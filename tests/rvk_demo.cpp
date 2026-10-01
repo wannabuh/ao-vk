@@ -1199,9 +1199,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 
 // Particle test (--particle-test): an effect like the game's sparkle auras - a ring of soft additive sprites (FVF 0x142,
 // drawn the way GfxVisualDiaBill draws them) that twinkle on and off - announced with ParticleEmitter, so each live
-// sprite sheds GPU particles. --particles-off draws the sprites alone for comparison.
+// sprite sheds GPU particles. --particles-off draws the sprites alone for comparison. --particle-end F: the effect ends
+// at frame F (no longer announced or drawn); its particles must fade out on their own. An interface quad follows the 3D.
 template <typename D>
-void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, const std::string& dump, bool particles)
+void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, const std::string& dump, bool particles,
+                     int endFrame)
 {
     std::vector<uint32_t> soft(32 * 32);
     for (int y = 0; y < 32; ++y)
@@ -1274,7 +1276,8 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
             idx.insert(idx.end(), q, q + 6);
         }
         float center[3] = {cx, 0.0f, cz};
-        dev.ParticleEmitter(0x5EED, center, sprites, kN);
+        bool effect = endFrame < 0 || frame < endFrame;
+        if (effect) dev.ParticleEmitter(0x5EED, center, sprites, kN);
         dev.SetRenderState(RS_ZWRITEENABLE, 0);
         dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
         dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
@@ -1286,10 +1289,21 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
         dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_MODULATE);
         dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
         dev.SetTextureStageState(0, TSS_ALPHAARG2, TA_DIFFUSE);
-        if (!verts.empty())
+        if (effect && !verts.empty())
             dev.DrawIndexedPrimitive(TriangleList, Device::kParticleFvf, verts.data(), uint32_t(verts.size()), idx.data(),
                                      uint32_t(idx.size()));
         dev.EndParticleEmitter();
+        // Interface: a pre-transformed quad (the end of the 3D scene).
+        struct VtxUi { float x, y, z, rhw; uint32_t color; };
+        VtxUi ui[4] = {{20, 20, 0, 1, 0xFF4080C0}, {120, 20, 0, 1, 0xFF4080C0}, {20, 60, 0, 1, 0xFF4080C0}, {120, 60, 0, 1, 0xFF4080C0}};
+        dev.SetRenderState(RS_ZENABLE, 0);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        dev.SetTexture(0, nullptr);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_COLORARG1, TA_DIFFUSE);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_DIFFUSE);
+        dev.DrawIndexedPrimitive(TriangleList, FVF_XYZRHW | FVF_DIFFUSE, ui, 4, gi, 6);
         dev.EndFrame();
         if (frameMs > 0)
             Sleep(DWORD(frameMs));
@@ -1302,6 +1316,7 @@ int main(int argc, char** argv)
     bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false, pointShadowTest = false, pointShadowSun = false;
     int cacheTest = 0, frameMs = 0;
     bool particleTest = false, particlesOff = false;
+    int particleEnd = -1;
     uint32_t pointShadows = 4;
     float headroom = 1.0f;
     double fadeIn = 0.0;
@@ -1358,6 +1373,7 @@ int main(int argc, char** argv)
         else if (a == "--shot" && i + 1 < argc) shot = argv[++i];
         else if (a == "--particle-test") particleTest = true;
         else if (a == "--particles-off") particlesOff = true;
+        else if (a == "--particle-end" && i + 1 < argc) particleEnd = std::atoi(argv[++i]);
     }
 
     HWND hwnd = nullptr;
@@ -1410,10 +1426,10 @@ int main(int argc, char** argv)
             if (!tdev.Init(nullptr, kWidth, kHeight, &error)) { std::printf("init failed: %s\n", error.c_str()); return 1; }
             tdev.SetHdr(hdr);
             tdev.SetBloom(bloom, 1.0f);
-            RunParticleTest(tdev, frames, frameMs, shot, dump, !particlesOff);
+            RunParticleTest(tdev, frames, frameMs, shot, dump, !particlesOff, particleEnd);
             tdev.Sync();
         } else {
-            RunParticleTest(dev, frames, frameMs, shot, dump, !particlesOff);
+            RunParticleTest(dev, frames, frameMs, shot, dump, !particlesOff, particleEnd);
         }
         std::printf("rendered; screenshot %s\n", shot.c_str());
         return 0;

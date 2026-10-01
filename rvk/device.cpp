@@ -984,6 +984,8 @@ void Device::BeginFrame()
     m_terrainBases.clear();
     m_particlePending = nullptr;
     m_particleDraws = 0;
+    m_particleOrphansDone = false;
+    m_particleSaw3D = false;
     SimulateParticles(f.main);                   // last frame's effects; reads last frame's world camera
     m_inFrame = true;
     BeginScene();
@@ -996,6 +998,8 @@ void Device::BeginFrame()
 
 void Device::EndFrame()
 {
+    if (m_rendering)
+        DrawOrphanParticles();                   // if no interface draw did
     EndScene();                                  // if the interface didn't end it (no interface drawn)
     EndFrameDump();
     Frame& f = m_frames[m_frameIndex];

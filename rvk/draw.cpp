@@ -657,6 +657,13 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 {
     if (!m_inFrame || !vertexCount)
         return;
+    // Particles whose effect the game no longer draws: at the end of the 3D scene (the first interface draw after 3D).
+    if (!m_external) {
+        if ((fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW)
+            m_particleSaw3D = true;
+        else if (m_particleSaw3D && !m_particleOrphansDone)
+            DrawOrphanParticles();
+    }
     // HDR: the frame's first interface (pre-transformed) draw after its 3D ends the scene phase - the scene is tone
     // mapped and the interface drawn over it into the 8-bit target.
     if (m_scenePhase && m_target == m_scene) {

@@ -161,6 +161,9 @@ void Device::ParticleEmitter(uint64_t key, const float center[3], const Particle
         block->reset = true;
         block->havePrev = false;
         block->lastSeen = 0;
+        block->lastAliveTime = 0.0;
+        block->drawnFrame = 0;
+        block->haveState = false;
         block->sprites.assign(kParticleSlots, ParticleSprite{});
         block->prevSprites.assign(kParticleSlots, ParticleSprite{});
     }
@@ -172,6 +175,8 @@ void Device::ParticleEmitter(uint64_t key, const float center[3], const Particle
         std::fill(block->sprites.begin() + count, block->sprites.end(), ParticleSprite{});
         std::memcpy(block->center, center, sizeof(block->center));
         block->lastSeen = m_frameNumber;
+        if (std::any_of(sprites, sprites + count, [](const ParticleSprite& sp) { return sp.alive != 0; }))
+            block->lastAliveTime = Clock();
     }
     // The camera the effect is drawn with: the quads made at the start of next frame face it (a frame old - invisible on
     // particles this small).
@@ -186,14 +191,16 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
     m_particleLastClock = now;
     m_particleTime += dt;
 
+    // Effects announced last frame (this frame's number is one higher by now), and those whose particles may still
+    // be alive - they fade out on their own once the effect is gone.
     std::vector<uint32_t> active;
     for (uint32_t i = 0; i < m_particleBlocks.size(); ++i) {
         ParticleBlock& b = m_particleBlocks[i];
         b.simulated = false;
-        if (b.key && b.lastSeen + kForgetFrames < m_frameNumber)
+        bool live = ParticlesMayLive(b, now);
+        if (b.key && b.lastSeen + kForgetFrames < m_frameNumber && !live)
             b.key = 0;
-        // Effects drawn last frame (this frame's number is one higher by now).
-        if (b.key && b.lastSeen + 1 == m_frameNumber)
+        if (b.key && (b.lastSeen + 1 == m_frameNumber || live))
             active.push_back(i);
     }
     if (active.empty() || !m_particleParams.enable || !m_particlePipeline)
@@ -227,15 +234,16 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
     for (uint32_t k = 0; k < n; ++k) {
         ParticleBlock& b = m_particleBlocks[active[k]];
         gb[k] = {{b.center[0], b.center[1], b.center[2], b.reset ? 1.0f : 0.0f}, {active[k], 0, 0, 0}};
+        bool announced = b.lastSeen + 1 == m_frameNumber;   // else its sprites are gone: no new particles
         for (uint32_t s = 0; s < kParticleSlots; ++s) {
             const ParticleSprite& cur = b.sprites[s];
             const ParticleSprite& prev = b.prevSprites[s];
-            bool prevAlive = b.havePrev && prev.alive;
+            bool prevAlive = announced && b.havePrev && prev.alive;
             GpuSprite& g = gs[size_t(k) * kParticleSlots + s];
             std::memcpy(g.posSize, cur.pos, 12);
             g.posSize[3] = cur.size;
             std::memcpy(g.prevPos, prevAlive ? prev.pos : cur.pos, 12);
-            g.prevPos[3] = BitsAsFloat((cur.alive ? 1u : 0u) | (prevAlive ? 2u : 0u));
+            g.prevPos[3] = BitsAsFloat((announced && cur.alive ? 1u : 0u) | (prevAlive ? 2u : 0u));
             std::memcpy(g.uv, cur.uv, 16);
             g.color[0] = cur.color;
             g.color[1] = g.color[2] = g.color[3] = 0;
@@ -291,17 +299,66 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
     vkCmdPipelineBarrier2(cmd, &dep);
 }
 
-void Device::DrawParticles(ParticleBlock& block)
+bool Device::ParticlesMayLive(const ParticleBlock& block, double now) const
+{
+    // The longest a particle lives: 1.5x the set life (particles.comp), plus the spawn delay.
+    return block.key && block.lastAliveTime > 0.0 && now - block.lastAliveTime < m_particleParams.life * 1.5 + 0.25;
+}
+
+void Device::DrawOrphanParticles()
+{
+    if (m_particleOrphansDone)
+        return;
+    m_particleOrphansDone = true;
+    if (!m_particleParams.enable)
+        return;
+    double now = Clock();
+    for (ParticleBlock& b : m_particleBlocks) {
+        if (!b.simulated || b.drawnFrame == m_frameNumber || !b.haveState || b.state.target != m_target ||
+            !ParticlesMayLive(b, now))
+            continue;
+        ParticleBlock::DrawState current{m_rs, m_tss, m_textures, m_view, m_proj, {m_texMatrix[0], m_texMatrix[1]},
+                                         m_viewport, m_target};
+        auto apply = [&](const ParticleBlock::DrawState& st) {
+            m_rs = st.rs;
+            m_tss = st.tss;
+            m_textures = st.textures;
+            m_view = st.view;
+            m_proj = st.proj;
+            m_texMatrix[0] = st.texMatrix[0];
+            m_texMatrix[1] = st.texMatrix[1];
+            m_viewport = st.viewport;
+            m_constantsDirty = true;
+        };
+        apply(b.state);
+        DrawParticles(b, true);
+        apply(current);
+    }
+}
+
+void Device::ForgetParticleTexture(Texture* texture)
+{
+    for (ParticleBlock& b : m_particleBlocks)
+        if (b.haveState && (b.state.textures[0] == texture || b.state.textures[1] == texture || b.state.target == texture))
+            b.haveState = false;
+}
+
+void Device::DrawParticles(ParticleBlock& block, bool orphan)
 {
     if (!block.simulated || !m_particleParams.enable)
         return;
+    if (!orphan) {
+        block.state = {m_rs, m_tss, m_textures, m_view, m_proj, {m_texMatrix[0], m_texMatrix[1]}, m_viewport, m_target};
+        block.haveState = true;
+    }
+    block.drawnFrame = m_frameNumber;
     uint32_t index = uint32_t(&block - m_particleBlocks.data());
     ExternalGeometry geometry{m_particleQuads[m_frameIndex], m_particleIndices, int32_t(index * kParticlesPerBlock * 4)};
     d3d::Matrix world = m_world;                // the quads are in world space
     m_world = Identity();
     if (m_dumpFile)
-        std::fprintf(m_dumpFile, "# particles of effect %llx (block %u) after draw %u\n", (unsigned long long)block.key, index,
-                     m_dumpDraw);
+        std::fprintf(m_dumpFile, "# particles of effect %llx (block %u)%s after draw %u\n", (unsigned long long)block.key,
+                     index, orphan ? " - effect gone, fading out" : "", m_dumpDraw);
     m_external = &geometry;
     Draw(d3d::TriangleList, kParticleFvf, nullptr, kParticlesPerBlock * 4, nullptr, kParticlesPerBlock * 6);
     m_external = nullptr;

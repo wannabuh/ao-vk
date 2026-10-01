@@ -237,6 +237,7 @@ void Device::DestroyTexture(Texture* texture)
     if (m_target == texture)
         SetRenderTarget(nullptr);
     ForgetCasterTexture(texture);
+    ForgetParticleTexture(texture);
     m_deadTextures.push_back({DeathTag(), texture});   // freed once every submission that may use it is done
 }
 

@@ -583,6 +583,19 @@ private:
         float center[3] = {};
         std::vector<ParticleSprite> sprites, prevSprites;
         bool havePrev = false;
+        double lastAliveTime = 0.0;              // Clock() when a sprite was last alive: particles may live a while yet
+        uint64_t drawnFrame = 0;                 // frame its particles were last drawn
+        // The state its particles were last drawn with (the effect's), so they can still be drawn - and fade out on
+        // their own - once the game stops drawing the effect (DrawOrphanParticles).
+        struct DrawState {
+            std::array<uint32_t, d3d::RS_COUNT> rs;
+            std::array<std::array<uint32_t, d3d::TSS_COUNT>, 2> tss;
+            std::array<Texture*, 2> textures;
+            d3d::Matrix view, proj, texMatrix[2];
+            d3d::Viewport viewport;
+            Texture* target;
+        } state{};
+        bool haveState = false;
     };
     std::vector<ParticleBlock> m_particleBlocks;
     ParticleBlock* m_particlePending = nullptr;  // the effect whose sprite draw comes next
@@ -602,7 +615,13 @@ private:
     bool CreateParticleResources(std::string* error);
     void DestroyParticleResources();
     void SimulateParticles(VkCommandBuffer cmd); // BeginFrame, before rendering starts
-    void DrawParticles(ParticleBlock& block);    // right after the effect's own draw, with its state
+    void DrawParticles(ParticleBlock& block, bool orphan = false);   // right after the effect's own draw, with its state
+    // Particles of effects the game didn't draw this frame (ended, or out of view): drawn with their effect's last state
+    // at the end of the 3D scene, until they have died out. Once a frame.
+    void DrawOrphanParticles();
+    bool ParticlesMayLive(const ParticleBlock& block, double now) const;
+    bool m_particleOrphansDone = false, m_particleSaw3D = false;
+    void ForgetParticleTexture(Texture* texture);
     // A draw whose geometry is already in a GPU buffer (the particle quads): Draw uses it instead of copying vertices.
     struct ExternalGeometry {
         VkBuffer vertices, indices;

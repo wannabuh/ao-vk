@@ -58,8 +58,6 @@ std::vector<Range> g_templates;
 bool g_allTemplates;
 // Sprite batches of chosen effects, with the frame their effect last updated them.
 std::unordered_map<const void*, uint32_t> g_chosen;
-// Per batch: the frame a sprite was last alive (particles keep being drawn a while after the last one dies).
-std::unordered_map<const void*, uint32_t> g_lastAlive;
 
 template <typename T>
 T At(const void* object, uint32_t offset)
@@ -179,32 +177,18 @@ uint32_t __fastcall DiaBillRender(void* self, void* /*edx*/, void* viewport)
     // The swirl and the pull centre on the effect's live sprites (its origin may be at the character's feet).
     if (alive) {
         for (float& c : center) c /= float(alive);
-        g_lastAlive[self] = g_frame;
     } else {
         std::memcpy(center, m + 12, sizeof(center));
     }
 
-    // The game's own sprites, dimmed while it draws them. With none alive, a transparent one keeps the effect drawing
-    // (its particles are drawn after its sprite draw) for as long as particles may live.
+    // The game's own sprites, dimmed while it draws them. (Once none are alive the game draws nothing; rvk then draws
+    // the remaining particles itself until they have died out.)
     float core = rvk_settings::Get("RVK_PartCore");
     uint32_t savedColor[rvk::Device::kParticleSlots];
-    uint8_t savedAlive = sprites[0].alive;
-    float savedWidth = sprites[0].width, savedHeight = sprites[0].height;
     for (uint32_t i = 0; i < count; ++i) {
         savedColor[i] = sprites[i].color;
         uint32_t a = uint32_t(float(sprites[i].color >> 24) * core + 0.5f);
         sprites[i].color = (sprites[i].color & 0x00FFFFFFu) | (std::min(a, 255u) << 24);
-    }
-    bool keepAlive = false;
-    if (!alive) {
-        auto la = g_lastAlive.find(self);
-        float life = device->GetParticleParams().life * 1.5f;
-        keepAlive = la != g_lastAlive.end() && float(g_frame - la->second) < life * 240.0f;   // frames, at up to 240 fps
-        if (keepAlive) {
-            sprites[0].alive = 1;
-            sprites[0].color &= 0x00FFFFFFu;
-            sprites[0].width = sprites[0].height = 0.0f;
-        }
     }
     uint32_t r;
     {
@@ -216,11 +200,6 @@ uint32_t __fastcall DiaBillRender(void* self, void* /*edx*/, void* viewport)
     }
     for (uint32_t i = 0; i < count; ++i)
         sprites[i].color = savedColor[i];
-    if (keepAlive) {
-        sprites[0].alive = savedAlive;
-        sprites[0].width = savedWidth;
-        sprites[0].height = savedHeight;
-    }
     return r;
 }
 
@@ -233,8 +212,6 @@ void ParticleFrame()
     if (g_frame % 600 == 0) {                         // forget batches of effects that ended
         for (auto it = g_chosen.begin(); it != g_chosen.end();)
             it = it->second + 600 < g_frame ? g_chosen.erase(it) : std::next(it);
-        for (auto it = g_lastAlive.begin(); it != g_lastAlive.end();)
-            it = it->second + 2400 < g_frame ? g_lastAlive.erase(it) : std::next(it);
     }
     if (g_installed || g_gaveUp)
         return;
