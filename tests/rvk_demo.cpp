@@ -686,7 +686,20 @@ int main(int argc, char** argv)
         scene.RenderToTexture();
         scene.Formats();
         scene.MipsAndBuffers();
+        Texture* shortLived = nullptr;
+        if (stress) {
+            // Drawn with in this frame and destroyed right after submission, while the GPU may still be
+            // running the frame: rvk must defer the free until that work has completed.
+            uint32_t px[16] = {};
+            shortLived = dev.CreateTexture(4, 4, px);
+            dev.SetTexture(0, shortLived);
+            VtxRhwDiffuseTex q[3] = {{0, 0, 0, 1, 0x01FFFFFF, 0, 0}, {1, 0, 0, 1, 0x01FFFFFF, 1, 0}, {0, 1, 0, 1, 0x01FFFFFF, 0, 1}};
+            dev.DrawPrimitive(TriangleList, kFvfRhwDiffuseTex, q, 3);
+            dev.SetTexture(0, nullptr);
+        }
         dev.EndFrame();
+        if (shortLived)
+            dev.DestroyTexture(shortLived);
     }
     for (Texture* t : {scene.checker, scene.dot, scene.stripes, scene.gray, scene.target, scene.mips})
         dev.DestroyTexture(t);

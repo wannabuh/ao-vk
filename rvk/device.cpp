@@ -70,23 +70,6 @@ void LayoutUse(VkImageLayout layout, VkPipelineStageFlags2* stage, VkAccessFlags
     }
 }
 
-// vkWaitForFences that reports a stuck GPU instead of hanging silently (messages go to stderr, which the
-// launcher wrapper writes to the Wine log).
-void WaitFence(VkDevice device, VkFence fence, const char* what)
-{
-    for (int seconds = 1;; ++seconds) {
-        VkResult r = vkWaitForFences(device, 1, &fence, VK_TRUE, 1000000000ull);
-        if (r != VK_TIMEOUT) {
-            if (seconds > 1)
-                Log("%s finished after %d s\n", what, seconds);
-            if (r != VK_SUCCESS)
-                Log("waiting for %s failed: VkResult %d\n", what, r);
-            return;
-        }
-        Log("still waiting for %s after %d s\n", what, seconds);
-    }
-}
-
 }  // namespace
 
 namespace detail {
@@ -173,9 +156,9 @@ Device::~Device()
     if (!m_device)
         return;
     vkDeviceWaitIdle(m_device);
+    m_completed = m_submitted;
+    CollectGarbage();
     for (auto& f : m_frames) {
-        for (Texture* t : f.pendingDestroy)
-            DestroyTextureNow(t);
         if (f.ring) vmaDestroyBuffer(m_allocator, f.ring, f.ringAllocation);
         if (f.fence) vkDestroyFence(m_device, f.fence, nullptr);
         if (f.imageAvailable) vkDestroySemaphore(m_device, f.imageAvailable, nullptr);
@@ -350,6 +333,8 @@ bool Device::CreateLogicalDevice(std::string* error)
     VkPhysicalDeviceFeatures2 enabled{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     enabled.pNext = &enV13;
     enabled.features.samplerAnisotropy = features.features.samplerAnisotropy;
+    // Out-of-range vertex indices in game data read zeros instead of faulting the GPU.
+    enabled.features.robustBufferAccess = features.features.robustBufferAccess;
     enabled.features.textureCompressionBC = features.features.textureCompressionBC;
 
     float priority = 1.0f;
@@ -416,7 +401,7 @@ bool Device::EnsureDepth(uint32_t width, uint32_t height)
     width = std::max(width, m_depthWidth);
     height = std::max(height, m_depthHeight);
     if (m_depth)          // may still be in use by submitted or recorded work: free with this frame slot
-        m_deadImages[m_frameIndex].push_back({m_depth, m_depthView, m_depthAllocation});
+        m_deadImages.push_back({DeathTag(), {m_depth, m_depthView, m_depthAllocation}});
     m_depth = VK_NULL_HANDLE;
     m_depthView = VK_NULL_HANDLE;
     VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -448,10 +433,8 @@ bool Device::EnsureDepth(uint32_t width, uint32_t height)
 void Device::DestroyMainTargets()
 {
     if (m_main) { DestroyTextureNow(m_main); m_main = nullptr; }
-    for (auto& dead : m_deadImages) {
-        for (auto& d : dead) { vkDestroyImageView(m_device, d.view, nullptr); vmaDestroyImage(m_allocator, d.image, d.allocation); }
-        dead.clear();
-    }
+    for (auto& [tag, d] : m_deadImages) { vkDestroyImageView(m_device, d.view, nullptr); vmaDestroyImage(m_allocator, d.image, d.allocation); }
+    m_deadImages.clear();
     if (m_depthView) { vkDestroyImageView(m_device, m_depthView, nullptr); m_depthView = VK_NULL_HANDLE; }
     if (m_depth) { vmaDestroyImage(m_allocator, m_depth, m_depthAllocation); m_depth = VK_NULL_HANDLE; }
     if (m_readback) { vmaDestroyBuffer(m_allocator, m_readback, m_readbackAllocation); m_readback = VK_NULL_HANDLE; }
@@ -462,6 +445,7 @@ bool Device::Resize(uint32_t width, uint32_t height)
     if (m_inFrame || !width || !height)
         return false;
     vkDeviceWaitIdle(m_device);
+    m_completed = m_submitted;
     bool wasMain = m_target == m_main;
     DestroyMainTargets();
     m_width = width;
@@ -721,6 +705,43 @@ VkDeviceSize Device::Allocate(VkDeviceSize size, VkDeviceSize alignment, void** 
     return offset;
 }
 
+void Device::WaitFrame(Frame& f, const char* what)
+{
+    // Reports a stuck GPU instead of hanging silently; gives up on a lost device.
+    for (int seconds = 1; !m_deviceLost; ++seconds) {
+        VkResult r = vkWaitForFences(m_device, 1, &f.fence, VK_TRUE, 1000000000ull);
+        if (r == VK_SUCCESS) {
+            if (seconds > 1)
+                Log("%s finished after %d s", what, seconds);
+            m_completed = std::max(m_completed, f.serial);
+            return;
+        }
+        if (r == VK_ERROR_DEVICE_LOST) {
+            m_deviceLost = true;
+            Log("GPU device lost (while waiting for %s); rendering stops", what);
+            return;
+        }
+        Log("still waiting for %s after %d s", what, seconds);
+    }
+}
+
+void Device::CollectGarbage()
+{
+    auto textures = std::remove_if(m_deadTextures.begin(), m_deadTextures.end(), [&](auto& e) {
+        if (e.first > m_completed) return false;
+        DestroyTextureNow(e.second);
+        return true;
+    });
+    m_deadTextures.erase(textures, m_deadTextures.end());
+    auto images = std::remove_if(m_deadImages.begin(), m_deadImages.end(), [&](auto& e) {
+        if (e.first > m_completed) return false;
+        vkDestroyImageView(m_device, e.second.view, nullptr);
+        vmaDestroyImage(m_allocator, e.second.image, e.second.allocation);
+        return true;
+    });
+    m_deadImages.erase(images, m_deadImages.end());
+}
+
 void Device::EnsureRingSpace(VkDeviceSize bytes)
 {
     Frame& f = m_frames[m_frameIndex];
@@ -742,12 +763,13 @@ void Device::EnsureRingSpace(VkDeviceSize bytes)
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
         si.commandBufferCount = 1;
         si.pCommandBuffers = &f.upload;
+        f.serial = ++m_submitted;
         vkQueueSubmit(m_queue, 1, &si, f.fence);
-        WaitFence(m_device, f.fence, "GPU frame work");
+        WaitFrame(f, "GPU frame work");
         // Leave the fence signalled: BeginFrame waits on it before using this slot.
         f.uploadsRecorded = false;
     } else {
-        WaitFence(m_device, f.fence, "GPU frame work");
+        WaitFrame(f, "GPU frame work");
     }
     f.ringOffset = 0;
 }
@@ -759,7 +781,7 @@ VkCommandBuffer Device::UploadCommands()
         if (!m_inFrame) {
             // Between frames this slot's previous submission may still be running: wait for it before
             // reusing its command buffer and ring buffer. BeginFrame keeps what is recorded here.
-            WaitFence(m_device, f.fence, "GPU frame work");
+            WaitFrame(f, "GPU frame work");
             f.ringOffset = 0;
         }
         VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -854,16 +876,9 @@ void Device::BeginFrame()
     }
     Frame& f = m_frames[m_frameIndex];
     bool uploadsPending = f.uploadsRecorded;          // recorded between frames, already waited for
-    WaitFence(m_device, f.fence, "GPU frame work");
+    WaitFrame(f, "GPU frame work");
     vkResetFences(m_device, 1, &f.fence);
-    for (Texture* t : f.pendingDestroy)
-        DestroyTextureNow(t);
-    f.pendingDestroy.clear();
-    for (auto& d : m_deadImages[m_frameIndex]) {
-        vkDestroyImageView(m_device, d.view, nullptr);
-        vmaDestroyImage(m_allocator, d.image, d.allocation);
-    }
-    m_deadImages[m_frameIndex].clear();
+    CollectGarbage();
     if (!uploadsPending)
         f.ringOffset = 0;
 
@@ -936,6 +951,7 @@ void Device::EndFrame()
         si.signalSemaphoreCount = 1;
         si.pSignalSemaphores = &m_renderDone[imageIndex];
     }
+    f.serial = ++m_submitted;
     vkQueueSubmit(m_queue, 1, &si, f.fence);
     f.uploadsRecorded = false;
     if (present) {
@@ -950,7 +966,7 @@ void Device::EndFrame()
             m_swapchainStale = true;
     }
     if (screenshot) {
-        WaitFence(m_device, f.fence, "GPU frame work");
+        WaitFrame(f, "GPU frame work");
         SaveScreenshot();
         m_screenshotPath.clear();
     }
@@ -974,8 +990,9 @@ void Device::SubmitAndWait()
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = n;
     si.pCommandBuffers = cmds;
+    f.serial = ++m_submitted;
     vkQueueSubmit(m_queue, 1, &si, f.fence);
-    WaitFence(m_device, f.fence, "GPU frame work");
+    WaitFrame(f, "mid-frame flush");
     vkResetFences(m_device, 1, &f.fence);
     VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     b.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -1026,6 +1043,7 @@ bool Device::ReadPixels(Texture* target, void* out)
         si.pCommandBuffers = &cmd;
         vkQueueSubmit(m_queue, 1, &si, VK_NULL_HANDLE);
         vkQueueWaitIdle(m_queue);
+        m_completed = m_submitted;
         vkFreeCommandBuffers(m_device, m_pool, 1, &cmd);
     }
     std::memcpy(out, info.pMappedData, size_t(bi.size));

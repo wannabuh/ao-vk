@@ -161,7 +161,7 @@ private:
         VmaAllocation_T* ringAllocation = nullptr;
         uint8_t* ringData = nullptr;
         VkDeviceSize ringOffset = 0;
-        std::vector<Texture*> pendingDestroy;
+        uint64_t serial = 0;                       // submission number last signalled through `fence`
         bool uploadsRecorded = false;
     };
 
@@ -227,7 +227,16 @@ private:
     VkImageLayout m_depthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     uint32_t m_depthWidth = 0, m_depthHeight = 0;
     struct DeadImage { VkImage image; VkImageView view; VmaAllocation_T* allocation; };
-    std::array<std::vector<DeadImage>, kFramesInFlight> m_deadImages;   // freed when their frame is done
+    // Deferred destruction: each object is tagged with the last submission that may still use it and freed
+    // once that submission has completed (m_completed). Frames run concurrently with recording, so freeing at
+    // "the next BeginFrame of this slot" is not enough.
+    uint64_t m_submitted = 0, m_completed = 0;
+    std::vector<std::pair<uint64_t, Texture*>> m_deadTextures;
+    std::vector<std::pair<uint64_t, DeadImage>> m_deadImages;
+    bool m_deviceLost = false;
+    uint64_t DeathTag() const { return m_inFrame ? m_submitted + 1 : m_submitted; }
+    void WaitFrame(Frame& f, const char* what);          // waits for f's fence, updates m_completed
+    void CollectGarbage();
     static constexpr VkFormat kColorFormat = VK_FORMAT_B8G8R8A8_UNORM;
     static constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
 

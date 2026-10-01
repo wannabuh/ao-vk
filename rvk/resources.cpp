@@ -216,7 +216,7 @@ void Device::DestroyTexture(Texture* texture)
         if (t == texture) t = nullptr;
     if (m_target == texture)
         SetRenderTarget(nullptr);
-    m_frames[m_frameIndex].pendingDestroy.push_back(texture);   // freed once this frame's GPU work is done
+    m_deadTextures.push_back({DeathTag(), texture});   // freed once every submission that may use it is done
 }
 
 void Device::DestroyTextureNow(Texture* t)
