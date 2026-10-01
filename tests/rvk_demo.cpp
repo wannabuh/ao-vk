@@ -772,7 +772,7 @@ void AddCube(std::vector<VtxMesh>& v, std::vector<uint16_t>& idx, float cx, floa
 }
 
 template <typename D>
-void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, int frameMs)
+void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, int frameMs, const std::string& dump)
 {
     auto groundPixels = Checker(64, 8, 0xFFC8C0B0, 0xFFA09888);
     auto fencePixels = Checker(64, 8, 0xFF806040, 0x00000000);
@@ -780,11 +780,15 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
     Texture* fence = dev.CreateTexture(64, 64, fencePixels.data());
     std::vector<uint32_t> blobPixels(64, 0xFFFFFFFF);
     std::vector<uint32_t> lightmapPixels(64, 0xFFC0C0C0);
+    std::vector<uint32_t> labelPixels(64 * 16, 0xFF20FF20);
+    Texture* labelTex = dev.CreateTexture(64, 16, labelPixels.data());
     Texture* lightmap = dev.CreateTexture(8, 8, lightmapPixels.data());
     Texture* blobTex = dev.CreateTexture(8, 8, blobPixels.data());
     for (int frame = 0; frame < frames; ++frame) {
-        if (frame == frames - 1)
+        if (frame == frames - 1) {
             dev.RequestScreenshot(shot);
+            if (!dump.empty()) dev.RequestFrameDump(dump);     // the shadow test dumps its last frame
+        }
         dev.BeginFrame();
         dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
         dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF6080A0, 1.0f);
@@ -856,7 +860,8 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
         lamp.attenuation1 = 0.15f;                    // bright enough to fill the shadow in near it
         dev.SetLight(1, lamp);
         // The sun stays enabled, as the game leaves it when there are 8 lights or fewer; rvk keeps it off terrain.
-        dev.LightEnable(1, true);
+        // (No lamp in the cache test: it would fill in the shadow that test looks at.)
+        dev.LightEnable(1, cacheTest == 0);
         dev.SetRenderState(RS_LIGHTING, 1);
         dev.SetRenderState(RS_AMBIENT, 0);
         dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
@@ -915,6 +920,39 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
             dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, sv.data(), uint32_t(sv.size()), si.data(), uint32_t(si.size()));
             dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
         }
+        // A name label over the small cube (unlit, blended, depth-writing quad with a wide text texture) and a 3D
+        // preview drawn with its own camera like an interface window's: neither may cast a shadow.
+        {
+            dev.SetRenderState(RS_LIGHTING, 0);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+            dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+            dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
+            dev.SetTexture(0, labelTex);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
+            VtxDiffuseTex label[4] = {{5.5f, 2.6f, -2, 0xFFFFFFFF, 0, 1}, {5.5f, 3.4f, -2, 0xFFFFFFFF, 0, 0},
+                                      {8.5f, 2.6f, -2, 0xFFFFFFFF, 1, 1}, {8.5f, 3.4f, -2, 0xFFFFFFFF, 1, 0}};
+            dev.DrawPrimitive(TriangleStrip, kFvfDiffuseTex, label, 4);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+            dev.SetRenderState(RS_LIGHTING, 1);
+            dev.SetTexture(0, nullptr);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+            Matrix saveView = LookAtLH({0, 9, -14}, {0, 0, 2}, {0, 1, 0});
+            dev.SetTransform(View, LookAtLH({0, 0, -6}, {0, 0, 0}, {0, 1, 0}));
+            dev.SetTransform(Projection, PerspectiveLH(kPi / 4, 1.0f, 0.5f, 50.0f));   // a window's own projection
+            dev.SetViewport({kWidth - 200, 20, 180, 180, 0.0f, 1.0f});
+            std::vector<VtxMesh> pv;
+            std::vector<uint16_t> pi;
+            AddCube(pv, pi, 0, 0, 0, 1.5f);
+            dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, pv.data(), uint32_t(pv.size()), pi.data(), uint32_t(pi.size()));
+            dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
+            if (!topDown) {
+                dev.SetTransform(View, saveView);
+                dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 200.0f));
+            } else {
+                dev.SetTransform(View, LookAtLH({7.5f, 4, 6.5f}, {7.5f, 0, 6.5f}, {0, 0, 1}));
+                dev.SetTransform(Projection, PerspectiveLH(kPi / 4.5f, float(kWidth) / kHeight, 0.5f, 200.0f));
+            }
+        }
         // Anarchy Online's blob shadow (GfxVisualSimpleShadow_c, 8 segments) under the small cube: rvk hides it
         // once sun shadows are available (from the second frame).
         dev.SetRenderState(RS_LIGHTING, 0);
@@ -954,6 +992,7 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
     dev.DestroyTexture(fence);
     dev.DestroyTexture(blobTex);
     dev.DestroyTexture(lightmap);
+    dev.DestroyTexture(labelTex);
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
@@ -1014,7 +1053,7 @@ int main(int argc, char** argv)
     dev.SetLightingDebug(lightingDebug);
     dev.SetLightOverride(lightOverride);
     dev.SetShadows(shadows);
-    if (!dump.empty()) dev.RequestFrameDump(dump);
+    if (!dump.empty() && !shadowTest) dev.RequestFrameDump(dump);
     std::printf("GPU: %s (Vulkan %u.%u), driver %s\n", dev.Info().gpu.c_str(), VK_API_VERSION_MAJOR(dev.Info().apiVersion),
                 VK_API_VERSION_MINOR(dev.Info().apiVersion), dev.Info().driver.c_str());
 
@@ -1041,11 +1080,11 @@ int main(int argc, char** argv)
         tdev.SetLightingDebug(lightingDebug);
         tdev.SetLightOverride(lightOverride);
         tdev.SetShadows(shadows);
-        if (!dump.empty()) tdev.RequestFrameDump(dump);
-        if (shadowTest) RunShadowTest(tdev, frames, shot, cacheTest, frameMs);
+        if (!dump.empty() && !shadowTest) tdev.RequestFrameDump(dump);
+        if (shadowTest) RunShadowTest(tdev, frames, shot, cacheTest, frameMs, dump);
         else RunDemo(tdev, windowed, stress, frames, shot);
     } else if (shadowTest) {
-        RunShadowTest(dev, frames, shot, cacheTest, frameMs);
+        RunShadowTest(dev, frames, shot, cacheTest, frameMs, dump);
     } else {
         RunDemo(dev, windowed, stress, frames, shot);
     }

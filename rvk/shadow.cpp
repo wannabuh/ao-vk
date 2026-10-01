@@ -278,8 +278,19 @@ bool Device::IsTerrain(uint32_t fvf) const
 // 3D triangles drawn into the main target with depth writes: opaque, alpha-tested, or alpha-blended the way
 // Anarchy Online draws most static objects (blended, but writing depth - solid apart from the texture's cut-out
 // parts). That leaves out the sky, effects, see-through surfaces and pre-transformed (XYZRHW) geometry.
+// Name labels over characters: unlit, alpha-blended quads (4 vertices, position + colour + one texture set)
+// with a wide text texture - drawn with depth writes, but neither casting nor taking shadows.
+bool Device::IsLabel(uint32_t primitive, uint32_t fvf, uint32_t vertexCount) const
+{
+    const Texture* t = m_textures[0];
+    return fvf == (d3d::FVF_XYZ | d3d::FVF_DIFFUSE | (1u << 8)) && vertexCount == 4 && TopologyClassOf(primitive) == 2 &&
+           !m_rs[d3d::RS_LIGHTING] && m_rs[d3d::RS_ALPHABLENDENABLE] && t && t->Width() >= 2 * t->Height();
+}
+
 bool Device::IsShadowCaster(uint32_t primitive, uint32_t fvf) const
 {
+    if (m_drawIsLabel)
+        return false;
     if (!m_shadows || m_target != m_main || TopologyClassOf(primitive) != 2 ||
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || !m_rs[d3d::RS_ZENABLE] || !m_rs[d3d::RS_ZWRITEENABLE])
         return false;
@@ -300,11 +311,18 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     if (!IsShadowCaster(primitive, fvf))
         return;
     UpdateFrameEye();
-    if (!m_frameViewProjValid) {                 // the world camera: taken at the first world object, not the sky
-        m_frameViewProj = MulMatrix(m_view, m_proj);
-        m_frameViewProjValid = true;
+    uint32_t view = 0;
+    while (view < m_casterViews.size() && (std::memcmp(&m_casterViews[view].view, &m_view, sizeof(m_view)) != 0 ||
+                                           std::memcmp(&m_casterViews[view].proj, &m_proj, sizeof(m_proj)) != 0))
+        ++view;
+    if (view == m_casterViews.size()) {
+        if (view == 8)
+            return;                              // too many cameras; not the world
+        m_casterViews.push_back({m_view, m_proj, 0});
     }
+    ++m_casterViews[view].count;
     ShadowCaster c;
+    c.view = view;
     c.primitive = primitive;
     c.stride = stride;
     c.vertexCount = vertexCount;
@@ -317,6 +335,7 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     m_casters.push_back(c);
 
     uint64_t key = CasterKey(primitive, fvf, stride, vertices, vertexCount, indices, indexCount);
+    m_casters.back().key = key;
     auto cached = m_casterCache.find(key);
     if (cached != m_casterCache.end()) {
         CachedCaster& e = cached->second;
@@ -495,9 +514,15 @@ void Device::UpdateCasterCache()
 
 // Whether a draw takes sun shadows: opaque or alpha-blended 3D geometry on the main target. Additive and
 // multiplying passes (lights, lightmaps) build on a surface that was already shadowed.
+// Whether the current draw uses the world camera's projection (3D interface previews use their own).
+bool Device::WorldCamera() const
+{
+    return std::memcmp(&m_proj, &m_shadowWorldProj, sizeof(m_proj)) == 0;
+}
+
 bool Device::ShadowReceiver(uint32_t fvf) const
 {
-    if (!m_shadows || !m_shadowValid || m_target != m_main || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ ||
+    if (m_drawIsLabel || !WorldCamera() || !m_shadows || !m_shadowValid || m_target != m_main || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ ||
         !m_rs[d3d::RS_ZENABLE])
         return false;
     if (!m_rs[d3d::RS_ALPHABLENDENABLE])
@@ -520,7 +545,8 @@ bool Device::IsMultiplyPass() const
 // ground = base * min(1, lightmap * shadow + ambient + lights).
 bool Device::ShadowInLightmap(uint32_t fvf) const
 {
-    return m_shadows && m_shadowValid && m_target == m_main && m_rs[d3d::RS_ZENABLE] && IsTerrain(fvf) && IsMultiplyPass();
+    return !m_drawIsLabel && WorldCamera() && m_shadows && m_shadowValid && m_target == m_main && m_rs[d3d::RS_ZENABLE] &&
+           IsTerrain(fvf) && IsMultiplyPass();
 }
 
 // Anarchy Online's round blob shadow under characters (GfxVisualSimpleShadow_c): a black, alpha-blended disc of
@@ -556,8 +582,8 @@ bool Device::IsBlobShadow(uint32_t primitive, uint32_t fvf, const void* vertices
 // pass divides its local lights by the same shadow factor so only the (baked) sunlight ends up shadowed.
 bool Device::ShadowCompensated(uint32_t fvf) const
 {
-    return m_shadows && m_shadowValid && m_target == m_main && (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ &&
-           m_rs[d3d::RS_ZENABLE] && IsMultiplyPass();
+    return !m_drawIsLabel && WorldCamera() && m_shadows && m_shadowValid && m_target == m_main &&
+           (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ && m_rs[d3d::RS_ZENABLE] && IsMultiplyPass();
 }
 
 // The sun for the next frame's shadows: the brightest directional light used during this frame.
@@ -579,7 +605,23 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
 {
     bool haveSun = m_sunLuminance > 0.0f && m_sunDir[1] < -0.05f;   // below the horizon / grazing: none
     m_shadowValid = false;
-    if (!m_shadows || !haveSun || !m_frameEyeValid || m_casters.empty()) {
+    // The world camera: the one most casters were drawn with.
+    uint32_t world = 0;
+    for (uint32_t i = 1; i < m_casterViews.size(); ++i)
+        if (m_casterViews[i].count > m_casterViews[world].count) world = i;
+    float eye[3], forward[3];
+    m_frameViewProjValid = !m_casterViews.empty();
+    if (m_frameViewProjValid) {
+        const auto& v = m_casterViews[world].view.m;
+        for (int i = 0; i < 3; ++i) {
+            eye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
+            forward[i] = v[i][2];
+        }
+        m_frameViewProj = MulMatrix(m_casterViews[world].view, m_casterViews[world].proj);
+        m_shadowWorldProj = m_casterViews[world].proj;
+        std::memcpy(m_frameEye, eye, sizeof(eye));             // also what caster cache eviction measures from
+    }
+    if (!m_shadows || !haveSun || !m_frameViewProjValid || m_casters.empty()) {
         m_casters.clear();
         UpdateCasterCache();
         return;
@@ -594,7 +636,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     Normalize(x);
     Cross(z, x, y);
     float center[3];
-    for (int i = 0; i < 3; ++i) center[i] = m_frameEye[i] + m_frameForward[i] * m_shadowRange * 0.4f;
+    for (int i = 0; i < 3; ++i) center[i] = eye[i] + forward[i] * m_shadowRange * 0.4f;
     float texel = 2.0f * m_shadowRange / float(kShadowSize);
     float cx = std::round(Dot(x, center) / texel) * texel, cy = std::round(Dot(y, center) / texel) * texel;
     float cz = Dot(z, center);
@@ -637,13 +679,18 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
     vkCmdBindIndexBuffer(cmd, f.ring, 0, VK_INDEX_TYPE_UINT16);
 
+    std::vector<uint64_t> staleKeys;
     int boundPipeline = -1;
     uint32_t boundStride = ~0u, boundPrimitive = ~0u;
     int boundTexOffset = -2;
     Texture* boundTexture = nullptr;
     for (const ShadowCaster& c : m_casters) {
-        if (c.generation != m_ringGeneration)                    // the ring restarted since: data overwritten
+        if (c.view != world)
             continue;
+        if (c.generation != m_ringGeneration) {  // the ring restarted since (mid-frame flush): data overwritten
+            staleKeys.push_back(c.key);          // drawn from the caster cache instead, if remembered
+            continue;
+        }
         int pipeline = c.texture ? 1 : 0;
         if (pipeline != boundPipeline) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelines[pipeline]);
@@ -691,7 +738,9 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     // Remembered static casters the game didn't draw this frame (out of view), if they reach into the map.
     m_cachedCastersDrawn = 0;
     for (auto& [key, e] : m_casterCache) {
-        if (e.lastSeen == m_frameNumber || BoxInClip(e.boundsMin, e.boundsMax, lightViewProj, false) == -1)
+        bool drawnThisFrame = e.lastSeen == m_frameNumber &&
+                              std::find(staleKeys.begin(), staleKeys.end(), key) == staleKeys.end();
+        if (drawnThisFrame || BoxInClip(e.boundsMin, e.boundsMax, lightViewProj, false) == -1)
             continue;
         ++m_cachedCastersDrawn;
         int pipeline = e.texture ? 1 : 0;

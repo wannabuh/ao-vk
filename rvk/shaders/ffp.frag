@@ -130,7 +130,9 @@ void main()
         float len2 = dot(n, n);
         n = len2 > 0.0 ? n * (vNormalW.w * inversesqrt(len2)) : vec3(0.0);
         vec3 ambient = vec3(0.0), diff = vec3(0.0), spec = vec3(0.0);
-        AccumulateLights(vPosW, n, shadeSun ? shade : 1.0, localScale, ambient, diff, spec);
+        // Sunlight is shadowed: by the receiver's shade, or in the ground's lighting pass by the lightmap's.
+        float sunScale = (C.flags.x & F_SHADOWTEX) != 0u ? texShade : shadeSun ? shade : 1.0;
+        AccumulateLights(vPosW, n, sunScale, localScale, ambient, diff, spec);
         // The ground's lighting pass (F_SHADOWTEX): the shadow takes the global ambient and emissive part along
         // with the lightmap, leaving only the lights' own contribution: (lightmap + ambient) * shadow + lights.
         vec3 base = (vMatEmissive + vMatAmbient * C.ambient.rgb) * texShade;

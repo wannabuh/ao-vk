@@ -773,6 +773,8 @@ void Device::EnsureRingSpace(VkDeviceSize bytes)
         return;
     }
     if (m_inFrame) {
+        if (m_midFrameFlushes++ < 20)
+            Log("ring buffer full mid-frame (%llu bytes wanted): flushing\n", (unsigned long long)bytes);
         bool wasRendering = m_rendering;
         SubmitAndWait();                                     // also submits pending uploads
         if (wasRendering)
@@ -916,6 +918,7 @@ void Device::BeginFrame()
     m_lightsCur.clear();
     m_sunLuminance = 0.0f;
     m_casters.clear();
+    m_casterViews.clear();
     m_frameLightsDirty = true;
     m_constantsDirty = true;                     // shadow receiving depends on last frame's map
     m_frameEyeValid = false;

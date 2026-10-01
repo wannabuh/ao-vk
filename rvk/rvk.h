@@ -255,7 +255,18 @@ private:
         Texture* texture;                        // alpha-tested casters: texture 0, its coordinates' offset, ref
         int texOffset;
         float alphaRef;
+        uint64_t key;                            // caster cache identity
+        uint32_t view;                           // index into m_casterViews
     };
+    // The cameras casters were drawn with this frame; the shadow map follows the one most casters share (the
+    // world's), so 3D interface elements drawn with their own camera neither move the map nor cast into it.
+    struct CasterView { d3d::Matrix view, proj; uint32_t count; };
+    std::vector<CasterView> m_casterViews;
+    d3d::Matrix m_shadowWorldProj{};             // the world camera's projection: only its draws take shadows
+    bool WorldCamera() const;
+    bool m_drawIsLabel = false;                  // the current draw is a name label (IsLabel)
+    bool IsLabel(uint32_t primitive, uint32_t fvf, uint32_t vertexCount) const;
+    uint32_t m_midFrameFlushes = 0;
     bool m_shadows = false;
     float m_shadowStrength = 0.65f, m_shadowRange = 60.0f;
     VkImage m_shadowImage = VK_NULL_HANDLE;
@@ -329,7 +340,7 @@ private:
     VkDeviceSize m_constantsOffset = 0;
     uint32_t m_constantsFvf = ~0u;
     uint32_t m_constantsTexMask = ~0u;
-    bool m_constantsTerrain = false;
+    bool m_constantsTerrain = false, m_constantsLabel = false;
     void BeginRenderingOn(Texture* target);
     void EndRendering();
     bool EnsureDepth(uint32_t width, uint32_t height);   // grows the shared depth buffer if needed

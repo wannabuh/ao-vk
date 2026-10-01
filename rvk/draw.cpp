@@ -508,6 +508,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 {
     if (!m_inFrame || !vertexCount)
         return;
+    m_drawIsLabel = IsLabel(primitive, fvf, vertexCount);
     if (m_dumpFile)
         DumpDraw(primitive, fvf, vertices, vertexCount, indices, indexCount);
     if (IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount))
@@ -555,7 +556,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     uint32_t texMask = (m_textures[0] ? 1u : 0u) | (m_textures[1] ? 2u : 0u);
     bool terrain = IsTerrain(fvf);
     bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
-                   m_constantsTexMask != texMask || m_constantsTerrain != terrain;
+                   m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel;
     VkDeviceSize uboOffset = m_constantsOffset;
     if (rewrite) {
     uboOffset = Allocate(sizeof(DrawConstants), uboAlign, &cpu);
@@ -565,6 +566,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsFvf = fvf;
     m_constantsTexMask = texMask;
     m_constantsTerrain = terrain;
+    m_constantsLabel = m_drawIsLabel;
     auto* c = static_cast<DrawConstants*>(cpu);
     c->view = m_view;
     c->proj = m_proj;
