@@ -75,7 +75,7 @@ bool Device::CreateParticleResources(std::string* error)
     sl.pBindings = b;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_particleSetLayout), "particle set layout", error))
         return false;
-    VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 80};
+    VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 96};
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pl.setLayoutCount = 1;
     pl.pSetLayouts = &m_particleSetLayout;
@@ -357,12 +357,13 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_particlePipeline);
     vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_particleLayout, 0, 4, writes);
     const ParticleParams& p = m_particleParams;
-    float push[20] = {
+    float push[24] = {
         dt, float(m_particleTime), float(perSprite), float(m_frameNumber & 0xFFFFFF),
         p.size, p.life, p.curl, p.swirl,
         0.0f, p.drag, std::clamp(p.follow, 0.0f, 1.0f), p.speed,
         v[0][0], v[1][0], v[2][0], std::max(p.trail, 0.0f),     // camera right: the view matrix's first column
         v[0][1], v[1][1], v[2][1], std::max(p.trailMax, 1.0f),  // camera up: its second
+        std::max(p.fixedSize, 0.001f), std::clamp(p.uniformSize, 0.0f, 1.0f), 0.0f, 0.0f,
     };
     vkCmdPushConstants(cmd, m_particleLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), push);
     vkCmdDispatch(cmd, perSprite * kParticleSlots / kGroupSize, n, 1);

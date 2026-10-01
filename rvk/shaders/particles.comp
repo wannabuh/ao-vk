@@ -47,6 +47,7 @@ layout(push_constant) uniform Params {
     vec4 c;             // -, drag, follow (how much young particles follow their sprite), launch speed
     vec4 right;         // camera right (world); w: trail length (seconds of motion shown, 0 = round sprites)
     vec4 up;            // camera up (world); w: longest trail, in particle sizes
+    vec4 d;             // x: fixed particle size (world units), y: how far sizes go from their sprite's to it (0..1)
 } pc;
 
 uint Hash(uint x)
@@ -151,7 +152,11 @@ void main()
             P.velLife = vec4(spriteVel * blk.motionA.y + RandDir(seed) * pc.c.w * (0.3 + 0.7 * Rand(seed)),
                              pc.b.y * blk.motionB.z * (0.5 + Rand(seed)));
             P.uv = S.uv;
-            P.meta = uvec4(S.color.x, floatBitsToUint(S.posSize.w * pc.b.x * (0.6 + 0.8 * Rand(seed))), Hash(seed), 0u);
+            // Size: a fraction of the sprite's, or the same for every effect (effects with tiny sprites would otherwise
+            // get particles too small to see), blended in log space; each particle varies around it.
+            float relative = max(S.posSize.w * pc.b.x, 1e-4);
+            float size = exp(mix(log(relative), log(max(pc.d.x, 1e-4)), clamp(pc.d.y, 0.0, 1.0)));
+            P.meta = uvec4(S.color.x, floatBitsToUint(size * (0.6 + 0.8 * Rand(seed))), Hash(seed), 0u);
         }
     } else {
         vec3 pos = P.posAge.xyz, vel = P.velLife.xyz;

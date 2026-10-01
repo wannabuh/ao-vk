@@ -1203,6 +1203,8 @@ bool g_particleOffscreen = false;        // --particle-offscreen: a render targe
 float g_particleBright = 1.0f;           // --particle-bright X: the particles' colour multiplier
 float g_particleTrail = 0.0f;            // --particle-trail S: motion trails (seconds)
 uint32_t g_particleColor = 0xC0B080FF;   // --particle-color AARRGGBB: the sprites' colour
+float g_particleUniform = 0.0f;          // --particle-uniform U: same size for every effect (0..1)
+float g_spriteScale = 1.0f;              // --sprite-scale X: the effect's sprite size
 bool g_particleWater = false;            // --particle-water: water the game's way (ProcessVertices output, FVF 0x1C4) mid-scene
 
 // Particle test (--particle-test): an effect like the game's sparkle auras - a ring of soft additive sprites (FVF 0x142,
@@ -1226,6 +1228,8 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
     params.enable = particles;
     params.brightness = g_particleBright;
     params.trail = g_particleTrail;
+    params.uniformSize = g_particleUniform;
+    params.fixedSize = 0.09f;
     dev.SetParticleParams(params);
     struct VtxSprite { float x, y, z; uint32_t color; float u, v; };
     struct VtxGround { float x, y, z; uint32_t color; };
@@ -1305,7 +1309,7 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
             sp.pos[0] = cx + std::cos(a) * 1.0f;
             sp.pos[1] = 1.0f + 0.3f * std::sin(a * 3.0f);
             sp.pos[2] = cz + std::sin(a) * 1.0f;
-            sp.size = 0.6f;
+            sp.size = 0.6f * g_spriteScale;
             sp.uv[0] = 0; sp.uv[1] = 0; sp.uv[2] = 1; sp.uv[3] = 1;
             sp.color = g_particleColor;
             sp.alive = effects > 1 || ((frame / 12 + i) % 3) != 0;
@@ -1459,6 +1463,8 @@ int main(int argc, char** argv)
         else if (a == "--particle-bright" && i + 1 < argc) g_particleBright = float(std::atof(argv[++i]));
         else if (a == "--particle-trail" && i + 1 < argc) g_particleTrail = float(std::atof(argv[++i]));
         else if (a == "--particle-color" && i + 1 < argc) g_particleColor = uint32_t(std::strtoul(argv[++i], nullptr, 16));
+        else if (a == "--particle-uniform" && i + 1 < argc) g_particleUniform = float(std::atof(argv[++i]));
+        else if (a == "--sprite-scale" && i + 1 < argc) g_spriteScale = float(std::atof(argv[++i]));
     }
 
     HWND hwnd = nullptr;
