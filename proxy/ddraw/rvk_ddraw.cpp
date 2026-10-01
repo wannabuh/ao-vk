@@ -98,7 +98,9 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     char dumpVerts[16] = "0";         // frame dumps: vertices of draws with this many (RANDYVK_DUMP_VERTS)
     GetEnvironmentVariableA("RANDYVK_DUMP_VERTS", dumpVerts, sizeof(dumpVerts));
     device->SetDumpVertexCount(uint32_t(std::atoi(dumpVerts)));
-    char hdr[8] = "1", knee[16] = "0.85", exposure[16] = "1.0";
+    char hdr[8] = "1", knee[16] = "0.85", exposure[16] = "1.0", hdrHeadroom[16] = "1.5";
+    GetEnvironmentVariableA("RANDYVK_HDR_HEADROOM", hdrHeadroom, sizeof(hdrHeadroom));
+    device->SetHdrHeadroom(float(std::atof(hdrHeadroom)));
     GetEnvironmentVariableA("RANDYVK_HDR", hdr, sizeof(hdr));
     GetEnvironmentVariableA("RANDYVK_TONEMAP_KNEE", knee, sizeof(knee));
     GetEnvironmentVariableA("RANDYVK_EXPOSURE", exposure, sizeof(exposure));
@@ -115,7 +117,8 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     RvkLog("rvk point light shadows: %u lights (strength %s, x%s in daylight; needs per-pixel lighting + light override)",
            device->PointShadows(), pointStrength, pointDay);
     RvkLog("rvk light headroom (local lights above the game's clamp): %s", headroom);
-    RvkLog("rvk HDR scene + tone mapping: %s (knee %s, exposure %s)", device->Hdr() ? "on" : "off", knee, exposure);
+    RvkLog("rvk HDR scene + tone mapping: %s (knee %s, exposure %s, light headroom %s)", device->Hdr() ? "on" : "off", knee,
+           exposure, hdrHeadroom);
     return true;
 }
 
@@ -174,6 +177,15 @@ void RvkState::Present()
         RvkLog("HDR %s", device->Hdr() ? "on" : "off");
     }
     f5Down = f5;
+    // Ctrl+Shift+PageUp / PageDown: HDR light headroom up / down by 0.25 (how bright local lights get).
+    static bool pgUpDown, pgDnDown;
+    bool pgUp = chord && (GetAsyncKeyState(VK_PRIOR) & 0x8000), pgDn = chord && (GetAsyncKeyState(VK_NEXT) & 0x8000);
+    if ((pgUp && !pgUpDown) || (pgDn && !pgDnDown)) {
+        device->SetHdrHeadroom(device->HdrHeadroom() + (pgUp ? 0.25f : -0.25f));
+        RvkLog("HDR light headroom %.2f", device->HdrHeadroom());
+    }
+    pgUpDown = pgUp;
+    pgDnDown = pgDn;
     // Ctrl+Shift+F6: point light shadows (off / the configured number of lights, at least 1).
     static bool f6Down;
     static uint32_t pointShadowsOn = 0;

@@ -261,7 +261,7 @@ VkDeviceSize Device::WriteFrameLights()
     fl->shadowParams[2] = 2.0f * m_shadowRange / float(kShadowSize);
     fl->shadowParams[3] = PointShadowStrength();
     fl->sunDir[0] = m_shadowSunDir[0]; fl->sunDir[1] = m_shadowSunDir[1]; fl->sunDir[2] = m_shadowSunDir[2];
-    fl->sunDir[3] = m_hdr ? kHdrHeadroom : m_lightHeadroom;   // HDR: the tone mapping rolls the light off
+    fl->sunDir[3] = m_hdr ? m_hdrHeadroom : m_lightHeadroom;
     m_frameLightIndices.clear();
     for (uint32_t k = 0; k < used; ++k) {
         const CapturedLight& c = m_lightsPrev[candidates[k].index];

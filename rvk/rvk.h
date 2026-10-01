@@ -150,6 +150,9 @@ public:
     void SetHdr(bool enable) { m_hdr = enable; m_constantsDirty = true; m_frameLightsDirty = true; }
     bool Hdr() const { return m_hdr; }
     void SetTonemap(float knee, float exposure) { m_tonemapKnee = knee; m_exposure = exposure; }
+    // With HDR: how bright local lights may make a surface (1 = the game's clamp; soft roll-off towards it).
+    void SetHdrHeadroom(float headroom) { m_hdrHeadroom = headroom < 1.0f ? 1.0f : headroom; m_frameLightsDirty = true; }
+    float HdrHeadroom() const { return m_hdrHeadroom; }
     // Enhancement, with the light override: how bright the frame's lights may make a surface (1 = D3D's clamp, up to
     // 2). The game's own lighting stays clamped at 1; local lights add on top of it, so they (and their shadows) show
     // on surfaces the sun already lights fully.
@@ -406,7 +409,7 @@ private:
 
     // HDR (hdr.cpp): during the scene phase m_main is m_scene (float); EndScene tone maps it into m_ldrMain, which is
     // m_main from then on (the interface, read-backs, presenting).
-    static constexpr float kHdrHeadroom = 16.0f;  // how far local lights may go above 1 in the HDR scene
+    float m_hdrHeadroom = 1.5f;                  // how far local lights may go above 1 in the HDR scene (soft roll-off)
     bool m_hdr = false;
     float m_tonemapKnee = 0.85f, m_exposure = 1.0f;
     Texture* m_ldrMain = nullptr;

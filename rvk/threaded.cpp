@@ -350,6 +350,12 @@ void ThreadedDevice::SetHdr(bool enable)
     Enqueue([this, enable](const uint8_t*) { m_device.SetHdr(enable); });
 }
 
+void ThreadedDevice::SetHdrHeadroom(float headroom)
+{
+    m_hdrHeadroom = headroom < 1.0f ? 1.0f : headroom;
+    Enqueue([this, headroom](const uint8_t*) { m_device.SetHdrHeadroom(headroom); });
+}
+
 void ThreadedDevice::SetTonemap(float knee, float exposure)
 {
     Enqueue([this, knee, exposure](const uint8_t*) { m_device.SetTonemap(knee, exposure); });
