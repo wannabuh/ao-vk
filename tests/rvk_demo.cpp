@@ -1200,6 +1200,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 std::string g_particleMotion = "ring";   // --particle-motion ring | orbit-cw | orbit-ccw | burst | rise
 bool g_particleEndFree = false;          // --particle-end-free: the effect's texture is destroyed when it ends
 bool g_particleOffscreen = false;        // --particle-offscreen: a render target pass (3D + pre-transformed) comes first
+bool g_particleWater = false;            // --particle-water: water the game's way (ProcessVertices output, FVF 0x1C4) mid-scene
 
 // Particle test (--particle-test): an effect like the game's sparkle auras - a ring of soft additive sprites (FVF 0x142,
 // drawn the way GfxVisualDiaBill draws them) that twinkle on and off - announced with ParticleEmitter, so each live
@@ -1272,6 +1273,14 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
         VtxGround ground[4] = {{-4, 0, -3, 0xFF303440}, {4, 0, -3, 0xFF303440}, {-4, 0, 5, 0xFF202430}, {4, 0, 5, 0xFF202430}};
         uint16_t gi[6] = {0, 1, 2, 1, 2, 3};
         dev.DrawIndexedPrimitive(TriangleList, FVF_XYZ | FVF_DIFFUSE, ground, 4, gi, 6);
+        if (g_particleWater) {                   // pre-transformed water between the 3D draws, as VisualLiquid_t does
+            struct VW { float x, y, z, rhw; uint32_t c, s; float u, v; } water[4] = {
+                {0, 700, 0.9f, 1, 0x80204060, 0, 0, 0}, {float(kWidth), 700, 0.9f, 1, 0x80204060, 0, 1, 0},
+                {0, float(kHeight), 0.9f, 1, 0x80204060, 0, 0, 1}, {float(kWidth), float(kHeight), 0.9f, 1, 0x80204060, 0, 1, 1}};
+            dev.SetRenderState(RS_ZWRITEENABLE, 0);
+            dev.DrawIndexedPrimitive(TriangleList, FVF_XYZRHW | FVF_DIFFUSE | FVF_SPECULAR | (1u << 8), water, 4, gi, 6);
+            dev.SetRenderState(RS_ZWRITEENABLE, 1);
+        }
         if (frame == 10)
             QueryPerformanceCounter(&start);
 
@@ -1441,6 +1450,7 @@ int main(int argc, char** argv)
         else if (a == "--particle-motion" && i + 1 < argc) g_particleMotion = argv[++i];
         else if (a == "--particle-end-free") g_particleEndFree = true;
         else if (a == "--particle-offscreen") g_particleOffscreen = true;
+        else if (a == "--particle-water") g_particleWater = true;
     }
 
     HWND hwnd = nullptr;

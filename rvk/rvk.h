@@ -518,6 +518,7 @@ private:
     bool m_glowCleared = false;                  // this frame
     uint32_t m_glowDraws = 0;                    // this frame's draws feeding the glow (frame dumps)
     bool GlowDraw(uint32_t fvf) const;
+    static bool IsInterfaceDraw(uint32_t fvf);
     VkDescriptorSetLayout m_bloomSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_bloomLayout = VK_NULL_HANDLE;
     VkPipeline m_bloomDown = VK_NULL_HANDLE, m_bloomUp = VK_NULL_HANDLE;

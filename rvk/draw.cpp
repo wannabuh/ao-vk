@@ -324,6 +324,15 @@ uint64_t Device::MotionKey(uint32_t primitive, uint32_t fvf, uint32_t vertexCoun
 
 // An additive effect drawn into the HDR scene (light halos, spells, fire: blend ONE or SRCALPHA onto ONE) feeds the
 // glow, and so the bloom. Not the sky's additive layers (clouds, stars), drawn at infinity with depth test ALWAYS.
+// A pre-transformed draw that belongs to the interface, not the 3D scene. The water (VisualLiquid_t) is drawn from
+// vertices the game transforms with ProcessVertices: pre-transformed too, but with a specular colour (FVF 0x1C4), in the
+// middle of the scene - taking it for the interface ended the scene early wherever water was in view.
+bool Device::IsInterfaceDraw(uint32_t fvf)
+{
+    return (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW &&
+           fvf != (d3d::FVF_XYZRHW | d3d::FVF_DIFFUSE | d3d::FVF_SPECULAR | (1u << d3d::FVF_TEXCOUNT_SHIFT));
+}
+
 bool Device::GlowDraw(uint32_t fvf) const
 {
     if (m_effectGlow <= 0.0f || m_target != m_scene || !m_rs[d3d::RS_ALPHABLENDENABLE] ||
@@ -662,13 +671,13 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (!m_external && m_target == m_main) {
         if ((fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW)
             m_particleSaw3D = true;
-        else if (m_particleSaw3D && !m_particleOrphansDone) {
+        else if (IsInterfaceDraw(fvf) && m_particleSaw3D && !m_particleOrphansDone) {
             m_particleOrphanTrigger = "end of the 3D scene";
             DrawOrphanParticles();
         }
     }
-    // HDR: the frame's first interface (pre-transformed) draw after its 3D ends the scene phase - the scene is tone
-    // mapped and the interface drawn over it into the 8-bit target.
+    // HDR: the frame's first interface draw after its 3D ends the scene phase - the scene is tone mapped and the
+    // interface drawn over it into the 8-bit target. (Not every pre-transformed draw is interface: IsInterfaceDraw.)
     if (m_scenePhase && m_target == m_scene) {
         if ((fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) {
             m_sceneSaw3D = true;
@@ -677,7 +686,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                 m_aoView = m_view;
                 m_aoProjValid = true;
             }
-        } else if (m_sceneSaw3D) {
+        } else if (m_sceneSaw3D && IsInterfaceDraw(fvf)) {
             m_sceneEndDraw = m_dumpDraw;
             m_sceneEndFvf = fvf;
             EndScene();
