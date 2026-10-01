@@ -6,6 +6,7 @@ layout(set = 0, binding = 0) uniform sampler2D scene;
 layout(set = 0, binding = 1) uniform sampler2D bloom;   // half resolution, light above the bloom threshold, blurred
 layout(set = 0, binding = 2) uniform sampler2D ao;      // half resolution: ambient occlusion (1 = open), view depth
 layout(set = 0, binding = 3) uniform sampler2D depthTex; // full resolution scene depth (for the AO upsampling)
+layout(set = 0, binding = 4) uniform sampler2D localFraction;   // how much of each pixel local lights lit
 layout(push_constant) uniform Push {
     vec4 params;        // knee, exposure, bloom strength, ambient occlusion on (1)
     vec4 proj;          // D3D projection m[2][2], m[3][2] (view depth from the depth buffer)
@@ -41,7 +42,9 @@ void main()
     vec3 glow = P.params.z > 0.0 ? texture(bloom, gl_FragCoord.xy / vec2(textureSize(scene, 0))).rgb * P.params.z : vec3(0.0);
     vec2 uv = gl_FragCoord.xy / vec2(textureSize(scene, 0));
     float occlusion = P.params.w > 0.5 ? Occlusion() : 1.0;
-    vec3 c = max((s.rgb * occlusion + glow) * P.params.y, vec3(0.0));
+    // Occlusion takes ambient light away, not the light local lights shine into the corner.
+    float local = P.params.w > 0.5 ? texelFetch(localFraction, ivec2(gl_FragCoord.xy), 0).r : 0.0;
+    vec3 c = max((s.rgb * mix(occlusion, 1.0, local) + glow) * P.params.y, vec3(0.0));
     float m = max(c.r, max(c.g, c.b)), k = P.params.x;
     if (m > k) {
         float room = 1.0 - k;

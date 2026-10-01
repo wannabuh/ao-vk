@@ -547,6 +547,26 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
         c.src = src;
         c.dst = dst;
     }
+    if (pipelineClass >= 3) {
+        // Attachment 2, the local-light fraction: blended like the colour, so it stays the fraction of the final
+        // colour - except for multiplying passes (the ground's lightmap + lights pass: its fraction replaces the
+        // unlit base pass's) and additive effects (they don't light the surface under them: kept).
+        uint32_t fEnable = blend, fSrc = src, fDst = dst;
+        if (blend && IsMultiplyPass()) { fSrc = d3d::BLEND_ONE; fDst = d3d::BLEND_ZERO; }
+        else if (blend && dst == d3d::BLEND_ONE) { fSrc = d3d::BLEND_ZERO; fDst = d3d::BLEND_ONE; }
+        if (c.fractionEnable != fEnable) {
+            VkBool32 e = fEnable;
+            vkCmdSetColorBlendEnableEXT(cmd, 2, 1, &e);
+            c.fractionEnable = fEnable;
+        }
+        if (c.fractionSrc == ~0u || (fEnable && (c.fractionSrc != fSrc || c.fractionDst != fDst))) {
+            VkColorBlendEquationEXT eq{BlendFactor(fSrc), BlendFactor(fDst), VK_BLEND_OP_ADD,
+                                       BlendFactor(fSrc), BlendFactor(fDst), VK_BLEND_OP_ADD};
+            vkCmdSetColorBlendEquationEXT(cmd, 2, 1, &eq);
+            c.fractionSrc = fSrc;
+            c.fractionDst = fDst;
+        }
+    }
 
     if (c.fvf != fvf) {
         // Vertex layout: binding 0 = the frame's ring buffer (draws address it through their vertex offset),

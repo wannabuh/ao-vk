@@ -55,10 +55,12 @@ layout(location = 9) in vec4 vNormalW;
 vec4 gDiffuse, gSpecular;
 // F_OVERBRIGHT: the frame lights' part, kept out of gDiffuse / gSpecular (and the game's clamp).
 vec3 gLocalDiffuse = vec3(0.0), gLocalSpecular = vec3(0.0);
+float gLocalFraction = 0.0;                     // how much of the final colour the local lights gave (outLocal)
 
 layout(location = 0) out vec4 outColor;
 #ifdef RVK_GLOW
 layout(location = 1) out vec4 outGlow;     // HDR scene only: the glow attachment (F_GLOW)
+layout(location = 2) out vec4 outLocal;    // HDR scene only: the fraction of the colour local lights gave it
 #endif
 
 vec4 Arg(uint a, vec4 current, vec4 tex)
@@ -232,7 +234,10 @@ void main()
         gDiffuse = d;
         gSpecular = sp;
         float maxColor = (C.flags.x & (F_OVERBRIGHT2X | F_HDR)) != 0u ? FL.sunDir.w : 1.0;
-        current.rgb = min(current.rgb + max(with.rgb - without.rgb, 0.0), vec3(maxColor));
+        vec3 added = max(with.rgb - without.rgb, 0.0);
+        current.rgb = min(current.rgb + added, vec3(maxColor));
+        const vec3 kLuma = vec3(0.3, 0.59, 0.11);
+        gLocalFraction = clamp(dot(added, kLuma) / max(dot(current.rgb, kLuma), 1e-4), 0.0, 1.0);
     }
     if (!shadeSun)
         current.rgb *= shade;
@@ -262,6 +267,8 @@ void main()
     if ((C.flags.x & F_GLOW) != 0u)
         glow = current.rgb * ((C.flags.x & F_GLOWALPHA) != 0u ? clamp(current.a, 0.0, 1.0) : 1.0) * C.misc.z;
     outGlow = vec4(glow, 0.0);
+    // Blended with this fragment's alpha like the colour (attachment 2's blend state follows the colour's).
+    outLocal = vec4(gLocalFraction, 0.0, 0.0, current.a);
 #endif
     if ((C.flags.x & F_OVERBRIGHT2X) != 0u)
         current.rgb *= 0.5;                               // blended as dst * src * 2

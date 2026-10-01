@@ -32,6 +32,7 @@ enum class Format : uint32_t {
     RGBA16F,    // internal: the HDR scene target
     RG11B10F,   // internal: the HDR glow target (additive effects, for the bloom)
     RG16F,      // internal: ambient occlusion (factor, view depth)
+    R8,         // internal: the HDR scene's local-light fraction (ambient occlusion spares it)
     Count
 };
 
@@ -246,6 +247,7 @@ private:
         VkRect2D scissor{};
         bool buffersBound = false;
         bool glowBlendSet = false;               // attachment 1 (glow) blend state, HDR pipelines
+        uint32_t fractionEnable = ~0u, fractionSrc = ~0u, fractionDst = ~0u;   // attachment 2 (local-light fraction)
     };
 
     bool CreateInstance(std::string* error);
@@ -439,6 +441,7 @@ private:
     std::vector<Texture*> m_bloomLevels;         // half resolution and down, float
     float m_effectGlow = 1.0f;
     Texture* m_glow = nullptr;                   // second scene attachment: what additive effects add (F_GLOW)
+    Texture* m_localFraction = nullptr;          // third: how much of each pixel's colour local lights gave it
     bool m_glowCleared = false;                  // this frame
     uint32_t m_glowDraws = 0;                    // this frame's draws feeding the glow (frame dumps)
     bool GlowDraw(uint32_t fvf) const;
