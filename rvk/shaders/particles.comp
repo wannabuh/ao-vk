@@ -6,6 +6,10 @@
 // not all at once); a live one follows a flow field - curl noise (divergence free, so it swirls like a fluid without
 // bunching up), an orbit around the effect's vertical axis and a pull back towards it - taking on the flow's velocity
 // at the rate `drag`. Particles outlive their sprite.
+//
+// Each effect brings its own flow parameters, derived from how its sprites move (particles.cpp MeasureParticleMotion):
+// the swirl turns the way the effect turns, bursts throw particles out, rising effects lift them, big effects get big
+// eddies. Young particles also follow their sprite's own motion (`follow`), then break away into the flow.
 #version 450
 
 layout(local_size_x = 64) in;
@@ -15,6 +19,9 @@ const uint SLOTS = 128u, CHILDREN = 32u, PER_BLOCK = SLOTS * CHILDREN;
 struct Block {
     vec4 center;        // world space; w: 1 = newly assigned (its particles start dead)
     uvec4 info;         // x: block index (its state); quads go to region = its place in this frame's list
+    vec4 motionA;       // swirl speed (signed), inherit, pull, lift (world units / s upwards)
+    vec4 motionB;       // flow feature size, curl speed, life factor, -
+    vec4 noise;         // xyz: this effect's offset into the noise field
 };
 struct Sprite {
     vec4 posSize;       // world position, width
@@ -37,8 +44,8 @@ layout(std430, binding = 3) writeonly buffer Quads { uint quads[]; };
 layout(push_constant) uniform Params {
     vec4 a;             // dt, time, particles per sprite, frame number
     vec4 b;             // size factor, life, curl speed, swirl speed
-    vec4 c;             // pull, drag, inherit, launch speed
-    vec4 right;         // camera right (world); w: flow feature size
+    vec4 c;             // -, drag, follow (how much young particles follow their sprite), launch speed
+    vec4 right;         // camera right (world)
     vec4 up;            // camera up (world)
 } pc;
 
@@ -141,20 +148,28 @@ void main()
             if (sv > 20.0) spriteVel *= 20.0 / sv;   // teleports, respawned sprites
             float r = pow(Rand(seed), 1.0 / 3.0) * S.posSize.w * 0.5;
             P.posAge = vec4(S.posSize.xyz + RandDir(seed) * r, 0.0);
-            P.velLife = vec4(spriteVel * pc.c.z + RandDir(seed) * pc.c.w * (0.3 + 0.7 * Rand(seed)),
-                             pc.b.y * (0.5 + Rand(seed)));
+            P.velLife = vec4(spriteVel * blk.motionA.y + RandDir(seed) * pc.c.w * (0.3 + 0.7 * Rand(seed)),
+                             pc.b.y * blk.motionB.z * (0.5 + Rand(seed)));
             P.uv = S.uv;
             P.meta = uvec4(S.color.x, floatBitsToUint(S.posSize.w * pc.b.x * (0.6 + 0.8 * Rand(seed))), Hash(seed), 0u);
         }
     } else {
         vec3 pos = P.posAge.xyz, vel = P.velLife.xyz;
-        vec3 flow = Curl(pos / max(pc.right.w, 0.05) + vec3(0.0, pc.a.y * 0.15, 0.0)) * pc.b.z;
+        vec3 flow = Curl(pos / max(blk.motionB.x, 0.05) + blk.noise.xyz + vec3(0.0, pc.a.y * 0.15, 0.0)) * blk.motionB.y;
         vec3 r = pos - blk.center.xyz;
         vec3 rh = vec3(r.x, 0.0, r.z);
         float d = length(rh);
         if (d > 1e-4)
-            flow += cross(vec3(0.0, 1.0, 0.0), rh / d) * pc.b.w / (1.0 + d * 0.5);
-        flow -= r * pc.c.x;
+            flow += cross(vec3(0.0, 1.0, 0.0), rh / d) * blk.motionA.x / (1.0 + d * 0.5);
+        flow -= r * blk.motionA.z;
+        flow.y += blk.motionA.w;
+        // Young particles move with their sprite (a spiral leaves spiral trails, a burst streaks), then the flow takes over.
+        if (alive && prevAlive) {
+            vec3 spriteVel = (S.posSize.xyz - S.prevPos.xyz) / max(dt, 1e-3);
+            float sv = length(spriteVel);
+            if (sv < 20.0)
+                flow = mix(flow, spriteVel, pc.c.z * exp(-P.posAge.w / 0.35));
+        }
         vel += (flow - vel) * (1.0 - exp(-pc.c.y * dt));
         P.posAge.xyz = pos + vel * dt;
         P.velLife.xyz = vel;

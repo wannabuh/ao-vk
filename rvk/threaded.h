@@ -91,7 +91,8 @@ public:
     void SetDumpVertexCount(uint32_t count);
     void SetParticleParams(const Device::ParticleParams& params);
     const Device::ParticleParams& GetParticleParams() const { return m_particleParams; }
-    void ParticleEmitter(uint64_t key, const float center[3], const Device::ParticleSprite* sprites, uint32_t count);
+    void ParticleEmitter(uint64_t key, const float center[3], const float origin[3], const Device::ParticleSprite* sprites,
+                         uint32_t count);
     void EndParticleEmitter();
     void SetTexture(uint32_t stage, Texture* texture);
     void SetRenderTarget(Texture* target);

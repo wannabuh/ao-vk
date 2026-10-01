@@ -1197,6 +1197,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 
 }  // namespace
 
+std::string g_particleMotion = "ring";   // --particle-motion ring | orbit-cw | orbit-ccw | burst | rise
+
 // Particle test (--particle-test): an effect like the game's sparkle auras - a ring of soft additive sprites (FVF 0x142,
 // drawn the way GfxVisualDiaBill draws them) that twinkle on and off - announced with ParticleEmitter, so each live
 // sprite sheds GPU particles. --particles-off draws the sprites alone for comparison. --particle-end F: the effect ends
@@ -1273,6 +1275,26 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
             sp.uv[0] = 0; sp.uv[1] = 0; sp.uv[2] = 1; sp.uv[3] = 1;
             sp.color = 0xC0B080FF;
             sp.alive = effects > 1 || ((frame / 12 + i) % 3) != 0;
+            const std::string& mo = g_particleMotion;
+            if (mo == "orbit-cw" || mo == "orbit-ccw") {          // a fast ring, all alive
+                float b = 2 * kPi * i / kN + (mo == "orbit-cw" ? -2.5f : 2.5f) * t;
+                sp.pos[0] = cx + std::cos(b);
+                sp.pos[1] = 1.0f;
+                sp.pos[2] = cz + std::sin(b);
+                sp.alive = 1;
+            } else if (mo == "burst") {                            // flung out from the middle every 1.2 s
+                float phase = std::fmod(t, 1.2f), r = 0.1f + phase * 2.5f, el = 0.6f * std::sin(float(i) * 2.3f);
+                sp.pos[0] = cx + std::cos(a - t * 0.5f) * std::cos(el) * r;
+                sp.pos[1] = 1.0f + std::sin(el) * r;
+                sp.pos[2] = cz + std::sin(a - t * 0.5f) * std::cos(el) * r;
+                sp.alive = phase < 0.9f;
+            } else if (mo == "rise") {                             // a fountain column, rising 2 units a second
+                float phase = std::fmod(t * 0.9f + float(i) / kN, 1.0f), b = 2 * kPi * i / kN;
+                sp.pos[0] = cx + std::cos(b) * 0.5f;
+                sp.pos[1] = phase * 2.2f;
+                sp.pos[2] = cz + std::sin(b) * 0.5f;
+                sp.alive = 1;
+            }
             if (!sp.alive) continue;
             uint16_t base = uint16_t(verts.size());
             float h = sp.size * 0.5f;
@@ -1284,9 +1306,14 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
             uint16_t q[6] = {base, uint16_t(base + 1), uint16_t(base + 2), uint16_t(base + 1), uint16_t(base + 2), uint16_t(base + 3)};
             idx.insert(idx.end(), q, q + 6);
         }
-        float center[3] = {cx, 0.0f, cz};
+        // As the game side does: the centre = the live sprites' middle, the origin = the effect's frame of reference.
+        float center[3] = {0, 0, 0}, origin[3] = {cx, 0.0f, cz};
+        uint32_t live = 0;
+        for (uint32_t i = 0; i < kN; ++i)
+            if (sprites[i].alive) { for (int c = 0; c < 3; ++c) center[c] += sprites[i].pos[c]; ++live; }
+        for (int c = 0; c < 3; ++c) center[c] = live ? center[c] / float(live) : origin[c];
         bool effect = endFrame < 0 || frame < endFrame;
-        if (effect) dev.ParticleEmitter(0x5EED + uint64_t(e), center, sprites, kN);
+        if (effect) dev.ParticleEmitter(0x5EED + uint64_t(e), center, origin, sprites, kN);
         dev.SetRenderState(RS_ZWRITEENABLE, 0);
         dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
         dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
@@ -1390,6 +1417,7 @@ int main(int argc, char** argv)
         else if (a == "--particles-off") particlesOff = true;
         else if (a == "--particle-end" && i + 1 < argc) particleEnd = std::atoi(argv[++i]);
         else if (a == "--particle-effects" && i + 1 < argc) particleEffects = std::atoi(argv[++i]);
+        else if (a == "--particle-motion" && i + 1 < argc) g_particleMotion = argv[++i];
     }
 
     HWND hwnd = nullptr;

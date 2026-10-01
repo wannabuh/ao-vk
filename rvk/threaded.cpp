@@ -436,12 +436,12 @@ void ThreadedDevice::SetParticleParams(const Device::ParticleParams& params)
     Enqueue([this, params](const uint8_t*) { m_device.SetParticleParams(params); });
 }
 
-void ThreadedDevice::ParticleEmitter(uint64_t key, const float center[3], const Device::ParticleSprite* sprites,
-                                     uint32_t count)
+void ThreadedDevice::ParticleEmitter(uint64_t key, const float center[3], const float origin[3],
+                                     const Device::ParticleSprite* sprites, uint32_t count)
 {
-    float c[3] = {center[0], center[1], center[2]};
-    Enqueue([this, key, c, count](const uint8_t* data) {
-        m_device.ParticleEmitter(key, c, reinterpret_cast<const Device::ParticleSprite*>(data), count);
+    float c[3] = {center[0], center[1], center[2]}, o[3] = {origin[0], origin[1], origin[2]};
+    Enqueue([this, key, c, o, count](const uint8_t* data) {
+        m_device.ParticleEmitter(key, c, o, reinterpret_cast<const Device::ParticleSprite*>(data), count);
     }, sprites, uint32_t(count * sizeof(Device::ParticleSprite)));
 }
 

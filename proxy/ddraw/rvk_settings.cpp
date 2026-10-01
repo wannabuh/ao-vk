@@ -72,6 +72,8 @@ Setting g_settings[] = {
     {"RVK_PartPull",   "Pull back towards the effect",                                    "Particles",      Float, 0, 3, 0.05f, 0.6f, nullptr, 0},
     {"RVK_PartDrag",   "How quickly particles follow the flow",                           "Particles",      Float, 0.25f, 10, 0.25f, 2.5f, nullptr, 0},
     {"RVK_PartSpeed",  "Launch speed",                                                    "Particles",      Float, 0, 4, 0.1f, 0.6f, nullptr, 0},
+    {"RVK_PartAdapt",  "Adapt to each effect's own motion (0 = all alike)",               "Particles",      Float, 0, 1, 0.05f, 1, nullptr, 0},
+    {"RVK_PartFollow", "Young particles follow their sprite",                             "Particles",      Float, 0, 1, 0.05f, 0.7f, nullptr, 0},
     {"RVK_PartCore",   "Brightness of the game's own sprites (1 = unchanged)",            "Particles",      Float, 0, 1, 0.05f, 0.35f, nullptr, 0},
 };
 constexpr uint32_t kCount = sizeof(g_settings) / sizeof(g_settings[0]);
@@ -150,6 +152,8 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
         p.pull = V("RVK_PartPull");
         p.drag = V("RVK_PartDrag");
         p.speed = V("RVK_PartSpeed");
+        p.adapt = V("RVK_PartAdapt");
+        p.follow = V("RVK_PartFollow");
         d->SetParticleParams(p);
     }
     else if (std::strncmp(n, "RVK_Dof", 7) == 0)

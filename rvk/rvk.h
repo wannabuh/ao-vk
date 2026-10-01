@@ -218,10 +218,16 @@ public:
         float inherit = 0.5f;                    // fraction of the sprite's own velocity a new particle starts with
         float speed = 0.6f;                      // random launch speed
         float scale = 1.5f;                      // flow field feature size (world units)
+        // How much each effect's own motion shapes its particles (0 = every effect alike; MeasureParticleMotion).
+        float adapt = 1.0f;
+        float follow = 0.7f;                     // how much young particles follow their sprite's motion (0..1)
     };
     void SetParticleParams(const ParticleParams& params) { m_particleParams = params; }
     const ParticleParams& GetParticleParams() const { return m_particleParams; }
-    void ParticleEmitter(uint64_t key, const float center[3], const ParticleSprite* sprites, uint32_t count);
+    // center: where the swirl and pull centre (the live sprites' middle); origin: the effect's own frame of reference
+    // (it moves with a character - motion relative to it is the effect's own).
+    void ParticleEmitter(uint64_t key, const float center[3], const float origin[3], const ParticleSprite* sprites,
+                         uint32_t count);
     void EndParticleEmitter() { m_particlePending = nullptr; }
     static constexpr uint32_t kParticleSlots = 128, kParticleChildren = 32;
     static constexpr uint32_t kParticlesPerBlock = kParticleSlots * kParticleChildren, kParticleBlocks = 256;
@@ -586,6 +592,14 @@ private:
         std::vector<ParticleSprite> sprites, prevSprites;
         bool havePrev = false;
         double lastAliveTime = 0.0;              // Clock() when a sprite was last alive: particles may live a while yet
+        // How the effect's sprites move relative to its origin, smoothed (MeasureParticleMotion). orbit: tangential
+        // speed around the vertical axis (sign = the swirl's direction), burst: outward speed (< 0 inward), rise:
+        // upward speed, spread: RMS distance from the centre, speed: RMS speed, turnover: sprite births per second per
+        // live sprite (1 / their life).
+        struct Motion { float orbit, burst, rise, spread, speed, turnover; bool valid; } motion{};
+        float origin[3] = {}, prevOrigin[3] = {};
+        double uploadTime = 0.0;
+        float noise[3] = {};                     // its offset into the noise field (from the key)
         uint64_t drawnFrame = 0;                 // frame its particles were last drawn
         // The state its particles were last drawn with (the effect's), so they can still be drawn - and fade out on
         // their own - once the game stops drawing the effect (DrawOrphanParticles).
@@ -624,6 +638,10 @@ private:
     // at the end of the 3D scene, until they have died out. Once a frame.
     void DrawOrphanParticles();
     bool ParticlesMayLive(const ParticleBlock& block, double now) const;
+    void MeasureParticleMotion(ParticleBlock& block, float dt);
+    // The block's flow parameters: the global ones shaped by its motion. a: swirl, inherit, pull, lift; b: feature
+    // size, curl speed, life factor.
+    void ParticleBlockParams(const ParticleBlock& block, float a[4], float b[4]) const;
     bool m_particleOrphansDone = false, m_particleSaw3D = false;
     void ForgetParticleTexture(Texture* texture);
     // A draw whose geometry is already in a GPU buffer (the particle quads): Draw uses it instead of copying vertices.

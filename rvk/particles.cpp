@@ -8,6 +8,7 @@
 #include "internal.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -26,6 +27,7 @@ const uint32_t kParticlesSpirv[] = {
 struct GpuBlock {
     float center[4];
     uint32_t info[4];
+    float motionA[4], motionB[4], noise[4];
 };
 struct GpuSprite {
     float posSize[4];
@@ -37,11 +39,12 @@ struct GpuParticle {
     float posAge[4], velLife[4], uv[4];
     uint32_t meta[4];
 };
-static_assert(sizeof(GpuBlock) == 32 && sizeof(GpuSprite) == 64 && sizeof(GpuParticle) == 64, "std430 layouts");
+static_assert(sizeof(GpuBlock) == 80 && sizeof(GpuSprite) == 64 && sizeof(GpuParticle) == 64, "std430 layouts");
 
 constexpr uint32_t kQuadStride = 24;           // FVF 0x142
 constexpr uint32_t kGroupSize = 64;
 constexpr uint64_t kForgetFrames = 120;        // a block unseen this long is free again
+constexpr double kMotionSmoothing = 0.3;       // seconds: how quickly an effect's measured motion follows changes
 
 double Clock()
 {
@@ -145,7 +148,8 @@ void Device::DestroyParticleResources()
     if (m_particleIndices) vmaDestroyBuffer(m_allocator, m_particleIndices, m_particleIndicesAllocation);
 }
 
-void Device::ParticleEmitter(uint64_t key, const float center[3], const ParticleSprite* sprites, uint32_t count)
+void Device::ParticleEmitter(uint64_t key, const float center[3], const float origin[3], const ParticleSprite* sprites,
+                             uint32_t count)
 {
     m_particlePending = nullptr;
     if (!m_particleParams.enable || !key || m_particleBlocks.empty())
@@ -175,6 +179,11 @@ void Device::ParticleEmitter(uint64_t key, const float center[3], const Particle
         block->lastAliveTime = 0.0;
         block->drawnFrame = 0;
         block->haveState = false;
+        block->motion = {};
+        block->uploadTime = 0.0;
+        uint64_t h = key * 0x9E3779B97F4A7C15ull;   // each effect swirls through its own part of the noise
+        for (int i = 0; i < 3; ++i, h = (h ^ (h >> 29)) * 0xBF58476D1CE4E5B9ull)
+            block->noise[i] = float(h >> 40) / float(1 << 24) * 97.0f;
         block->sprites.assign(kParticleSlots, ParticleSprite{});
         block->prevSprites.assign(kParticleSlots, ParticleSprite{});
     }
@@ -185,9 +194,16 @@ void Device::ParticleEmitter(uint64_t key, const float center[3], const Particle
         std::copy(sprites, sprites + count, block->sprites.begin());
         std::fill(block->sprites.begin() + count, block->sprites.end(), ParticleSprite{});
         std::memcpy(block->center, center, sizeof(block->center));
+        std::memcpy(block->prevOrigin, block->origin, sizeof(block->origin));
+        std::memcpy(block->origin, origin, sizeof(block->origin));
         block->lastSeen = m_frameNumber;
+        double now = Clock();
         if (std::any_of(sprites, sprites + count, [](const ParticleSprite& sp) { return sp.alive != 0; }))
-            block->lastAliveTime = Clock();
+            block->lastAliveTime = now;
+        float dt = block->uploadTime > 0.0 ? float(now - block->uploadTime) : 0.0f;
+        block->uploadTime = now;
+        if (block->havePrev && dt > 1e-4f && dt < 0.25f)
+            MeasureParticleMotion(*block, dt);
     }
     // The camera the effect is drawn with: the quads made at the start of next frame face it (a frame old - invisible on
     // particles this small).
@@ -265,7 +281,9 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
     auto* gs = static_cast<GpuSprite*>(cpu);
     for (uint32_t k = 0; k < n; ++k) {
         ParticleBlock& b = m_particleBlocks[active[k]];
-        gb[k] = {{b.center[0], b.center[1], b.center[2], b.reset ? 1.0f : 0.0f}, {active[k], 0, 0, 0}};
+        gb[k] = {{b.center[0], b.center[1], b.center[2], b.reset ? 1.0f : 0.0f}, {active[k], 0, 0, 0}, {}, {},
+                 {b.noise[0], b.noise[1], b.noise[2], 0.0f}};
+        ParticleBlockParams(b, gb[k].motionA, gb[k].motionB);
         bool announced = b.lastSeen + 1 == m_frameNumber;   // else its sprites are gone: no new particles
         for (uint32_t s = 0; s < kParticleSlots; ++s) {
             const ParticleSprite& cur = b.sprites[s];
@@ -317,8 +335,8 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
     float push[20] = {
         dt, float(m_particleTime), float(perSprite), float(m_frameNumber & 0xFFFFFF),
         p.size, p.life, p.curl, p.swirl,
-        p.pull, p.drag, p.inherit, p.speed,
-        v[0][0], v[1][0], v[2][0], p.scale,       // camera right: the view matrix's first column
+        0.0f, p.drag, std::clamp(p.follow, 0.0f, 1.0f), p.speed,
+        v[0][0], v[1][0], v[2][0], 0.0f,          // camera right: the view matrix's first column
         v[0][1], v[1][1], v[2][1], 0.0f,          // camera up: its second
     };
     vkCmdPushConstants(cmd, m_particleLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), push);
@@ -329,6 +347,82 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
     mb.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
     mb.dstAccessMask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
     vkCmdPipelineBarrier2(cmd, &dep);
+}
+
+// How the effect's sprites move, relative to its origin (which moves with a character): orbiting, bursting out or
+// falling in, rising, how big, how fast, how quickly sprites come and go. Smoothed, so a single frame can't flip it.
+void Device::MeasureParticleMotion(ParticleBlock& b, float dt)
+{
+    float originVel[3];
+    for (int i = 0; i < 3; ++i)
+        originVel[i] = (b.origin[i] - b.prevOrigin[i]) / dt;
+    double orbit = 0, burst = 0, rise = 0, speed2 = 0, spread2 = 0;
+    uint32_t matched = 0, alive = 0, births = 0;
+    for (uint32_t s = 0; s < kParticleSlots; ++s) {
+        const ParticleSprite& cur = b.sprites[s];
+        const ParticleSprite& prev = b.prevSprites[s];
+        if (!cur.alive)
+            continue;
+        ++alive;
+        float r[3] = {cur.pos[0] - b.center[0], cur.pos[1] - b.center[1], cur.pos[2] - b.center[2]};
+        spread2 += r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
+        if (!prev.alive) {
+            ++births;
+            continue;
+        }
+        float v[3];
+        for (int i = 0; i < 3; ++i)
+            v[i] = (cur.pos[i] - prev.pos[i]) / dt - originVel[i];
+        float v2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+        if (v2 > 30.0f * 30.0f)
+            continue;                            // a slot reused for a new sprite elsewhere, or a teleport
+        ++matched;
+        speed2 += v2;
+        rise += v[1];
+        float rl = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+        if (rl > 1e-3f)
+            burst += (v[0] * r[0] + v[1] * r[1] + v[2] * r[2]) / rl;
+        float rh = std::sqrt(r[0] * r[0] + r[2] * r[2]);
+        if (rh > 1e-3f)                          // along cross(up, r): the shader's swirl direction
+            orbit += (v[0] * r[2] - v[2] * r[0]) / rh;
+    }
+    if (!alive)
+        return;
+    ParticleBlock::Motion m = b.motion;
+    float k = m.valid ? float(1.0 - std::exp(-dt / kMotionSmoothing)) : 1.0f;
+    auto blend = [k](float& value, double sample) { value += (float(sample) - value) * k; };
+    blend(m.spread, std::sqrt(spread2 / alive));
+    blend(m.turnover, double(births) / (double(alive) * dt));
+    if (matched >= 2) {
+        blend(m.orbit, orbit / matched);
+        blend(m.burst, burst / matched);
+        blend(m.rise, rise / matched);
+        blend(m.speed, std::sqrt(speed2 / matched));
+    }
+    m.valid = true;
+    b.motion = m;
+}
+
+void Device::ParticleBlockParams(const ParticleBlock& b, float a[4], float bb[4]) const
+{
+    const ParticleParams& p = m_particleParams;
+    const ParticleBlock::Motion& m = b.motion;
+    float A = m.valid ? std::clamp(p.adapt, 0.0f, 1.0f) : 0.0f;
+    // Swirl: the way the effect turns (if it clearly does), faster for fast orbits.
+    float dir = (A > 0.0f && std::fabs(m.orbit) > 0.15f && m.orbit < 0.0f) ? -1.0f : 1.0f;
+    a[0] = p.swirl * dir * (1.0f + A * std::min(std::fabs(m.orbit) / 0.75f, 2.0f));
+    // Bursts throw their particles out (more of the sprite's speed, less pull back); implosions pull harder.
+    float out = std::clamp(m.burst, 0.0f, 2.0f), in = std::clamp(-m.burst, 0.0f, 2.0f);
+    a[1] = std::min(p.inherit * (1.0f + A * out), 1.5f);
+    a[2] = p.pull * (1.0f - A * 0.6f * std::min(out, 1.0f)) * (1.0f + A * in);
+    // Rising (or falling) effects carry their particles along.
+    a[3] = A * std::clamp(m.rise, -3.0f, 3.0f) * 0.8f;
+    // Big effects get big eddies, fast ones a faster flow, effects whose sprites live long longer-lived particles.
+    bb[0] = p.scale * std::pow(std::clamp(m.spread, 0.35f, 3.0f), A);
+    bb[1] = p.curl * std::pow(std::clamp(m.speed / 0.8f, 0.6f, 2.0f), A * 0.75f);
+    float spriteLife = m.turnover > 0.05f ? 1.0f / m.turnover : 2.0f;
+    bb[2] = std::pow(std::clamp(spriteLife / 0.6f, 0.6f, 1.8f), A * 0.5f);
+    bb[3] = 0.0f;
 }
 
 bool Device::ParticlesMayLive(const ParticleBlock& block, double now) const
@@ -389,9 +483,16 @@ void Device::DrawParticles(ParticleBlock& block, bool orphan)
                               int32_t(block.quadRegion * kParticlesPerBlock * 4)};
     d3d::Matrix world = m_world;                // the quads are in world space
     m_world = Identity();
-    if (m_dumpFile)
-        std::fprintf(m_dumpFile, "# particles of effect %llx (block %u)%s after draw %u\n", (unsigned long long)block.key,
-                     index, orphan ? " - effect gone, fading out" : "", m_dumpDraw);
+    if (m_dumpFile) {
+        const ParticleBlock::Motion& m = block.motion;
+        float a[4], b[4];
+        ParticleBlockParams(block, a, b);
+        std::fprintf(m_dumpFile, "# particles of effect %llx (block %u)%s after draw %u: motion orbit %.2f burst %.2f rise %.2f"
+                     " spread %.2f speed %.2f turnover %.2f/s -> swirl %.2f inherit %.2f pull %.2f lift %.2f scale %.2f"
+                     " curl %.2f life x%.2f\n", (unsigned long long)block.key, index,
+                     orphan ? " - effect gone, fading out" : "", m_dumpDraw, m.orbit, m.burst, m.rise, m.spread, m.speed,
+                     m.turnover, a[0], a[1], a[2], a[3], b[0], b[1], b[2]);
+    }
     m_external = &geometry;
     uint32_t quads = m_particleSimCount * kParticleSlots;   // only the particles in use
     Draw(d3d::TriangleList, kParticleFvf, nullptr, quads * 4, nullptr, quads * 6);

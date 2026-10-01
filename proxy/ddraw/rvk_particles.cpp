@@ -193,7 +193,7 @@ uint32_t __fastcall DiaBillRender(void* self, void* /*edx*/, void* viewport)
     {
         static const unsigned index = ComIndex("IDirect3DDevice7::DrawIndexedPrimitive");
         ComScope scope(index);
-        device->ParticleEmitter(uint64_t(uintptr_t(self)), center, out, count);
+        device->ParticleEmitter(uint64_t(uintptr_t(self)), center, m + 12, out, count);   // origin: the matrix's translation
         r = g_render(self, viewport);
         device->EndParticleEmitter();
     }
