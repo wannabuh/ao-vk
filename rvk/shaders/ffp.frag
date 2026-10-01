@@ -120,6 +120,12 @@ void main()
         }
         current.rgb = mix(C.fogColor.rgb, current.rgb, f);
     }
+    if ((C.flags.x & F_DEBUGLIGHT) != 0u && (C.vtx.x & 0xEu) != 4u) {
+        // Blue: lighting off. Red: lit, but no point / spot light reaches the draw. Green: lit by a point light.
+        vec3 tint = (C.flags.x & F_LIGHTING) == 0u ? vec3(0.1, 0.3, 1.0)
+                  : C.lightInfo.y == 0u ? vec3(1.0, 0.15, 0.1) : vec3(0.1, 1.0, 0.2);
+        current.rgb = mix(current.rgb, tint, 0.45);
+    }
     if ((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(current.a))
         discard;
     outColor = current;

@@ -30,10 +30,11 @@ layout(set = 0, binding = 0, std140) uniform DrawConstants {
     uvec4 matSources;           // diffuse, ambient, specular, emissive material sources
     uvec4 stageA[2];            // colorop, colorarg1, colorarg2, alphaop
     uvec4 stageB[2];            // alphaarg1, alphaarg2, texcoordindex, texturetransformflags
-    uvec4 lightInfo;            // light count
+    uvec4 lightInfo;            // light count, point + spot light count
     Light lights[8];
 } C;
 
 const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8u, F_FOG = 16u,
            F_RANGEFOG = 32u, F_LOCALVIEWER = 64u, F_TEX0 = 128u, F_TEX1 = 256u, F_ALPHATEST = 512u,
-           F_PERPIXEL = 1024u;    // lighting evaluated in ffp.frag (set together with F_LIGHTING)
+           F_PERPIXEL = 1024u,    // lighting evaluated in ffp.frag (set together with F_LIGHTING)
+           F_DEBUGLIGHT = 2048u;  // tint draws by how they are lit (Device::SetLightingDebug)

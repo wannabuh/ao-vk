@@ -463,6 +463,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     uint32_t flags = 0;
     if (m_rs[d3d::RS_LIGHTING] && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) flags |= F_LIGHTING;
     if ((flags & F_LIGHTING) && m_pixelLighting) flags |= F_PERPIXEL;
+    if (m_lightingDebug) flags |= F_DEBUGLIGHT;
     if (m_rs[d3d::RS_COLORVERTEX]) flags |= F_COLORVERTEX;
     if (m_rs[d3d::RS_SPECULARENABLE]) flags |= F_SPECULAR;
     if (m_rs[d3d::RS_NORMALIZENORMALS]) flags |= F_NORMALIZE;
@@ -491,7 +492,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         c->stageB[s][2] = t[d3d::TSS_TEXCOORDINDEX];
         c->stageB[s][3] = t[d3d::TSS_TEXTURETRANSFORMFLAGS];
     }
-    uint32_t lightCount = 0;
+    uint32_t lightCount = 0, localLights = 0;
     if (flags & F_LIGHTING)
         for (const LightSlot& slot : m_lights) {
             if (!slot.enabled || lightCount == kMaxLights)
@@ -503,6 +504,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             Copy4(g.ambient, l.ambient);
             g.position[0] = l.position.x; g.position[1] = l.position.y; g.position[2] = l.position.z;
             g.position[3] = float(l.type);
+            if (l.type != d3d::LIGHT_DIRECTIONAL) ++localLights;
             g.direction[0] = l.direction.x; g.direction[1] = l.direction.y; g.direction[2] = l.direction.z;
             g.direction[3] = l.range;
             g.atten[0] = l.attenuation0; g.atten[1] = l.attenuation1; g.atten[2] = l.attenuation2; g.atten[3] = l.falloff;
@@ -511,7 +513,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             g.spot[2] = g.spot[3] = 0.0f;
         }
     c->lightInfo[0] = lightCount;
-    c->lightInfo[1] = c->lightInfo[2] = c->lightInfo[3] = 0;
+    c->lightInfo[1] = localLights;
+    c->lightInfo[2] = c->lightInfo[3] = 0;
     }
 
     // Geometry: vertices aligned to their stride and indices to 2 bytes, so the draw can address them inside

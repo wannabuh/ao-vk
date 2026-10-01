@@ -110,6 +110,20 @@ void RvkState::Present()
         return;
     Frame();                  // a present without any rendering still shows a frame
     device->EndFrame();
+    // Ctrl+Shift+F10: per-pixel / per-vertex lighting. Ctrl+Shift+F11: lighting debug view.
+    static bool f10Down, f11Down;
+    bool chord = (GetAsyncKeyState(VK_CONTROL) & 0x8000) && (GetAsyncKeyState(VK_SHIFT) & 0x8000);
+    bool f10 = chord && (GetAsyncKeyState(VK_F10) & 0x8000), f11 = chord && (GetAsyncKeyState(VK_F11) & 0x8000);
+    if (f10 && !f10Down) {
+        device->SetPixelLighting(!device->PixelLighting());
+        RvkLog("lighting: %s", device->PixelLighting() ? "per-pixel" : "per-vertex");
+    }
+    if (f11 && !f11Down) {
+        device->SetLightingDebug(!device->LightingDebug());
+        RvkLog("lighting debug view %s", device->LightingDebug() ? "on" : "off");
+    }
+    f10Down = f10;
+    f11Down = f11;
     // Heartbeat: shows whether frames keep coming (a frozen picture vs. a hung game).
     static unsigned frames;
     static DWORD lastTick = GetTickCount();

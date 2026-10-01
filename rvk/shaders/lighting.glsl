@@ -17,6 +17,13 @@ void AccumulateLights(vec3 posW, vec3 normalW, inout vec3 ambient, inout vec3 di
             L = d / max(dist, 1e-6);
             float denom = l.atten.x + l.atten.y * dist + l.atten.z * dist * dist;
             att = denom > 0.0 ? 1.0 / denom : 1.0;
+            // D3D cuts lights off at their range. Per vertex the cut-off is smeared over the triangles; per
+            // pixel it would draw a hard circle, so fade the light out towards its range instead.
+            if ((C.flags.x & F_PERPIXEL) != 0u) {
+                float r = dist / max(l.direction.w, 1e-6);
+                float w = clamp(1.0 - r * r * r * r, 0.0, 1.0);
+                att *= w * w;
+            }
             if (type == 2u) {
                 float rho = dot(-L, normalize(l.direction.xyz));
                 if (rho <= l.spot.y) att = 0.0;
