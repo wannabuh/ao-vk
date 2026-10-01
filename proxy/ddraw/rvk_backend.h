@@ -13,6 +13,7 @@
 namespace rvkproxy {
 
 HRESULT StubCall(unsigned index);                 // logs an unimplemented method once
+void CountBackendDraw();                          // heartbeat statistics
 unsigned ComIndex(const char* name);              // counter index of "Interface::Method"
 void RvkLog(const char* fmt, ...);
 

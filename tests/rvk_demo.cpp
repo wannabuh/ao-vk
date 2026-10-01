@@ -599,6 +599,61 @@ struct Scene {
     }
 };
 
+// CPU benchmark shaped like a crowded scene in the game (frame inspector, 2026-09-29): ~2450 indexed draws
+// per frame of FVF 0x152 pieces (~67 vertices), a new world matrix per draw, texture / material / light changes
+// every few draws. Returns the average CPU time per frame spent recording (BeginFrame .. EndFrame).
+double Benchmark(Device& dev, int frames)
+{
+    std::vector<Texture*> textures;
+    for (int i = 0; i < 16; ++i) {
+        auto px = Checker(64, 4 + i % 4, 0xFF000000u | (0x101010u * (i + 4)), 0xFF404040);
+        textures.push_back(dev.CreateTexture(64, 64, px.data()));
+    }
+    // One "piece": a 67-vertex strip-like patch, 32 triangles.
+    std::vector<VtxMesh> verts(67);
+    for (int i = 0; i < 67; ++i)
+        verts[i] = {float(i % 8) * 0.1f, float(i / 8) * 0.1f, 0.0f, 0, 0, -1, 0xFFFFFFFF, (i % 8) / 7.0f, (i / 8) / 8.0f};
+    std::vector<uint16_t> idx;
+    for (int t = 0; t < 32; ++t) { idx.push_back(uint16_t(t)); idx.push_back(uint16_t(t + 1)); idx.push_back(uint16_t(t + 8)); }
+    Light l{};
+    l.type = LIGHT_POINT;
+    l.diffuse = {1, 0.9f, 0.8f, 1};
+    l.range = 50;
+    l.attenuation0 = 1;
+    LARGE_INTEGER freq, t0, t1;
+    QueryPerformanceFrequency(&freq);
+    double total = 0;
+    for (int f = 0; f < frames; ++f) {
+        QueryPerformanceCounter(&t0);
+        dev.BeginFrame();
+        dev.SetViewport({0, 0, kWidth, kHeight, 0, 1});
+        dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF102030, 1.0f);
+        dev.SetRenderState(RS_LIGHTING, 1);
+        dev.SetTransform(View, LookAtLH({0, 2, -10}, {0, 0, 0}, {0, 1, 0}));
+        dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.1f, 100.0f));
+        for (int i = 0; i < 4; ++i) {
+            l.position = {float(i) * 3 - 4, 2, -2};
+            dev.SetLight(i, l);
+            dev.LightEnable(i, true);
+        }
+        for (int d = 0; d < 2450; ++d) {
+            if (d % 2 == 0) dev.SetTexture(0, textures[(d / 2) % textures.size()]);
+            if (d % 7 == 0) {
+                Material m{{1, 1, 1, 1}, {0.4f, 0.4f, 0.4f, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}, 0};
+                dev.SetMaterial(m);
+            }
+            if (d % 13 == 0) dev.SetRenderState(RS_ALPHABLENDENABLE, (d / 13) & 1);
+            dev.SetTransform(World, Translate(float(d % 50) * 0.2f - 5, float(d / 50) * 0.2f - 5, float(d % 7)));
+            dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, verts.data(), 67, idx.data(), uint32_t(idx.size()));
+        }
+        dev.EndFrame();
+        QueryPerformanceCounter(&t1);
+        if (f >= 10) total += double(t1.QuadPart - t0.QuadPart) / double(freq.QuadPart);   // skip warm-up
+    }
+    for (Texture* t : textures) dev.DestroyTexture(t);
+    return total * 1000.0 / std::max(frames - 10, 1);
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 {
     if (msg == WM_DESTROY) { PostQuitMessage(0); return 0; }
@@ -610,12 +665,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 int main(int argc, char** argv)
 {
     bool windowed = false, stress = false;
+    int bench = 0;
     int frames = 3;
     std::string shot = "rvk_demo.bmp";
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--window") windowed = true;
         else if (a == "--stress") stress = true;
+        else if (a == "--bench" && i + 1 < argc) bench = std::atoi(argv[++i]);
         else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
         else if (a == "--shot" && i + 1 < argc) shot = argv[++i];
     }
@@ -643,6 +700,11 @@ int main(int argc, char** argv)
     std::printf("GPU: %s (Vulkan %u.%u), driver %s\n", dev.Info().gpu.c_str(), VK_API_VERSION_MAJOR(dev.Info().apiVersion),
                 VK_API_VERSION_MINOR(dev.Info().apiVersion), dev.Info().driver.c_str());
 
+    if (bench) {
+        double ms = Benchmark(dev, bench);
+        std::printf("bench: %.3f ms CPU per frame for 2450 draws (%.2f us per draw)\n", ms, ms * 1000.0 / 2450);
+        return 0;
+    }
     auto checkerPixels = Checker(64, 8, 0xFFE0E0E0, 0x00404040);   // dark cells are transparent (alpha test)
     auto dotPixels = SoftDot(64);
     auto stripePixels = Stripes(64);

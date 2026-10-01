@@ -679,7 +679,9 @@ bool Device::CreateFrames(std::string* error)
         bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         VmaAllocationCreateInfo ac{};
-        ac.usage = VMA_MEMORY_USAGE_AUTO;
+        // System memory, never the CPU-visible VRAM window: without resizable BAR that window is ~256 MB,
+        // shared with the driver and other programs, and running it out makes allocations fail.
+        ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
         ac.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
         VmaAllocationInfo info;
         if (!Check(vmaCreateBuffer(m_allocator, &bi, &ac, &f.ring, &f.ringAllocation, &info), "ring buffer", error))
@@ -699,7 +701,7 @@ bool Device::CreateFrames(std::string* error)
 VkDeviceSize Device::Allocate(VkDeviceSize size, VkDeviceSize alignment, void** cpu)
 {
     Frame& f = m_frames[m_frameIndex];
-    VkDeviceSize offset = (f.ringOffset + alignment - 1) & ~(alignment - 1);
+    VkDeviceSize offset = (f.ringOffset + alignment - 1) / alignment * alignment;   // any alignment (vertex strides)
     if (offset + size > kRingSize) {
         Log("per-frame ring buffer full (%llu bytes)\n", (unsigned long long)kRingSize);
         offset = 0;     // overwrites this frame's data; visible corruption rather than a crash
@@ -892,6 +894,7 @@ void Device::BeginFrame()
     VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     b.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(f.main, &b);
+    m_cache = StateCache{};
     m_inFrame = true;
     BeginRenderingOn(m_target);
 }
@@ -1004,6 +1007,7 @@ void Device::SubmitAndWait()
     VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     b.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(f.main, &b);          // the frame goes on; the caller resumes rendering
+    m_cache = StateCache{};
 }
 
 bool Device::ReadPixels(Texture* target, void* out)

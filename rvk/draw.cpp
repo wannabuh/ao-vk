@@ -122,6 +122,8 @@ void Device::SetLight(uint32_t index, const d3d::Light& light)
     if (index >= m_lights.size())
         m_lights.resize(index + 1);
     m_lights[index].light = light;
+    m_lights[index].cosHalfTheta = std::cos(light.theta * 0.5f);
+    m_lights[index].cosHalfPhi = std::cos(light.phi * 0.5f);
 }
 
 void Device::LightEnable(uint32_t index, bool enable)
@@ -244,11 +246,24 @@ void Device::DrawIndexedPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32
     Draw(primitive, vb->m_fvf, vb->m_data.data() + size_t(startVertex) * vb->m_stride, vertexCount, indices, indexCount);
 }
 
-void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf)
+void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride)
 {
     VkCommandBuffer cmd = m_frames[m_frameIndex].main;
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines[TopologyClass(primitive)]);
-    vkCmdSetPrimitiveTopology(cmd, Topology(primitive));
+    StateCache& c = m_cache;
+    uint32_t topoClass = TopologyClass(primitive);
+    if (c.topologyClass != topoClass) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines[topoClass]);
+        c.topologyClass = topoClass;
+    }
+    if (c.topology != primitive) {
+        vkCmdSetPrimitiveTopology(cmd, Topology(primitive));
+        c.topology = primitive;
+    }
+    if (!c.valid) {
+        // D3D front faces are clockwise on screen; D3DCULL_CCW culls the counter-clockwise (back) ones.
+        vkCmdSetFrontFace(cmd, VK_FRONT_FACE_CLOCKWISE);
+        c.valid = true;
+    }
 
     // Negative height flips Y so D3D's clip space maps the same way; +0.5 matches D3D pixel centres.
     VkViewport vp;
@@ -258,54 +273,83 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf)
     vp.height = -float(m_viewport.height);
     vp.minDepth = m_viewport.minZ;
     vp.maxDepth = m_viewport.maxZ;
-    vkCmdSetViewport(cmd, 0, 1, &vp);
+    if (std::memcmp(&vp, &c.viewport, sizeof(vp)) != 0) {
+        vkCmdSetViewport(cmd, 0, 1, &vp);
+        c.viewport = vp;
+    }
     uint32_t w = m_target->m_width, h = m_target->m_height;
     uint32_t sx = std::min(m_viewport.x, w), sy = std::min(m_viewport.y, h);
     VkRect2D scissor{{int32_t(sx), int32_t(sy)}, {std::min(m_viewport.width, w - sx), std::min(m_viewport.height, h - sy)}};
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    if (std::memcmp(&scissor, &c.scissor, sizeof(scissor)) != 0) {
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+        c.scissor = scissor;
+    }
 
-    // D3D front faces are clockwise on screen; D3DCULL_CCW culls the counter-clockwise (back) ones.
-    vkCmdSetFrontFace(cmd, VK_FRONT_FACE_CLOCKWISE);
     uint32_t cull = m_rs[d3d::RS_CULLMODE];
-    vkCmdSetCullMode(cmd, cull == d3d::CULL_CCW ? VK_CULL_MODE_BACK_BIT
-                          : cull == d3d::CULL_CW ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_NONE);
-    bool zEnable = m_rs[d3d::RS_ZENABLE] != 0;
-    vkCmdSetDepthTestEnable(cmd, zEnable);
-    vkCmdSetDepthWriteEnable(cmd, zEnable && m_rs[d3d::RS_ZWRITEENABLE] != 0);
-    vkCmdSetDepthCompareOp(cmd, CompareOp(m_rs[d3d::RS_ZFUNC]));
+    if (c.cull != cull) {
+        vkCmdSetCullMode(cmd, cull == d3d::CULL_CCW ? VK_CULL_MODE_BACK_BIT
+                              : cull == d3d::CULL_CW ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_NONE);
+        c.cull = cull;
+    }
+    uint32_t zEnable = m_rs[d3d::RS_ZENABLE] != 0;
+    uint32_t zWrite = zEnable && m_rs[d3d::RS_ZWRITEENABLE] != 0;
+    uint32_t zFunc = m_rs[d3d::RS_ZFUNC];
+    if (c.depthTest != zEnable) { vkCmdSetDepthTestEnable(cmd, zEnable); c.depthTest = zEnable; }
+    if (c.depthWrite != zWrite) { vkCmdSetDepthWriteEnable(cmd, zWrite); c.depthWrite = zWrite; }
+    if (c.depthOp != zFunc) { vkCmdSetDepthCompareOp(cmd, CompareOp(zFunc)); c.depthOp = zFunc; }
 
     VkBool32 blend = m_rs[d3d::RS_ALPHABLENDENABLE] != 0;
-    vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &blend);
-    VkColorBlendEquationEXT eq{};
+    if (c.blendEnable != blend) {
+        vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &blend);
+        c.blendEnable = blend;
+    }
     uint32_t src = m_rs[d3d::RS_SRCBLEND], dst = m_rs[d3d::RS_DESTBLEND];
     if (src == d3d::BLEND_BOTHSRCALPHA) { src = d3d::BLEND_SRCALPHA; dst = d3d::BLEND_INVSRCALPHA; }
     if (src == d3d::BLEND_BOTHINVSRCALPHA) { src = d3d::BLEND_INVSRCALPHA; dst = d3d::BLEND_SRCALPHA; }
-    eq.srcColorBlendFactor = eq.srcAlphaBlendFactor = BlendFactor(src);
-    eq.dstColorBlendFactor = eq.dstAlphaBlendFactor = BlendFactor(dst);
-    eq.colorBlendOp = eq.alphaBlendOp = VK_BLEND_OP_ADD;
-    vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &eq);
-
-    // Vertex layout: binding 0 = the draw's vertices, binding 1 = zeros for missing attributes.
-    FvfLayout layout = DecodeFvf(fvf);
-    VkVertexInputBindingDescription2EXT bindings[2] = {
-        {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 0, layout.stride, VK_VERTEX_INPUT_RATE_VERTEX, 1},
-        {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 1, 0, VK_VERTEX_INPUT_RATE_VERTEX, 1},
-    };
-    VkVertexInputAttributeDescription2EXT attrs[6];
-    for (uint32_t i = 0; i < 6; ++i) {
-        attrs[i] = {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT};
-        attrs[i].location = i;
-        if (layout.offset[i] >= 0) {
-            attrs[i].binding = 0;
-            attrs[i].format = layout.format[i];
-            attrs[i].offset = uint32_t(layout.offset[i]);
-        } else {
-            attrs[i].binding = 1;
-            attrs[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-            attrs[i].offset = 0;
-        }
+    // The equation only matters while blending, but Vulkan wants it set once per command buffer regardless.
+    if (c.src == ~0u || (blend && (c.src != src || c.dst != dst))) {
+        VkColorBlendEquationEXT eq{};
+        eq.srcColorBlendFactor = eq.srcAlphaBlendFactor = BlendFactor(src);
+        eq.dstColorBlendFactor = eq.dstAlphaBlendFactor = BlendFactor(dst);
+        eq.colorBlendOp = eq.alphaBlendOp = VK_BLEND_OP_ADD;
+        vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &eq);
+        c.src = src;
+        c.dst = dst;
     }
-    vkCmdSetVertexInputEXT(cmd, 2, bindings, 6, attrs);
+
+    if (c.fvf != fvf) {
+        // Vertex layout: binding 0 = the frame's ring buffer (draws address it through their vertex offset),
+        // binding 1 = zeros for attributes the format lacks.
+        FvfLayout layout = DecodeFvf(fvf);
+        VkVertexInputBindingDescription2EXT bindings[2] = {
+            {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 0, stride, VK_VERTEX_INPUT_RATE_VERTEX, 1},
+            {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 1, 0, VK_VERTEX_INPUT_RATE_VERTEX, 1},
+        };
+        VkVertexInputAttributeDescription2EXT attrs[6];
+        for (uint32_t i = 0; i < 6; ++i) {
+            attrs[i] = {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT};
+            attrs[i].location = i;
+            if (layout.offset[i] >= 0) {
+                attrs[i].binding = 0;
+                attrs[i].format = layout.format[i];
+                attrs[i].offset = uint32_t(layout.offset[i]);
+            } else {
+                attrs[i].binding = 1;
+                attrs[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+                attrs[i].offset = 0;
+            }
+        }
+        vkCmdSetVertexInputEXT(cmd, 2, bindings, 6, attrs);
+        c.fvf = fvf;
+    }
+    if (!c.buffersBound) {
+        Frame& f = m_frames[m_frameIndex];
+        VkBuffer buffers[2] = {f.ring, m_nullBuffer};
+        VkDeviceSize offsets[2] = {0, 0};
+        vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
+        vkCmdBindIndexBuffer(cmd, f.ring, 0, VK_INDEX_TYPE_UINT16);
+        c.buffersBound = true;
+    }
 }
 
 void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
@@ -332,7 +376,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 
     // Everything this draw puts in the ring buffer, reserved together so a flush can't split it.
     EnsureRingSpace(sizeof(DrawConstants) + VkDeviceSize(layout.stride) * vertexCount + VkDeviceSize(indexCount) * 2 +
-                    m_props.limits.minUniformBufferOffsetAlignment + 32);
+                    m_props.limits.minUniformBufferOffsetAlignment + layout.stride + 32);
 
     // Per-draw constants.
     void* cpu;
@@ -417,24 +461,25 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             g.direction[0] = l.direction.x; g.direction[1] = l.direction.y; g.direction[2] = l.direction.z;
             g.direction[3] = l.range;
             g.atten[0] = l.attenuation0; g.atten[1] = l.attenuation1; g.atten[2] = l.attenuation2; g.atten[3] = l.falloff;
-            g.spot[0] = std::cos(l.theta * 0.5f);
-            g.spot[1] = std::cos(l.phi * 0.5f);
+            g.spot[0] = slot.cosHalfTheta;
+            g.spot[1] = slot.cosHalfPhi;
             g.spot[2] = g.spot[3] = 0.0f;
         }
     c->lightInfo[0] = lightCount;
     c->lightInfo[1] = c->lightInfo[2] = c->lightInfo[3] = 0;
 
-    // Geometry.
+    // Geometry: vertices aligned to their stride and indices to 2 bytes, so the draw can address them inside
+    // the ring buffer bound once (vertexOffset / firstIndex) instead of rebinding buffers per draw.
     VkDeviceSize vbBytes = VkDeviceSize(layout.stride) * vertexCount;
-    VkDeviceSize vbOffset = Allocate(vbBytes, 16, &cpu);
+    VkDeviceSize vbOffset = Allocate(vbBytes, layout.stride, &cpu);
     std::memcpy(cpu, vertices, vbBytes);
     VkDeviceSize ibOffset = 0;
     if (indices) {
-        ibOffset = Allocate(VkDeviceSize(indexCount) * 2, 4, &cpu);
+        ibOffset = Allocate(VkDeviceSize(indexCount) * 2, 2, &cpu);
         std::memcpy(cpu, indices, size_t(indexCount) * 2);
     }
 
-    ApplyDynamicState(primitive, fvf);
+    ApplyDynamicState(primitive, fvf, layout.stride);
 
     VkDescriptorBufferInfo ubo{f.ring, uboOffset, sizeof(DrawConstants)};
     VkDescriptorImageInfo images[2];
@@ -455,15 +500,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[2].pImageInfo = &images[1];
     vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 3, writes);
 
-    VkBuffer buffers[2] = {f.ring, m_nullBuffer};
-    VkDeviceSize offsets[2] = {vbOffset, 0};
-    vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
-    if (indices) {
-        vkCmdBindIndexBuffer(cmd, f.ring, ibOffset, VK_INDEX_TYPE_UINT16);
-        vkCmdDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
-    } else {
-        vkCmdDraw(cmd, vertexCount, 1, 0, 0);
-    }
+    if (indices)
+        vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);
+    else
+        vkCmdDraw(cmd, vertexCount, 1, uint32_t(vbOffset / layout.stride), 0);
 }
 
 }  // namespace rvk

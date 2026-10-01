@@ -310,6 +310,7 @@ HRESULT RDevice::DoGetTexture(DWORD stage, LPDIRECTDRAWSURFACE7* out)
 
 HRESULT RDevice::DoDrawPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID verts, DWORD count, DWORD)
 {
+    CountBackendDraw();
     rvk::Device* dev = g_rvk.device;
     if (!dev || !verts) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
@@ -320,6 +321,7 @@ HRESULT RDevice::DoDrawPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID verts,
 HRESULT RDevice::DoDrawIndexedPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID verts, DWORD vcount, LPWORD idx,
                                         DWORD icount, DWORD)
 {
+    CountBackendDraw();
     rvk::Device* dev = g_rvk.device;
     if (!dev || !verts || !idx) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
@@ -329,6 +331,7 @@ HRESULT RDevice::DoDrawIndexedPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID
 
 HRESULT RDevice::DoDrawPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER7 iface, DWORD start, DWORD count, DWORD)
 {
+    CountBackendDraw();
     auto* vb = static_cast<RVertexBuffer*>(iface);
     rvk::Device* dev = g_rvk.device;
     if (!dev || !vb || start + count > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
@@ -340,6 +343,7 @@ HRESULT RDevice::DoDrawPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER
 HRESULT RDevice::DoDrawIndexedPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER7 iface, DWORD start, DWORD vcount,
                                           LPWORD idx, DWORD icount, DWORD)
 {
+    CountBackendDraw();
     // D3D7: the indices are relative to start; vcount vertices from there are referenced.
     auto* vb = static_cast<RVertexBuffer*>(iface);
     rvk::Device* dev = g_rvk.device;

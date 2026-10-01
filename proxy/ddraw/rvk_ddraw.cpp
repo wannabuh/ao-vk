@@ -13,11 +13,19 @@ RvkState g_rvk;
 
 namespace {
 std::recursive_mutex g_comMutex;
+// CPU time spent inside the backend (outermost ComScope only), for the heartbeat.
+thread_local int t_depth = 0;
+thread_local LARGE_INTEGER t_enter;
+int64_t g_backendTicks = 0, g_drawCalls = 0;
 }
+
+void CountBackendDraw() { ++g_drawCalls; }
 
 ComScope::ComScope(unsigned methodIndex)
 {
     g_comMutex.lock();
+    if (t_depth++ == 0)
+        QueryPerformanceCounter(&t_enter);
     thread_local bool seen = false;
     if (!seen) {
         seen = true;
@@ -25,7 +33,15 @@ ComScope::ComScope(unsigned methodIndex)
     }
 }
 
-ComScope::~ComScope() { g_comMutex.unlock(); }
+ComScope::~ComScope()
+{
+    if (--t_depth == 0) {
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        g_backendTicks += now.QuadPart - t_enter.QuadPart;
+    }
+    g_comMutex.unlock();
+}
 
 void RvkLog(const char* fmt, ...)
 {
@@ -98,7 +114,15 @@ void RvkState::Present()
     static DWORD lastTick = GetTickCount();
     if (++frames % 600 == 0) {
         DWORD now = GetTickCount();
-        RvkLog("presented %u frames (%.1f fps over the last 600)", frames, 600000.0 / std::max<DWORD>(now - lastTick, 1));
+        LARGE_INTEGER freq;
+        QueryPerformanceFrequency(&freq);
+        double frameMs = double(now - lastTick) / 600.0;
+        double backendMs = double(g_backendTicks) * 1000.0 / double(freq.QuadPart) / 600.0;
+        RvkLog("presented %u frames: %.1f fps, %.2f ms/frame, of which %.2f ms in the rvk backend (%.0f%%), %lld draws/frame",
+               frames, 1000.0 / std::max(frameMs, 0.001), frameMs, backendMs, 100.0 * backendMs / std::max(frameMs, 0.001),
+               (long long)(g_drawCalls / 600));
+        g_backendTicks = 0;
+        g_drawCalls = 0;
         lastTick = now;
     }
 }

@@ -168,6 +168,18 @@ private:
     struct LightSlot {
         d3d::Light light{};
         bool enabled = false;
+        float cosHalfTheta = 1.0f, cosHalfPhi = 1.0f;   // precomputed for the shader
+    };
+
+    // What is currently set in the main command buffer, so unchanged state isn't re-issued (every Vulkan
+    // call crosses Wine's 32/64-bit boundary). Reset whenever a command buffer begins.
+    struct StateCache {
+        bool valid = false;
+        uint32_t topologyClass = ~0u, topology = ~0u, fvf = ~0u;
+        uint32_t cull = ~0u, depthTest = ~0u, depthWrite = ~0u, depthOp = ~0u, blendEnable = ~0u, src = ~0u, dst = ~0u;
+        VkViewport viewport{};
+        VkRect2D scissor{};
+        bool buffersBound = false;
     };
 
     bool CreateInstance(std::string* error);
@@ -188,7 +200,8 @@ private:
     VkSampler SamplerFor(uint32_t stage);
     void Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
               const uint16_t* indices, uint32_t indexCount);
-    void ApplyDynamicState(uint32_t primitive, uint32_t fvf);
+    void ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride);
+    StateCache m_cache;
     void BeginRenderingOn(Texture* target);
     void EndRendering();
     bool EnsureDepth(uint32_t width, uint32_t height);   // grows the shared depth buffer if needed
