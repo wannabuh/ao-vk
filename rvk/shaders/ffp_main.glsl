@@ -287,8 +287,22 @@ void main()
     }
     if (!shadeSun)
         current.rgb *= shade;
-    if (C.vtx.y != 0u)                                   // GPU particles: brighter than their sprites, so small ones show
-        current.rgb *= uintBitsToFloat(C.vtx.y);
+    if (C.vtx.y != 0u) {
+        // GPU particles' brightness: a hot core. Where in the particle a pixel is comes from its texture (a sparkle is
+        // bright and opaque in the middle, fading out to the edge; shape in alpha or in intensity). Brighter settings
+        // raise the centre most and bleach it towards white - a red or orange particle stays red at its edge but gets
+        // a white-hot middle, which reads as bright where a brighter red wouldn't. Below 1: dimmer all over.
+        float bright = uintBitsToFloat(C.vtx.y);
+        if (bright < 1.0) {
+            current.rgb *= bright;
+        } else {
+            float shape = clamp(min(t0.a, max(t0.r, max(t0.g, t0.b))), 0.0, 1.0);
+            float core = smoothstep(0.25, 0.9, shape);
+            current.rgb *= mix(1.0, bright, core);
+            float peak = max(current.r, max(current.g, current.b));
+            current.rgb = mix(current.rgb, vec3(peak), core * clamp((bright - 1.0) / 3.0, 0.0, 1.0));
+        }
+    }
     if ((C.flags.x & F_FOG) != 0u) {
         float f = vFogFactor;
         uint table = C.flags.z;

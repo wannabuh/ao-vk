@@ -65,7 +65,7 @@ Setting g_settings[] = {
     {"RVK_Particles",  "GPU particles on sparkle effects (listed in randy-vk.ini [Particles])", "Particles", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_PartCount",  "Particles per sprite",                                            "Particles",      Int,   1, 32, 1, 12, nullptr, 0},
     {"RVK_PartSize",   "Particle size (fraction of its sprite)",                          "Particles",      Float, 0.03f, 0.6f, 0.01f, 0.15f, nullptr, 0},
-    {"RVK_PartBright", "Particle brightness (colour multiplier)",                         "Particles",      Float, 0.25f, 8, 0.25f, 2, nullptr, 0},
+    {"RVK_PartBright", "Particle brightness (hot white core from 1 up, full at 4)",       "Particles",      Float, 0.25f, 8, 0.25f, 2, nullptr, 0},
     {"RVK_PartTrail",  "Motion trails (seconds of motion shown, 0 = off)",               "Particles",      Float, 0, 0.3f, 0.01f, 0.05f, nullptr, 0},
     {"RVK_PartTrailMx","Longest trail (particle sizes)",                                  "Particles",      Float, 1, 20, 0.5f, 6, nullptr, 0},
     {"RVK_PartLife",   "Particle life (seconds)",                                         "Particles",      Float, 0.25f, 5, 0.05f, 1.5f, nullptr, 0},

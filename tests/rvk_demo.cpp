@@ -1202,6 +1202,7 @@ bool g_particleEndFree = false;          // --particle-end-free: the effect's te
 bool g_particleOffscreen = false;        // --particle-offscreen: a render target pass (3D + pre-transformed) comes first
 float g_particleBright = 1.0f;           // --particle-bright X: the particles' colour multiplier
 float g_particleTrail = 0.0f;            // --particle-trail S: motion trails (seconds)
+uint32_t g_particleColor = 0xC0B080FF;   // --particle-color AARRGGBB: the sprites' colour
 bool g_particleWater = false;            // --particle-water: water the game's way (ProcessVertices output, FVF 0x1C4) mid-scene
 
 // Particle test (--particle-test): an effect like the game's sparkle auras - a ring of soft additive sprites (FVF 0x142,
@@ -1306,7 +1307,7 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
             sp.pos[2] = cz + std::sin(a) * 1.0f;
             sp.size = 0.6f;
             sp.uv[0] = 0; sp.uv[1] = 0; sp.uv[2] = 1; sp.uv[3] = 1;
-            sp.color = 0xC0B080FF;
+            sp.color = g_particleColor;
             sp.alive = effects > 1 || ((frame / 12 + i) % 3) != 0;
             const std::string& mo = g_particleMotion;
             if (mo == "orbit-cw" || mo == "orbit-ccw") {          // a fast ring, all alive
@@ -1457,6 +1458,7 @@ int main(int argc, char** argv)
         else if (a == "--particle-water") g_particleWater = true;
         else if (a == "--particle-bright" && i + 1 < argc) g_particleBright = float(std::atof(argv[++i]));
         else if (a == "--particle-trail" && i + 1 < argc) g_particleTrail = float(std::atof(argv[++i]));
+        else if (a == "--particle-color" && i + 1 < argc) g_particleColor = uint32_t(std::strtoul(argv[++i], nullptr, 16));
     }
 
     HWND hwnd = nullptr;
