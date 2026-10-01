@@ -855,7 +855,7 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
         lamp.range = 4.0f;
         lamp.attenuation1 = 0.4f;
         dev.SetLight(1, lamp);
-        dev.LightEnable(0, false);
+        // The sun stays enabled, as the game leaves it when there are 8 lights or fewer; rvk keeps it off terrain.
         dev.LightEnable(1, true);
         dev.SetRenderState(RS_LIGHTING, 1);
         dev.SetRenderState(RS_AMBIENT, 0);
@@ -872,7 +872,6 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
         dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
         dev.SetRenderState(RS_AMBIENT, 0xFF505050);
         dev.LightEnable(1, false);
-        dev.LightEnable(0, true);
         dev.SetTexture(0, ground);
         dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
         dev.SetRenderState(RS_LIGHTING, 1);

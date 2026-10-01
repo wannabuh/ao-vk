@@ -551,8 +551,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 
     // The big constant block: reused unless something feeding it changed since it was written.
     uint32_t texMask = (m_textures[0] ? 1u : 0u) | (m_textures[1] ? 2u : 0u);
+    bool terrain = IsTerrain(fvf);
     bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
-                   m_constantsTexMask != texMask;
+                   m_constantsTexMask != texMask || m_constantsTerrain != terrain;
     VkDeviceSize uboOffset = m_constantsOffset;
     if (rewrite) {
     uboOffset = Allocate(sizeof(DrawConstants), uboAlign, &cpu);
@@ -561,6 +562,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsDirty = false;
     m_constantsFvf = fvf;
     m_constantsTexMask = texMask;
+    m_constantsTerrain = terrain;
     auto* c = static_cast<DrawConstants*>(cpu);
     c->view = m_view;
     c->proj = m_proj;
@@ -638,6 +640,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                 continue;
             if (override && slot.light.type != d3d::LIGHT_DIRECTIONAL)
                 continue;                        // replaced by the frame lights
+            // The ground's lightmap has the sun baked in, and the game means to keep directional lights off it
+            // (CullLights mask 0xfffffffe) - but skips that mask when there are 8 lights or fewer. The sun then
+            // saturates the ground's lighting pass and local lights (the player's) vanish on it.
+            if (override && terrain && slot.light.type == d3d::LIGHT_DIRECTIONAL)
+                continue;
             FillGpuLight(slot.light, slot.cosHalfTheta, slot.cosHalfPhi, c->lights[lightCount++]);
             if (slot.light.type != d3d::LIGHT_DIRECTIONAL) ++localLights;
         }

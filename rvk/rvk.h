@@ -326,6 +326,7 @@ private:
     VkDeviceSize m_constantsOffset = 0;
     uint32_t m_constantsFvf = ~0u;
     uint32_t m_constantsTexMask = ~0u;
+    bool m_constantsTerrain = false;
     void BeginRenderingOn(Texture* target);
     void EndRendering();
     bool EnsureDepth(uint32_t width, uint32_t height);   // grows the shared depth buffer if needed
