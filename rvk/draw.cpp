@@ -283,6 +283,17 @@ VkDeviceSize Device::WriteFrameLights()
     return offset;
 }
 
+// An additive effect drawn into the HDR scene (light halos, spells, fire: blend ONE or SRCALPHA onto ONE) feeds the
+// glow, and so the bloom. Not the sky's additive layers (clouds, stars), drawn at infinity with depth test ALWAYS.
+bool Device::GlowDraw(uint32_t fvf) const
+{
+    if (m_effectGlow <= 0.0f || m_target != m_scene || !m_rs[d3d::RS_ALPHABLENDENABLE] ||
+        (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW || m_rs[d3d::RS_ZFUNC] == d3d::CMP_ALWAYS)
+        return false;
+    uint32_t src = m_rs[d3d::RS_SRCBLEND], dst = m_rs[d3d::RS_DESTBLEND];
+    return dst == d3d::BLEND_ONE && (src == d3d::BLEND_ONE || src == d3d::BLEND_SRCALPHA);
+}
+
 // A multiplying pass (the ground's lightmap + lights) lit by the frame lights with headroom: it outputs half its
 // colour and is blended at 2x, so the lights can brighten the surface under it beyond the texture.
 bool Device::Overbright2x(uint32_t fvf) const
@@ -497,6 +508,15 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     if (c.depthWrite != zWrite) { vkCmdSetDepthWriteEnable(cmd, zWrite); c.depthWrite = zWrite; }
     if (c.depthOp != zFunc) { vkCmdSetDepthCompareOp(cmd, CompareOp(zFunc)); c.depthOp = zFunc; }
 
+    if (pipelineClass >= 3 && !c.glowBlendSet) {
+        // The glow attachment always adds: what each additive effect contributes (others write 0).
+        VkBool32 on = VK_TRUE;
+        vkCmdSetColorBlendEnableEXT(cmd, 1, 1, &on);
+        VkColorBlendEquationEXT eq{VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD,
+                                   VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD};
+        vkCmdSetColorBlendEquationEXT(cmd, 1, 1, &eq);
+        c.glowBlendSet = true;
+    }
     VkBool32 blend = m_rs[d3d::RS_ALPHABLENDENABLE] != 0;
     if (c.blendEnable != blend) {
         vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &blend);
@@ -659,7 +679,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     ArgbToFloat(m_rs[d3d::RS_TEXTUREFACTOR], c->tfactor);
     c->misc[0] = m_material.power;
     c->misc[1] = float(m_rs[d3d::RS_ALPHAREF] & 0xFF);
-    c->misc[2] = c->misc[3] = 0.0f;
+    c->misc[2] = m_effectGlow;                 // F_GLOW: how much the effect feeds the glow
+    c->misc[3] = 0.0f;
     // Camera position/forward in world space from the view matrix (columns 0-2 = camera axes for an
     // orthonormal D3D view matrix; row 3 = -eye expressed in those axes).
     const auto& v = m_view.m;
@@ -679,6 +700,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (override) flags |= F_LIGHTOVERRIDE;
     bool hdrTarget = m_target->m_format == Format::RGBA16F;
     if (hdrTarget) flags |= F_HDR;
+    if (GlowDraw(fvf)) flags |= F_GLOW | (m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA ? F_GLOWALPHA : 0u);
     if (override && (m_lightHeadroom > 1.0f || hdrTarget)) flags |= F_OVERBRIGHT;
     if (Overbright2x(fvf)) flags |= F_OVERBRIGHT2X;
     if (ShadowReceiver(fvf)) flags |= F_SHADOW;
@@ -747,6 +769,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     RecordShadowCaster(primitive, fvf, layout.stride, vertices, vertexCount, vbOffset, indices, indices ? indexCount : 0,
                        ibOffset);
     m_drawOverbright2x = Overbright2x(fvf);
+    if (GlowDraw(fvf)) ++m_glowDraws;
     ApplyDynamicState(primitive, fvf, layout.stride);
 
     VkDescriptorBufferInfo ubo{f.ring, uboOffset, sizeof(DrawConstants)};

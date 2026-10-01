@@ -3,6 +3,7 @@
 // pass from the scene keeps only light above the threshold (soft knee) and weights its taps by brightness (Karis
 // average), so single bright pixels don't flicker as they move.
 layout(set = 0, binding = 0) uniform sampler2D src;
+layout(set = 0, binding = 1) uniform sampler2D glow;    // first pass: what additive effects added (full resolution)
 layout(push_constant) uniform Push {
     vec4 params;        // source texel size xy, threshold, first pass (1)
 } P;
@@ -19,22 +20,30 @@ vec3 Prefilter(vec3 c)
 
 float Weight(vec3 c) { return 1.0 / (1.0 + max(c.r, max(c.g, c.b))); }
 
+// A tap: the source, or in the first pass the scene's light above the threshold plus the glow.
+vec3 Tap(vec2 uv)
+{
+    if (P.params.w > 0.5)
+        return Prefilter(texture(src, uv).rgb) + texture(glow, uv).rgb;
+    return texture(src, uv).rgb;
+}
+
 void main()
 {
     vec2 ts = P.params.xy, uv = gl_FragCoord.xy * 2.0 * ts;   // centre of this pixel in the (2x larger) source
-    vec3 a = texture(src, uv + ts * vec2(-2, -2)).rgb, b = texture(src, uv + ts * vec2(0, -2)).rgb;
-    vec3 c = texture(src, uv + ts * vec2(2, -2)).rgb, d = texture(src, uv + ts * vec2(-2, 0)).rgb;
-    vec3 e = texture(src, uv).rgb, f = texture(src, uv + ts * vec2(2, 0)).rgb;
-    vec3 g = texture(src, uv + ts * vec2(-2, 2)).rgb, h = texture(src, uv + ts * vec2(0, 2)).rgb;
-    vec3 i = texture(src, uv + ts * vec2(2, 2)).rgb, j = texture(src, uv + ts * vec2(-1, -1)).rgb;
-    vec3 k = texture(src, uv + ts * vec2(1, -1)).rgb, l = texture(src, uv + ts * vec2(-1, 1)).rgb;
-    vec3 m = texture(src, uv + ts * vec2(1, 1)).rgb;
+    vec3 a = Tap(uv + ts * vec2(-2, -2)), b = Tap(uv + ts * vec2(0, -2));
+    vec3 c = Tap(uv + ts * vec2(2, -2)), d = Tap(uv + ts * vec2(-2, 0));
+    vec3 e = Tap(uv), f = Tap(uv + ts * vec2(2, 0));
+    vec3 g = Tap(uv + ts * vec2(-2, 2)), h = Tap(uv + ts * vec2(0, 2));
+    vec3 i = Tap(uv + ts * vec2(2, 2)), j = Tap(uv + ts * vec2(-1, -1));
+    vec3 k = Tap(uv + ts * vec2(1, -1)), l = Tap(uv + ts * vec2(-1, 1));
+    vec3 m = Tap(uv + ts * vec2(1, 1));
     vec3 result;
     if (P.params.w > 0.5) {
-        // Five 2x2 boxes, each prefiltered and brightness-weighted.
-        vec3 b0 = Prefilter((j + k + l + m) * 0.25), b1 = Prefilter((a + b + d + e) * 0.25);
-        vec3 b2 = Prefilter((b + c + e + f) * 0.25), b3 = Prefilter((d + e + g + h) * 0.25);
-        vec3 b4 = Prefilter((e + f + h + i) * 0.25);
+        // Five 2x2 boxes, brightness-weighted.
+        vec3 b0 = (j + k + l + m) * 0.25, b1 = (a + b + d + e) * 0.25;
+        vec3 b2 = (b + c + e + f) * 0.25, b3 = (d + e + g + h) * 0.25;
+        vec3 b4 = (e + f + h + i) * 0.25;
         float w0 = Weight(b0) * 0.5, w1 = Weight(b1) * 0.125, w2 = Weight(b2) * 0.125, w3 = Weight(b3) * 0.125,
               w4 = Weight(b4) * 0.125;
         result = (b0 * w0 + b1 * w1 + b2 * w2 + b3 * w3 + b4 * w4) / (w0 + w1 + w2 + w3 + w4);

@@ -104,6 +104,9 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     GetEnvironmentVariableA("RANDYVK_BLOOM", bloom, sizeof(bloom));
     GetEnvironmentVariableA("RANDYVK_BLOOM_THRESHOLD", bloomThreshold, sizeof(bloomThreshold));
     device->SetBloom(float(std::atof(bloom)), float(std::atof(bloomThreshold)));
+    char effectGlow[16] = "1.0";
+    GetEnvironmentVariableA("RANDYVK_BLOOM_EFFECTS", effectGlow, sizeof(effectGlow));
+    device->SetEffectGlow(float(std::atof(effectGlow)));
     device->SetHdrHeadroom(float(std::atof(hdrHeadroom)));
     GetEnvironmentVariableA("RANDYVK_HDR", hdr, sizeof(hdr));
     GetEnvironmentVariableA("RANDYVK_TONEMAP_KNEE", knee, sizeof(knee));
@@ -123,7 +126,7 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     RvkLog("rvk light headroom (local lights above the game's clamp): %s", headroom);
     RvkLog("rvk HDR scene + tone mapping: %s (knee %s, exposure %s, light headroom %s)", device->Hdr() ? "on" : "off", knee,
            exposure, hdrHeadroom);
-    RvkLog("rvk bloom: strength %s, threshold %s", bloom, bloomThreshold);
+    RvkLog("rvk bloom: strength %s, threshold %s, effects %s", bloom, bloomThreshold, effectGlow);
     return true;
 }
 
@@ -204,6 +207,15 @@ void RvkState::Present()
     }
     homeDown = home;
     endDown = end;
+    // Ctrl+Shift+Insert / Delete: how much additive effects glow, up / down by 0.25.
+    static bool insDown, delDown;
+    bool ins = chord && (GetAsyncKeyState(VK_INSERT) & 0x8000), del = chord && (GetAsyncKeyState(VK_DELETE) & 0x8000);
+    if ((ins && !insDown) || (del && !delDown)) {
+        device->SetEffectGlow(device->EffectGlow() + (ins ? 0.25f : -0.25f));
+        RvkLog("effect glow %.2f", device->EffectGlow());
+    }
+    insDown = ins;
+    delDown = del;
     // Ctrl+Shift+F5: HDR scene + tone mapping.
     static bool f5Down;
     bool f5 = chord && (GetAsyncKeyState(VK_F5) & 0x8000);

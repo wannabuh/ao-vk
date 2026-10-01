@@ -30,6 +30,7 @@ enum class Format : uint32_t {
     A8R8G8B8, X8R8G8B8, R5G6B5, A1R5G5B5, X1R5G5B5, A4R4G4B4, L8, A8, A8L8,
     DXT1, DXT2, DXT3, DXT4, DXT5,
     RGBA16F,    // internal: the HDR scene target
+    RG11B10F,   // internal: the HDR glow target (additive effects, for the bloom)
     Count
 };
 
@@ -152,6 +153,10 @@ public:
     void SetTonemap(float knee, float exposure) { m_tonemapKnee = knee; m_exposure = exposure; }
     // With HDR: glow around light above the threshold (hdr.cpp). strength 0 = off.
     void SetBloom(float strength, float threshold) { m_bloomStrength = strength; m_bloomThreshold = threshold; }
+    // With HDR: how much the game's additive effects (light halos, spells, fire) feed the bloom, on top of light above
+    // the threshold. 0 = only the threshold.
+    void SetEffectGlow(float gain) { if (m_effectGlow != gain) { m_effectGlow = gain; m_constantsDirty = true; } }
+    float EffectGlow() const { return m_effectGlow; }
     float BloomStrength() const { return m_bloomStrength; }
     // With HDR: how bright local lights may make a surface (1 = the game's clamp; soft roll-off towards it).
     void SetHdrHeadroom(float headroom) { m_hdrHeadroom = headroom < 1.0f ? 1.0f : headroom; m_frameLightsDirty = true; }
@@ -236,6 +241,7 @@ private:
         VkViewport viewport{};
         VkRect2D scissor{};
         bool buffersBound = false;
+        bool glowBlendSet = false;               // attachment 1 (glow) blend state, HDR pipelines
     };
 
     bool CreateInstance(std::string* error);
@@ -427,12 +433,17 @@ private:
     VkSampler m_pointSampler = VK_NULL_HANDLE, m_linearSampler = VK_NULL_HANDLE;
     float m_bloomStrength = 1.5f, m_bloomThreshold = 1.0f;
     std::vector<Texture*> m_bloomLevels;         // half resolution and down, float
+    float m_effectGlow = 1.0f;
+    Texture* m_glow = nullptr;                   // second scene attachment: what additive effects add (F_GLOW)
+    bool m_glowCleared = false;                  // this frame
+    uint32_t m_glowDraws = 0;                    // this frame's draws feeding the glow (frame dumps)
+    bool GlowDraw(uint32_t fvf) const;
     VkDescriptorSetLayout m_bloomSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_bloomLayout = VK_NULL_HANDLE;
     VkPipeline m_bloomDown = VK_NULL_HANDLE, m_bloomUp = VK_NULL_HANDLE;
     void RenderBloom(VkCommandBuffer cmd);
     void FullscreenPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, VkPipelineLayout layout, Texture* src,
-                        const float params[4], bool load);
+                        Texture* src2, const float params[4], bool load);
     bool CreateHdrResources(std::string* error);
     void DestroyHdrResources();
     void BeginScene();

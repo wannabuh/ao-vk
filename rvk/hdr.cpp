@@ -63,7 +63,7 @@ bool Device::CreateHdrResources(std::string* error)
         return Check(vkCreatePipelineLayout(m_device, &pl, nullptr, out), "post pipeline layout", error);
     };
     if (!setLayout(2, &m_tonemapSetLayout) || !pipelineLayout(m_tonemapSetLayout, &m_tonemapLayout) ||
-        !setLayout(1, &m_bloomSetLayout) || !pipelineLayout(m_bloomSetLayout, &m_bloomLayout))
+        !setLayout(2, &m_bloomSetLayout) || !pipelineLayout(m_bloomSetLayout, &m_bloomLayout))
         return false;
 
     auto module = [&](const uint32_t* code, size_t size, VkShaderModule* out) {
@@ -166,6 +166,8 @@ void Device::DestroyHdrResources()
 void Device::BeginScene()
 {
     m_sceneSaw3D = false;
+    m_glowCleared = false;
+    m_glowDraws = 0;
     m_sceneEndDraw = 0;
     m_sceneEndFvf = 0;
     m_scenePhase = m_hdr && m_scene && m_ldrMain;
@@ -233,9 +235,10 @@ void Device::EndScene()
 
 // One full-target pass: dst <- pipeline(src). load: keep dst's contents (blended onto) instead of overwriting them.
 void Device::FullscreenPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, VkPipelineLayout layout, Texture* src,
-                            const float params[4], bool load)
+                            Texture* src2, const float params[4], bool load)
 {
     Transition(cmd, src, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    Transition(cmd, src2, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     Transition(cmd, dst, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     color.imageView = dst->m_view;
@@ -253,13 +256,16 @@ void Device::FullscreenPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeli
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    VkDescriptorImageInfo image{m_linearSampler, src->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    w.dstBinding = 0;
-    w.descriptorCount = 1;
-    w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    w.pImageInfo = &image;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &w);
+    VkDescriptorImageInfo images[2] = {{m_linearSampler, src->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                       {m_linearSampler, src2->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+    VkWriteDescriptorSet w[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
+    for (uint32_t i = 0; i < 2; ++i) {
+        w[i].dstBinding = i;
+        w[i].descriptorCount = 1;
+        w[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        w[i].pImageInfo = &images[i];
+    }
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 2, w);
     vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16, params);
     vkCmdDraw(cmd, 3, 1, 0, 0);
     vkCmdEndRendering(cmd);
@@ -284,13 +290,14 @@ void Device::RenderBloom(VkCommandBuffer cmd)
     Texture* src = m_scene;
     for (size_t i = 0; i < m_bloomLevels.size(); ++i) {
         float params[4] = {1.0f / float(src->m_width), 1.0f / float(src->m_height), m_bloomThreshold, i == 0 ? 1.0f : 0.0f};
-        FullscreenPass(cmd, m_bloomLevels[i], m_bloomDown, m_bloomLayout, src, params, false);
+        // The first pass adds the glow (additive effects) to the scene's light above the threshold.
+        FullscreenPass(cmd, m_bloomLevels[i], m_bloomDown, m_bloomLayout, src, i == 0 ? m_glow : src, params, false);
         src = m_bloomLevels[i];
     }
     for (size_t i = m_bloomLevels.size() - 1; i-- > 0;) {
         Texture* smaller = m_bloomLevels[i + 1];
         float params[4] = {1.0f / float(smaller->m_width), 1.0f / float(smaller->m_height), 0.0f, 0.0f};
-        FullscreenPass(cmd, m_bloomLevels[i], m_bloomUp, m_bloomLayout, smaller, params, true);
+        FullscreenPass(cmd, m_bloomLevels[i], m_bloomUp, m_bloomLayout, smaller, smaller, params, true);
     }
     Transition(cmd, m_bloomLevels[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }

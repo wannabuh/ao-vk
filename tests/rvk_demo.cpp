@@ -1188,7 +1188,7 @@ int main(int argc, char** argv)
     float headroom = 1.0f;
     double fadeIn = 0.0;
     bool hdr = false;
-    float bloom = 0.0f;
+    float bloom = 0.0f, effectGlow = 1.0f;
     float knee = 0.85f;
     int bench = 0;
     int frames = 3;
@@ -1214,6 +1214,7 @@ int main(int argc, char** argv)
         else if (a == "--game-ms" && i + 1 < argc) g_benchGameMs = std::atof(argv[++i]);
         else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
         else if (a == "--hdr") hdr = true;
+        else if (a == "--effect-glow" && i + 1 < argc) effectGlow = float(std::atof(argv[++i]));
         else if (a == "--bloom" && i + 1 < argc) { bloom = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--tonemap-knee" && i + 1 < argc) knee = float(std::atof(argv[++i]));
         else if (a == "--point-shadow-fade" && i + 1 < argc) fadeIn = std::atof(argv[++i]);
@@ -1250,6 +1251,7 @@ int main(int argc, char** argv)
     dev.SetHdr(hdr);
     dev.SetTonemap(knee, 1.0f);
     dev.SetBloom(bloom, 1.0f);
+    dev.SetEffectGlow(effectGlow);
     dev.SetPointShadowFadeIn(fadeIn);    // frames here are milliseconds apart: no fade-in unless asked
     if (pointShadowTest) {               // needs per-pixel lighting with the light override
         dev.SetPixelLighting(true);

@@ -356,6 +356,12 @@ void ThreadedDevice::SetBloom(float strength, float threshold)
     Enqueue([this, strength, threshold](const uint8_t*) { m_device.SetBloom(strength, threshold); });
 }
 
+void ThreadedDevice::SetEffectGlow(float gain)
+{
+    m_effectGlow = gain < 0.0f ? 0.0f : gain;
+    Enqueue([this, gain](const uint8_t*) { m_device.SetEffectGlow(gain < 0.0f ? 0.0f : gain); });
+}
+
 void ThreadedDevice::SetHdrHeadroom(float headroom)
 {
     m_hdrHeadroom = headroom < 1.0f ? 1.0f : headroom;

@@ -42,8 +42,9 @@ void Device::EndFrameDump()
                              " forgotten since start: %u in view but not drawn, %u far away\n",
                  m_dumpDraw, m_casters.size(), m_casterCache.size(), m_cachedCastersDrawn, m_forgottenInView, m_forgottenFar);
     if (m_hdr)
-        std::fprintf(m_dumpFile, "# hdr: scene phase ended at draw %u (fvf 0x%X)%s\n", m_sceneEndDraw, m_sceneEndFvf,
-                     m_sceneEndDraw ? "" : " - no interface draw (tone mapped at the end of the frame)");
+        std::fprintf(m_dumpFile, "# hdr: scene phase ended at draw %u (fvf 0x%X)%s; %u additive draws fed the glow\n",
+                     m_sceneEndDraw, m_sceneEndFvf,
+                     m_sceneEndDraw ? "" : " - no interface draw (tone mapped at the end of the frame)", m_glowDraws);
     std::fprintf(m_dumpFile, "# point shadows (rendered last frame, %u caster draws; daylight %.2f -> strength %.2f):",
                  m_pointShadowDraws, m_daylight, PointShadowStrength());
     for (uint32_t i = 0; i < m_pointShadowCount; ++i) {

@@ -42,6 +42,9 @@ const uint32_t kVertSpirv[] = {
 const uint32_t kFragSpirv[] = {
 #include "ffp.frag.inc"
 };
+const uint32_t kFragGlowSpirv[] = {             // the HDR scene's: also writes the glow attachment
+#include "ffp_glow.frag.inc"
+};
 
 // Access/stage masks to go with an image layout, for barriers.
 void LayoutUse(VkImageLayout layout, VkPipelineStageFlags2* stage, VkAccessFlags2* access)
@@ -374,7 +377,8 @@ bool Device::CreateMainTargets(std::string* error)
 {
     m_ldrMain = CreateImage(m_width, m_height, Format::A8R8G8B8, 1, true);
     m_scene = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);
-    if (!m_ldrMain || !m_scene) {
+    m_glow = CreateImage(m_width, m_height, Format::RG11B10F, 1, true);
+    if (!m_ldrMain || !m_scene || !m_glow) {
         if (error) *error = "main colour target";
         return false;
     }
@@ -441,6 +445,7 @@ void Device::DestroyMainTargets()
 {
     if (m_ldrMain) { DestroyTextureNow(m_ldrMain); m_ldrMain = nullptr; }
     if (m_scene) { DestroyTextureNow(m_scene); m_scene = nullptr; }
+    if (m_glow) { DestroyTextureNow(m_glow); m_glow = nullptr; }
     m_main = nullptr;
     for (auto& [tag, d] : m_deadImages) { vkDestroyImageView(m_device, d.view, nullptr); vmaDestroyImage(m_allocator, d.image, d.allocation); }
     m_deadImages.clear();
@@ -588,8 +593,9 @@ bool Device::CreatePipelines(std::string* error)
         ci.pCode = code;
         return Check(vkCreateShaderModule(m_device, &ci, nullptr, out), "vkCreateShaderModule", error);
     };
-    VkShaderModule vert, frag;
-    if (!module(kVertSpirv, sizeof(kVertSpirv), &vert) || !module(kFragSpirv, sizeof(kFragSpirv), &frag))
+    VkShaderModule vert, frag, fragGlow;
+    if (!module(kVertSpirv, sizeof(kVertSpirv), &vert) || !module(kFragSpirv, sizeof(kFragSpirv), &frag) ||
+        !module(kFragGlowSpirv, sizeof(kFragGlowSpirv), &fragGlow))
         return false;
 
     VkPipelineShaderStageCreateInfo stages[2] = {
@@ -612,15 +618,16 @@ bool Device::CreatePipelines(std::string* error)
     VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     VkPipelineDepthStencilStateCreateInfo dss{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    VkPipelineColorBlendAttachmentState att{};
-    att.colorWriteMask = 0xF;
+    VkPipelineColorBlendAttachmentState att[2] = {};
+    att[0].colorWriteMask = att[1].colorWriteMask = 0xF;
     VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
     cb.attachmentCount = 1;
-    cb.pAttachments = &att;
-    VkFormat colorFormat = kColorFormat;
+    cb.pAttachments = att;
+    // 8-bit targets: one colour attachment. HDR scene: the float scene + the glow (additive effects, for the bloom).
+    VkFormat colorFormats[2] = {kColorFormat, GetFormatInfo(Format::RG11B10F).vk};
     VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachmentFormats = &colorFormat;
+    rendering.pColorAttachmentFormats = colorFormats;
     rendering.depthAttachmentFormat = kDepthFormat;
 
     static const VkPrimitiveTopology kClassTopology[3] = {VK_PRIMITIVE_TOPOLOGY_POINT_LIST,
@@ -630,7 +637,9 @@ bool Device::CreatePipelines(std::string* error)
     // One set for the 8-bit targets, one for the HDR scene (float).
     for (int set = 0; set < 2 && ok; ++set)
     for (int c = 0; c < 3 && ok; ++c) {
-        colorFormat = set ? GetFormatInfo(Format::RGBA16F).vk : kColorFormat;
+        colorFormats[0] = set ? GetFormatInfo(Format::RGBA16F).vk : kColorFormat;
+        rendering.colorAttachmentCount = cb.attachmentCount = set ? 2 : 1;
+        stages[1].module = set ? fragGlow : frag;
         VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         ia.topology = kClassTopology[c];
         VkGraphicsPipelineCreateInfo ci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -649,6 +658,7 @@ bool Device::CreatePipelines(std::string* error)
                    "vkCreateGraphicsPipelines", error);
     }
     vkDestroyShaderModule(m_device, vert, nullptr);
+    vkDestroyShaderModule(m_device, fragGlow, nullptr);
     vkDestroyShaderModule(m_device, frag, nullptr);
     if (!ok || !CreateShadowResources(error) || !CreatePointShadowResources(error) || !CreateHdrResources(error))
         return false;
@@ -872,11 +882,22 @@ void Device::BeginRenderingOn(Texture* target)
     depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    // The HDR scene has the glow as a second attachment, cleared at its first use in the frame.
+    VkRenderingAttachmentInfo colors[2] = {color, color};
+    uint32_t colorCount = 1;
+    if (target == m_scene && m_glow) {
+        Transition(cmd, m_glow, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        colors[1].imageView = m_glow->m_view;
+        colors[1].loadOp = m_glowCleared ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colors[1].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
+        m_glowCleared = true;
+        colorCount = 2;
+    }
     VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
     ri.renderArea = {{0, 0}, {target->m_width, target->m_height}};
     ri.layerCount = 1;
-    ri.colorAttachmentCount = 1;
-    ri.pColorAttachments = &color;
+    ri.colorAttachmentCount = colorCount;
+    ri.pColorAttachments = colors;
     ri.pDepthAttachment = &depth;
     vkCmdBeginRendering(cmd, &ri);
     m_rendering = true;

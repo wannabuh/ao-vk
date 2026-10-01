@@ -22,7 +22,7 @@ layout(set = 0, binding = 0, std140) uniform DrawConstants {
     vec4 fogColor;
     vec4 fogParams;             // start, end, density
     vec4 tfactor;
-    vec4 misc;                  // material power, alpha reference (0..255)
+    vec4 misc;                  // material power, alpha reference (0..255), effect glow gain
     vec4 eyePos;                // camera position, world space
     vec4 eyeDir;                // camera forward, world space (non-local viewer)
     uvec4 vtx;                  // FVF
@@ -54,4 +54,6 @@ const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8
            F_SHADOWTEX = 32768u,    // the shadow darkens texture stage 0 (the ground's lightmap) only
            F_OVERBRIGHT = 65536u,   // frame lights may light beyond the game's clamp, up to FL.sunDir.w
            F_OVERBRIGHT2X = 131072u, // multiplying pass blended at 2x (DESTCOLOR/SRCCOLOR): output halved, up to 2
-           F_HDR = 262144u;          // drawn into the HDR scene (float): colours above 1 are kept
+           F_HDR = 262144u,          // drawn into the HDR scene (float): colours above 1 are kept
+           F_GLOW = 524288u,         // an additive effect: also adds itself (x misc.z) to the glow attachment
+           F_GLOWALPHA = 1048576u;   // ... blended SRCALPHA: its contribution is colour x alpha

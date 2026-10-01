@@ -23,7 +23,7 @@ find_program(GLSLC glslc HINTS "${VULKAN_SDK_DIR}/bin" REQUIRED)
 
 set(RVK_SHADER_OUT "${CMAKE_CURRENT_BINARY_DIR}/rvk-shaders")
 set(RVK_SHADER_INCS)
-foreach(shader ffp.vert ffp.frag shadow.vert shadow.frag fullscreen.vert tonemap.frag bloom_down.frag bloom_up.frag)
+foreach(shader ffp.vert ffp.frag ffp_glow.frag shadow.vert shadow.frag fullscreen.vert tonemap.frag bloom_down.frag bloom_up.frag)
     set(src "${CMAKE_CURRENT_SOURCE_DIR}/rvk/shaders/${shader}")
     set(out "${RVK_SHADER_OUT}/${shader}.inc")
     add_custom_command(OUTPUT "${out}"
@@ -31,6 +31,7 @@ foreach(shader ffp.vert ffp.frag shadow.vert shadow.frag fullscreen.vert tonemap
         COMMAND ${GLSLC} --target-env=vulkan1.3 -O -mfmt=num -o "${out}" "${src}"
         DEPENDS "${src}" "${CMAKE_CURRENT_SOURCE_DIR}/rvk/shaders/constants.glsl"
                 "${CMAKE_CURRENT_SOURCE_DIR}/rvk/shaders/lighting.glsl"
+                "${CMAKE_CURRENT_SOURCE_DIR}/rvk/shaders/ffp_main.glsl"
         COMMENT "glslc ${shader}")
     list(APPEND RVK_SHADER_INCS "${out}")
 endforeach()
