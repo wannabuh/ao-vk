@@ -11,7 +11,8 @@ out=$(cd "$out" && pwd)
 client=${AO_CLIENT:-$HOME/.wine-prk/drive_c/linux/client}
 # The Wine game process shows up as CrBrowserMain (CEF renames its main thread) or with a Windows path argv0;
 # don't match ao-wine.sh, whose command line also contains AnarchyOnline.exe.
-if pgrep -x CrBrowserMain >/dev/null || ps -eo args | grep -qE '^([A-Za-z]:\\[^ ]*\\)?AnarchyOnline\.exe'; then
+# A separate test client folder (AO_CLIENT, e.g. symlinks to the real one) can be used while the game runs.
+if [ -z "$AO_CLIENT" ] && { pgrep -x CrBrowserMain >/dev/null || ps -eo args | grep -qE '^([A-Za-z]:\\[^ ]*\\)?AnarchyOnline\.exe'; }; then
     echo "game is running; not touching the client folder" >&2
     exit 1
 fi

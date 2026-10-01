@@ -12,6 +12,7 @@ target_include_directories(randy31 PRIVATE proxy)
 target_compile_definitions(randy31 PRIVATE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(randy31 PRIVATE rvk user32)
 set_target_properties(randy31 PROPERTIES OUTPUT_NAME randy31 PREFIX "")
+target_link_options(randy31 PRIVATE "/MAP:${CMAKE_CURRENT_BINARY_DIR}/randy31.map")   # for profiling: function addresses
 
 # Wine-run check that every proxy export resolves to the original's address.
 add_executable(forward_check tests/forward_check.cpp)

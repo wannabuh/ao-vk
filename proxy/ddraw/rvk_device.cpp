@@ -443,7 +443,7 @@ C4 FromArgb(DWORD c) { return {((c >> 16) & 0xFF) / 255.0f, ((c >> 8) & 0xFF) / 
 C4 FromValue(const D3DCOLORVALUE& c) { return {c.r, c.g, c.b, c.a}; }
 DWORD ToArgb(C4 c)
 {
-    auto q = [](float v) { return DWORD(std::lround(std::fmin(std::fmax(v, 0.0f), 1.0f) * 255.0f)); };
+    auto q = [](float v) { return DWORD((v <= 0.0f ? 0.0f : v >= 1.0f ? 1.0f : v) * 255.0f + 0.5f); };   // lroundf is slow
     return (q(c.a) << 24) | (q(c.r) << 16) | (q(c.g) << 8) | q(c.b);
 }
 

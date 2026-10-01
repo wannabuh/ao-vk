@@ -202,6 +202,13 @@ private:
               const uint16_t* indices, uint32_t indexCount);
     void ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride);
     StateCache m_cache;
+    // The big constant block is reused while nothing that feeds it changes (m_constantsDirty) and the ring
+    // it lives in hasn't been restarted (m_ringGeneration counts restarts).
+    bool m_constantsDirty = true;
+    uint64_t m_ringGeneration = 0, m_constantsGeneration = ~0ull;
+    VkDeviceSize m_constantsOffset = 0;
+    uint32_t m_constantsFvf = ~0u;
+    uint32_t m_constantsTexMask = ~0u;
     void BeginRenderingOn(Texture* target);
     void EndRendering();
     bool EnsureDepth(uint32_t width, uint32_t height);   // grows the shared depth buffer if needed

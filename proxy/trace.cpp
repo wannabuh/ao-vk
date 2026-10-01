@@ -271,13 +271,21 @@ void Init()
 extern "C" {
 
 void* g_traceTargets[kExportCount];
+// Fast path for the thunks: while nothing is being recorded, every export except Randy_t::Flip (the frame
+// boundary) jumps straight to the original. Set once the targets are resolved; cleared while recording.
+uint32_t g_traceFastPath = 0;
+uint32_t g_traceFlipIndex = 0xFFFFFFFF;
 
 void __cdecl trace_on_call(CallFrame* f)
 {
-    static bool initialized = (Init(), true);
+    static bool initialized = [] {
+        Init();
+        for (unsigned i = 0; i < kExportCount; ++i)
+            g_traceTargets[i] = reinterpret_cast<void*>(GetProcAddress(g_orig, kExports[i].mangled));
+        g_traceFlipIndex = uint32_t(g_flip);
+        return true;
+    }();
     (void)initialized;
-    if (!g_traceTargets[f->index])
-        g_traceTargets[f->index] = reinterpret_cast<void*>(GetProcAddress(g_orig, kExports[f->index].mangled));
 
     bool flip = static_cast<int>(f->index) == g_flip;
     if (g_capture == Capture::Recording && GetCurrentThreadId() == g_captureThread) {
@@ -304,11 +312,26 @@ void __cdecl trace_on_call(CallFrame* f)
         for (unsigned i = 0; i < g_comStart.size(); ++i)
             g_comStart[i] = rvkproxy::ComCallCount(i);
     }
+    g_traceFastPath = g_capture == Capture::Idle;
 }
 
 __declspec(naked) void trace_common()
 {
     __asm {
+        // Stack: [esp] = export index, [esp+4] = caller's return address.
+        cmp g_traceFastPath, 0
+        je slow
+        push eax
+        mov eax, [esp + 4]
+        cmp eax, g_traceFlipIndex
+        je slow_pop
+        mov eax, dword ptr g_traceTargets[eax * 4]
+        mov [esp + 4], eax                      // replace the index with the original export
+        pop eax
+        ret                                     // jump there; stack is as the caller left it
+    slow_pop:
+        pop eax
+    slow:
         pushad
         push esp
         call trace_on_call

@@ -7,8 +7,14 @@ struct Light {
     vec4 spot;          // cos(theta/2), cos(phi/2)
 };
 
+// Changes on nearly every draw, so it has its own small block (binding 3); the big block below is only
+// rewritten when render state changes.
+layout(set = 0, binding = 3, std140) uniform DrawTransform {
+    mat4 world;                 // raw D3DMATRIX memory: GLSL M * v == D3D v * M
+} D;
+
 layout(set = 0, binding = 0, std140) uniform DrawConstants {
-    mat4 world, view, proj;     // raw D3DMATRIX memory: GLSL M * v == D3D v * M
+    mat4 view, proj;
     mat4 texMatrix[2];
     vec4 viewport;              // D3D viewport x, y, width, height (pixels)
     vec4 matDiffuse, matAmbient, matSpecular, matEmissive;

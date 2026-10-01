@@ -90,38 +90,57 @@ uint32_t TopologyClass(uint32_t p)
 
 void Device::SetRenderState(uint32_t state, uint32_t value)
 {
-    if (state < m_rs.size())
+    if (state < m_rs.size() && m_rs[state] != value) {
         m_rs[state] = value;
+        m_constantsDirty = true;
+    }
 }
 
 void Device::SetTextureStageState(uint32_t stage, uint32_t type, uint32_t value)
 {
     if (stage >= 2 || type >= d3d::TSS_COUNT)
         return;
+    if (m_tss[stage][type] == value && type != d3d::TSS_ADDRESS)
+        return;
     m_tss[stage][type] = value;
     if (type == d3d::TSS_ADDRESS)                      // ADDRESS sets both U and V
         m_tss[stage][d3d::TSS_ADDRESSU] = m_tss[stage][d3d::TSS_ADDRESSV] = value;
+    m_constantsDirty = true;
 }
 
 void Device::SetTransform(uint32_t type, const d3d::Matrix& m)
 {
+    // The world matrix has its own per-draw block; the others live in the cached constant block.
+    d3d::Matrix* target = nullptr;
     switch (type) {
-    case d3d::World: m_world = m; break;
-    case d3d::View: m_view = m; break;
-    case d3d::Projection: m_proj = m; break;
-    case d3d::Texture0: m_texMatrix[0] = m; break;
-    case d3d::Texture1: m_texMatrix[1] = m; break;
-    default: break;
+    case d3d::World: m_world = m; return;
+    case d3d::View: target = &m_view; break;
+    case d3d::Projection: target = &m_proj; break;
+    case d3d::Texture0: target = &m_texMatrix[0]; break;
+    case d3d::Texture1: target = &m_texMatrix[1]; break;
+    default: return;
+    }
+    if (std::memcmp(target, &m, sizeof(m)) != 0) {
+        *target = m;
+        m_constantsDirty = true;
     }
 }
 
-void Device::SetMaterial(const d3d::Material& m) { m_material = m; }
+void Device::SetMaterial(const d3d::Material& m)
+{
+    if (std::memcmp(&m_material, &m, sizeof(m)) != 0) {
+        m_material = m;
+        m_constantsDirty = true;
+    }
+}
 
 void Device::SetLight(uint32_t index, const d3d::Light& light)
 {
     if (index >= m_lights.size())
         m_lights.resize(index + 1);
     m_lights[index].light = light;
+    if (m_lights[index].enabled)
+        m_constantsDirty = true;
     m_lights[index].cosHalfTheta = std::cos(light.theta * 0.5f);
     m_lights[index].cosHalfPhi = std::cos(light.phi * 0.5f);
 }
@@ -130,7 +149,10 @@ void Device::LightEnable(uint32_t index, bool enable)
 {
     if (index >= m_lights.size())
         m_lights.resize(index + 1);
-    m_lights[index].enabled = enable;
+    if (m_lights[index].enabled != enable) {
+        m_lights[index].enabled = enable;
+        m_constantsDirty = true;
+    }
 }
 
 void Device::SetTexture(uint32_t stage, Texture* texture)
@@ -139,7 +161,13 @@ void Device::SetTexture(uint32_t stage, Texture* texture)
         m_textures[stage] = texture == m_target ? nullptr : texture;
 }
 
-void Device::SetViewport(const d3d::Viewport& vp) { m_viewport = vp; }
+void Device::SetViewport(const d3d::Viewport& vp)
+{
+    if (std::memcmp(&m_viewport, &vp, sizeof(vp)) != 0) {
+        m_viewport = vp;
+        m_constantsDirty = true;
+    }
+}
 
 void Device::Clear(uint32_t flags, uint32_t argb, float z)
 {
@@ -375,14 +403,28 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     }
 
     // Everything this draw puts in the ring buffer, reserved together so a flush can't split it.
-    EnsureRingSpace(sizeof(DrawConstants) + VkDeviceSize(layout.stride) * vertexCount + VkDeviceSize(indexCount) * 2 +
-                    m_props.limits.minUniformBufferOffsetAlignment + layout.stride + 32);
+    const VkDeviceSize uboAlign = m_props.limits.minUniformBufferOffsetAlignment;
+    EnsureRingSpace(sizeof(DrawConstants) + sizeof(DrawTransform) + VkDeviceSize(layout.stride) * vertexCount +
+                    VkDeviceSize(indexCount) * 2 + 2 * uboAlign + layout.stride + 32);
 
-    // Per-draw constants.
+    // Per-draw world matrix (small block).
     void* cpu;
-    VkDeviceSize uboOffset = Allocate(sizeof(DrawConstants), m_props.limits.minUniformBufferOffsetAlignment, &cpu);
+    VkDeviceSize transformOffset = Allocate(sizeof(DrawTransform), uboAlign, &cpu);
+    std::memcpy(cpu, &m_world, sizeof(m_world));
+
+    // The big constant block: reused unless something feeding it changed since it was written.
+    uint32_t texMask = (m_textures[0] ? 1u : 0u) | (m_textures[1] ? 2u : 0u);
+    bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
+                   m_constantsTexMask != texMask;
+    VkDeviceSize uboOffset = m_constantsOffset;
+    if (rewrite) {
+    uboOffset = Allocate(sizeof(DrawConstants), uboAlign, &cpu);
+    m_constantsOffset = uboOffset;
+    m_constantsGeneration = m_ringGeneration;   // after Allocate: a wrap would bump the generation
+    m_constantsDirty = false;
+    m_constantsFvf = fvf;
+    m_constantsTexMask = texMask;
     auto* c = static_cast<DrawConstants*>(cpu);
-    c->world = m_world;
     c->view = m_view;
     c->proj = m_proj;
     c->texMatrix[0] = m_texMatrix[0];
@@ -467,6 +509,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         }
     c->lightInfo[0] = lightCount;
     c->lightInfo[1] = c->lightInfo[2] = c->lightInfo[3] = 0;
+    }
 
     // Geometry: vertices aligned to their stride and indices to 2 bytes, so the draw can address them inside
     // the ring buffer bound once (vertexOffset / firstIndex) instead of rebinding buffers per draw.
@@ -482,13 +525,14 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     ApplyDynamicState(primitive, fvf, layout.stride);
 
     VkDescriptorBufferInfo ubo{f.ring, uboOffset, sizeof(DrawConstants)};
+    VkDescriptorBufferInfo transform{f.ring, transformOffset, sizeof(DrawTransform)};
     VkDescriptorImageInfo images[2];
     for (uint32_t s = 0; s < 2; ++s) {
         Texture* t = m_textures[s] ? m_textures[s] : m_blackTexture;
         images[s] = {SamplerFor(s), t->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     }
-    VkWriteDescriptorSet writes[3] = {};
-    for (int i = 0; i < 3; ++i) {
+    VkWriteDescriptorSet writes[4] = {};
+    for (int i = 0; i < 4; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstBinding = uint32_t(i);
         writes[i].descriptorCount = 1;
@@ -498,7 +542,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[1].descriptorType = writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].pImageInfo = &images[0];
     writes[2].pImageInfo = &images[1];
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 3, writes);
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[3].pBufferInfo = &transform;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 4, writes);
 
     if (indices)
         vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);

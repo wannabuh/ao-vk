@@ -11,7 +11,7 @@
 namespace rvkproxy {
 namespace {
 
-std::atomic<uint32_t>* g_counts;                 // allocated once kComMethodCount is known
+uint32_t* g_counts;                              // allocated once kComMethodCount is known (plain: counts are statistics)
 std::mutex g_mutex;
 std::unordered_map<void*, void*> g_realToWrapper;
 std::unordered_set<const void*> g_wrappers;
@@ -33,7 +33,7 @@ void LogLine(const char* fmt, ...)
 
 }  // namespace
 
-void CountComCall(unsigned index) { g_counts[index].fetch_add(1, std::memory_order_relaxed); }
+void CountComCall(unsigned index) { ++g_counts[index]; }
 
 void* LookupWrapper(void* real)
 {
@@ -294,7 +294,7 @@ const char* ComMethodName(unsigned index)
 
 uint32_t ComCallCount(unsigned index)
 {
-    return g_counts && index < ComMethodCount() ? g_counts[index].load(std::memory_order_relaxed) : 0;
+    return g_counts && index < ComMethodCount() ? g_counts[index] : 0;
 }
 
 bool ComTraceActive() { return g_active; }
@@ -306,7 +306,7 @@ bool InstallDDrawHooks(HMODULE randyOrig)
     bool rvkMode = _stricmp(mode, "rvk") == 0;
     if (_stricmp(mode, "trace") != 0 && !rvkMode)
         return false;
-    g_counts = new std::atomic<uint32_t>[ComMethodCount()]();
+    g_counts = new uint32_t[ComMethodCount()]();
     g_createExIndex = kComMethodCount;
     g_enumerateIndex = kComMethodCount + 1;
     if (rvkMode) {

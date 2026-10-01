@@ -82,11 +82,11 @@ void main()
         vFogDist = inPos.z;
         vFogFactor = specular.a;          // pre-transformed vertices carry their fog factor in specular alpha
     } else {
-        vec4 posW = C.world * vec4(inPos.xyz, 1.0);
+        vec4 posW = D.world * vec4(inPos.xyz, 1.0);
         vec4 pv = C.view * posW;
         gl_Position = C.proj * pv;
         posV = pv.xyz;
-        vec3 normalW = mat3(C.world) * (hasNormal ? inNormal : vec3(0.0));
+        vec3 normalW = mat3(D.world) * (hasNormal ? inNormal : vec3(0.0));
         if ((C.flags.x & F_NORMALIZE) != 0u && dot(normalW, normalW) > 0.0)
             normalW = normalize(normalW);
         normalV = mat3(C.view) * normalW;

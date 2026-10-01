@@ -552,14 +552,15 @@ void Device::DestroySwapchain()
 
 bool Device::CreatePipelines(std::string* error)
 {
-    VkDescriptorSetLayoutBinding bindings[3] = {
+    VkDescriptorSetLayoutBinding bindings[4] = {
         {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
     };
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 3;
+    sl.bindingCount = 4;
     sl.pBindings = bindings;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_setLayout), "vkCreateDescriptorSetLayout", error))
         return false;
@@ -701,10 +702,13 @@ bool Device::CreateFrames(std::string* error)
 VkDeviceSize Device::Allocate(VkDeviceSize size, VkDeviceSize alignment, void** cpu)
 {
     Frame& f = m_frames[m_frameIndex];
-    VkDeviceSize offset = (f.ringOffset + alignment - 1) / alignment * alignment;   // any alignment (vertex strides)
+    // Any alignment (vertex strides); 32-bit math, the ring is far below 4 GB (64-bit division is a libcall on x86).
+    uint32_t a = uint32_t(alignment), o = uint32_t(f.ringOffset);
+    VkDeviceSize offset = (o + a - 1) / a * a;
     if (offset + size > kRingSize) {
         Log("per-frame ring buffer full (%llu bytes)\n", (unsigned long long)kRingSize);
         offset = 0;     // overwrites this frame's data; visible corruption rather than a crash
+        ++m_ringGeneration;
     }
     f.ringOffset = offset + size;
     *cpu = f.ringData + offset;
@@ -781,6 +785,7 @@ void Device::EnsureRingSpace(VkDeviceSize bytes)
         WaitFrame(f, "GPU frame work");
     }
     f.ringOffset = 0;
+    ++m_ringGeneration;
 }
 
 VkCommandBuffer Device::UploadCommands()
@@ -871,6 +876,7 @@ void Device::SetRenderTarget(Texture* target)
     for (auto& t : m_textures)                  // a texture can't be sampled while it is being drawn into
         if (t == target) t = nullptr;
     m_viewport = {0, 0, target->m_width, target->m_height, 0.0f, 1.0f};
+    m_constantsDirty = true;
 }
 
 void Device::BeginFrame()
@@ -890,6 +896,7 @@ void Device::BeginFrame()
     CollectGarbage();
     if (!uploadsPending)
         f.ringOffset = 0;
+    ++m_ringGeneration;                          // a different slot's ring: cached offsets are invalid
 
     VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     b.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

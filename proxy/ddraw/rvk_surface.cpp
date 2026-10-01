@@ -220,11 +220,14 @@ rvk::Texture* RSurface::RvkTexture()
     if (!t->texture) {
         t->texture = dev->CreateTexture(t->desc.dwWidth, t->desc.dwHeight, t->format, t->levels);
         for (RSurface* l = t; l; l = l->nextLevel)
-            l->dirty = !l->shadow.empty();
+            t->anyDirty |= (l->dirty = !l->shadow.empty());
     }
-    for (RSurface* l = t; l; l = l->nextLevel)
-        if (l->dirty)
-            l->Upload();
+    if (t->anyDirty) {                             // SetTexture is hot: walk the chain only when needed
+        t->anyDirty = false;
+        for (RSurface* l = t; l; l = l->nextLevel)
+            if (l->dirty)
+                l->Upload();
+    }
     return t->texture;
 }
 
@@ -236,6 +239,7 @@ void RSurface::Upload()
     RSurface* t = top;
     if (!dev || shadow.empty()) {
         dirty = !shadow.empty();
+        t->anyDirty |= dirty;
         return;
     }
     if (!t->texture) {

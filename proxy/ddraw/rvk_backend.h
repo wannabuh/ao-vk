@@ -149,6 +149,7 @@ public:
     RSurface* nextLevel = nullptr;                 // owned by level 0
     std::vector<uint8_t> shadow;                   // CPU copy of this level (textures, plain surfaces)
     bool dirty = false;                            // shadow newer than the GPU copy
+    bool anyDirty = false;                         // level 0 only: some level of the chain is dirty
 
     RSurface* depth = nullptr;                     // attached z-buffer
     RClipper* clipper = nullptr;
