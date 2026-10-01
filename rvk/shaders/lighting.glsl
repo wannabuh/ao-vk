@@ -42,13 +42,14 @@ void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScal
     }
 }
 
+// The frame lights (light override) go to diffLocal / specLocal, so they can light beyond the game's clamp.
 void AccumulateLights(vec3 posW, vec3 normalW, float sunScale, float localScale, inout vec3 ambient, inout vec3 diff,
-                      inout vec3 spec)
+                      inout vec3 spec, inout vec3 diffLocal, inout vec3 specLocal)
 {
     vec3 toEye = (C.flags.x & F_LOCALVIEWER) != 0u ? normalize(C.eyePos.xyz - posW) : -C.eyeDir.xyz;
     for (uint i = 0u; i < C.lightInfo.x; ++i)
         AccumulateLight(C.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diff, spec);
     if ((C.flags.x & F_LIGHTOVERRIDE) != 0u)
         for (uint i = 0u; i < FL.info.x; ++i)
-            AccumulateLight(FL.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diff, spec);
+            AccumulateLight(FL.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diffLocal, specLocal);
 }

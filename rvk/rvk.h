@@ -140,6 +140,12 @@ public:
     // around a light, so its shadows only show where the sun's are (they'd look cut off there); they fade instead.
     void SetPointShadowStrength(float strength, float dayFactor) { m_pointShadowStrength = strength; m_pointShadowDay = dayFactor; }
     static constexpr uint32_t kMaxPointShadows = 4;
+    // Enhancement, with the light override: how bright the frame's lights may make a surface (1 = D3D's clamp, up to
+    // 2). The game's own lighting stays clamped at 1; local lights add on top of it, so they (and their shadows) show
+    // on surfaces the sun already lights fully.
+    void SetLightHeadroom(float headroom) { headroom = headroom < 1.0f ? 1.0f : headroom > 2.0f ? 2.0f : headroom;
+                                            if (m_lightHeadroom != headroom) { m_lightHeadroom = headroom; m_constantsDirty = true; m_frameLightsDirty = true; } }
+    float LightHeadroom() const { return m_lightHeadroom; }
     void SetTexture(uint32_t stage, Texture* texture);
     // Null = the main target. Like D3D, resets the viewport to the whole target.
     void SetRenderTarget(Texture* target);
@@ -241,6 +247,9 @@ private:
     // it lives in hasn't been restarted (m_ringGeneration counts restarts).
     bool m_constantsDirty = true;
     bool m_pixelLighting = false, m_lightingDebug = false, m_lightOverride = false;
+    float m_lightHeadroom = 1.0f;
+    bool m_drawOverbright2x = false;              // the current draw is blended at 2x (F_OVERBRIGHT2X)
+    bool Overbright2x(uint32_t fvf) const;
     uint64_t m_frameNumber = 0;
     bool m_frameLightsDirty = true;
     bool m_frameEyeValid = false;                // the camera the frame's light list is chosen from

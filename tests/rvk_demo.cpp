@@ -1119,6 +1119,7 @@ int main(int argc, char** argv)
     bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false, pointShadowTest = false, pointShadowSun = false;
     int cacheTest = 0, frameMs = 0;
     uint32_t pointShadows = 4;
+    float headroom = 1.0f;
     int bench = 0;
     int frames = 3;
     std::string shot = "rvk_demo.bmp", dump;
@@ -1140,6 +1141,7 @@ int main(int argc, char** argv)
         else if (a == "--bench" && i + 1 < argc) bench = std::atoi(argv[++i]);
         else if (a == "--game-ms" && i + 1 < argc) g_benchGameMs = std::atof(argv[++i]);
         else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
+        else if (a == "--light-headroom" && i + 1 < argc) headroom = float(std::atof(argv[++i]));
         else if (a == "--point-shadows" && i + 1 < argc) pointShadows = uint32_t(std::atoi(argv[++i]));
         else if (a == "--shot" && i + 1 < argc) shot = argv[++i];
     }
@@ -1168,6 +1170,7 @@ int main(int argc, char** argv)
     dev.SetLightingDebug(lightingDebug);
     dev.SetLightOverride(lightOverride);
     dev.SetShadows(shadows);
+    dev.SetLightHeadroom(headroom);
     if (pointShadowTest) {               // needs per-pixel lighting with the light override
         dev.SetPixelLighting(true);
         dev.SetLightOverride(true);

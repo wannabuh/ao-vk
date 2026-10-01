@@ -40,7 +40,7 @@ layout(set = 0, binding = 4, std140) uniform FrameLights {
     uvec4 info;                 // count
     mat4 shadowViewProj;        // world -> shadow map (raw D3DMATRIX memory)
     vec4 shadowParams;          // enabled, strength, texel size (world units), point light shadow strength
-    vec4 sunDir;                // direction the sunlight travels
+    vec4 sunDir;                // direction the sunlight travels; w = light headroom (F_OVERBRIGHT)
     Light lights[64];
 } FL;
 
@@ -51,4 +51,6 @@ const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8
            F_LIGHTOVERRIDE = 4096u, // point / spot lights come from FL (the frame's nearest lights), not C.lights
            F_SHADOW = 8192u,        // receives sun shadows (FL.shadow*, shadow map at binding 5)
            F_SHADOWCOMP = 16384u,   // multiplies a shadowed surface: local lights divided by its shadow factor
-           F_SHADOWTEX = 32768u;    // the shadow darkens texture stage 0 (the ground's lightmap) only
+           F_SHADOWTEX = 32768u,    // the shadow darkens texture stage 0 (the ground's lightmap) only
+           F_OVERBRIGHT = 65536u,   // frame lights may light beyond the game's clamp, up to FL.sunDir.w
+           F_OVERBRIGHT2X = 131072u; // multiplying pass blended at 2x (DESTCOLOR/SRCCOLOR): output halved, up to 2

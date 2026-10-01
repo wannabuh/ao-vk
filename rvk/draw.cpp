@@ -49,6 +49,8 @@ float AsFloat(uint32_t v)
     return f;
 }
 
+constexpr uint32_t kBlendOverbright2x = 0x10000;   // pseudo D3D blend value: see Device::Overbright2x
+
 VkBlendFactor BlendFactor(uint32_t b)
 {
     switch (b) {
@@ -259,7 +261,7 @@ VkDeviceSize Device::WriteFrameLights()
     fl->shadowParams[2] = 2.0f * m_shadowRange / float(kShadowSize);
     fl->shadowParams[3] = PointShadowStrength();
     fl->sunDir[0] = m_shadowSunDir[0]; fl->sunDir[1] = m_shadowSunDir[1]; fl->sunDir[2] = m_shadowSunDir[2];
-    fl->sunDir[3] = 0.0f;
+    fl->sunDir[3] = m_lightHeadroom;
     for (uint32_t k = 0; k < used; ++k) {
         const CapturedLight& c = m_lightsPrev[candidates[k].index];
         FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k]);
@@ -275,6 +277,14 @@ VkDeviceSize Device::WriteFrameLights()
         std::fprintf(m_dumpFile, "\n");
     }
     return offset;
+}
+
+// A multiplying pass (the ground's lightmap + lights) lit by the frame lights with headroom: it outputs half its
+// colour and is blended at 2x, so the lights can brighten the surface under it beyond the texture.
+bool Device::Overbright2x(uint32_t fvf) const
+{
+    return m_lightHeadroom > 1.0f && m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
+           (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW && IsMultiplyPass();
 }
 
 void Device::SetTexture(uint32_t stage, Texture* texture)
@@ -456,6 +466,7 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
         c.blendEnable = blend;
     }
     uint32_t src = m_rs[d3d::RS_SRCBLEND], dst = m_rs[d3d::RS_DESTBLEND];
+    if (m_drawOverbright2x) { src = kBlendOverbright2x; dst = kBlendOverbright2x; }
     if (src == d3d::BLEND_BOTHSRCALPHA) { src = d3d::BLEND_SRCALPHA; dst = d3d::BLEND_INVSRCALPHA; }
     if (src == d3d::BLEND_BOTHINVSRCALPHA) { src = d3d::BLEND_INVSRCALPHA; dst = d3d::BLEND_SRCALPHA; }
     // The equation only matters while blending, but Vulkan wants it set once per command buffer regardless.
@@ -463,6 +474,13 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
         VkColorBlendEquationEXT eq{};
         eq.srcColorBlendFactor = eq.srcAlphaBlendFactor = BlendFactor(src);
         eq.dstColorBlendFactor = eq.dstAlphaBlendFactor = BlendFactor(dst);
+        if (src == kBlendOverbright2x) {
+            // dst * src * 2 from a halved src: src * dst + dst * src. Alpha as the game's multiply: dst * src.
+            eq.srcColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
+            eq.dstColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR;
+            eq.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+            eq.dstAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        }
         eq.colorBlendOp = eq.alphaBlendOp = VK_BLEND_OP_ADD;
         vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &eq);
         c.src = src;
@@ -608,6 +626,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_lightingDebug) flags |= F_DEBUGLIGHT;
     bool override = (flags & F_PERPIXEL) && m_lightOverride;
     if (override) flags |= F_LIGHTOVERRIDE;
+    if (override && m_lightHeadroom > 1.0f) flags |= F_OVERBRIGHT;
+    if (Overbright2x(fvf)) flags |= F_OVERBRIGHT2X;
     if (ShadowReceiver(fvf)) flags |= F_SHADOW;
     else if (ShadowInLightmap(fvf)) flags |= F_SHADOWTEX;
     else if (ShadowCompensated(fvf)) flags |= F_SHADOWCOMP;
@@ -672,6 +692,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 
     RecordShadowCaster(primitive, fvf, layout.stride, vertices, vertexCount, vbOffset, indices, indices ? indexCount : 0,
                        ibOffset);
+    m_drawOverbright2x = Overbright2x(fvf);
     ApplyDynamicState(primitive, fvf, layout.stride);
 
     VkDescriptorBufferInfo ubo{f.ring, uboOffset, sizeof(DrawConstants)};

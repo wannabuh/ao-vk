@@ -95,6 +95,9 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     GetEnvironmentVariableA("RANDYVK_POINT_SHADOW_DAY", pointDay, sizeof(pointDay));
     device->SetPointShadows(uint32_t(std::max(0, std::atoi(pointShadows))));
     device->SetPointShadowStrength(float(std::atof(pointStrength)), float(std::atof(pointDay)));
+    char headroom[16] = "1.5";
+    GetEnvironmentVariableA("RANDYVK_LIGHT_HEADROOM", headroom, sizeof(headroom));
+    device->SetLightHeadroom(float(std::atof(headroom)));
     gpuName = device->Info().gpu;
     RvkLog("rvk device %ux%u on %s (window %p, %s, %s lighting)", width, height, gpuName.c_str(), (void*)window,
            device->Threaded() ? "worker thread" : "calling thread", device->PixelLighting() ? "per-pixel" : "per-vertex");
@@ -102,6 +105,7 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     RvkLog("rvk sun shadows: %s (strength %s, range %s)", device->Shadows() ? "on" : "off", strength, range);
     RvkLog("rvk point light shadows: %u lights (strength %s, x%s in daylight; needs per-pixel lighting + light override)",
            device->PointShadows(), pointStrength, pointDay);
+    RvkLog("rvk light headroom (local lights above the game's clamp): %s", headroom);
     return true;
 }
 

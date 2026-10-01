@@ -66,6 +66,7 @@ public:
     void SetPointShadows(uint32_t count);
     uint32_t PointShadows() const { return m_pointShadows; }
     void SetPointShadowStrength(float strength, float dayFactor);
+    void SetLightHeadroom(float headroom);
     void SetTexture(uint32_t stage, Texture* texture);
     void SetRenderTarget(Texture* target);
     Texture* GetRenderTarget() const { return m_target; }

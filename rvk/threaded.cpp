@@ -339,6 +339,11 @@ void ThreadedDevice::SetPointShadowStrength(float strength, float dayFactor)
     Enqueue([this, strength, dayFactor](const uint8_t*) { m_device.SetPointShadowStrength(strength, dayFactor); });
 }
 
+void ThreadedDevice::SetLightHeadroom(float headroom)
+{
+    Enqueue([this, headroom](const uint8_t*) { m_device.SetLightHeadroom(headroom); });
+}
+
 void ThreadedDevice::SetTexture(uint32_t stage, Texture* texture)
 {
     Enqueue([this, stage, texture](const uint8_t*) { m_device.SetTexture(stage, texture); });

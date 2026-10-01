@@ -116,8 +116,10 @@ void main()
                 diffuse = mDiffuse;
                 specular = vec4(mSpecular.rgb, specular.a);
             } else {
-                vec3 ambient = C.ambient.rgb, diff = vec3(0.0), spec = vec3(0.0);
-                AccumulateLights(posW.xyz, normalW, 1.0, 1.0, ambient, diff, spec);
+                vec3 ambient = C.ambient.rgb, diff = vec3(0.0), spec = vec3(0.0), diffL = vec3(0.0), specL = vec3(0.0);
+                AccumulateLights(posW.xyz, normalW, 1.0, 1.0, ambient, diff, spec, diffL, specL);
+                diff += diffL;
+                spec += specL;
                 diffuse = vec4(mEmissive.rgb + mAmbient.rgb * ambient + mDiffuse.rgb * diff, mDiffuse.a);
                 specular = vec4(mSpecular.rgb * spec, specular.a);
             }

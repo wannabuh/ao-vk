@@ -50,6 +50,8 @@ layout(location = 9) in vec4 vNormalW;
 
 // Lit vertex colours: the interpolated ones, or computed here for per-pixel lighting.
 vec4 gDiffuse, gSpecular;
+// F_OVERBRIGHT: the frame lights' part, kept out of gDiffuse / gSpecular (and the game's clamp).
+vec3 gLocalDiffuse = vec3(0.0), gLocalSpecular = vec3(0.0);
 
 layout(location = 0) out vec4 outColor;
 
@@ -121,6 +123,25 @@ float SunVisibility(vec3 posW, vec3 n)
     return mix(sum / 9.0, 1.0, smoothstep(0.8, 1.0, edge));   // fade out towards the map's edge
 }
 
+// D3D's texture stages (and specular add) on gDiffuse / gSpecular. maxColor: the stages' clamp (1 = D3D).
+vec4 Cascade(vec4 t0, vec4 t1, float maxColor)
+{
+    vec4 current = gDiffuse;
+    for (uint s = 0u; s < 2u; ++s) {
+        uint colorOp = C.stageA[s].x;
+        if (colorOp == 1u) break;                         // DISABLE ends the cascade
+        vec4 tex = s == 0u ? t0 : t1;
+        vec3 rgb = Op(colorOp, Arg(C.stageA[s].y, current, tex), Arg(C.stageA[s].z, current, tex), current, tex).rgb;
+        uint alphaOp = C.stageA[s].w;
+        float a = alphaOp == 1u ? current.a
+                : Op(alphaOp, Arg(C.stageB[s].x, current, tex), Arg(C.stageB[s].y, current, tex), current, tex).a;
+        current = vec4(clamp(rgb, 0.0, maxColor), clamp(a, 0.0, 1.0));
+    }
+    if ((C.flags.x & F_SPECULAR) != 0u)
+        current.rgb = min(current.rgb + gSpecular.rgb, maxColor);
+    return current;
+}
+
 bool AlphaPass(float a)
 {
     float a8 = floor(a * 255.0 + 0.5), ref = C.misc.y;
@@ -159,30 +180,44 @@ void main()
         vec3 n = vNormalW.xyz;
         float len2 = dot(n, n);
         n = len2 > 0.0 ? n * (vNormalW.w * inversesqrt(len2)) : vec3(0.0);
-        vec3 ambient = vec3(0.0), diff = vec3(0.0), spec = vec3(0.0);
+        vec3 ambient = vec3(0.0), diff = vec3(0.0), spec = vec3(0.0), diffL = vec3(0.0), specL = vec3(0.0);
         // Sunlight is shadowed: by the receiver's shade, or in the ground's lighting pass by the lightmap's.
         float sunScale = (C.flags.x & F_SHADOWTEX) != 0u ? texShade : shadeSun ? shade : 1.0;
-        AccumulateLights(vPosW, n, sunScale, localScale, ambient, diff, spec);
+        AccumulateLights(vPosW, n, sunScale, localScale, ambient, diff, spec, diffL, specL);
         // The ground's lighting pass (F_SHADOWTEX): the shadow takes the global ambient and emissive part along
         // with the lightmap, leaving only the lights' own contribution: (lightmap + ambient) * shadow + lights.
         vec3 base = (vMatEmissive + vMatAmbient * C.ambient.rgb) * texShade;
-        gDiffuse = clamp(vec4(base + vMatAmbient * ambient + vDiffuse.rgb * diff, vDiffuse.a), 0.0, 1.0);
-        gSpecular = clamp(vec4(vSpecular.rgb * spec, vSpecular.a), 0.0, 1.0);
+        vec3 lit = base + vMatAmbient * ambient + vDiffuse.rgb * diff, litSpec = vSpecular.rgb * spec;
+        vec3 local = vDiffuse.rgb * diffL, localSpec = vSpecular.rgb * specL;
+        if ((C.flags.x & F_OVERBRIGHT) != 0u) {
+            // The game's lighting is clamped as D3D does; the frame lights add on top, up to the headroom. Under a
+            // bright sun a surface is already near 1, and a light (and its shadow) would otherwise barely show on
+            // surfaces facing the sun while those facing away light up a lot.
+            gDiffuse = clamp(vec4(lit, vDiffuse.a), 0.0, 1.0);
+            gSpecular = clamp(vec4(litSpec, vSpecular.a), 0.0, 1.0);
+            gLocalDiffuse = clamp(local, vec3(0.0), FL.sunDir.w - gDiffuse.rgb);
+            gLocalSpecular = clamp(localSpec, vec3(0.0), FL.sunDir.w - gSpecular.rgb);
+        } else {
+            gDiffuse = clamp(vec4(lit + local, vDiffuse.a), 0.0, 1.0);
+            gSpecular = clamp(vec4(litSpec + localSpec, vSpecular.a), 0.0, 1.0);
+        }
     }
-    vec4 current = gDiffuse;
-    for (uint s = 0u; s < 2u; ++s) {
-        uint colorOp = C.stageA[s].x;
-        if (colorOp == 1u) break;                         // DISABLE ends the cascade
-        vec4 tex = Sample(s);
-        if (s == 0u) tex.rgb *= texShade;
-        vec3 rgb = Op(colorOp, Arg(C.stageA[s].y, current, tex), Arg(C.stageA[s].z, current, tex), current, tex).rgb;
-        uint alphaOp = C.stageA[s].w;
-        float a = alphaOp == 1u ? current.a
-                : Op(alphaOp, Arg(C.stageB[s].x, current, tex), Arg(C.stageB[s].y, current, tex), current, tex).a;
-        current = clamp(vec4(rgb, a), 0.0, 1.0);
+    vec4 t0 = Sample(0u), t1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
+    t0.rgb *= texShade;
+    vec4 current = Cascade(t0, t1, 1.0);
+    if (any(greaterThan(gLocalDiffuse + gLocalSpecular, vec3(0.0)))) {
+        // What the frame lights add through the stages (with and without them, unclamped), on top of the
+        // D3D result: identical to it wherever that didn't clip.
+        vec4 d = gDiffuse, sp = gSpecular;
+        vec4 without = Cascade(t0, t1, 1e4);
+        gDiffuse.rgb += gLocalDiffuse;
+        gSpecular.rgb += gLocalSpecular;
+        vec4 with = Cascade(t0, t1, 1e4);
+        gDiffuse = d;
+        gSpecular = sp;
+        float maxColor = (C.flags.x & F_OVERBRIGHT2X) != 0u ? FL.sunDir.w : 1.0;
+        current.rgb = min(current.rgb + max(with.rgb - without.rgb, 0.0), vec3(maxColor));
     }
-    if ((C.flags.x & F_SPECULAR) != 0u)
-        current.rgb = min(current.rgb + gSpecular.rgb, 1.0);
     if (!shadeSun)
         current.rgb *= shade;
     if ((C.flags.x & F_FOG) != 0u) {
@@ -205,5 +240,7 @@ void main()
     }
     if ((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(current.a))
         discard;
+    if ((C.flags.x & F_OVERBRIGHT2X) != 0u)
+        current.rgb *= 0.5;                               // blended as dst * src * 2
     outColor = current;
 }
