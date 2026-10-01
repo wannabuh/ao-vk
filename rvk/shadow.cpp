@@ -323,9 +323,9 @@ void Device::ShadowCutout(uint32_t fvf, Texture** texture, int* texOffset, float
     *alphaRef = alphaBlend ? std::max(ref, 0.5f) : ref;
 }
 
-// Identity of a caster across frames: mesh structure (format, counts, indices), placement (world matrix), cut-out
-// texture and its bounds rounded to 4 units - but not the exact vertices, so plants swaying in the wind (whose
-// vertices change every frame) are still the same caster.
+// Identity of a caster across frames: mesh structure (format, counts, indices), where it stands, cut-out texture
+// and its bounds rounded to 4 units - but not the exact vertices or world matrix, so plants swaying in the wind
+// (by vertices or by a tilting world matrix) are still the same caster.
 uint64_t Device::CasterKey(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
                            const uint16_t* indices, uint32_t indexCount) const
 {
@@ -348,7 +348,11 @@ uint64_t Device::CasterKey(uint32_t primitive, uint32_t fvf, uint32_t stride, co
     key = HashBytes(bounds, sizeof(bounds), key);
     if (indexCount)
         key = HashBytes(indices, size_t(indexCount) * 2, key ^ indexCount);
-    key = HashBytes(&m_world, sizeof(m_world), key);
+    // Placement: where it stands (translation, to a quarter unit), not the exact matrix - plants sway by tilting
+    // their world matrix a little every frame.
+    int32_t at[3] = {int32_t(std::floor(m_world.m[3][0] * 4.0f)), int32_t(std::floor(m_world.m[3][1] * 4.0f)),
+                     int32_t(std::floor(m_world.m[3][2] * 4.0f))};
+    key = HashBytes(at, sizeof(at), key);
     return HashBytes(&texture, sizeof(texture), key ^ uint64_t(texOffset + 1));
 }
 
