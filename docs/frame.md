@@ -133,9 +133,21 @@ object (0x298 bytes) is built by `FUN_10043365`. Errors go through `fun::DXError
 - The scene graph, render lists and visual classes can stay as they are at first. Native passes
   (shadow maps, G-buffer) are added by walking the same `g_renderLists` with our own pass code.
 
+## Measured in game (frame inspector, 2026-10-01, busy outdoor scene, default settings)
+
+- The pass sequence used is the direct one: `SetRenderTarget(0)` (back buffer), Clear, lists 0-2, 3-4
+  (front to back), 5-6 (back to front), 7 (flags 0xC). No offscreen / refraction targets: Randy's two
+  render-target textures exist but are 8x8 placeholders with these settings.
+- List contents: 0 = sky/environment (clouds, sun rays, GenericMeshObject_t/GenericVisualObject_t,
+  VisualFillSquare_t), 1 = AnarchyGround_t (terrain), 2 = 48 GfxVisualSimpleShadow_c (blob shadows),
+  3 = 46 RCATMesh_t (characters) + 448 RTriMesh_t (static world meshes) + 12 GenericMeshObject_t,
+  4 = VisualLiquid_t (water, uses ProcessVertices for screen-space texture coordinates), 5 = booster/ship
+  lights, 6 = transparent effects and fading meshes (RTriMesh_t, sprites, flares, a fading RCATMesh_t).
+- GUI.dll draws the whole UI after list 7 and before `RViewPort_t::Close`: ~1150 draw calls
+  (`RenderTriangleList` from vertex buffers, fans for round widgets).
+- FXS.dll draws a few primitives at the start of list 0-2 rendering.
+
 ## Open questions
 
-- Where GUI.dll draws the UI relative to this sequence (who calls `WindowController_c::Render`).
 - What the other three pass sequences are for (`Randy_t+0x288` values; probably quality settings / no
   offscreen support).
-- Where characters (`RCATMesh_t`) sit: Gamecode list 3 sites are the likely candidates.
