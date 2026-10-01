@@ -330,6 +330,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         BeginRenderingOn(m_target);
     }
 
+    // Everything this draw puts in the ring buffer, reserved together so a flush can't split it.
+    EnsureRingSpace(sizeof(DrawConstants) + VkDeviceSize(layout.stride) * vertexCount + VkDeviceSize(indexCount) * 2 +
+                    m_props.limits.minUniformBufferOffsetAlignment + 32);
+
     // Per-draw constants.
     void* cpu;
     VkDeviceSize uboOffset = Allocate(sizeof(DrawConstants), m_props.limits.minUniformBufferOffsetAlignment, &cpu);

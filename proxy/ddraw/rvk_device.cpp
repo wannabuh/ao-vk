@@ -1,6 +1,7 @@
 // rvk backend: IDirect3DDevice7 and IDirect3DVertexBuffer7.
 #include "rvk_backend.h"
 
+#include <cmath>
 #include <cstring>
 
 namespace rvkproxy {
@@ -375,6 +376,186 @@ HRESULT RVertexBuffer::DoGetVertexBufferDesc(LPD3DVERTEXBUFFERDESC out)
     if (!out) return DDERR_INVALIDPARAMS;
     *out = desc;
     return D3D_OK;
+}
+
+}  // namespace rvkproxy
+
+// ---------------------------------------------------------------------------------------------------
+// Software vertex processing: D3D7 ProcessVertices with D3DVOP_TRANSFORM [| LIGHT | CLIP | EXTENTS].
+// Clip codes and extents are not kept (nothing in the client reads them back).
+
+namespace rvkproxy {
+
+namespace {
+
+struct Fvf {
+    uint32_t stride = 0;
+    int pos = 0, normal = -1, diffuse = -1, specular = -1;
+    bool rhw = false;
+    int tex[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    uint32_t texSize[8] = {};                        // floats per set
+    uint32_t texCount = 0;
+};
+
+Fvf DecodeFvf(DWORD fvf)
+{
+    Fvf f;
+    DWORD position = fvf & D3DFVF_POSITION_MASK;
+    f.rhw = position == D3DFVF_XYZRHW;
+    f.stride = f.rhw ? 16 : 12 + (position >= D3DFVF_XYZB1 ? ((position - D3DFVF_XYZRHW) / 2) * 4 : 0);
+    if (fvf & D3DFVF_NORMAL) { f.normal = int(f.stride); f.stride += 12; }
+    if (fvf & D3DFVF_RESERVED1) f.stride += 4;
+    if (fvf & D3DFVF_DIFFUSE) { f.diffuse = int(f.stride); f.stride += 4; }
+    if (fvf & D3DFVF_SPECULAR) { f.specular = int(f.stride); f.stride += 4; }
+    f.texCount = (fvf & D3DFVF_TEXCOUNT_MASK) >> D3DFVF_TEXCOUNT_SHIFT;
+    static const uint32_t sizes[4] = {2, 3, 4, 1};
+    for (uint32_t i = 0; i < f.texCount && i < 8; ++i) {
+        f.tex[i] = int(f.stride);
+        f.texSize[i] = sizes[(fvf >> (16 + 2 * i)) & 3];
+        f.stride += f.texSize[i] * 4;
+    }
+    return f;
+}
+
+struct V3 { float x, y, z; };
+V3 operator+(V3 a, V3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+V3 operator-(V3 a, V3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+V3 operator*(V3 a, float s) { return {a.x * s, a.y * s, a.z * s}; }
+float Dot(V3 a, V3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+V3 Normalize(V3 a) { float l = std::sqrt(Dot(a, a)); return l > 0 ? a * (1.0f / l) : a; }
+
+void Transform(const D3DMATRIX& m, const float in[4], float out[4])
+{
+    const float(*r)[4] = reinterpret_cast<const float(*)[4]>(&m);
+    for (int j = 0; j < 4; ++j)
+        out[j] = in[0] * r[0][j] + in[1] * r[1][j] + in[2] * r[2][j] + in[3] * r[3][j];
+}
+
+struct C4 { float r, g, b, a; };
+C4 FromArgb(DWORD c) { return {((c >> 16) & 0xFF) / 255.0f, ((c >> 8) & 0xFF) / 255.0f, (c & 0xFF) / 255.0f, (c >> 24) / 255.0f}; }
+C4 FromValue(const D3DCOLORVALUE& c) { return {c.r, c.g, c.b, c.a}; }
+DWORD ToArgb(C4 c)
+{
+    auto q = [](float v) { return DWORD(std::lround(std::fmin(std::fmax(v, 0.0f), 1.0f) * 255.0f)); };
+    return (q(c.a) << 24) | (q(c.r) << 16) | (q(c.g) << 8) | q(c.b);
+}
+
+}  // namespace
+
+HRESULT RDevice::ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, DWORD count, RVertexBuffer* src,
+                                 DWORD srcIndex, DWORD flags)
+{
+    if (!(op & D3DVOP_TRANSFORM)) return DDERR_INVALIDPARAMS;
+    Fvf sf = DecodeFvf(src->desc.dwFVF), df = DecodeFvf(dst->desc.dwFVF);
+    if (!df.rhw || sf.rhw || srcIndex + count > src->desc.dwNumVertices || dstIndex + count > dst->desc.dwNumVertices)
+        return DDERR_INVALIDPARAMS;
+    bool copyData = !(flags & D3DPV_DONOTCOPYDATA);
+    bool light = (op & D3DVOP_LIGHT) && m_rs[D3DRENDERSTATE_LIGHTING];
+    D3DMATRIX wvp = Multiply(Multiply(m_transforms[D3DTRANSFORMSTATE_WORLD], m_transforms[D3DTRANSFORMSTATE_VIEW]),
+                             m_transforms[D3DTRANSFORMSTATE_PROJECTION]);
+    const D3DMATRIX& world = m_transforms[D3DTRANSFORMSTATE_WORLD];
+    const float(*v)[4] = reinterpret_cast<const float(*)[4]>(&m_transforms[D3DTRANSFORMSTATE_VIEW]);
+    V3 eyePos{}, eyeDir{v[0][2], v[1][2], v[2][2]};
+    eyePos.x = -(v[3][0] * v[0][0] + v[3][1] * v[0][1] + v[3][2] * v[0][2]);
+    eyePos.y = -(v[3][0] * v[1][0] + v[3][1] * v[1][1] + v[3][2] * v[1][2]);
+    eyePos.z = -(v[3][0] * v[2][0] + v[3][1] * v[2][1] + v[3][2] * v[2][2]);
+
+    for (DWORD i = 0; i < count; ++i) {
+        const uint8_t* in = src->data.data() + size_t(srcIndex + i) * sf.stride;
+        uint8_t* out = dst->data.data() + size_t(dstIndex + i) * df.stride;
+        float p[4] = {0, 0, 0, 1}, c[4];
+        std::memcpy(p, in + sf.pos, 12);
+        Transform(wvp, p, c);
+        float rhw = c[3] != 0.0f ? 1.0f / c[3] : 1.0f;
+        float screen[4] = {m_viewport.dwX + (1.0f + c[0] * rhw) * 0.5f * m_viewport.dwWidth,
+                           m_viewport.dwY + (1.0f - c[1] * rhw) * 0.5f * m_viewport.dwHeight,
+                           m_viewport.dvMinZ + c[2] * rhw * (m_viewport.dvMaxZ - m_viewport.dvMinZ), rhw};
+        std::memcpy(out + df.pos, screen, 16);
+
+        DWORD inDiffuse = 0xFFFFFFFF, inSpecular = 0xFF000000;   // specular alpha = fog factor, 1 without fog
+        if (sf.diffuse >= 0) std::memcpy(&inDiffuse, in + sf.diffuse, 4);
+        if (sf.specular >= 0) std::memcpy(&inSpecular, in + sf.specular, 4);
+        DWORD outDiffuse = inDiffuse, outSpecular = inSpecular;
+        if (light) {
+            // D3D7 fixed-function lighting in world space (same model as rvk's vertex shader).
+            float pw[4];
+            Transform(world, p, pw);
+            V3 posW{pw[0], pw[1], pw[2]};
+            V3 n{0, 0, 0};
+            if (sf.normal >= 0) {
+                float nn[3];
+                std::memcpy(nn, in + sf.normal, 12);
+                const float(*w)[4] = reinterpret_cast<const float(*)[4]>(&world);
+                n = {nn[0] * w[0][0] + nn[1] * w[1][0] + nn[2] * w[2][0], nn[0] * w[0][1] + nn[1] * w[1][1] + nn[2] * w[2][1],
+                     nn[0] * w[0][2] + nn[1] * w[1][2] + nn[2] * w[2][2]};
+                if (m_rs[D3DRENDERSTATE_NORMALIZENORMALS]) n = Normalize(n);
+            }
+            auto source = [&](DWORD which, const D3DCOLORVALUE& material) {
+                if (m_rs[D3DRENDERSTATE_COLORVERTEX]) {
+                    if (which == D3DMCS_COLOR1 && sf.diffuse >= 0) return FromArgb(inDiffuse);
+                    if (which == D3DMCS_COLOR2 && sf.specular >= 0) return FromArgb(inSpecular);
+                }
+                return FromValue(material);
+            };
+            C4 mDiffuse = source(m_rs[D3DRENDERSTATE_DIFFUSEMATERIALSOURCE], m_material.diffuse);
+            C4 mAmbient = source(m_rs[D3DRENDERSTATE_AMBIENTMATERIALSOURCE], m_material.ambient);
+            C4 mSpecular = source(m_rs[D3DRENDERSTATE_SPECULARMATERIALSOURCE], m_material.specular);
+            C4 mEmissive = source(m_rs[D3DRENDERSTATE_EMISSIVEMATERIALSOURCE], m_material.emissive);
+            C4 ambient = FromArgb(m_rs[D3DRENDERSTATE_AMBIENT]);
+            V3 amb{ambient.r, ambient.g, ambient.b}, diff{0, 0, 0}, spec{0, 0, 0};
+            V3 toEye = m_rs[D3DRENDERSTATE_LOCALVIEWER] ? Normalize(eyePos - posW) : eyeDir * -1.0f;
+            for (auto& [l, enabled] : m_lights) {
+                if (!enabled) continue;
+                V3 L;
+                float att = 1.0f;
+                if (l.dltType == D3DLIGHT_DIRECTIONAL) {
+                    L = Normalize(V3{l.dvDirection.x, l.dvDirection.y, l.dvDirection.z} * -1.0f);
+                } else {
+                    V3 d = V3{l.dvPosition.x, l.dvPosition.y, l.dvPosition.z} - posW;
+                    float dist = std::sqrt(Dot(d, d));
+                    if (dist > l.dvRange) continue;
+                    L = dist > 0 ? d * (1.0f / dist) : d;
+                    float denom = l.dvAttenuation0 + l.dvAttenuation1 * dist + l.dvAttenuation2 * dist * dist;
+                    att = denom > 0 ? 1.0f / denom : 1.0f;
+                    if (l.dltType == D3DLIGHT_SPOT) {
+                        float rho = Dot(L * -1.0f, Normalize(V3{l.dvDirection.x, l.dvDirection.y, l.dvDirection.z}));
+                        float cosTheta = std::cos(l.dvTheta * 0.5f), cosPhi = std::cos(l.dvPhi * 0.5f);
+                        if (rho <= cosPhi) att = 0;
+                        else if (rho < cosTheta)
+                            att *= std::pow(std::fmax((rho - cosPhi) / std::fmax(cosTheta - cosPhi, 1e-6f), 0.0f), l.dvFalloff);
+                    }
+                }
+                amb = amb + V3{l.dcvAmbient.r, l.dcvAmbient.g, l.dcvAmbient.b} * att;
+                float nl = std::fmax(Dot(n, L), 0.0f);
+                diff = diff + V3{l.dcvDiffuse.r, l.dcvDiffuse.g, l.dcvDiffuse.b} * (att * nl);
+                if (m_rs[D3DRENDERSTATE_SPECULARENABLE] && nl > 0) {
+                    float nh = std::fmax(Dot(n, Normalize(L + toEye)), 0.0f);
+                    spec = spec + V3{l.dcvSpecular.r, l.dcvSpecular.g, l.dcvSpecular.b} * (att * std::pow(nh, m_material.power));
+                }
+            }
+            outDiffuse = ToArgb({mEmissive.r + mAmbient.r * amb.x + mDiffuse.r * diff.x,
+                                 mEmissive.g + mAmbient.g * amb.y + mDiffuse.g * diff.y,
+                                 mEmissive.b + mAmbient.b * amb.z + mDiffuse.b * diff.z, mDiffuse.a});
+            outSpecular = ToArgb({mSpecular.r * spec.x, mSpecular.g * spec.y, mSpecular.b * spec.z, FromArgb(inSpecular).a});
+        }
+        if (df.diffuse >= 0 && (light || copyData)) std::memcpy(out + df.diffuse, &outDiffuse, 4);
+        if (df.specular >= 0 && (light || copyData)) std::memcpy(out + df.specular, &outSpecular, 4);
+        if (copyData)
+            for (uint32_t t = 0; t < df.texCount && t < 8; ++t) {
+                float tc[4] = {0, 0, 0, 0};
+                if (t < sf.texCount) std::memcpy(tc, in + sf.tex[t], sf.texSize[t] * 4);
+                std::memcpy(out + df.tex[t], tc, df.texSize[t] * 4);
+            }
+    }
+    return D3D_OK;
+}
+
+HRESULT RVertexBuffer::DoProcessVertices(DWORD op, DWORD dstIndex, DWORD count, LPDIRECT3DVERTEXBUFFER7 src, DWORD srcIndex,
+                                         LPDIRECT3DDEVICE7 device, DWORD flags)
+{
+    if (!src || !device) return DDERR_INVALIDPARAMS;
+    return static_cast<RDevice*>(device)->ProcessVertices(op, this, dstIndex, count, static_cast<RVertexBuffer*>(src), srcIndex,
+                                                          flags);
 }
 
 }  // namespace rvkproxy

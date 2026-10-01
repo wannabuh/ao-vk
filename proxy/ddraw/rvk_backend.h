@@ -204,6 +204,8 @@ protected:
     HRESULT DoUnlock() override { return DD_OK; }
     HRESULT DoGetVertexBufferDesc(LPD3DVERTEXBUFFERDESC out) override;
     HRESULT DoOptimize(LPDIRECT3DDEVICE7, DWORD) override { return DD_OK; }
+    HRESULT DoProcessVertices(DWORD op, DWORD dstIndex, DWORD count, LPDIRECT3DVERTEXBUFFER7 src, DWORD srcIndex,
+                              LPDIRECT3DDEVICE7 device, DWORD flags) override;
 };
 
 class RDirect3D final : public Com<BaseIDirect3D7> {
@@ -259,6 +261,9 @@ class RDevice final : public Com<BaseIDirect3DDevice7> {
 public:
     RDevice(RDirect3D* d3d, RSurface* target, REFCLSID clsid);
     ~RDevice() override;
+    // Software vertex processing (IDirect3DVertexBuffer7::ProcessVertices) with this device's state.
+    HRESULT ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, DWORD count, RVertexBuffer* src,
+                            DWORD srcIndex, DWORD flags);
 
 protected:
     void* Cast(REFIID iid) override { return iid == IID_IDirect3DDevice7 ? this : nullptr; }

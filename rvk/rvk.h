@@ -178,6 +178,9 @@ private:
     Texture* CreateImage(uint32_t width, uint32_t height, Format format, uint32_t levels, bool renderTarget);
 
     VkDeviceSize Allocate(VkDeviceSize size, VkDeviceSize alignment, void** cpu);
+    // Makes sure `bytes` (plus alignment slack) fit in this frame's ring; if not, submits and waits for the
+    // work recorded so far and restarts the ring. Call before a group of allocations that belong together.
+    void EnsureRingSpace(VkDeviceSize bytes);
     VkSampler SamplerFor(uint32_t stage);
     void Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
               const uint16_t* indices, uint32_t indexCount);

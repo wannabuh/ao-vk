@@ -609,12 +609,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 
 int main(int argc, char** argv)
 {
-    bool windowed = false;
+    bool windowed = false, stress = false;
     int frames = 3;
     std::string shot = "rvk_demo.bmp";
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--window") windowed = true;
+        else if (a == "--stress") stress = true;
         else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
         else if (a == "--shot" && i + 1 < argc) shot = argv[++i];
     }
@@ -666,6 +667,16 @@ int main(int argc, char** argv)
         if (!windowed && frame == frames - 1)
             dev.RequestScreenshot(shot);
         dev.BeginFrame();
+        if (stress && frame == 0) {
+            // ~100 MB of texture uploads inside one frame: more than the 64 MB ring, so rvk must flush.
+            std::vector<uint32_t> pixels(256 * 256, 0xFF00FF00);
+            std::vector<Texture*> many;
+            for (int i = 0; i < 400; ++i)
+                many.push_back(dev.CreateTexture(256, 256, pixels.data()));
+            for (Texture* t : many)
+                dev.DestroyTexture(t);
+            std::printf("stress: uploaded %zu textures (%zu MB) in one frame\n", many.size(), many.size() * 256 * 256 * 4 >> 20);
+        }
         scene.Ui();
         scene.LitCube();
         scene.Effects();

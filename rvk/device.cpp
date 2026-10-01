@@ -670,6 +670,37 @@ VkDeviceSize Device::Allocate(VkDeviceSize size, VkDeviceSize alignment, void** 
     return offset;
 }
 
+void Device::EnsureRingSpace(VkDeviceSize bytes)
+{
+    Frame& f = m_frames[m_frameIndex];
+    VkDeviceSize needed = bytes + 1024;                      // alignment slack for a few allocations
+    if (f.ringOffset + needed <= kRingSize)
+        return;
+    if (needed > kRingSize) {
+        std::fprintf(stderr, "rvk: %llu bytes do not fit in the %llu-byte ring buffer\n",
+                     (unsigned long long)bytes, (unsigned long long)kRingSize);
+        return;
+    }
+    if (m_inFrame) {
+        bool wasRendering = m_rendering;
+        SubmitAndWait();                                     // also submits pending uploads
+        if (wasRendering)
+            BeginRenderingOn(m_target);
+    } else if (f.uploadsRecorded) {
+        vkEndCommandBuffer(f.upload);
+        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        si.commandBufferCount = 1;
+        si.pCommandBuffers = &f.upload;
+        vkQueueSubmit(m_queue, 1, &si, f.fence);
+        vkWaitForFences(m_device, 1, &f.fence, VK_TRUE, UINT64_MAX);
+        // Leave the fence signalled: BeginFrame waits on it before using this slot.
+        f.uploadsRecorded = false;
+    } else {
+        vkWaitForFences(m_device, 1, &f.fence, VK_TRUE, UINT64_MAX);
+    }
+    f.ringOffset = 0;
+}
+
 VkCommandBuffer Device::UploadCommands()
 {
     Frame& f = m_frames[m_frameIndex];

@@ -180,6 +180,7 @@ void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, u
 
     // Stage tightly packed rows in this frame's ring buffer; the upload command buffer runs before the
     // frame's draws.
+    EnsureRingSpace(VkDeviceSize(rowBytes) * rows);
     VkCommandBuffer cmd = UploadCommands();
     void* cpu;
     VkDeviceSize offset = Allocate(VkDeviceSize(rowBytes) * rows, 16, &cpu);

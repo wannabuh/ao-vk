@@ -73,6 +73,102 @@ void* MakeTexture(const char* name, unsigned w, unsigned h, int format, const vo
     return tex;
 }
 
+using SetTransformFn = void(__fastcall*)(void* self, void*, D3DTRANSFORMSTATETYPE, D3DMATRIX*);
+using VbCtorFn = void*(__fastcall*)(void* self, void*, unsigned fvf, unsigned flags, unsigned memory, unsigned bytes);
+using VbLockFn = void*(__fastcall*)(void* self, void*, unsigned, unsigned);
+using VbUnlockFn = void(__fastcall*)(void* self, void*);
+using ProcessVerticesFn = void(__fastcall*)(void* self, void*, void* dst, unsigned long op, unsigned long dstIndex,
+                                            unsigned long count, void* src, unsigned long srcIndex, unsigned long flags);
+
+D3DMATRIX Mat(float a, float b, float c, float d, float e, float f, float g, float h, float i, float j, float k, float l,
+              float m, float n, float o, float p)
+{
+    D3DMATRIX r;
+    float v[16] = {a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p};
+    std::memcpy(&r, v, sizeof(v));
+    return r;
+}
+
+// Software vertex processing through Randy (render_t::ProcessVertices) with lighting; prints the results so
+// the D3D7 and rvk backends can be compared.
+void TestProcessVertices(void* render)
+{
+    auto* device = *static_cast<IDirect3DDevice7**>(render);
+    auto setTransform = Export<SetTransformFn>("?SetTransformMatrix@render_t@@QAEXW4_D3DTRANSFORMSTATETYPE@@PAU_D3DMATRIX@@@Z");
+    D3DMATRIX world = Mat(0.8f, 0.0f, -0.6f, 0, 0, 1, 0, 0, 0.6f, 0.0f, 0.8f, 0, 0.5f, -0.2f, 0.3f, 1);   // rotate Y + move
+    D3DMATRIX view = Mat(1, 0, 0, 0, 0, 0.9701f, 0.2425f, 0, 0, -0.2425f, 0.9701f, 0, 0, -0.2425f, 5.0f, 1);
+    D3DMATRIX proj = Mat(1.299f, 0, 0, 0, 0, 1.732f, 0, 0, 0, 0, 1.001f, 1, 0, 0, -0.1001f, 0);
+    setTransform(render, nullptr, D3DTRANSFORMSTATE_WORLD, &world);
+    setTransform(render, nullptr, D3DTRANSFORMSTATE_VIEW, &view);
+    setTransform(render, nullptr, D3DTRANSFORMSTATE_PROJECTION, &proj);
+    D3DVIEWPORT7 vp{0, 0, 640, 480, 0.0f, 1.0f};
+    device->SetViewport(&vp);
+
+    device->SetRenderState(D3DRENDERSTATE_LIGHTING, TRUE);
+    device->SetRenderState(D3DRENDERSTATE_SPECULARENABLE, TRUE);
+    device->SetRenderState(D3DRENDERSTATE_AMBIENT, 0xFF202830);
+    device->SetRenderState(D3DRENDERSTATE_COLORVERTEX, TRUE);
+    device->SetRenderState(D3DRENDERSTATE_DIFFUSEMATERIALSOURCE, D3DMCS_COLOR1);
+    device->SetRenderState(D3DRENDERSTATE_AMBIENTMATERIALSOURCE, D3DMCS_MATERIAL);
+    device->SetRenderState(D3DRENDERSTATE_NORMALIZENORMALS, TRUE);
+    D3DMATERIAL7 mat{};
+    mat.diffuse = {1, 1, 1, 1};
+    mat.ambient = {0.5f, 0.5f, 0.5f, 1};
+    mat.specular = {1, 1, 1, 1};
+    mat.emissive = {0.05f, 0.0f, 0.0f, 0};
+    mat.power = 12.0f;
+    device->SetMaterial(&mat);
+    D3DLIGHT7 sun{};
+    sun.dltType = D3DLIGHT_DIRECTIONAL;
+    sun.dcvDiffuse = {0.7f, 0.7f, 0.6f, 1};
+    sun.dcvSpecular = {0.5f, 0.5f, 0.5f, 1};
+    sun.dvDirection = {-0.3f, -1.0f, 0.4f};
+    D3DLIGHT7 point{};
+    point.dltType = D3DLIGHT_POINT;
+    point.dcvDiffuse = {0.9f, 0.2f, 0.1f, 1};
+    point.dcvAmbient = {0.05f, 0.05f, 0.05f, 1};
+    point.dvPosition = {-1.0f, 0.5f, -1.0f};
+    point.dvRange = 20;
+    point.dvAttenuation0 = 0.5f;
+    point.dvAttenuation1 = 0.2f;
+    D3DLIGHT7 spot{};
+    spot.dltType = D3DLIGHT_SPOT;
+    spot.dcvDiffuse = {0.1f, 0.3f, 1.0f, 1};
+    spot.dvPosition = {0.0f, 3.0f, 0.0f};
+    spot.dvDirection = {0.0f, -1.0f, 0.1f};
+    spot.dvRange = 30;
+    spot.dvAttenuation0 = 1.0f;
+    spot.dvFalloff = 1.0f;
+    spot.dvTheta = 0.6f;
+    spot.dvPhi = 1.4f;
+    device->SetLight(0, &sun);
+    device->SetLight(1, &point);
+    device->SetLight(2, &spot);
+    for (DWORD i = 0; i < 3; ++i) device->LightEnable(i, TRUE);
+
+    struct Src { float x, y, z, nx, ny, nz; uint32_t c; float u, v; };      // 0x152
+    struct Dst { float x, y, z, rhw; uint32_t c, s; float u, v; };            // 0x1c4
+    const Src vertices[4] = {{-1, 0, 0, 0, 1, 0, 0xFFFFFFFF, 0, 0}, {1, 0, 0, 0.5f, 0.5f, -0.5f, 0xFF80FF80, 1, 0},
+                             {0, 1.5f, 0, -1, 0.2f, -0.3f, 0xC0FFC080, 0.5f, 1}, {0.2f, -0.5f, -1, 0, 0, -1, 0xFF4060FF, 0.25f, 0.75f}};
+    static uint8_t srcStorage[4], dstStorage[4];
+    auto vbCtor = Export<VbCtorFn>("??0VertexBuffer_c@@QAE@IIII@Z");
+    auto lock = Export<VbLockFn>("?Lock@VertexBuffer_c@@QAEPAXII@Z");
+    auto unlock = Export<VbUnlockFn>("?Unlock@VertexBuffer_c@@QAEXXZ");
+    void* src = vbCtor(srcStorage, nullptr, 0x152, 0, 2, sizeof(vertices));
+    void* dst = vbCtor(dstStorage, nullptr, 0x1c4, 0, 2, 4 * sizeof(Dst));
+    std::memcpy(lock(src, nullptr, 0, 0), vertices, sizeof(vertices));
+    unlock(src, nullptr);
+    Export<ProcessVerticesFn>("?ProcessVertices@render_t@@QAEXPAVVertexBuffer_c@@KKK0KK@Z")(
+        render, nullptr, dst, D3DVOP_TRANSFORM | D3DVOP_LIGHT | D3DVOP_CLIP | D3DVOP_EXTENTS, 0, 4, src, 0, 0);
+    auto* out = static_cast<const Dst*>(lock(dst, nullptr, 0, 0));
+    for (int i = 0; i < 4; ++i)
+        std::printf("pv %d: pos %.3f %.3f %.5f rhw %.5f diffuse %08x specular %08x uv %.3f %.3f\n", i, out[i].x, out[i].y,
+                    out[i].z, out[i].rhw, out[i].c, out[i].s, out[i].u, out[i].v);
+    unlock(dst, nullptr);
+    for (DWORD i = 0; i < 3; ++i) device->LightEnable(i, FALSE);
+    device->SetRenderState(D3DRENDERSTATE_LIGHTING, FALSE);
+}
+
 void* SurfaceOf(void* rtexture) { return *reinterpret_cast<void**>(static_cast<uint8_t*>(rtexture) + 0x30); }
 
 const GUID kTnLHalDevice = {0xf5049e78, 0x4861, 0x11d2, {0xa4, 0x07, 0x00, 0xa0, 0xc9, 0x06, 0x29, 0xa8}};
@@ -196,6 +292,7 @@ int main(int argc, char** argv)
     for (int b = 0; b < 4; ++b) std::memcpy(dxt1 + b * 8, &blocks[b], 2);
     void* texDxt = MakeTexture("harness_dxt1", 8, 8, D3DX_SF_DXT1, dxt1, 16);
     std::printf("textures: checker surface_t %p, dxt1 surface_t %p\n", SurfaceOf(texChecker), SurfaceOf(texDxt));
+    TestProcessVertices(render);
 
     for (int frame = 0; frame < frames; ++frame) {
         bool restored = false;
