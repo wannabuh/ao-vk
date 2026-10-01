@@ -708,7 +708,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c->misc[0] = m_material.power;
     c->misc[1] = float(m_rs[d3d::RS_ALPHAREF] & 0xFF);
     c->misc[2] = m_effectGlow;                 // F_GLOW: how much the effect feeds the glow
-    c->misc[3] = 0.0f;
+    c->misc[3] = m_bump;                       // F_BUMP: height change per texel for a full brightness step
     // Camera position/forward in world space from the view matrix (columns 0-2 = camera axes for an
     // orthonormal D3D view matrix; row 3 = -eye expressed in those axes).
     const auto& v = m_view.m;
@@ -728,6 +728,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (override) flags |= F_LIGHTOVERRIDE;
     bool hdrTarget = m_target->m_format == Format::RGBA16F;
     if (hdrTarget) flags |= F_HDR;
+    // Generated normals: per-pixel lit 3D drawn with a texture in stage 0 as its surface (not the ground's
+    // lightmap pass, whose stage 0 is the lightmap), with plain coordinates.
+    if ((flags & F_PERPIXEL) && m_bump > 0.0f && m_textures[0] && !terrain && m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
+        !(m_tss[0][d3d::TSS_TEXTURETRANSFORMFLAGS] & 256u) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
+        flags |= F_BUMP;
     if (GlowDraw(fvf)) flags |= F_GLOW | (m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA ? F_GLOWALPHA : 0u);
     if (override && (m_lightHeadroom > 1.0f || hdrTarget)) flags |= F_OVERBRIGHT;
     if (Overbright2x(fvf)) flags |= F_OVERBRIGHT2X;

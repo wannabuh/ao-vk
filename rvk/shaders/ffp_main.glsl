@@ -160,6 +160,34 @@ vec4 Cascade(vec4 t0, vec4 t1, float maxColor)
     return current;
 }
 
+// Generated normal mapping (F_BUMP): the surface's texture (stage 0) read as a height field - brightness = height -
+// tilts the shading normal. The slope comes from neighbouring texels at the mip level being sampled, so it doesn't
+// alias in the distance, and is scaled per texel (C.misc.w: height change per texel for a full brightness step), so
+// it looks the same on big and small surfaces. The normal is bent with the screen-space derivatives of position and
+// height (Mikkelsen, "Bump Mapping Unparametrized Surfaces on the GPU"): no tangents needed.
+float Luma(vec3 c) { return dot(c, vec3(0.3, 0.59, 0.11)); }
+
+vec3 BumpNormal(vec3 n, vec3 posW, vec2 uv)
+{
+    vec2 size = vec2(textureSize(tex0, 0));
+    float lod = max(textureQueryLod(tex0, uv).y, 0.0);
+    vec2 step = exp2(lod) / size;                          // one texel at the sampled mip level, in uv
+    float hl = Luma(textureLod(tex0, uv - vec2(step.x, 0.0), lod).rgb), hr = Luma(textureLod(tex0, uv + vec2(step.x, 0.0), lod).rgb);
+    float hd = Luma(textureLod(tex0, uv - vec2(0.0, step.y), lod).rgb), hu = Luma(textureLod(tex0, uv + vec2(0.0, step.y), lod).rgb);
+    vec2 slope = vec2(hr - hl, hu - hd) * 0.5;             // height per texel of this level, along u and v
+    vec2 uvx = dFdx(uv) / step, uvy = dFdy(uv) / step;     // screen pixel -> texels of this level
+    vec3 px = dFdx(posW), py = dFdy(posW);
+    float texelWorld = sqrt(max(dot(px, px), dot(py, py)) / max(max(dot(uvx, uvx), dot(uvy, uvy)), 1e-8));
+    float k = C.misc.w * texelWorld;                       // world height of a full brightness step per texel
+    float dBs = dot(slope, uvx) * k, dBt = dot(slope, uvy) * k;
+    vec3 nu = normalize(n);
+    vec3 r1 = cross(py, nu), r2 = cross(nu, px);
+    float det = dot(px, r1);
+    if (abs(det) < 1e-12) return n;
+    vec3 grad = sign(det) * (dBs * r1 + dBt * r2);
+    return normalize(abs(det) * nu - grad) * length(n);
+}
+
 bool AlphaPass(float a)
 {
     float a8 = floor(a * 255.0 + 0.5), ref = C.misc.y;
@@ -198,6 +226,8 @@ void main()
         vec3 n = vNormalW.xyz;
         float len2 = dot(n, n);
         n = len2 > 0.0 ? n * (vNormalW.w * inversesqrt(len2)) : vec3(0.0);
+        if ((C.flags.x & F_BUMP) != 0u && len2 > 0.0)
+            n = BumpNormal(n, vPosW, vTex0.xy);
         vec3 ambient = vec3(0.0), diff = vec3(0.0), spec = vec3(0.0), diffL = vec3(0.0), specL = vec3(0.0);
         // Sunlight is shadowed: by the receiver's shade, or in the ground's lighting pass by the lightmap's.
         float sunScale = (C.flags.x & F_SHADOWTEX) != 0u ? texShade : shadeSun ? shade : 1.0;

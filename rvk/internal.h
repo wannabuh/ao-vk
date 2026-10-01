@@ -44,7 +44,8 @@ enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE
                   F_PERPIXEL = 1024, F_DEBUGLIGHT = 2048, F_LIGHTOVERRIDE = 4096,
                   F_SHADOW = 8192, F_SHADOWCOMP = 16384,
                   F_SHADOWTEX = 32768, F_OVERBRIGHT = 65536, F_OVERBRIGHT2X = 131072,
-                  F_HDR = 262144, F_GLOW = 524288, F_GLOWALPHA = 1048576 };
+                  F_HDR = 262144, F_GLOW = 524288, F_GLOWALPHA = 1048576,
+                  F_BUMP = 2097152 };
 
 constexpr uint32_t kFrameLights = 64;
 struct FrameLights {               // binding 4: per-frame data (constants.glsl FrameLights)

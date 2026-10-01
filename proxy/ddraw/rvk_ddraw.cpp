@@ -104,6 +104,9 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     GetEnvironmentVariableA("RANDYVK_BLOOM", bloom, sizeof(bloom));
     GetEnvironmentVariableA("RANDYVK_BLOOM_THRESHOLD", bloomThreshold, sizeof(bloomThreshold));
     device->SetBloom(float(std::atof(bloom)), float(std::atof(bloomThreshold)));
+    char bump[16] = "1.5";
+    GetEnvironmentVariableA("RANDYVK_BUMP", bump, sizeof(bump));
+    device->SetBump(float(std::atof(bump)));
     char aoStrength[16] = "1.0", aoRadius[16] = "1.5";
     GetEnvironmentVariableA("RANDYVK_AO", aoStrength, sizeof(aoStrength));
     GetEnvironmentVariableA("RANDYVK_AO_RADIUS", aoRadius, sizeof(aoRadius));
@@ -132,6 +135,7 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
            exposure, hdrHeadroom);
     RvkLog("rvk bloom: strength %s, threshold %s, effects %s", bloom, bloomThreshold, effectGlow);
     RvkLog("rvk ambient occlusion: strength %s, radius %s", aoStrength, aoRadius);
+    RvkLog("rvk generated normals (bump): %s", bump);
     return true;
 }
 
@@ -182,6 +186,27 @@ void RvkState::Present()
         RvkLog("sun shadows %s", device->Shadows() ? "on" : "off");
     }
     f7Down = f7;
+    // Ctrl+Shift+F2: generated normals on / off; Ctrl+Shift+[ / ]: their strength down / up by 0.25.
+    static bool f2Down, lbDown, rbDown;
+    static float bumpOn = 0.0f;
+    bool f2 = chord && (GetAsyncKeyState(VK_F2) & 0x8000);
+    if (f2 && !f2Down) {
+        if (device->Bump() > 0.0f) {
+            bumpOn = device->Bump();
+            device->SetBump(0.0f);
+        } else {
+            device->SetBump(bumpOn > 0.0f ? bumpOn : 1.5f);
+        }
+        RvkLog("generated normals %s (%.2f)", device->Bump() > 0.0f ? "on" : "off", device->Bump());
+    }
+    f2Down = f2;
+    bool lb = chord && (GetAsyncKeyState(VK_OEM_4) & 0x8000), rb = chord && (GetAsyncKeyState(VK_OEM_6) & 0x8000);
+    if ((lb && !lbDown) || (rb && !rbDown)) {
+        device->SetBump(device->Bump() + (rb ? 0.25f : -0.25f));
+        RvkLog("generated normals strength %.2f", device->Bump());
+    }
+    lbDown = lb;
+    rbDown = rb;
     // Ctrl+Shift+F3: ambient occlusion on / off (at the configured strength).
     static bool f3Down;
     bool f3 = chord && (GetAsyncKeyState(VK_F3) & 0x8000);

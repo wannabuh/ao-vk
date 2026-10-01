@@ -356,6 +356,13 @@ void ThreadedDevice::SetBloom(float strength, float threshold)
     Enqueue([this, strength, threshold](const uint8_t*) { m_device.SetBloom(strength, threshold); });
 }
 
+void ThreadedDevice::SetBump(float strength)
+{
+    m_bump = strength < 0.0f ? 0.0f : strength;
+    float s = m_bump;
+    Enqueue([this, s](const uint8_t*) { m_device.SetBump(s); });
+}
+
 void ThreadedDevice::SetAo(float strength, float radius)
 {
     m_aoStrength = strength;

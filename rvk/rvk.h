@@ -157,6 +157,10 @@ public:
     void SetBloom(float strength, float threshold) { m_bloomStrength = strength; m_bloomThreshold = threshold; }
     // With HDR: how much the game's additive effects (light halos, spells, fire) feed the bloom, on top of light above
     // the threshold. 0 = only the threshold.
+    // Enhancement, with per-pixel lighting: normals generated from each surface's texture (brightness = height).
+    // strength = height change per texel for a full brightness step, in texels (0 = off).
+    void SetBump(float strength) { strength = strength < 0.0f ? 0.0f : strength; if (m_bump != strength) { m_bump = strength; m_constantsDirty = true; } }
+    float Bump() const { return m_bump; }
     // With HDR: ambient occlusion from the depth buffer (hdr.cpp). strength 0 = off; radius in world units.
     void SetAo(float strength, float radius) { m_aoStrength = strength; m_aoRadius = radius; }
     float AoStrength() const { return m_aoStrength; }
@@ -276,6 +280,7 @@ private:
     bool m_constantsDirty = true;
     bool m_pixelLighting = false, m_lightingDebug = false, m_lightOverride = false;
     float m_lightHeadroom = 1.0f;
+    float m_bump = 0.0f;
     uint32_t m_dumpVertexCount = 0;
     bool m_drawOverbright2x = false;              // the current draw is blended at 2x (F_OVERBRIGHT2X)
     bool Overbright2x(uint32_t fvf) const;
