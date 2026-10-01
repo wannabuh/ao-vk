@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <vector>
 
 namespace rvk {
 
@@ -139,6 +141,11 @@ void Device::SetViewport(const d3d::Viewport& vp) { m_viewport = vp; }
 
 void Device::Clear(uint32_t flags, uint32_t argb, float z)
 {
+    Clear(0, nullptr, flags, argb, z);
+}
+
+void Device::Clear(uint32_t count, const Rect* rects, uint32_t flags, uint32_t argb, float z)
+{
     if (!m_inFrame)
         return;
     VkClearAttachment att[2];
@@ -155,12 +162,56 @@ void Device::Clear(uint32_t flags, uint32_t argb, float z)
     }
     if (!n)
         return;
-    // D3D clears the viewport rectangle.
-    uint32_t w = m_target->m_width, h = m_target->m_height;
-    uint32_t x = std::min(m_viewport.x, w), y = std::min(m_viewport.y, h);
-    VkClearRect rect{{{int32_t(x), int32_t(y)}, {std::min(m_viewport.width, w - x), std::min(m_viewport.height, h - y)}}, 0, 1};
-    if (rect.rect.extent.width && rect.rect.extent.height)
-        vkCmdClearAttachments(m_frames[m_frameIndex].main, n, att, 1, &rect);
+    // D3D clears the given rectangles (or the whole viewport), always clipped to the viewport.
+    int32_t vx0 = int32_t(std::min(m_viewport.x, m_target->m_width));
+    int32_t vy0 = int32_t(std::min(m_viewport.y, m_target->m_height));
+    int32_t vx1 = int32_t(std::min(m_viewport.x + m_viewport.width, m_target->m_width));
+    int32_t vy1 = int32_t(std::min(m_viewport.y + m_viewport.height, m_target->m_height));
+    Rect whole{vx0, vy0, vx1, vy1};
+    if (!count) {
+        count = 1;
+        rects = &whole;
+    }
+    std::vector<VkClearRect> clears;
+    for (uint32_t i = 0; i < count; ++i) {
+        int32_t x0 = std::max(rects[i].left, vx0), y0 = std::max(rects[i].top, vy0);
+        int32_t x1 = std::min(rects[i].right, vx1), y1 = std::min(rects[i].bottom, vy1);
+        if (x1 > x0 && y1 > y0)
+            clears.push_back({{{x0, y0}, {uint32_t(x1 - x0), uint32_t(y1 - y0)}}, 0, 1});
+    }
+    if (!clears.empty())
+        vkCmdClearAttachments(m_frames[m_frameIndex].main, n, att, uint32_t(clears.size()), clears.data());
+}
+
+void Device::CopyTexture(Texture* dst, const Rect* dstRect, Texture* src, const Rect* srcRect, bool linear)
+{
+    if (!m_inFrame)
+        return;
+    if (!dst) dst = m_main;
+    if (!src) src = m_main;
+    if (!dst->m_renderTarget || src == dst || FormatIsCompressed(src->m_format)) {
+        std::fprintf(stderr, "rvk: CopyTexture: unsupported source/destination combination\n");
+        return;
+    }
+    VkCommandBuffer cmd = m_frames[m_frameIndex].main;
+    EndRendering();
+    VkImageLayout srcRestore = src->m_layout;
+    Transition(cmd, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    Transition(cmd, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkImageBlit blit{};
+    blit.srcSubresource = blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    Rect s = srcRect ? *srcRect : Rect{0, 0, int32_t(src->m_width), int32_t(src->m_height)};
+    Rect d = dstRect ? *dstRect : Rect{0, 0, int32_t(dst->m_width), int32_t(dst->m_height)};
+    blit.srcOffsets[0] = {s.left, s.top, 0};
+    blit.srcOffsets[1] = {s.right, s.bottom, 1};
+    blit.dstOffsets[0] = {d.left, d.top, 0};
+    blit.dstOffsets[1] = {d.right, d.bottom, 1};
+    vkCmdBlitImage(cmd, src->m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst->m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   1, &blit, linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+    // Plain textures stay sampleable between uploads (their layout is otherwise only changed by uploads).
+    if (!src->m_renderTarget)
+        Transition(cmd, src, srcRestore);
+    BeginRenderingOn(m_target);
 }
 
 // ---------------------------------------------------------------------------------------------------

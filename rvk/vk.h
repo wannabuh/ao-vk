@@ -4,7 +4,9 @@
 #define VK_NO_PROTOTYPES
 #define VK_USE_PLATFORM_WIN32_KHR
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <vulkan/vulkan.h>
 
@@ -45,6 +47,7 @@
     X(vkCreateCommandPool) \
     X(vkDestroyCommandPool) \
     X(vkAllocateCommandBuffers) \
+    X(vkFreeCommandBuffers) \
     X(vkResetCommandBuffer) \
     X(vkBeginCommandBuffer) \
     X(vkEndCommandBuffer) \

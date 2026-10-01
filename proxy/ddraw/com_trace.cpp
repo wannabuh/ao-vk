@@ -80,6 +80,26 @@ unsigned IndexOf(const char* name)
     return 0;
 }
 
+}  // namespace
+
+unsigned ComIndex(const char* name) { return IndexOf(name); }
+
+HRESULT StubCall(unsigned index)
+{
+    static std::mutex mutex;
+    static std::unordered_set<unsigned> logged;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (logged.insert(index).second)
+        LogLine("randy-vk rvk: unimplemented %s called (returning DDERR_UNSUPPORTED)",
+                index < kComMethodCount ? kComMethodNames[index] : "?");
+    return DDERR_UNSUPPORTED;
+}
+
+HRESULT WINAPI RvkDirectDrawCreateEx(GUID*, LPVOID*, REFIID, IUnknown*);      // rvk_ddraw.cpp
+HRESULT WINAPI RvkDirectDrawEnumerateExA(LPDDENUMCALLBACKEXA, LPVOID, DWORD);
+
+namespace {
+
 // Interface pointer for a wrapper of a known IID, or nullptr if the IID isn't one we wrap.
 void* WrapByIid(REFIID iid, void* real)
 {
@@ -283,11 +303,20 @@ bool InstallDDrawHooks(HMODULE randyOrig)
 {
     char mode[32] = "";
     GetEnvironmentVariableA("RANDYVK_DDRAW", mode, sizeof(mode));
-    if (_stricmp(mode, "trace") != 0)
+    bool rvkMode = _stricmp(mode, "rvk") == 0;
+    if (_stricmp(mode, "trace") != 0 && !rvkMode)
         return false;
     g_counts = new std::atomic<uint32_t>[ComMethodCount()]();
     g_createExIndex = kComMethodCount;
     g_enumerateIndex = kComMethodCount + 1;
+    if (rvkMode) {
+        // DirectDraw / Direct3D 7 implemented on rvk; the real ddraw.dll is never used by randy31_orig.
+        bool ok = PatchImport(randyOrig, "DDRAW.dll", "DirectDrawCreateEx", reinterpret_cast<void*>(RvkDirectDrawCreateEx)) &&
+                  PatchImport(randyOrig, "DDRAW.dll", "DirectDrawEnumerateExA", reinterpret_cast<void*>(RvkDirectDrawEnumerateExA));
+        g_active = ok;
+        LogLine("randy-vk: rvk backend %s", ok ? "installed" : "FAILED to install");
+        return ok;
+    }
     g_realCreateEx = reinterpret_cast<DirectDrawCreateExFn>(
         PatchImport(randyOrig, "DDRAW.dll", "DirectDrawCreateEx", reinterpret_cast<void*>(HookDirectDrawCreateEx)));
     g_realEnumerateExA = reinterpret_cast<DirectDrawEnumerateExAFn>(

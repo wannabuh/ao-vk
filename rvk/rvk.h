@@ -84,17 +84,27 @@ public:
     // window may be null (headless: no swapchain, screenshots still work).
     bool Init(HWND window, uint32_t width, uint32_t height, std::string* error);
     bool Resize(uint32_t width, uint32_t height);        // main target size; call outside a frame
+    bool SetWindow(HWND window);                         // attach (or change) the presentation window later
+    HWND Window() const { return m_window; }
     const DeviceInfo& Info() const { return m_info; }
     uint32_t Width() const { return m_width; }
     uint32_t Height() const { return m_height; }
 
     void BeginFrame();
     void EndFrame();
+    bool InFrame() const { return m_inFrame; }
+    // Reads a target (null = main) as B8G8R8A8 rows of width*4 bytes. Mid-frame this submits the work
+    // recorded so far and waits for it (rendering then continues in the same frame).
+    bool ReadPixels(Texture* target, void* out);
     void RequestScreenshot(const std::string& bmpPath);   // saved during the next EndFrame()
 
     // ---- D3D7-style interface (IDirect3DDevice7 semantics and enum values) ----
     void Clear(uint32_t flags, uint32_t argb, float z);
+    struct Rect { int32_t left, top, right, bottom; };         // same layout as D3DRECT / RECT
+    // D3D7 Clear with a rectangle list (target coordinates, clipped to the viewport); count 0 = viewport.
+    void Clear(uint32_t count, const Rect* rects, uint32_t flags, uint32_t argb, float z);
     void SetViewport(const d3d::Viewport& vp);
+    const d3d::Viewport& GetViewport() const { return m_viewport; }
     void SetRenderState(uint32_t state, uint32_t value);
     void SetTextureStageState(uint32_t stage, uint32_t type, uint32_t value);
     void SetTransform(uint32_t type, const d3d::Matrix& m);
@@ -123,6 +133,9 @@ public:
     void UpdateTexture(Texture* texture, uint32_t level, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                        const void* data, uint32_t pitch);
     Texture* CreateRenderTarget(uint32_t width, uint32_t height);   // A8R8G8B8, sampleable
+    // GPU copy/stretch between images (render targets, the main target or textures as source; render
+    // targets or the main target as destination). Null = main target; null rect = whole image.
+    void CopyTexture(Texture* dst, const Rect* dstRect, Texture* src, const Rect* srcRect, bool linear);
     void DestroyTexture(Texture* texture);
 
     VertexBuffer* CreateVertexBuffer(uint32_t fvf, uint32_t vertexCount);
@@ -170,6 +183,9 @@ private:
               const uint16_t* indices, uint32_t indexCount);
     void ApplyDynamicState(uint32_t primitive, uint32_t fvf);
     void BeginRenderingOn(Texture* target);
+    void EndRendering();
+    bool EnsureDepth(uint32_t width, uint32_t height);   // grows the shared depth buffer if needed
+    void SubmitAndWait();                                // mid-frame flush; recording continues
     void Transition(VkCommandBuffer cmd, Texture* t, VkImageLayout to);
     VkCommandBuffer UploadCommands();
     void SaveScreenshot();
@@ -193,6 +209,7 @@ private:
     std::vector<VkSemaphore> m_renderDone;     // one per swapchain image
     VkExtent2D m_swapExtent{};
     bool m_swapchainStale = false;
+    bool m_swapchainSupported = false;
 
     uint32_t m_width = 0, m_height = 0;
     Texture* m_main = nullptr;                 // main colour target (a render target texture)
@@ -201,6 +218,9 @@ private:
     VkImageView m_depthView = VK_NULL_HANDLE;
     VmaAllocation_T* m_depthAllocation = nullptr;
     VkImageLayout m_depthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    uint32_t m_depthWidth = 0, m_depthHeight = 0;
+    struct DeadImage { VkImage image; VkImageView view; VmaAllocation_T* allocation; };
+    std::array<std::vector<DeadImage>, kFramesInFlight> m_deadImages;   // freed when their frame is done
     static constexpr VkFormat kColorFormat = VK_FORMAT_B8G8R8A8_UNORM;
     static constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
 

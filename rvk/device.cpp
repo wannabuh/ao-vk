@@ -264,8 +264,14 @@ bool Device::CreateLogicalDevice(std::string* error)
     std::vector<const char*> extensions = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
                                            VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
                                            VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME};
-    if (m_window)
+    // Swapchain support even without a window yet: SetWindow() can attach one later.
+    m_swapchainSupported = has(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    if (m_swapchainSupported)
         extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    else if (m_window) {
+        if (error) *error = "device extension missing: " VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+        return false;
+    }
     for (const char* e : extensions)
         if (!has(e)) {
             if (error) *error = std::string("device extension missing: ") + e;
@@ -342,27 +348,11 @@ bool Device::CreateMainTargets(std::string* error)
     }
     m_target = m_main;
 
-    VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-    ci.imageType = VK_IMAGE_TYPE_2D;
-    ci.format = kDepthFormat;
-    ci.extent = {m_width, m_height, 1};
-    ci.mipLevels = 1;
-    ci.arrayLayers = 1;
-    ci.samples = VK_SAMPLE_COUNT_1_BIT;
-    ci.tiling = VK_IMAGE_TILING_OPTIMAL;
-    ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    VmaAllocationCreateInfo ac{};
-    ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    if (!Check(vmaCreateImage(m_allocator, &ci, &ac, &m_depth, &m_depthAllocation, nullptr), "depth image", error))
+    m_depthWidth = m_depthHeight = 0;
+    if (!EnsureDepth(m_width, m_height)) {
+        if (error) *error = "depth buffer";
         return false;
-    VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-    vi.image = m_depth;
-    vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    vi.format = kDepthFormat;
-    vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-    if (!Check(vkCreateImageView(m_device, &vi, nullptr, &m_depthView), "depth view", error))
-        return false;
-    m_depthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    }
 
     // Readback buffer for screenshots.
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -378,9 +368,49 @@ bool Device::CreateMainTargets(std::string* error)
     return true;
 }
 
+bool Device::EnsureDepth(uint32_t width, uint32_t height)
+{
+    if (m_depth && width <= m_depthWidth && height <= m_depthHeight)
+        return true;
+    width = std::max(width, m_depthWidth);
+    height = std::max(height, m_depthHeight);
+    if (m_depth)          // may still be in use by submitted or recorded work: free with this frame slot
+        m_deadImages[m_frameIndex].push_back({m_depth, m_depthView, m_depthAllocation});
+    m_depth = VK_NULL_HANDLE;
+    m_depthView = VK_NULL_HANDLE;
+    VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ci.imageType = VK_IMAGE_TYPE_2D;
+    ci.format = kDepthFormat;
+    ci.extent = {width, height, 1};
+    ci.mipLevels = 1;
+    ci.arrayLayers = 1;
+    ci.samples = VK_SAMPLE_COUNT_1_BIT;
+    ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    VmaAllocationCreateInfo ac{};
+    ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    ac.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    if (vmaCreateImage(m_allocator, &ci, &ac, &m_depth, &m_depthAllocation, nullptr) != VK_SUCCESS)
+        return false;
+    VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vi.image = m_depth;
+    vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    vi.format = kDepthFormat;
+    vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    vkCreateImageView(m_device, &vi, nullptr, &m_depthView);
+    m_depthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    m_depthWidth = width;
+    m_depthHeight = height;
+    return true;
+}
+
 void Device::DestroyMainTargets()
 {
     if (m_main) { DestroyTextureNow(m_main); m_main = nullptr; }
+    for (auto& dead : m_deadImages) {
+        for (auto& d : dead) { vkDestroyImageView(m_device, d.view, nullptr); vmaDestroyImage(m_allocator, d.image, d.allocation); }
+        dead.clear();
+    }
     if (m_depthView) { vkDestroyImageView(m_device, m_depthView, nullptr); m_depthView = VK_NULL_HANDLE; }
     if (m_depth) { vmaDestroyImage(m_allocator, m_depth, m_depthAllocation); m_depth = VK_NULL_HANDLE; }
     if (m_readback) { vmaDestroyBuffer(m_allocator, m_readback, m_readbackAllocation); m_readback = VK_NULL_HANDLE; }
@@ -403,6 +433,36 @@ bool Device::Resize(uint32_t width, uint32_t height)
     m_viewport = {0, 0, width, height, 0.0f, 1.0f};
     if (m_swapchain)
         m_swapchainStale = true;
+    return true;
+}
+
+bool Device::SetWindow(HWND window)
+{
+    if (window == m_window && m_surface)
+        return true;
+    if (!m_swapchainSupported || m_inFrame)
+        return false;
+    vkDeviceWaitIdle(m_device);
+    DestroySwapchain();
+    if (m_surface) {
+        vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+        m_surface = VK_NULL_HANDLE;
+    }
+    m_window = window;
+    if (!window)
+        return true;
+    VkWin32SurfaceCreateInfoKHR si{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
+    si.hinstance = GetModuleHandleA(nullptr);
+    si.hwnd = window;
+    std::string error;
+    if (!Check(vkCreateWin32SurfaceKHR(m_instance, &si, nullptr, &m_surface), "vkCreateWin32SurfaceKHR", &error))
+        return false;
+    VkBool32 present = VK_FALSE;
+    vkGetPhysicalDeviceSurfaceSupportKHR(m_physical, m_queueFamily, m_surface, &present);
+    if (!present || !CreateSwapchain(&error)) {
+        std::fprintf(stderr, "rvk: SetWindow failed: %s\n", present ? error.c_str() : "queue cannot present");
+        return false;
+    }
     return true;
 }
 
@@ -640,9 +700,18 @@ void Device::Transition(VkCommandBuffer cmd, Texture* t, VkImageLayout to)
     t->m_layout = to;
 }
 
+void Device::EndRendering()
+{
+    if (m_rendering) {
+        vkCmdEndRendering(m_frames[m_frameIndex].main);
+        m_rendering = false;
+    }
+}
+
 void Device::BeginRenderingOn(Texture* target)
 {
     VkCommandBuffer cmd = m_frames[m_frameIndex].main;
+    EnsureDepth(target->m_width, target->m_height);
     Transition(cmd, target, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     if (m_depthLayout != VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL) {
         ImageBarrier(cmd, m_depth, VK_IMAGE_ASPECT_DEPTH_BIT, m_depthLayout, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
@@ -676,13 +745,12 @@ void Device::SetRenderTarget(Texture* target)
 {
     if (!target)
         target = m_main;
-    if (!target->m_renderTarget || target->m_width > m_width || target->m_height > m_height) {
-        std::fprintf(stderr, "rvk: SetRenderTarget: not a render target or larger than the depth buffer\n");
+    if (!target->m_renderTarget) {
+        std::fprintf(stderr, "rvk: SetRenderTarget: not a render target\n");
         return;
     }
     if (target != m_target && m_inFrame) {
-        vkCmdEndRendering(m_frames[m_frameIndex].main);
-        m_rendering = false;
+        EndRendering();
         m_target = target;
         BeginRenderingOn(target);
     }
@@ -709,6 +777,11 @@ void Device::BeginFrame()
     for (Texture* t : f.pendingDestroy)
         DestroyTextureNow(t);
     f.pendingDestroy.clear();
+    for (auto& d : m_deadImages[m_frameIndex]) {
+        vkDestroyImageView(m_device, d.view, nullptr);
+        vmaDestroyImage(m_allocator, d.image, d.allocation);
+    }
+    m_deadImages[m_frameIndex].clear();
     if (!uploadsPending)
         f.ringOffset = 0;
 
@@ -722,10 +795,7 @@ void Device::BeginFrame()
 void Device::EndFrame()
 {
     Frame& f = m_frames[m_frameIndex];
-    if (m_rendering) {
-        vkCmdEndRendering(f.main);
-        m_rendering = false;
-    }
+    EndRendering();
     Transition(f.main, m_main, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
     bool screenshot = !m_screenshotPath.empty();
@@ -798,6 +868,81 @@ void Device::EndFrame()
     }
     m_inFrame = false;
     m_frameIndex = (m_frameIndex + 1) % kFramesInFlight;
+}
+
+void Device::SubmitAndWait()
+{
+    Frame& f = m_frames[m_frameIndex];
+    EndRendering();
+    vkEndCommandBuffer(f.main);
+    VkCommandBuffer cmds[2];
+    uint32_t n = 0;
+    if (f.uploadsRecorded) {
+        vkEndCommandBuffer(f.upload);
+        cmds[n++] = f.upload;
+        f.uploadsRecorded = false;
+    }
+    cmds[n++] = f.main;
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.commandBufferCount = n;
+    si.pCommandBuffers = cmds;
+    vkQueueSubmit(m_queue, 1, &si, f.fence);
+    vkWaitForFences(m_device, 1, &f.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(m_device, 1, &f.fence);
+    VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    b.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(f.main, &b);          // the frame goes on; the caller resumes rendering
+}
+
+bool Device::ReadPixels(Texture* target, void* out)
+{
+    Texture* t = target ? target : m_main;
+    if (!t->m_renderTarget)
+        return false;
+    VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bi.size = VkDeviceSize(t->m_width) * t->m_height * 4;
+    bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VmaAllocationCreateInfo ac{};
+    ac.usage = VMA_MEMORY_USAGE_AUTO;
+    ac.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VkBuffer buffer;
+    VmaAllocation allocation;
+    VmaAllocationInfo info;
+    if (vmaCreateBuffer(m_allocator, &bi, &ac, &buffer, &allocation, &info) != VK_SUCCESS)
+        return false;
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {t->m_width, t->m_height, 1};
+    if (m_inFrame) {
+        VkCommandBuffer cmd = m_frames[m_frameIndex].main;
+        EndRendering();
+        Transition(cmd, t, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        vkCmdCopyImageToBuffer(cmd, t->m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &region);
+        SubmitAndWait();
+        BeginRenderingOn(m_target);
+    } else {
+        VkCommandBufferAllocateInfo ai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        ai.commandPool = m_pool;
+        ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        ai.commandBufferCount = 1;
+        VkCommandBuffer cmd;
+        vkAllocateCommandBuffers(m_device, &ai, &cmd);
+        VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        b.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(cmd, &b);
+        Transition(cmd, t, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        vkCmdCopyImageToBuffer(cmd, t->m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &region);
+        vkEndCommandBuffer(cmd);
+        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        si.commandBufferCount = 1;
+        si.pCommandBuffers = &cmd;
+        vkQueueSubmit(m_queue, 1, &si, VK_NULL_HANDLE);
+        vkQueueWaitIdle(m_queue);
+        vkFreeCommandBuffers(m_device, m_pool, 1, &cmd);
+    }
+    std::memcpy(out, info.pMappedData, size_t(bi.size));
+    vmaDestroyBuffer(m_allocator, buffer, allocation);
+    return true;
 }
 
 void Device::RequestScreenshot(const std::string& bmpPath)
