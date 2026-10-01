@@ -14,7 +14,7 @@ VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation \
     timeout 120 wine "$exe" --frames 3 --shot rvk_demo.bmp 2>&1 |
     grep -v -iE 'pci id|EGL' |
     # winevulkan itself enables VK_EXT_external_memory_dma_buf without its dependency; not ours.
-    awk '/external_memory_dma_buf/ {skip = 1} /^Validation Error/ && !/01387/ {skip = 0} !skip' | tee validation.log
+    awk 'BEGIN {RS = ""; ORS = "\n\n"} !/external_memory_dma_buf/' | tee validation.log
 python3 - <<'PY'
 import struct, zlib
 d = open("rvk_demo.bmp", "rb").read()
