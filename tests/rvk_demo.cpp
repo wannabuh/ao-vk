@@ -772,7 +772,7 @@ void AddCube(std::vector<VtxMesh>& v, std::vector<uint16_t>& idx, float cx, floa
 }
 
 template <typename D>
-void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest)
+void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, int frameMs)
 {
     auto groundPixels = Checker(64, 8, 0xFFC8C0B0, 0xFFA09888);
     auto fencePixels = Checker(64, 8, 0xFF806040, 0x00000000);
@@ -888,7 +888,7 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest)
             if (k == 2 && cacheTest > 0) {           // swaying like a plant: vertices and world matrix change
                 for (VtxMesh& m : v)
                     if (m.y > 1.0f) m.x += 0.15f * std::sin(frame * 0.7f);
-                Matrix sway = RotateZ(0.01f * std::sin(frame * 0.5f));   // tilts; the translation stays
+                Matrix sway = RotateZ(0.04f * std::sin(frame * 0.5f));   // tilts; the translation stays
                 dev.SetTransform(World, sway);
             }
             dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, v.data(), uint32_t(v.size()), idx.data(), uint32_t(idx.size()));
@@ -948,6 +948,8 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest)
         dev.SetTexture(0, nullptr);
         dev.LightEnable(0, false);
         dev.EndFrame();
+        if (frameMs > 0)
+            Sleep(DWORD(frameMs));
     }
     dev.DestroyTexture(ground);
     dev.DestroyTexture(fence);
@@ -966,7 +968,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 int main(int argc, char** argv)
 {
     bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false;
-    int cacheTest = 0;
+    int cacheTest = 0, frameMs = 0;
     int bench = 0;
     int frames = 3;
     std::string shot = "rvk_demo.bmp", dump;
@@ -980,6 +982,7 @@ int main(int argc, char** argv)
         else if (a == "--light-override") lightOverride = true;
         else if (a == "--shadows") shadows = true;
         else if (a == "--shadow-test") shadowTest = shadows = true;
+        else if (a == "--frame-ms" && i + 1 < argc) frameMs = std::atoi(argv[++i]);
         else if (a == "--cache-test" && i + 1 < argc) { cacheTest = std::atoi(argv[++i]); shadowTest = shadows = true; }
         else if (a == "--dump" && i + 1 < argc) dump = argv[++i];
         else if (a == "--bench" && i + 1 < argc) bench = std::atoi(argv[++i]);
@@ -1040,10 +1043,10 @@ int main(int argc, char** argv)
         tdev.SetLightOverride(lightOverride);
         tdev.SetShadows(shadows);
         if (!dump.empty()) tdev.RequestFrameDump(dump);
-        if (shadowTest) RunShadowTest(tdev, frames, shot, cacheTest);
+        if (shadowTest) RunShadowTest(tdev, frames, shot, cacheTest, frameMs);
         else RunDemo(tdev, windowed, stress, frames, shot);
     } else if (shadowTest) {
-        RunShadowTest(dev, frames, shot, cacheTest);
+        RunShadowTest(dev, frames, shot, cacheTest, frameMs);
     } else {
         RunDemo(dev, windowed, stress, frames, shot);
     }

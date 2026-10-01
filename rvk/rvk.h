@@ -290,7 +290,14 @@ private:
         int texOffset;
         float alphaRef;
         uint64_t lastSeen;
+        double lastSeenTime;                     // seconds (SwayClock)
+        // Swaying (world matrix changing while it is seen): a recording of the matrix at kSwayStep intervals,
+        // played back and forth while it is out of view so its shadow keeps moving.
+        std::vector<d3d::Matrix> sway;
+        double lastSwaySample;
     };
+    static constexpr double kSwayStep = 0.05;
+    static constexpr size_t kSwaySamples = 80;
     struct CasterStreak { uint64_t lastFrame; uint32_t count; };
     std::unordered_map<uint64_t, CachedCaster> m_casterCache;
     std::unordered_map<uint64_t, CasterStreak> m_casterStreaks;
@@ -306,6 +313,8 @@ private:
     void UpdateCasterCache();
     void ForgetCachedCaster(std::unordered_map<uint64_t, CachedCaster>::iterator it);
     void ForgetCasterTexture(Texture* texture);
+    static double SwayClock();
+    d3d::Matrix SwayPose(const CachedCaster& e) const;
     void CaptureSun(const d3d::Light& light);
     bool ShadowReceiver(uint32_t fvf) const;
     bool IsShadowCaster(uint32_t primitive, uint32_t fvf) const;

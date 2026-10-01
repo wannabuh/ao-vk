@@ -7,6 +7,7 @@
 #include "internal.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <climits>
 #include <cstring>
@@ -81,6 +82,31 @@ void Cross(const float a[3], const float b[3], float out[3])
 float Dot(const float a[3], const float b[3]) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
 }  // namespace
+
+double Device::SwayClock()
+{
+    using namespace std::chrono;
+    return duration<double>(steady_clock::now().time_since_epoch()).count();
+}
+
+// The pose of a remembered caster while out of view: its recorded sway played back and forth, starting from the
+// latest sample (backwards first), interpolated between samples. Without a recording: the last pose seen.
+d3d::Matrix Device::SwayPose(const CachedCaster& e) const
+{
+    size_t n = e.sway.size();
+    if (n < 8)
+        return e.world;
+    double span = double(n - 1);
+    double p = std::fmod((SwayClock() - e.lastSeenTime) / kSwayStep, 2.0 * span);
+    double pos = p < span ? span - p : p - span;      // n-1 ... 0 ... n-1
+    size_t i = std::min(size_t(pos), n - 2);
+    float f = float(pos - double(i));
+    d3d::Matrix r;
+    for (int a = 0; a < 4; ++a)
+        for (int b = 0; b < 4; ++b)
+            r.m[a][b] = e.sway[i].m[a][b] * (1.0f - f) + e.sway[i + 1].m[a][b] * f;
+    return r;
+}
 
 d3d::Matrix detail::MulMatrix(const d3d::Matrix& a, const d3d::Matrix& b)
 {
@@ -293,7 +319,17 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     uint64_t key = CasterKey(primitive, fvf, stride, vertices, vertexCount, indices, indexCount);
     auto cached = m_casterCache.find(key);
     if (cached != m_casterCache.end()) {
-        cached->second.lastSeen = m_frameNumber;
+        CachedCaster& e = cached->second;
+        double now = SwayClock();
+        e.lastSeen = m_frameNumber;
+        e.lastSeenTime = now;
+        if (std::memcmp(&e.world, &m_world, sizeof(m_world)) != 0) {
+            e.world = m_world;                   // the latest pose: where an out-of-view playback starts
+            if (e.sway.size() < kSwaySamples && now - e.lastSwaySample >= kSwayStep) {
+                e.sway.push_back(m_world);
+                e.lastSwaySample = now;
+            }
+        }
         return;
     }
     CasterStreak& streak = m_casterStreaks[key];
@@ -370,6 +406,8 @@ void Device::CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertic
     e.texOffset = c.texOffset;
     e.alphaRef = c.alphaRef;
     e.lastSeen = m_frameNumber;
+    e.lastSeenTime = SwayClock();
+    e.lastSwaySample = -1.0;
     // World-space bounds.
     for (int i = 0; i < 3; ++i) { e.boundsMin[i] = 1e30f; e.boundsMax[i] = -1e30f; }
     const uint8_t* v = static_cast<const uint8_t*>(vertices);
@@ -678,7 +716,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         VkDeviceSize zero = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &e.buffer, &zero);
         ShadowPush push;
-        push.worldLightViewProj = Mul(e.world, lightViewProj);
+        push.worldLightViewProj = Mul(SwayPose(e), lightViewProj);
         push.alpha[0] = e.alphaRef;
         push.alpha[1] = push.alpha[2] = push.alpha[3] = 0.0f;
         vkCmdPushConstants(cmd, m_shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
