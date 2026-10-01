@@ -22,18 +22,20 @@ randy31 exports, so randy31 is still the single choke point between the game and
 
 ## Object layout (`interface/subclasses.tsv`)
 
-Every visual derives from `RVisual_t : RRefFrame_t : fun::Serializable_c` at offset 0, with a second base
-`SubjectImpl<VisualEvents::Rendering>` at +0xA4. So:
+Every visual derives from `RVisual_t : RRefFrame_t : fun::Serializable_c` at offset 0. `RRefFrame_t` is 0xA4
+bytes; `RVisual_t` adds a second base `SubjectImpl<VisualEvents::Rendering>` at +0xA4 and its own fields
+after it, 0x178 bytes in total (element size in its vector-deleting destructor). So:
 
-- `sizeof(RVisual_t)` is 0xA4 and must stay 0xA4. Its vtable layout must stay identical, because
-  DisplaySystem's classes override its virtual methods and Randy calls them.
+- `sizeof(RVisual_t)` 0x178 and its vtable layout (21 slots, see `docs/frame.md`) must stay identical,
+  because DisplaySystem's classes override its virtual methods and Randy calls them.
 - `RTriMesh_t` is also a base class (`VisualEnvFXMeshBase_t`, ships, rocks, nebula, vortex sky).
 - `TextureCreator` / `TextureStreamCreator` are subclassed for texture loading (ads, ground).
 - `RResource_t` is subclassed by the ground data.
 
-Fields DisplaySystem touches directly inside Randy base objects (`interface/field_uses_DisplaySystem.tsv`,
-a lower bound: tracking is per function): only 4 offsets in `RVisual_t` and 10 in `RRefFrame_t`
-(0x14..0x28, 0x3C, 0x84, 0x88, 0x9E). Everything above 0xA4 belongs to the derived class.
+Fields other modules touch directly inside Randy base objects (`interface/field_uses_*.tsv`, a lower
+bound: tracking is per function): about 15 distinct offsets in `RRefFrame_t`/`RVisual_t`: 0x14..0x28,
+0x3C, 0x84, 0x88, 0x9E, 0xA4 (Subject vptr), 0xB0, 0xB8, 0xBC, 0xE4 (render list). Everything above 0x178
+belongs to the derived class.
 
 Allocation sizes DisplaySystem compiles in (operator new + imported constructor), which therefore
 can't change: `RDeltaState` 0x16C, `RMaterial_t`/`DefaultMaterial_t` 0xC0, `RTexture_t` 0xBC,
