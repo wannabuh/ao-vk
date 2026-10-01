@@ -28,7 +28,9 @@ void SetLogSink(void (*sink)(const char* line));
 // Texture formats (the D3DX 7 / DirectDraw pixel formats the client can create).
 enum class Format : uint32_t {
     A8R8G8B8, X8R8G8B8, R5G6B5, A1R5G5B5, X1R5G5B5, A4R4G4B4, L8, A8, A8L8,
-    DXT1, DXT2, DXT3, DXT4, DXT5, Count
+    DXT1, DXT2, DXT3, DXT4, DXT5,
+    RGBA16F,    // internal: the HDR scene target
+    Count
 };
 
 // Bytes for one row of 4x4 blocks (compressed) or of pixels, and rows of blocks/pixels, for a level.
@@ -142,6 +144,12 @@ public:
     void SetPointShadowFadeIn(double seconds) { m_pointShadowFadeIn = seconds; }
     void SetPointShadowStrength(float strength, float dayFactor) { m_pointShadowStrength = strength; m_pointShadowDay = dayFactor; }
     static constexpr uint32_t kMaxPointShadows = 8;
+    // Enhancement: the 3D scene is drawn into a 16-bit float target (colours above 1 kept) and tone mapped into the
+    // 8-bit main target when the interface starts drawing (hdr.cpp). knee: colours up to it are shown unchanged,
+    // brighter ones roll off towards white (1 = only clip, keeping the hue). exposure scales the scene first.
+    void SetHdr(bool enable) { m_hdr = enable; m_constantsDirty = true; m_frameLightsDirty = true; }
+    bool Hdr() const { return m_hdr; }
+    void SetTonemap(float knee, float exposure) { m_tonemapKnee = knee; m_exposure = exposure; }
     // Enhancement, with the light override: how bright the frame's lights may make a surface (1 = D3D's clamp, up to
     // 2). The game's own lighting stays clamped at 1; local lights add on top of it, so they (and their shadows) show
     // on surfaces the sun already lights fully.
@@ -395,6 +403,26 @@ private:
     bool m_terrainLitPassCur = false, m_terrainLitPassPrev = false;   // the ground had a lightmap + lights pass
     bool IsBlobShadow(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t indexCount) const;
     void RenderShadowMap(VkCommandBuffer cmd);
+
+    // HDR (hdr.cpp): during the scene phase m_main is m_scene (float); EndScene tone maps it into m_ldrMain, which is
+    // m_main from then on (the interface, read-backs, presenting).
+    static constexpr float kHdrHeadroom = 16.0f;  // how far local lights may go above 1 in the HDR scene
+    bool m_hdr = false;
+    float m_tonemapKnee = 0.85f, m_exposure = 1.0f;
+    Texture* m_ldrMain = nullptr;
+    Texture* m_scene = nullptr;
+    bool m_scenePhase = false;                   // 3D drawn into m_scene; ends at the first interface draw
+    bool m_sceneSaw3D = false;
+    uint32_t m_sceneEndDraw = 0, m_sceneEndFvf = 0;   // frame dumps: where the scene phase ended
+    VkPipeline m_pipelinesHdr[3] = {};           // m_pipelines for the float target
+    VkDescriptorSetLayout m_tonemapSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout m_tonemapLayout = VK_NULL_HANDLE;
+    VkPipeline m_tonemapPipeline = VK_NULL_HANDLE;
+    VkSampler m_pointSampler = VK_NULL_HANDLE;
+    bool CreateHdrResources(std::string* error);
+    void DestroyHdrResources();
+    void BeginScene();
+    void EndScene();
 
     // Point light shadows (pointshadow.cpp): a cube map per shadowed light, layers 6*i .. 6*i+5 of one cube array.
     static constexpr uint32_t kPointShadowSize = 1024;

@@ -39,6 +39,7 @@ const FormatInfo kFormats[] = {
     {VK_FORMAT_BC2_UNORM_BLOCK, kIdentity, 16, true},         // DXT3
     {VK_FORMAT_BC3_UNORM_BLOCK, kIdentity, 16, true},         // DXT4 (premultiplied; same storage)
     {VK_FORMAT_BC3_UNORM_BLOCK, kIdentity, 16, true},         // DXT5
+    {VK_FORMAT_R16G16B16A16_SFLOAT, kIdentity, 8, false},     // RGBA16F (HDR scene)
 };
 static_assert(sizeof(kFormats) / sizeof(kFormats[0]) == size_t(Format::Count), "format table");
 

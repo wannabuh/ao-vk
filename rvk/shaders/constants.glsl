@@ -53,4 +53,5 @@ const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8
            F_SHADOWCOMP = 16384u,   // multiplies a shadowed surface: local lights divided by its shadow factor
            F_SHADOWTEX = 32768u,    // the shadow darkens texture stage 0 (the ground's lightmap) only
            F_OVERBRIGHT = 65536u,   // frame lights may light beyond the game's clamp, up to FL.sunDir.w
-           F_OVERBRIGHT2X = 131072u; // multiplying pass blended at 2x (DESTCOLOR/SRCCOLOR): output halved, up to 2
+           F_OVERBRIGHT2X = 131072u, // multiplying pass blended at 2x (DESTCOLOR/SRCCOLOR): output halved, up to 2
+           F_HDR = 262144u;          // drawn into the HDR scene (float): colours above 1 are kept

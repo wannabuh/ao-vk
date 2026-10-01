@@ -261,7 +261,7 @@ VkDeviceSize Device::WriteFrameLights()
     fl->shadowParams[2] = 2.0f * m_shadowRange / float(kShadowSize);
     fl->shadowParams[3] = PointShadowStrength();
     fl->sunDir[0] = m_shadowSunDir[0]; fl->sunDir[1] = m_shadowSunDir[1]; fl->sunDir[2] = m_shadowSunDir[2];
-    fl->sunDir[3] = m_lightHeadroom;
+    fl->sunDir[3] = m_hdr ? kHdrHeadroom : m_lightHeadroom;   // HDR: the tone mapping rolls the light off
     m_frameLightIndices.clear();
     for (uint32_t k = 0; k < used; ++k) {
         const CapturedLight& c = m_lightsPrev[candidates[k].index];
@@ -287,7 +287,8 @@ VkDeviceSize Device::WriteFrameLights()
 // colour and is blended at 2x, so the lights can brighten the surface under it beyond the texture.
 bool Device::Overbright2x(uint32_t fvf) const
 {
-    return m_lightHeadroom > 1.0f && m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
+    return m_lightHeadroom > 1.0f && m_target->m_format != Format::RGBA16F &&   // a float target takes > 1 as is
+           m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
            (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW && IsMultiplyPass();
 }
 
@@ -447,9 +448,11 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     VkCommandBuffer cmd = m_frames[m_frameIndex].main;
     StateCache& c = m_cache;
     uint32_t topoClass = TopologyClass(primitive);
-    if (c.topologyClass != topoClass) {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines[topoClass]);
-        c.topologyClass = topoClass;
+    uint32_t pipelineClass = topoClass + (m_target->m_format == Format::RGBA16F ? 3u : 0u);
+    if (c.topologyClass != pipelineClass) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          pipelineClass >= 3 ? m_pipelinesHdr[topoClass] : m_pipelines[topoClass]);
+        c.topologyClass = pipelineClass;
     }
     if (c.topology != primitive) {
         vkCmdSetPrimitiveTopology(cmd, Topology(primitive));
@@ -561,6 +564,17 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 {
     if (!m_inFrame || !vertexCount)
         return;
+    // HDR: the frame's first interface (pre-transformed) draw after its 3D ends the scene phase - the scene is tone
+    // mapped and the interface drawn over it into the 8-bit target.
+    if (m_scenePhase && m_target == m_scene) {
+        if ((fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) {
+            m_sceneSaw3D = true;
+        } else if (m_sceneSaw3D) {
+            m_sceneEndDraw = m_dumpDraw;
+            m_sceneEndFvf = fvf;
+            EndScene();
+        }
+    }
     m_drawIsLabel = IsLabel(primitive, fvf, vertexCount);
     if (m_dumpFile)
         DumpDraw(primitive, fvf, vertices, vertexCount, indices, indexCount);
@@ -663,7 +677,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_lightingDebug) flags |= F_DEBUGLIGHT;
     bool override = (flags & F_PERPIXEL) && m_lightOverride;
     if (override) flags |= F_LIGHTOVERRIDE;
-    if (override && m_lightHeadroom > 1.0f) flags |= F_OVERBRIGHT;
+    bool hdrTarget = m_target->m_format == Format::RGBA16F;
+    if (hdrTarget) flags |= F_HDR;
+    if (override && (m_lightHeadroom > 1.0f || hdrTarget)) flags |= F_OVERBRIGHT;
     if (Overbright2x(fvf)) flags |= F_OVERBRIGHT2X;
     if (ShadowReceiver(fvf)) flags |= F_SHADOW;
     else if (ShadowInLightmap(fvf)) flags |= F_SHADOWTEX;

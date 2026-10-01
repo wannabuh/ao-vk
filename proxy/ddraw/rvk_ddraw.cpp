@@ -98,6 +98,12 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     char dumpVerts[16] = "0";         // frame dumps: vertices of draws with this many (RANDYVK_DUMP_VERTS)
     GetEnvironmentVariableA("RANDYVK_DUMP_VERTS", dumpVerts, sizeof(dumpVerts));
     device->SetDumpVertexCount(uint32_t(std::atoi(dumpVerts)));
+    char hdr[8] = "1", knee[16] = "0.85", exposure[16] = "1.0";
+    GetEnvironmentVariableA("RANDYVK_HDR", hdr, sizeof(hdr));
+    GetEnvironmentVariableA("RANDYVK_TONEMAP_KNEE", knee, sizeof(knee));
+    GetEnvironmentVariableA("RANDYVK_EXPOSURE", exposure, sizeof(exposure));
+    device->SetHdr(hdr[0] != '0');
+    device->SetTonemap(float(std::atof(knee)), float(std::atof(exposure)));
     char headroom[16] = "1.25";
     GetEnvironmentVariableA("RANDYVK_LIGHT_HEADROOM", headroom, sizeof(headroom));
     device->SetLightHeadroom(float(std::atof(headroom)));
@@ -109,6 +115,7 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     RvkLog("rvk point light shadows: %u lights (strength %s, x%s in daylight; needs per-pixel lighting + light override)",
            device->PointShadows(), pointStrength, pointDay);
     RvkLog("rvk light headroom (local lights above the game's clamp): %s", headroom);
+    RvkLog("rvk HDR scene + tone mapping: %s (knee %s, exposure %s)", device->Hdr() ? "on" : "off", knee, exposure);
     return true;
 }
 
@@ -159,6 +166,14 @@ void RvkState::Present()
         RvkLog("sun shadows %s", device->Shadows() ? "on" : "off");
     }
     f7Down = f7;
+    // Ctrl+Shift+F5: HDR scene + tone mapping.
+    static bool f5Down;
+    bool f5 = chord && (GetAsyncKeyState(VK_F5) & 0x8000);
+    if (f5 && !f5Down) {
+        device->SetHdr(!device->Hdr());
+        RvkLog("HDR %s", device->Hdr() ? "on" : "off");
+    }
+    f5Down = f5;
     // Ctrl+Shift+F6: point light shadows (off / the configured number of lights, at least 1).
     static bool f6Down;
     static uint32_t pointShadowsOn = 0;

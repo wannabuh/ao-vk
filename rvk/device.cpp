@@ -166,8 +166,10 @@ Device::~Device()
     if (m_blackTexture) DestroyTextureNow(m_blackTexture);
     for (auto& [key, sampler] : m_samplers) vkDestroySampler(m_device, sampler, nullptr);
     for (VkPipeline p : m_pipelines) if (p) vkDestroyPipeline(m_device, p, nullptr);
+    for (VkPipeline p : m_pipelinesHdr) if (p) vkDestroyPipeline(m_device, p, nullptr);
     DestroyShadowResources();
     DestroyPointShadowResources();
+    DestroyHdrResources();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_setLayout) vkDestroyDescriptorSetLayout(m_device, m_setLayout, nullptr);
     if (m_nullBuffer) vmaDestroyBuffer(m_allocator, m_nullBuffer, m_nullAllocation);
@@ -370,11 +372,13 @@ bool Device::CreateLogicalDevice(std::string* error)
 
 bool Device::CreateMainTargets(std::string* error)
 {
-    m_main = CreateImage(m_width, m_height, Format::A8R8G8B8, 1, true);
-    if (!m_main) {
+    m_ldrMain = CreateImage(m_width, m_height, Format::A8R8G8B8, 1, true);
+    m_scene = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);
+    if (!m_ldrMain || !m_scene) {
         if (error) *error = "main colour target";
         return false;
     }
+    m_main = m_ldrMain;
     m_target = m_main;
 
     m_depthWidth = m_depthHeight = 0;
@@ -435,7 +439,9 @@ bool Device::EnsureDepth(uint32_t width, uint32_t height)
 
 void Device::DestroyMainTargets()
 {
-    if (m_main) { DestroyTextureNow(m_main); m_main = nullptr; }
+    if (m_ldrMain) { DestroyTextureNow(m_ldrMain); m_ldrMain = nullptr; }
+    if (m_scene) { DestroyTextureNow(m_scene); m_scene = nullptr; }
+    m_main = nullptr;
     for (auto& [tag, d] : m_deadImages) { vkDestroyImageView(m_device, d.view, nullptr); vmaDestroyImage(m_allocator, d.image, d.allocation); }
     m_deadImages.clear();
     if (m_depthView) { vkDestroyImageView(m_device, m_depthView, nullptr); m_depthView = VK_NULL_HANDLE; }
@@ -621,7 +627,10 @@ bool Device::CreatePipelines(std::string* error)
                                                           VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
                                                           VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
     bool ok = true;
+    // One set for the 8-bit targets, one for the HDR scene (float).
+    for (int set = 0; set < 2 && ok; ++set)
     for (int c = 0; c < 3 && ok; ++c) {
+        colorFormat = set ? GetFormatInfo(Format::RGBA16F).vk : kColorFormat;
         VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         ia.topology = kClassTopology[c];
         VkGraphicsPipelineCreateInfo ci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -636,12 +645,12 @@ bool Device::CreatePipelines(std::string* error)
         ci.pColorBlendState = &cb;
         ci.pDynamicState = &ds;
         ci.layout = m_pipelineLayout;
-        ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, &m_pipelines[c]),
+        ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, set ? &m_pipelinesHdr[c] : &m_pipelines[c]),
                    "vkCreateGraphicsPipelines", error);
     }
     vkDestroyShaderModule(m_device, vert, nullptr);
     vkDestroyShaderModule(m_device, frag, nullptr);
-    if (!ok || !CreateShadowResources(error) || !CreatePointShadowResources(error))
+    if (!ok || !CreateShadowResources(error) || !CreatePointShadowResources(error) || !CreateHdrResources(error))
         return false;
 
     // Zero vertex data for attributes a format doesn't have (bound with stride 0).
@@ -929,6 +938,7 @@ void Device::BeginFrame()
     m_terrainLitPassPrev = m_terrainLitPassCur;
     m_terrainLitPassCur = false;
     m_inFrame = true;
+    BeginScene();
     PrepareShadowMap(f.main);
     PreparePointShadowMaps(f.main);
     BeginRenderingOn(m_target);
@@ -938,6 +948,7 @@ void Device::BeginFrame()
 
 void Device::EndFrame()
 {
+    EndScene();                                  // if the interface didn't end it (no interface drawn)
     EndFrameDump();
     Frame& f = m_frames[m_frameIndex];
     EndRendering();
@@ -1054,7 +1065,9 @@ void Device::SubmitAndWait()
 
 bool Device::ReadPixels(Texture* target, void* out)
 {
-    Texture* t = target ? target : m_main;
+    if (!target || target == m_scene)
+        EndScene();                              // the main target as the game sees it: 8-bit, tone mapped
+    Texture* t = target && target != m_scene ? target : m_main;
     if (!t->m_renderTarget)
         return false;
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};

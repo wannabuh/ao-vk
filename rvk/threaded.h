@@ -67,6 +67,9 @@ public:
     uint32_t PointShadows() const { return m_pointShadows; }
     void SetPointShadowStrength(float strength, float dayFactor);
     void SetLightHeadroom(float headroom);
+    void SetHdr(bool enable);
+    bool Hdr() const { return m_hdr; }
+    void SetTonemap(float knee, float exposure);
     void SetDumpVertexCount(uint32_t count);
     void SetTexture(uint32_t stage, Texture* texture);
     void SetRenderTarget(Texture* target);
@@ -138,6 +141,7 @@ private:
     Texture* m_target = nullptr;
     bool m_pixelLighting = false, m_lightingDebug = false, m_lightOverride = false, m_shadows = false;
     uint32_t m_pointShadows = 0;
+    bool m_hdr = false;
 };
 
 }  // namespace rvk

@@ -344,6 +344,17 @@ void ThreadedDevice::SetDumpVertexCount(uint32_t count)
     Enqueue([this, count](const uint8_t*) { m_device.SetDumpVertexCount(count); });
 }
 
+void ThreadedDevice::SetHdr(bool enable)
+{
+    m_hdr = enable;
+    Enqueue([this, enable](const uint8_t*) { m_device.SetHdr(enable); });
+}
+
+void ThreadedDevice::SetTonemap(float knee, float exposure)
+{
+    Enqueue([this, knee, exposure](const uint8_t*) { m_device.SetTonemap(knee, exposure); });
+}
+
 void ThreadedDevice::SetLightHeadroom(float headroom)
 {
     Enqueue([this, headroom](const uint8_t*) { m_device.SetLightHeadroom(headroom); });

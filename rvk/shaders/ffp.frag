@@ -229,7 +229,7 @@ void main()
         vec4 with = Cascade(t0, t1, 1e4);
         gDiffuse = d;
         gSpecular = sp;
-        float maxColor = (C.flags.x & F_OVERBRIGHT2X) != 0u ? FL.sunDir.w : 1.0;
+        float maxColor = (C.flags.x & (F_OVERBRIGHT2X | F_HDR)) != 0u ? FL.sunDir.w : 1.0;
         current.rgb = min(current.rgb + max(with.rgb - without.rgb, 0.0), vec3(maxColor));
     }
     if (!shadeSun)
