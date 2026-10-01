@@ -37,7 +37,7 @@ bool IsGpu(const RSurface* s)
 // Clears part of a GPU surface ignoring the current viewport (Blt colour/depth fill semantics).
 void FillGpu(RSurface* s, const RECT* rect, uint32_t flags, uint32_t argb, float z)
 {
-    rvk::Device* dev = g_rvk.device;
+    rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev)
         return;
     g_rvk.Frame();
@@ -206,7 +206,7 @@ void RSurface::EnsureShadow()
 
 rvk::Texture* RSurface::RvkTexture()
 {
-    rvk::Device* dev = g_rvk.device;
+    rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev)
         return nullptr;
     if (kind == Kind::RenderTarget) {
@@ -235,7 +235,7 @@ void RSurface::Upload()
 {
     if (kind != Kind::Texture)
         return;
-    rvk::Device* dev = g_rvk.device;
+    rvk::ThreadedDevice* dev = g_rvk.device;
     RSurface* t = top;
     if (!dev || shadow.empty()) {
         dirty = !shadow.empty();
@@ -291,7 +291,7 @@ HRESULT RSurface::DoDeleteAttachedSurface(DWORD, LPDIRECTDRAWSURFACE7 s)
 HRESULT RSurface::DoBlt(LPRECT dstRect, LPDIRECTDRAWSURFACE7 srcIface, LPRECT srcRect, DWORD flags, LPDDBLTFX fx)
 {
     auto* src = static_cast<RSurface*>(srcIface);
-    rvk::Device* dev = g_rvk.device;
+    rvk::ThreadedDevice* dev = g_rvk.device;
 
     if (kind == Kind::Primary) {
         if (src && src->kind == Kind::Main)

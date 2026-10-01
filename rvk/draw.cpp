@@ -157,6 +157,8 @@ void Device::LightEnable(uint32_t index, bool enable)
 
 void Device::SetTexture(uint32_t stage, Texture* texture)
 {
+    if (texture && !texture->m_view)            // failed creation: draw untextured
+        texture = nullptr;
     if (stage < 2)
         m_textures[stage] = texture == m_target ? nullptr : texture;
 }
@@ -219,7 +221,7 @@ void Device::CopyTexture(Texture* dst, const Rect* dstRect, Texture* src, const 
         return;
     if (!dst) dst = m_main;
     if (!src) src = m_main;
-    if (!dst->m_renderTarget || src == dst || FormatIsCompressed(src->m_format)) {
+    if (!dst->m_renderTarget || src == dst || FormatIsCompressed(src->m_format) || !dst->m_image || !src->m_image) {
         Log("CopyTexture: unsupported source/destination combination\n");
         return;
     }

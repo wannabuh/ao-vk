@@ -4,6 +4,7 @@
 
 #include "com_trace.h"
 #include "rvk.h"
+#include "threaded.h"
 
 #include <atomic>
 #include <map>
@@ -81,7 +82,7 @@ class RPalette;
 
 // Process-wide state shared by all objects.
 struct RvkState {
-    rvk::Device* device = nullptr;
+    rvk::ThreadedDevice* device = nullptr;      // rvk on its own thread (RANDYVK_THREADED=0: on the caller's)
     HWND window = nullptr;            // from SetCooperativeLevel or a clipper
     RSurface* mainSurface = nullptr;  // the back buffer the 3D device renders to (rvk main target)
     DWORD displayWidth = 0, displayHeight = 0;   // SetDisplayMode (0 = desktop)

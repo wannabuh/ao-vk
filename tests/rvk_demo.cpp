@@ -5,6 +5,7 @@
 // Headless by default: renders N frames (default 3) and writes the last one to --shot (default rvk_demo.bmp).
 // --window opens a window and animates until it is closed.
 #include "rvk.h"
+#include "threaded.h"
 
 #include <cmath>
 #include <cstdio>
@@ -147,7 +148,8 @@ std::vector<uint32_t> Stripes(uint32_t size)        // horizontal colour stripes
 //   R5G6B5 red->blue gradient | A1R5G5B5 green, right half transparent | A4R4G4B4 white, alpha ramp
 //   X8R8G8B8 yellow (alpha byte 0 ignored) | L8 grey ramp | A8 black with alpha ramp (over red)
 //   A8L8 grey ramp, bottom half transparent | DXT1 red/green/blue/white blocks | DXT5 white, alpha ramp
-std::vector<Texture*> MakeFormatTextures(Device& dev)
+template <typename D>
+std::vector<Texture*> MakeFormatTextures(D& dev)
 {
     std::vector<Texture*> out;
     auto make = [&](Format f, const void* data, uint32_t pitch) {
@@ -195,7 +197,8 @@ std::vector<Texture*> MakeFormatTextures(Device& dev)
 }
 
 // 64x64 texture with 7 levels; level 0 a white/grey checker, then solid red, green, blue, yellow, magenta, cyan.
-Texture* MakeMipTexture(Device& dev)
+template <typename D>
+Texture* MakeMipTexture(D& dev)
 {
     Texture* t = dev.CreateTexture(64, 64, Format::A8R8G8B8, 7);
     static const uint32_t colors[7] = {0, 0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFF00, 0xFFFF00FF, 0xFF00FFFF};
@@ -208,8 +211,9 @@ Texture* MakeMipTexture(Device& dev)
     return t;
 }
 
+template <typename D>
 struct Scene {
-    Device& dev;
+    D& dev;
     Texture* checker;
     Texture* dot;
     Texture* stripes;
@@ -602,7 +606,11 @@ struct Scene {
 // CPU benchmark shaped like a crowded scene in the game (frame inspector, 2026-09-29): ~2450 indexed draws
 // per frame of FVF 0x152 pieces (~67 vertices), a new world matrix per draw, texture / material / light changes
 // every few draws. Returns the average CPU time per frame spent recording (BeginFrame .. EndFrame).
-double Benchmark(Device& dev, int frames)
+double g_benchRecordMs = 0;     // time spent issuing calls, excluding EndFrame (pacing waits)
+double g_benchGameMs = 0;       // simulated game work per frame (busy loop), --game-ms
+
+template <typename D>
+double Benchmark(D& dev, int frames)
 {
     std::vector<Texture*> textures;
     for (int i = 0; i < 16; ++i) {
@@ -622,9 +630,16 @@ double Benchmark(Device& dev, int frames)
     l.attenuation0 = 1;
     LARGE_INTEGER freq, t0, t1;
     QueryPerformanceFrequency(&freq);
-    double total = 0;
+    double total = 0, record = 0;
     for (int f = 0; f < frames; ++f) {
         QueryPerformanceCounter(&t0);
+        if (g_benchGameMs > 0) {                      // the game's own work before it renders
+            LARGE_INTEGER s, n;
+            QueryPerformanceCounter(&s);
+            do QueryPerformanceCounter(&n); while (double(n.QuadPart - s.QuadPart) * 1000.0 / double(freq.QuadPart) < g_benchGameMs);
+        }
+        LARGE_INTEGER r0, r1;
+        QueryPerformanceCounter(&r0);
         dev.BeginFrame();
         dev.SetViewport({0, 0, kWidth, kHeight, 0, 1});
         dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF102030, 1.0f);
@@ -646,70 +661,27 @@ double Benchmark(Device& dev, int frames)
             dev.SetTransform(World, Translate(float(d % 50) * 0.2f - 5, float(d / 50) * 0.2f - 5, float(d % 7)));
             dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, verts.data(), 67, idx.data(), uint32_t(idx.size()));
         }
+        QueryPerformanceCounter(&r1);
         dev.EndFrame();
         QueryPerformanceCounter(&t1);
-        if (f >= 10) total += double(t1.QuadPart - t0.QuadPart) / double(freq.QuadPart);   // skip warm-up
+        if (f >= 10) {                                 // skip warm-up
+            total += double(t1.QuadPart - t0.QuadPart) / double(freq.QuadPart);
+            record += double(r1.QuadPart - r0.QuadPart) / double(freq.QuadPart);
+        }
     }
     for (Texture* t : textures) dev.DestroyTexture(t);
+    g_benchRecordMs = record * 1000.0 / std::max(frames - 10, 1);
     return total * 1000.0 / std::max(frames - 10, 1);
 }
 
-LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
+template <typename D>
+void RunDemo(D& dev, bool windowed, bool stress, int frames, const std::string& shot)
 {
-    if (msg == WM_DESTROY) { PostQuitMessage(0); return 0; }
-    return DefWindowProcA(hwnd, msg, w, l);
-}
-
-}  // namespace
-
-int main(int argc, char** argv)
-{
-    bool windowed = false, stress = false;
-    int bench = 0;
-    int frames = 3;
-    std::string shot = "rvk_demo.bmp";
-    for (int i = 1; i < argc; ++i) {
-        std::string a = argv[i];
-        if (a == "--window") windowed = true;
-        else if (a == "--stress") stress = true;
-        else if (a == "--bench" && i + 1 < argc) bench = std::atoi(argv[++i]);
-        else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
-        else if (a == "--shot" && i + 1 < argc) shot = argv[++i];
-    }
-
-    HWND hwnd = nullptr;
-    if (windowed) {
-        WNDCLASSA wc{};
-        wc.lpfnWndProc = WndProc;
-        wc.hInstance = GetModuleHandleA(nullptr);
-        wc.lpszClassName = "rvk_demo";
-        wc.hCursor = LoadCursorA(nullptr, (LPCSTR)IDC_ARROW);
-        RegisterClassA(&wc);
-        RECT r{0, 0, LONG(kWidth), LONG(kHeight)};
-        AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
-        hwnd = CreateWindowA("rvk_demo", "rvk demo", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
-                             r.right - r.left, r.bottom - r.top, nullptr, nullptr, wc.hInstance, nullptr);
-    }
-
-    Device dev;
-    std::string error;
-    if (!dev.Init(hwnd, kWidth, kHeight, &error)) {
-        std::printf("rvk init failed: %s\n", error.c_str());
-        return 1;
-    }
-    std::printf("GPU: %s (Vulkan %u.%u), driver %s\n", dev.Info().gpu.c_str(), VK_API_VERSION_MAJOR(dev.Info().apiVersion),
-                VK_API_VERSION_MINOR(dev.Info().apiVersion), dev.Info().driver.c_str());
-
-    if (bench) {
-        double ms = Benchmark(dev, bench);
-        std::printf("bench: %.3f ms CPU per frame for 2450 draws (%.2f us per draw)\n", ms, ms * 1000.0 / 2450);
-        return 0;
-    }
     auto checkerPixels = Checker(64, 8, 0xFFE0E0E0, 0x00404040);   // dark cells are transparent (alpha test)
     auto dotPixels = SoftDot(64);
     auto stripePixels = Stripes(64);
     uint32_t grayPixel = 0xFF808080;
-    Scene scene{dev, dev.CreateTexture(64, 64, checkerPixels.data()), dev.CreateTexture(64, 64, dotPixels.data()),
+    Scene<D> scene{dev, dev.CreateTexture(64, 64, checkerPixels.data()), dev.CreateTexture(64, 64, dotPixels.data()),
                 dev.CreateTexture(64, 64, stripePixels.data()), dev.CreateTexture(1, 1, &grayPixel),
                 dev.CreateRenderTarget(128, 128), MakeFormatTextures(dev), MakeMipTexture(dev),
                 dev.CreateVertexBuffer(kFvfRhwDiffuse, 8), 0.0f};
@@ -778,6 +750,79 @@ int main(int argc, char** argv)
     for (Texture* t : scene.formats)
         dev.DestroyTexture(t);
     dev.DestroyVertexBuffer(scene.vb);
+}
+
+LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
+{
+    if (msg == WM_DESTROY) { PostQuitMessage(0); return 0; }
+    return DefWindowProcA(hwnd, msg, w, l);
+}
+
+}  // namespace
+
+int main(int argc, char** argv)
+{
+    bool windowed = false, stress = false, threaded = false;
+    int bench = 0;
+    int frames = 3;
+    std::string shot = "rvk_demo.bmp";
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--window") windowed = true;
+        else if (a == "--stress") stress = true;
+        else if (a == "--threaded") threaded = true;
+        else if (a == "--bench" && i + 1 < argc) bench = std::atoi(argv[++i]);
+        else if (a == "--game-ms" && i + 1 < argc) g_benchGameMs = std::atof(argv[++i]);
+        else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
+        else if (a == "--shot" && i + 1 < argc) shot = argv[++i];
+    }
+
+    HWND hwnd = nullptr;
+    if (windowed) {
+        WNDCLASSA wc{};
+        wc.lpfnWndProc = WndProc;
+        wc.hInstance = GetModuleHandleA(nullptr);
+        wc.lpszClassName = "rvk_demo";
+        wc.hCursor = LoadCursorA(nullptr, (LPCSTR)IDC_ARROW);
+        RegisterClassA(&wc);
+        RECT r{0, 0, LONG(kWidth), LONG(kHeight)};
+        AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
+        hwnd = CreateWindowA("rvk_demo", "rvk demo", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
+                             r.right - r.left, r.bottom - r.top, nullptr, nullptr, wc.hInstance, nullptr);
+    }
+
+    Device dev;
+    std::string error;
+    if (!dev.Init(hwnd, kWidth, kHeight, &error)) {
+        std::printf("rvk init failed: %s\n", error.c_str());
+        return 1;
+    }
+    std::printf("GPU: %s (Vulkan %u.%u), driver %s\n", dev.Info().gpu.c_str(), VK_API_VERSION_MAJOR(dev.Info().apiVersion),
+                VK_API_VERSION_MINOR(dev.Info().apiVersion), dev.Info().driver.c_str());
+
+    if (bench && threaded) {
+        // The benchmark through rvk::ThreadedDevice: the time measured is what stays on the calling thread.
+        ThreadedDevice tdev;
+        std::string err;
+        if (!tdev.Init(nullptr, kWidth, kHeight, &err)) { std::printf("init failed: %s\n", err.c_str()); return 1; }
+        double ms = Benchmark(tdev, bench);
+        std::printf("bench threaded: frame %.3f ms, of which recording %.3f ms (%.2f us per draw), game work %.1f ms\n", ms,
+                    g_benchRecordMs, g_benchRecordMs * 1000.0 / 2450, g_benchGameMs);
+        return 0;
+    }
+    if (bench) {
+        double ms = Benchmark(dev, bench);
+        std::printf("bench direct:   frame %.3f ms, of which recording %.3f ms (%.2f us per draw), game work %.1f ms\n", ms,
+                    g_benchRecordMs, g_benchRecordMs * 1000.0 / 2450, g_benchGameMs);
+        return 0;
+    }
+    if (threaded) {
+        ThreadedDevice tdev;
+        if (!tdev.Init(hwnd, kWidth, kHeight, &error)) { std::printf("init failed: %s\n", error.c_str()); return 1; }
+        RunDemo(tdev, windowed, stress, frames, shot);
+    } else {
+        RunDemo(dev, windowed, stress, frames, shot);
+    }
     std::printf("rendered; screenshot %s\n", windowed ? "(none)" : shot.c_str());
     return 0;
 }

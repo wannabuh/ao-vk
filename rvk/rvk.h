@@ -67,6 +67,7 @@ public:
 
 private:
     friend class Device;
+    friend class ThreadedDevice;
     uint32_t m_fvf = 0, m_stride = 0, m_count = 0;
     std::vector<uint8_t> m_data;
     bool m_locked = false;
@@ -148,6 +149,12 @@ public:
     void DestroyVertexBuffer(VertexBuffer* vb);
 
     static uint32_t FvfStride(uint32_t fvf);
+    bool FormatSupported(Format format) const { return m_formatSupported[size_t(format)]; }
+
+    // Two-step creation (used by ThreadedDevice): a handle without GPU resources, realised later. A texture
+    // whose realisation failed (no image) is ignored by SetTexture / SetRenderTarget / UpdateTexture.
+    static Texture* NewTexture(uint32_t width, uint32_t height, Format format, uint32_t levels, bool renderTarget);
+    bool RealizeTexture(Texture* texture);
 
     static constexpr uint32_t kMaxLights = 8;
     static constexpr uint32_t kFramesInFlight = 2;
@@ -192,6 +199,7 @@ private:
     bool CreatePipelines(std::string* error);
     bool CreateFrames(std::string* error);
     Texture* CreateImage(uint32_t width, uint32_t height, Format format, uint32_t levels, bool renderTarget);
+    friend class ThreadedDevice;
 
     VkDeviceSize Allocate(VkDeviceSize size, VkDeviceSize alignment, void** cpu);
     // Makes sure `bytes` (plus alignment slack) fit in this frame's ring; if not, submits and waits for the

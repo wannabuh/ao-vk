@@ -34,13 +34,13 @@ foreach(stage vert frag)
     list(APPEND RVK_SHADER_INCS "${out}")
 endforeach()
 
-add_library(rvk STATIC rvk/vk.cpp rvk/vma.cpp rvk/device.cpp rvk/resources.cpp rvk/draw.cpp ${RVK_SHADER_INCS})
+add_library(rvk STATIC rvk/vk.cpp rvk/vma.cpp rvk/device.cpp rvk/resources.cpp rvk/draw.cpp rvk/threaded.cpp ${RVK_SHADER_INCS})
 target_include_directories(rvk PUBLIC rvk PRIVATE "${RVK_SHADER_OUT}")
 # Vulkan headers and VMA come from the SDK; /imsvc keeps their warnings quiet.
 target_compile_options(rvk PUBLIC "/imsvc${VULKAN_SDK_DIR}/include")
 target_compile_options(rvk PRIVATE /W3)
 target_compile_definitions(rvk PRIVATE _CRT_SECURE_NO_WARNINGS)
-target_link_libraries(rvk PUBLIC user32)
+target_link_libraries(rvk PUBLIC user32 synchronization)
 
 add_executable(rvk_demo tests/rvk_demo.cpp)
 target_link_libraries(rvk_demo PRIVATE rvk)

@@ -863,8 +863,8 @@ void Device::SetRenderTarget(Texture* target)
 {
     if (!target)
         target = m_main;
-    if (!target->m_renderTarget) {
-        Log("SetRenderTarget: not a render target\n");
+    if (!target->m_renderTarget || !target->m_image) {
+        Log("SetRenderTarget: not a (usable) render target\n");
         return;
     }
     if (target != m_target && m_inFrame) {

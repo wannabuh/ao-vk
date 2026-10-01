@@ -106,7 +106,7 @@ uint32_t Device::FvfStride(uint32_t fvf) { return DecodeFvf(fvf).stride; }
 // ---------------------------------------------------------------------------------------------------
 // Textures
 
-Texture* Device::CreateImage(uint32_t width, uint32_t height, Format format, uint32_t levels, bool renderTarget)
+Texture* Device::NewTexture(uint32_t width, uint32_t height, Format format, uint32_t levels, bool renderTarget)
 {
     if (!width || !height)
         return nullptr;
@@ -119,25 +119,31 @@ Texture* Device::CreateImage(uint32_t width, uint32_t height, Format format, uin
     t->m_levels = std::clamp(levels, 1u, maxLevels);
     t->m_format = format;
     t->m_renderTarget = renderTarget;
-    const FormatInfo& info = kFormats[size_t(format)];
+    return t;
+}
+
+bool Device::RealizeTexture(Texture* t)
+{
+    const FormatInfo& info = kFormats[size_t(t->m_format)];
     VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     ci.imageType = VK_IMAGE_TYPE_2D;
     ci.format = info.vk;
-    ci.extent = {width, height, 1};
+    ci.extent = {t->m_width, t->m_height, 1};
     ci.mipLevels = t->m_levels;
     ci.arrayLayers = 1;
     ci.samples = VK_SAMPLE_COUNT_1_BIT;
     ci.tiling = VK_IMAGE_TILING_OPTIMAL;
     ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    if (renderTarget)
+    if (t->m_renderTarget)
         ci.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     VmaAllocationCreateInfo ac{};
     ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    if (renderTarget)
+    if (t->m_renderTarget)
         ac.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
     if (vmaCreateImage(m_allocator, &ci, &ac, &t->m_image, &t->m_allocation, nullptr) != VK_SUCCESS) {
-        delete t;
-        return nullptr;
+        t->m_image = VK_NULL_HANDLE;
+        Log("texture creation failed (%ux%u, format %u)", t->m_width, t->m_height, uint32_t(t->m_format));
+        return false;
     }
     VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     vi.image = t->m_image;
@@ -146,6 +152,16 @@ Texture* Device::CreateImage(uint32_t width, uint32_t height, Format format, uin
     vi.components = info.swizzle;
     vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, t->m_levels, 0, 1};
     vkCreateImageView(m_device, &vi, nullptr, &t->m_view);
+    return true;
+}
+
+Texture* Device::CreateImage(uint32_t width, uint32_t height, Format format, uint32_t levels, bool renderTarget)
+{
+    Texture* t = NewTexture(width, height, format, levels, renderTarget);
+    if (t && !RealizeTexture(t)) {
+        delete t;
+        return nullptr;
+    }
     return t;
 }
 
@@ -174,7 +190,7 @@ Texture* Device::CreateRenderTarget(uint32_t width, uint32_t height)
 void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                            const void* data, uint32_t pitch)
 {
-    if (!t || level >= t->m_levels || !width || !height)
+    if (!t || !t->m_image || level >= t->m_levels || !width || !height)
         return;
     uint32_t rowBytes = FormatRowBytes(t->m_format, width), rows = FormatRows(t->m_format, height);
 
@@ -221,8 +237,8 @@ void Device::DestroyTexture(Texture* texture)
 
 void Device::DestroyTextureNow(Texture* t)
 {
-    vkDestroyImageView(m_device, t->m_view, nullptr);
-    vmaDestroyImage(m_allocator, t->m_image, t->m_allocation);
+    if (t->m_view) vkDestroyImageView(m_device, t->m_view, nullptr);
+    if (t->m_image) vmaDestroyImage(m_allocator, t->m_image, t->m_allocation);
     delete t;
 }
 

@@ -82,7 +82,7 @@ RDevice::RDevice(RDirect3D* d3d, RSurface* target, REFCLSID clsid) : m_d3d(d3d),
     }
     for (auto& m : m_transforms) m = kIdentity;
     m_viewport = {0, 0, target->desc.dwWidth, target->desc.dwHeight, 0.0f, 1.0f};
-    if (rvk::Device* dev = g_rvk.device) {
+    if (rvk::ThreadedDevice* dev = g_rvk.device) {
         dev->SetRenderTarget(target->kind == RSurface::Kind::Main ? nullptr : TextureOf(target));
         dev->SetViewport(*reinterpret_cast<rvk::d3d::Viewport*>(&m_viewport));
     }
@@ -143,7 +143,7 @@ HRESULT RDevice::DoSetRenderTarget(LPDIRECTDRAWSURFACE7 iface, DWORD)
     s->AddRef();
     m_target->Release();
     m_target = s;
-    if (rvk::Device* dev = g_rvk.device)
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
         dev->SetRenderTarget(s->kind == RSurface::Kind::Main ? nullptr : TextureOf(s));
     m_viewport = {0, 0, s->desc.dwWidth, s->desc.dwHeight, m_viewport.dvMinZ, m_viewport.dvMaxZ};
     for (int i = 0; i < 8; ++i)                 // rvk unbinds a texture that becomes the target
@@ -161,7 +161,7 @@ HRESULT RDevice::DoGetRenderTarget(LPDIRECTDRAWSURFACE7* out)
 
 HRESULT RDevice::DoClear(DWORD count, LPD3DRECT rects, DWORD flags, D3DCOLOR color, D3DVALUE z, DWORD)
 {
-    rvk::Device* dev = g_rvk.device;
+    rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev) return DDERR_GENERIC;
     g_rvk.Frame();
     dev->Clear(count, reinterpret_cast<const rvk::Device::Rect*>(rects), flags & (D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER), color, z);
@@ -172,7 +172,7 @@ HRESULT RDevice::DoSetTransform(D3DTRANSFORMSTATETYPE type, LPD3DMATRIX m)
 {
     if (!m || DWORD(type) >= 32) return DDERR_INVALIDPARAMS;
     m_transforms[type] = *m;
-    if (rvk::Device* dev = g_rvk.device)
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
         dev->SetTransform(type, *reinterpret_cast<const rvk::d3d::Matrix*>(m));
     return D3D_OK;
 }
@@ -195,7 +195,7 @@ HRESULT RDevice::DoSetViewport(LPD3DVIEWPORT7 vp)
 {
     if (!vp) return DDERR_INVALIDPARAMS;
     m_viewport = *vp;
-    if (rvk::Device* dev = g_rvk.device)
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
         dev->SetViewport(*reinterpret_cast<const rvk::d3d::Viewport*>(vp));
     return D3D_OK;
 }
@@ -211,7 +211,7 @@ HRESULT RDevice::DoSetMaterial(LPD3DMATERIAL7 m)
 {
     if (!m) return DDERR_INVALIDPARAMS;
     m_material = *m;
-    if (rvk::Device* dev = g_rvk.device)
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
         dev->SetMaterial(*reinterpret_cast<const rvk::d3d::Material*>(m));
     return D3D_OK;
 }
@@ -228,7 +228,7 @@ HRESULT RDevice::DoSetLight(DWORD i, LPD3DLIGHT7 l)
     if (!l) return DDERR_INVALIDPARAMS;
     if (i >= m_lights.size()) m_lights.resize(i + 1, {D3DLIGHT7{}, FALSE});
     m_lights[i].first = *l;
-    if (rvk::Device* dev = g_rvk.device)
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
         dev->SetLight(i, *reinterpret_cast<const rvk::d3d::Light*>(l));
     return D3D_OK;
 }
@@ -244,7 +244,7 @@ HRESULT RDevice::DoLightEnable(DWORD i, BOOL enable)
 {
     if (i >= m_lights.size()) m_lights.resize(i + 1, {D3DLIGHT7{}, FALSE});
     m_lights[i].second = enable;
-    if (rvk::Device* dev = g_rvk.device)
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
         dev->LightEnable(i, enable != FALSE);
     return D3D_OK;
 }
@@ -259,7 +259,7 @@ HRESULT RDevice::DoGetLightEnable(DWORD i, BOOL* enable)
 HRESULT RDevice::DoSetRenderState(D3DRENDERSTATETYPE s, DWORD v)
 {
     if (DWORD(s) < 256) m_rs[s] = v;
-    if (rvk::Device* dev = g_rvk.device)
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
         dev->SetRenderState(s, v);
     return D3D_OK;
 }
@@ -276,7 +276,7 @@ HRESULT RDevice::DoSetTextureStageState(DWORD stage, D3DTEXTURESTAGESTATETYPE t,
     if (stage >= 8 || DWORD(t) >= 32) return DDERR_INVALIDPARAMS;
     m_tss[stage][t] = v;
     if (t == D3DTSS_ADDRESS) m_tss[stage][D3DTSS_ADDRESSU] = m_tss[stage][D3DTSS_ADDRESSV] = v;
-    if (rvk::Device* dev = g_rvk.device)
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
         dev->SetTextureStageState(stage, t, v);
     return D3D_OK;
 }
@@ -295,7 +295,7 @@ HRESULT RDevice::DoSetTexture(DWORD stage, LPDIRECTDRAWSURFACE7 iface)
     if (s) s->AddRef();
     if (m_textures[stage]) m_textures[stage]->Release();
     m_textures[stage] = s;
-    if (rvk::Device* dev = g_rvk.device)
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
         dev->SetTexture(stage, TextureOf(s));
     return D3D_OK;
 }
@@ -311,7 +311,7 @@ HRESULT RDevice::DoGetTexture(DWORD stage, LPDIRECTDRAWSURFACE7* out)
 HRESULT RDevice::DoDrawPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID verts, DWORD count, DWORD)
 {
     CountBackendDraw();
-    rvk::Device* dev = g_rvk.device;
+    rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !verts) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
     dev->DrawPrimitive(type, fvf, verts, count);
@@ -322,7 +322,7 @@ HRESULT RDevice::DoDrawIndexedPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID
                                         DWORD icount, DWORD)
 {
     CountBackendDraw();
-    rvk::Device* dev = g_rvk.device;
+    rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !verts || !idx) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
     dev->DrawIndexedPrimitive(type, fvf, verts, vcount, idx, icount);
@@ -333,7 +333,7 @@ HRESULT RDevice::DoDrawPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER
 {
     CountBackendDraw();
     auto* vb = static_cast<RVertexBuffer*>(iface);
-    rvk::Device* dev = g_rvk.device;
+    rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !vb || start + count > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
     dev->DrawPrimitive(type, vb->desc.dwFVF, vb->data.data() + size_t(start) * vb->stride, count);
@@ -346,7 +346,7 @@ HRESULT RDevice::DoDrawIndexedPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTE
     CountBackendDraw();
     // D3D7: the indices are relative to start; vcount vertices from there are referenced.
     auto* vb = static_cast<RVertexBuffer*>(iface);
-    rvk::Device* dev = g_rvk.device;
+    rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !vb || !idx || start + vcount > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
     dev->DrawIndexedPrimitive(type, vb->desc.dwFVF, vb->data.data() + size_t(start) * vb->stride, vcount, idx, icount);

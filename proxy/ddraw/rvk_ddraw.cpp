@@ -66,16 +66,19 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
         return device->Resize(width, height);
     }
     rvk::SetLogSink([](const char* line) { RvkLog("rvk: %s", line); });
-    device = new rvk::Device;
+    device = new rvk::ThreadedDevice;
     std::string error;
-    if (!device->Init(window, width, height, &error)) {
+    char threaded[8] = "1";
+    GetEnvironmentVariableA("RANDYVK_THREADED", threaded, sizeof(threaded));
+    if (!device->Init(window, width, height, &error, threaded[0] != '0')) {
         RvkLog("rvk device creation failed: %s", error.c_str());
         delete device;
         device = nullptr;
         return false;
     }
     gpuName = device->Info().gpu;
-    RvkLog("rvk device %ux%u on %s (window %p)", width, height, gpuName.c_str(), (void*)window);
+    RvkLog("rvk device %ux%u on %s (window %p, %s)", width, height, gpuName.c_str(), (void*)window,
+           device->Threaded() ? "worker thread" : "calling thread");
     return true;
 }
 
