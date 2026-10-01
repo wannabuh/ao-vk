@@ -26,6 +26,8 @@ layout(location = 9) out vec4 vNormalW;      // xyz direction, w = length the ve
 layout(location = 10) out vec2 vSet0;        // texture coordinate set 0 as is (the ground's base texture, F_BUMPBASE)
 layout(location = 11) out vec4 vClip;        // motion vectors: clip position now
 layout(location = 12) out vec4 vPrevClip;    // ... and last frame (previous world matrix and camera)
+// Last frame's vertex positions of an animated (CPU-skinned) mesh, model space, 3 floats a vertex (D.motion.y).
+layout(set = 0, binding = 8, std430) readonly buffer PrevPositions { float prevPos[]; } PP;
 
 float FogFactor(uint mode, float d)
 {
@@ -103,7 +105,12 @@ void main()
         vec4 pv = C.view * posW;
         gl_Position = C.proj * pv;
         vClip = gl_Position;
-        vPrevClip = D.motion.x > 0.5 ? FL.prevViewProj * (D.prevWorld * vec4(inPos.xyz, 1.0)) : gl_Position;
+        vec3 prevLocal = inPos.xyz;
+        if (D.motion.y > 0.5) {
+            int i = (gl_VertexIndex - int(D.motion.z)) * 3;
+            prevLocal = vec3(PP.prevPos[i], PP.prevPos[i + 1], PP.prevPos[i + 2]);
+        }
+        vPrevClip = D.motion.x > 0.5 ? FL.prevViewProj * (D.prevWorld * vec4(prevLocal, 1.0)) : gl_Position;
         posV = pv.xyz;
         vec3 normalW = mat3(D.world) * (hasNormal ? inNormal : vec3(0.0));
         if ((C.flags.x & F_NORMALIZE) != 0u && dot(normalW, normalW) > 0.0)

@@ -38,7 +38,7 @@ static_assert(sizeof(DrawConstants) % 16 == 0, "std140 block size");
 struct DrawTransform {
     d3d::Matrix world;
     d3d::Matrix prevWorld;         // motion vectors: the object's world matrix last frame
-    float motion[4];               // x: 1 = drawn with the world camera
+    float motion[4];               // x: 1 = world camera; y: 1 = previous positions (binding 8); z: base vertex
 };
 
 enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE = 8, F_FOG = 16, F_RANGEFOG = 32,

@@ -754,6 +754,7 @@ void RunDemo(D& dev, bool windowed, bool stress, int frames, const std::string& 
 
 float g_cameraYaw = 0.0f;  // --camera-yaw: the shadow test's camera turns this much a frame (motion blur)
 float g_movingCube = 0.0f; // --moving-cube: the shadow test's big right cube moves this far a frame along x
+float g_deformCube = 0.0f; // --deform-cube: its top vertices move this far a frame along x (like CPU skinning)
 
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
 // (left) and unlit like Anarchy Online's ground base pass (right) - from a camera above and behind.
@@ -897,6 +898,9 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
             std::vector<VtxMesh> v;
             std::vector<uint16_t> idx;
             AddCube(v, idx, cubes[k][0], cubes[k][1], cubes[k][2], cubes[k][3]);
+            if (k == 2 && g_deformCube != 0.0f)      // animated vertices, the world matrix still (CPU skinning)
+                for (VtxMesh& m : v)
+                    if (m.y > 1.0f) m.x += g_deformCube * float(frame);
             if (k == 2 && g_movingCube != 0.0f) {    // moving through the world by its world matrix (motion blur)
                 Matrix move = Identity();
                 move.m[3][0] = g_movingCube * float(frame) - 2.0f * g_movingCube;
@@ -1232,6 +1236,7 @@ int main(int argc, char** argv)
         else if (a == "--hdr") hdr = true;
         else if (a == "--motion-blur" && i + 1 < argc) { motionBlur = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--motion-mode" && i + 1 < argc) motionMode = uint32_t(std::atoi(argv[++i]));
+        else if (a == "--deform-cube" && i + 1 < argc) g_deformCube = float(std::atof(argv[++i]));
         else if (a == "--moving-cube" && i + 1 < argc) g_movingCube = float(std::atof(argv[++i]));
         else if (a == "--camera-yaw" && i + 1 < argc) g_cameraYaw = float(std::atof(argv[++i]));
         else if (a == "--aniso" && i + 1 < argc) anisotropy = uint32_t(std::atoi(argv[++i]));

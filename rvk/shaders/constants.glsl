@@ -12,7 +12,8 @@ struct Light {
 layout(set = 0, binding = 3, std140) uniform DrawTransform {
     mat4 world;                 // raw D3DMATRIX memory: GLSL M * v == D3D v * M
     mat4 prevWorld;             // the same object's world matrix last frame (motion vectors)
-    vec4 motion;                // x: 1 = world camera, write its motion (else 0 motion)
+    vec4 motion;                // x: 1 = world camera, write its motion; y: 1 = last frame's vertex positions in
+                                // binding 8; z: the draw's base vertex (gl_VertexIndex - z = its vertex)
 } D;
 
 layout(set = 0, binding = 0, std140) uniform DrawConstants {

@@ -701,7 +701,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     const VkDeviceSize uboAlign = m_props.limits.minUniformBufferOffsetAlignment;
     EnsureRingSpace(sizeof(DrawConstants) + sizeof(DrawTransform) + sizeof(FrameLights) +
                     VkDeviceSize(layout.stride) * vertexCount + VkDeviceSize(indexCount) * 2 + 3 * uboAlign +
-                    layout.stride + 32);
+                    layout.stride + 32 + (MotionVectorDraw(fvf) ? 12ull * vertexCount + 256 : 0));
 
     // The frame's light list (binding 4): rebuilt when lights changed; always bound, as layouts require.
     // Only lit draws read it; the others bind any in-range part of the ring.
@@ -717,6 +717,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     void* cpu;
     VkDeviceSize transformOffset = Allocate(sizeof(DrawTransform), uboAlign, &cpu);
     auto* drawTransform = static_cast<DrawTransform*>(cpu);
+    VkDeviceSize prevPositionsOffset = 0, prevPositionsBytes = 0;   // binding 8 (animated meshes' last positions)
     drawTransform->world = m_world;
     drawTransform->prevWorld = m_world;
     drawTransform->motion[0] = motion ? 1.0f : 0.0f;
@@ -725,6 +726,14 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         // Motion vectors: the same object last frame - same mesh, nearest to where this one is (within 3 units). Not
         // found (new, or a different level of detail): its current matrix, i.e. it moved with the world.
         uint64_t key = MotionKey(primitive, fvf, vertexCount, indices, indexCount);
+        // This frame's positions (for next frame's match) of a mesh small enough to be a character's part.
+        std::vector<float> positions;
+        if (vertexCount <= kMotionMaxVertices) {
+            positions.resize(size_t(vertexCount) * 3);
+            const uint8_t* v = static_cast<const uint8_t*>(vertices);
+            for (uint32_t i = 0; i < vertexCount; ++i)
+                std::memcpy(&positions[size_t(i) * 3], v + size_t(i) * layout.stride, 12);
+        }
         auto it = m_motionPrev.find(key);
         if (it != m_motionPrev.end()) {
             MotionEntry* best = nullptr;
@@ -738,9 +747,18 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             if (best) {
                 drawTransform->prevWorld = best->world;
                 best->used = true;
+                // Animated (its vertices changed): last frame's positions for the vertex shader (binding 8).
+                if (!positions.empty() && best->positions.size() == positions.size() &&
+                    std::memcmp(best->positions.data(), positions.data(), positions.size() * 4) != 0) {
+                    void* prevCpu;
+                    prevPositionsOffset = Allocate(positions.size() * 4, m_props.limits.minStorageBufferOffsetAlignment, &prevCpu);
+                    std::memcpy(prevCpu, best->positions.data(), positions.size() * 4);
+                    prevPositionsBytes = positions.size() * 4;
+                    drawTransform->motion[1] = 1.0f;
+                }
             }
         }
-        m_motionCur[key].push_back({m_world, false});
+        m_motionCur[key].push_back({m_world, false, std::move(positions)});
     }
 
     // The big constant block: reused unless something feeding it changed since it was written.
@@ -883,6 +901,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     VkDeviceSize vbBytes = VkDeviceSize(layout.stride) * vertexCount;
     VkDeviceSize vbOffset = Allocate(vbBytes, layout.stride, &cpu);
     std::memcpy(cpu, vertices, vbBytes);
+    drawTransform->motion[2] = float(vbOffset / layout.stride);   // the base vertex: gl_VertexIndex - it = vertex
     VkDeviceSize ibOffset = 0;
     if (indices) {
         ibOffset = Allocate(VkDeviceSize(indexCount) * 2, 2, &cpu);
@@ -907,8 +926,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     VkDescriptorImageInfo cubes{m_cubeSampler, m_cubeArrayView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     Texture* bumpBase = m_drawBumpBase ? m_drawBumpBase : m_blackTexture;
     VkDescriptorImageInfo bump{m_bumpSampler, bumpBase->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet writes[8] = {};
-    for (int i = 0; i < 8; ++i) {
+    // Binding 8: an animated mesh's last positions, else any small part of the ring (unread).
+    VkDescriptorBufferInfo prevPositions{f.ring, prevPositionsOffset, prevPositionsBytes ? prevPositionsBytes : 16};
+    VkWriteDescriptorSet writes[9] = {};
+    for (int i = 0; i < 9; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstBinding = uint32_t(i);
         writes[i].descriptorCount = 1;
@@ -928,7 +949,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[6].pImageInfo = &cubes;
     writes[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[7].pImageInfo = &bump;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 8, writes);
+    writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[8].pBufferInfo = &prevPositions;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 9, writes);
 
     if (indices)
         vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);
