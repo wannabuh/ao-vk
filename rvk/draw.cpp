@@ -503,6 +503,10 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     }
     uint32_t zEnable = m_rs[d3d::RS_ZENABLE] != 0;
     uint32_t zWrite = zEnable && m_rs[d3d::RS_ZWRITEENABLE] != 0;
+    // Name labels write depth, which the ambient occlusion would take for geometry. They come in the game's
+    // back-to-front sorted list, so nothing drawn after them needs their depth.
+    if (m_drawIsLabel && m_target == m_scene && m_aoStrength > 0.0f)
+        zWrite = 0;
     uint32_t zFunc = m_rs[d3d::RS_ZFUNC];
     if (c.depthTest != zEnable) { vkCmdSetDepthTestEnable(cmd, zEnable); c.depthTest = zEnable; }
     if (c.depthWrite != zWrite) { vkCmdSetDepthWriteEnable(cmd, zWrite); c.depthWrite = zWrite; }
