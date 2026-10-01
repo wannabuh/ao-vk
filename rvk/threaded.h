@@ -53,6 +53,8 @@ public:
     void SetMaterial(const d3d::Material& m);
     void SetLight(uint32_t index, const d3d::Light& light);
     void LightEnable(uint32_t index, bool enable);
+    void SetPixelLighting(bool enable);
+    bool PixelLighting() const { return m_pixelLighting; }
     void SetTexture(uint32_t stage, Texture* texture);
     void SetRenderTarget(Texture* target);
     Texture* GetRenderTarget() const { return m_target; }
@@ -121,6 +123,7 @@ private:
     bool m_inFrame = false;
     d3d::Viewport m_viewport{};
     Texture* m_target = nullptr;
+    bool m_pixelLighting = false;
 };
 
 }  // namespace rvk

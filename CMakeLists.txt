@@ -30,6 +30,7 @@ foreach(stage vert frag)
         COMMAND ${CMAKE_COMMAND} -E make_directory "${RVK_SHADER_OUT}"
         COMMAND ${GLSLC} --target-env=vulkan1.3 -O -mfmt=num -o "${out}" "${src}"
         DEPENDS "${src}" "${CMAKE_CURRENT_SOURCE_DIR}/rvk/shaders/constants.glsl"
+                "${CMAKE_CURRENT_SOURCE_DIR}/rvk/shaders/lighting.glsl"
         COMMENT "glslc ffp.${stage}")
     list(APPEND RVK_SHADER_INCS "${out}")
 endforeach()

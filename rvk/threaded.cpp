@@ -293,6 +293,12 @@ void ThreadedDevice::LightEnable(uint32_t index, bool enable)
     Enqueue([this, index, enable](const uint8_t*) { m_device.LightEnable(index, enable); });
 }
 
+void ThreadedDevice::SetPixelLighting(bool enable)
+{
+    m_pixelLighting = enable;
+    Enqueue([this, enable](const uint8_t*) { m_device.SetPixelLighting(enable); });
+}
+
 void ThreadedDevice::SetTexture(uint32_t stage, Texture* texture)
 {
     Enqueue([this, stage, texture](const uint8_t*) { m_device.SetTexture(stage, texture); });

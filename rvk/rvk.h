@@ -116,6 +116,9 @@ public:
     void SetMaterial(const d3d::Material& m);
     void SetLight(uint32_t index, const d3d::Light& light);
     void LightEnable(uint32_t index, bool enable);
+    // Enhancement (not D3D7): evaluate the fixed-function lighting equation per pixel instead of per vertex.
+    void SetPixelLighting(bool enable) { if (m_pixelLighting != enable) { m_pixelLighting = enable; m_constantsDirty = true; } }
+    bool PixelLighting() const { return m_pixelLighting; }
     void SetTexture(uint32_t stage, Texture* texture);
     // Null = the main target. Like D3D, resets the viewport to the whole target.
     void SetRenderTarget(Texture* target);
@@ -213,6 +216,7 @@ private:
     // The big constant block is reused while nothing that feeds it changes (m_constantsDirty) and the ring
     // it lives in hasn't been restarted (m_ringGeneration counts restarts).
     bool m_constantsDirty = true;
+    bool m_pixelLighting = false;
     uint64_t m_ringGeneration = 0, m_constantsGeneration = ~0ull;
     VkDeviceSize m_constantsOffset = 0;
     uint32_t m_constantsFvf = ~0u;

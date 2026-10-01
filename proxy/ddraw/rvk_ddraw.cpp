@@ -76,9 +76,12 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
         device = nullptr;
         return false;
     }
+    char pixelLighting[8] = "1";
+    GetEnvironmentVariableA("RANDYVK_PIXEL_LIGHTING", pixelLighting, sizeof(pixelLighting));
+    device->SetPixelLighting(pixelLighting[0] != '0');
     gpuName = device->Info().gpu;
-    RvkLog("rvk device %ux%u on %s (window %p, %s)", width, height, gpuName.c_str(), (void*)window,
-           device->Threaded() ? "worker thread" : "calling thread");
+    RvkLog("rvk device %ux%u on %s (window %p, %s, %s lighting)", width, height, gpuName.c_str(), (void*)window,
+           device->Threaded() ? "worker thread" : "calling thread", device->PixelLighting() ? "per-pixel" : "per-vertex");
     return true;
 }
 

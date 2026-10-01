@@ -1,6 +1,7 @@
 #version 450
 // Direct3D 7 fixed-function vertex processing.
 #include "constants.glsl"
+#include "lighting.glsl"
 
 layout(location = 0) in vec4 inPos;
 layout(location = 1) in vec3 inNormal;
@@ -15,6 +16,11 @@ layout(location = 2) out vec4 vTex0;
 layout(location = 3) out vec4 vTex1;
 layout(location = 4) out float vFogDist;     // view-space distance (table fog)
 layout(location = 5) out float vFogFactor;   // vertex fog factor
+// Per-pixel lighting inputs (F_PERPIXEL); vDiffuse / vSpecular then carry the material diffuse / specular.
+layout(location = 6) out vec3 vMatAmbient;
+layout(location = 7) out vec3 vMatEmissive;
+layout(location = 8) out vec3 vPosW;
+layout(location = 9) out vec4 vNormalW;      // xyz direction, w = length the vertex path would light with
 
 float FogFactor(uint mode, float d)
 {
@@ -69,6 +75,10 @@ void main()
     vec4 diffuse = hasDiffuse ? inDiffuse : vec4(1.0);
     vec4 specular = hasSpecular ? inSpecular : vec4(0.0);
     vec3 posV = vec3(0.0), normalV = vec3(0.0, 0.0, 1.0);
+    vMatAmbient = vec3(0.0);
+    vMatEmissive = vec3(0.0);
+    vPosW = vec3(0.0);
+    vNormalW = vec4(0.0);
 
     if (rhw) {
         // Screen-space vertex. The Vulkan viewport is the D3D one shifted by half a pixel (D3D pixel
@@ -91,47 +101,29 @@ void main()
             normalW = normalize(normalW);
         normalV = mat3(C.view) * normalW;
 
+        vPosW = posW.xyz;
+        vNormalW = vec4(normalW, length(normalW));
         if ((C.flags.x & F_LIGHTING) != 0u) {
             vec4 mDiffuse = MaterialColor(C.matSources.x, C.matDiffuse, diffuse, specular, hasDiffuse, hasSpecular);
             vec4 mAmbient = MaterialColor(C.matSources.y, C.matAmbient, diffuse, specular, hasDiffuse, hasSpecular);
             vec4 mSpecular = MaterialColor(C.matSources.z, C.matSpecular, diffuse, specular, hasDiffuse, hasSpecular);
             vec4 mEmissive = MaterialColor(C.matSources.w, C.matEmissive, diffuse, specular, hasDiffuse, hasSpecular);
-            vec3 ambient = C.ambient.rgb, diff = vec3(0.0), spec = vec3(0.0);
-            vec3 toEye = (C.flags.x & F_LOCALVIEWER) != 0u ? normalize(C.eyePos.xyz - posW.xyz) : -C.eyeDir.xyz;
-            for (uint i = 0u; i < C.lightInfo.x; ++i) {
-                Light l = C.lights[i];
-                uint type = uint(l.position.w);
-                vec3 L;
-                float att = 1.0;
-                if (type == 3u) {
-                    L = -normalize(l.direction.xyz);
-                } else {
-                    vec3 d = l.position.xyz - posW.xyz;
-                    float dist = length(d);
-                    if (dist > l.direction.w) continue;
-                    L = d / max(dist, 1e-6);
-                    float denom = l.atten.x + l.atten.y * dist + l.atten.z * dist * dist;
-                    att = denom > 0.0 ? 1.0 / denom : 1.0;
-                    if (type == 2u) {
-                        float rho = dot(-L, normalize(l.direction.xyz));
-                        if (rho <= l.spot.y) att = 0.0;
-                        else if (rho < l.spot.x)
-                            att *= pow(clamp((rho - l.spot.y) / max(l.spot.x - l.spot.y, 1e-6), 0.0, 1.0), l.atten.w);
-                    }
-                }
-                ambient += att * l.ambient.rgb;
-                float nl = max(dot(normalW, L), 0.0);
-                diff += att * nl * l.diffuse.rgb;
-                if ((C.flags.x & F_SPECULAR) != 0u && nl > 0.0) {
-                    float nh = max(dot(normalW, normalize(L + toEye)), 0.0);
-                    spec += att * pow(nh, C.misc.x) * l.specular.rgb;
-                }
+            if ((C.flags.x & F_PERPIXEL) != 0u) {
+                vMatAmbient = mAmbient.rgb;
+                vMatEmissive = mEmissive.rgb;
+                diffuse = mDiffuse;
+                specular = vec4(mSpecular.rgb, specular.a);
+            } else {
+                vec3 ambient = C.ambient.rgb, diff = vec3(0.0), spec = vec3(0.0);
+                AccumulateLights(posW.xyz, normalW, ambient, diff, spec);
+                diffuse = vec4(mEmissive.rgb + mAmbient.rgb * ambient + mDiffuse.rgb * diff, mDiffuse.a);
+                specular = vec4(mSpecular.rgb * spec, specular.a);
             }
-            diffuse = vec4(mEmissive.rgb + mAmbient.rgb * ambient + mDiffuse.rgb * diff, mDiffuse.a);
-            specular = vec4(mSpecular.rgb * spec, specular.a);
         }
-        vDiffuse = clamp(diffuse, 0.0, 1.0);
-        vSpecular = clamp(specular, 0.0, 1.0);
+        // Material colours for per-pixel lighting stay unclamped; the fragment shader clamps the lit result.
+        bool perPixel = (C.flags.x & (F_LIGHTING | F_PERPIXEL)) == (F_LIGHTING | F_PERPIXEL);
+        vDiffuse = perPixel ? diffuse : clamp(diffuse, 0.0, 1.0);
+        vSpecular = perPixel ? specular : clamp(specular, 0.0, 1.0);
         float dist = (C.flags.x & F_RANGEFOG) != 0u ? length(pv.xyz) : abs(pv.z);
         vFogDist = dist;
         vFogFactor = FogFactor(C.flags.y, dist);

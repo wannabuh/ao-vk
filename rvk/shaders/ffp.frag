@@ -1,6 +1,7 @@
 #version 450
 // Direct3D 7 fixed-function pixel processing: two texture stages, specular add, fog, alpha test.
 #include "constants.glsl"
+#include "lighting.glsl"
 
 layout(set = 0, binding = 1) uniform sampler2D tex0;
 layout(set = 0, binding = 2) uniform sampler2D tex1;
@@ -11,13 +12,20 @@ layout(location = 2) in vec4 vTex0;
 layout(location = 3) in vec4 vTex1;
 layout(location = 4) in float vFogDist;
 layout(location = 5) in float vFogFactor;
+layout(location = 6) in vec3 vMatAmbient;
+layout(location = 7) in vec3 vMatEmissive;
+layout(location = 8) in vec3 vPosW;
+layout(location = 9) in vec4 vNormalW;
+
+// Lit vertex colours: the interpolated ones, or computed here for per-pixel lighting.
+vec4 gDiffuse, gSpecular;
 
 layout(location = 0) out vec4 outColor;
 
 vec4 Arg(uint a, vec4 current, vec4 tex)
 {
     uint sel = a & 0xFu;
-    vec4 v = sel == 0u ? vDiffuse : sel == 1u ? current : sel == 2u ? tex : sel == 3u ? C.tfactor : vSpecular;
+    vec4 v = sel == 0u ? gDiffuse : sel == 1u ? current : sel == 2u ? tex : sel == 3u ? C.tfactor : gSpecular;
     if ((a & 0x10u) != 0u) v = 1.0 - v;
     if ((a & 0x20u) != 0u) v = v.aaaa;
     return v;
@@ -36,7 +44,7 @@ vec4 Op(uint op, vec4 a1, vec4 a2, vec4 current, vec4 tex)
     case 9u: return (a1 + a2 - 0.5) * 2.0;                // ADDSIGNED2X
     case 10u: return a1 - a2;                             // SUBTRACT
     case 11u: return a1 + a2 - a1 * a2;                   // ADDSMOOTH
-    case 12u: return mix(a2, a1, vDiffuse.a);             // BLENDDIFFUSEALPHA
+    case 12u: return mix(a2, a1, gDiffuse.a);             // BLENDDIFFUSEALPHA
     case 13u: return mix(a2, a1, tex.a);                  // BLENDTEXTUREALPHA
     case 14u: return mix(a2, a1, C.tfactor.a);            // BLENDFACTORALPHA
     case 16u: return mix(a2, a1, current.a);              // BLENDCURRENTALPHA
@@ -75,7 +83,20 @@ bool AlphaPass(float a)
 
 void main()
 {
-    vec4 current = vDiffuse;
+    gDiffuse = vDiffuse;
+    gSpecular = vSpecular;
+    if ((C.flags.x & F_PERPIXEL) != 0u) {
+        // Interpolated normals shrink between vertices; restore the length the vertex path lights with
+        // (1 with NORMALIZENORMALS, otherwise whatever the world matrix made of the vertex normal).
+        vec3 n = vNormalW.xyz;
+        float len2 = dot(n, n);
+        n = len2 > 0.0 ? n * (vNormalW.w * inversesqrt(len2)) : vec3(0.0);
+        vec3 ambient = C.ambient.rgb, diff = vec3(0.0), spec = vec3(0.0);
+        AccumulateLights(vPosW, n, ambient, diff, spec);
+        gDiffuse = clamp(vec4(vMatEmissive + vMatAmbient * ambient + vDiffuse.rgb * diff, vDiffuse.a), 0.0, 1.0);
+        gSpecular = clamp(vec4(vSpecular.rgb * spec, vSpecular.a), 0.0, 1.0);
+    }
+    vec4 current = gDiffuse;
     for (uint s = 0u; s < 2u; ++s) {
         uint colorOp = C.stageA[s].x;
         if (colorOp == 1u) break;                         // DISABLE ends the cascade
@@ -87,7 +108,7 @@ void main()
         current = clamp(vec4(rgb, a), 0.0, 1.0);
     }
     if ((C.flags.x & F_SPECULAR) != 0u)
-        current.rgb = min(current.rgb + vSpecular.rgb, 1.0);
+        current.rgb = min(current.rgb + gSpecular.rgb, 1.0);
     if ((C.flags.x & F_FOG) != 0u) {
         float f = vFogFactor;
         uint table = C.flags.z;

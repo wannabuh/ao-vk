@@ -462,6 +462,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c->vtx[1] = c->vtx[2] = c->vtx[3] = 0;
     uint32_t flags = 0;
     if (m_rs[d3d::RS_LIGHTING] && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) flags |= F_LIGHTING;
+    if ((flags & F_LIGHTING) && m_pixelLighting) flags |= F_PERPIXEL;
     if (m_rs[d3d::RS_COLORVERTEX]) flags |= F_COLORVERTEX;
     if (m_rs[d3d::RS_SPECULARENABLE]) flags |= F_SPECULAR;
     if (m_rs[d3d::RS_NORMALIZENORMALS]) flags |= F_NORMALIZE;
