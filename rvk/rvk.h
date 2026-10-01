@@ -224,7 +224,8 @@ public:
     void ParticleEmitter(uint64_t key, const float center[3], const ParticleSprite* sprites, uint32_t count);
     void EndParticleEmitter() { m_particlePending = nullptr; }
     static constexpr uint32_t kParticleSlots = 128, kParticleChildren = 32;
-    static constexpr uint32_t kParticlesPerBlock = kParticleSlots * kParticleChildren, kParticleBlocks = 64;
+    static constexpr uint32_t kParticlesPerBlock = kParticleSlots * kParticleChildren, kParticleBlocks = 256;
+    static constexpr uint32_t kParticleDrawnBlocks = 128;     // effects simulated and drawn per frame (nearest first)
     static constexpr uint32_t kParticleFvf = 0x142;           // XYZ | DIFFUSE | TEX1: the game's sprite vertices
 
     void SetTexture(uint32_t stage, Texture* texture);
@@ -580,6 +581,7 @@ private:
         uint64_t lastSeen = 0;                   // frame number of its last ParticleEmitter
         bool reset = true;                       // newly assigned: its particles start dead
         bool simulated = false;                  // quads were generated for it this frame
+        uint32_t quadRegion = 0;                 // ... in this region of the quad buffer
         float center[3] = {};
         std::vector<ParticleSprite> sprites, prevSprites;
         bool havePrev = false;
@@ -609,6 +611,8 @@ private:
     VkPipelineLayout m_particleLayout = VK_NULL_HANDLE;
     VkPipeline m_particlePipeline = VK_NULL_HANDLE;
     bool m_particleStateCleared = false;
+    uint32_t m_particleSimCount = 0;             // particles per sprite this frame's simulation used
+    bool m_particleFullLogged = false;
     double m_particleTime = 0.0, m_particleLastClock = 0.0;
     d3d::Matrix m_particleView{};                // the camera the quads face (last effect's, last frame)
     uint32_t m_particleDraws = 0;                // this frame (frame dumps)

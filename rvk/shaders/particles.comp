@@ -1,7 +1,8 @@
 // GPU particles (particles.cpp): one invocation per particle of the active effects' blocks. Simulates, then writes the
 // particle's camera-facing quad in the game's sprite vertex format (FVF 0x142: position, D3DCOLOR, uv; 24 bytes).
 //
-// Particle p of a block belongs to sprite slot p / CHILDREN. A dead particle whose sprite is alive respawns at it (soon,
+// Particle p of a block belongs to sprite slot p % SLOTS (child p / SLOTS): with K particles per sprite only the first
+// K * SLOTS are used, and only those are dispatched and drawn. A dead particle whose sprite is alive respawns at it (soon,
 // not all at once); a live one follows a flow field - curl noise (divergence free, so it swirls like a fluid without
 // bunching up), an orbit around the effect's vertical axis and a pull back towards it - taking on the flow's velocity
 // at the rate `drag`. Particles outlive their sprite.
@@ -13,7 +14,7 @@ const uint SLOTS = 128u, CHILDREN = 32u, PER_BLOCK = SLOTS * CHILDREN;
 
 struct Block {
     vec4 center;        // world space; w: 1 = newly assigned (its particles start dead)
-    uvec4 info;         // x: block index (state and quad region)
+    uvec4 info;         // x: block index (its state); quads go to region = its place in this frame's list
 };
 struct Sprite {
     vec4 posSize;       // world position, width
@@ -116,12 +117,12 @@ void WriteVertex(uint v, vec3 pos, uint color, vec2 uv)
 void main()
 {
     uint p = gl_GlobalInvocationID.x;
-    if (p >= PER_BLOCK)
+    if (p >= uint(pc.a.z) * SLOTS)
         return;
     uint list = gl_WorkGroupID.y;
     Block blk = blocks[list];
     uint index = blk.info.x * PER_BLOCK + p;
-    uint slot = p / CHILDREN, child = p % CHILDREN;
+    uint slot = p % SLOTS;
     Particle P = particles[index];
     if (blk.center.w > 0.5)
         P.velLife.w = 0.0;
@@ -134,7 +135,7 @@ void main()
     if (P.velLife.w <= 0.0 || P.posAge.w >= P.velLife.w) {
         P.velLife.w = 0.0;
         // Respawn at the sprite - after a random delay (~1/8 s), so a new sprite's particles don't all start together.
-        if (alive && float(child) < pc.a.z && Rand(seed) < clamp(dt * 8.0, 0.0, 1.0)) {
+        if (alive && Rand(seed) < clamp(dt * 8.0, 0.0, 1.0)) {
             vec3 spriteVel = prevAlive ? (S.posSize.xyz - S.prevPos.xyz) / max(dt, 1e-3) : vec3(0.0);
             float sv = length(spriteVel);
             if (sv > 20.0) spriteVel *= 20.0 / sv;   // teleports, respawned sprites
@@ -168,7 +169,7 @@ void main()
     float extent = live ? uintBitsToFloat(P.meta.y) * 0.5 * (1.0 - 0.4 * t) : 0.0;
     uint color = (P.meta.x & 0x00FFFFFFu) | (uint(float(P.meta.x >> 24) * fade + 0.5) << 24);
     vec3 right = pc.right.xyz * extent, up = pc.up.xyz * extent;
-    uint v = index * 4u;
+    uint v = (list * PER_BLOCK + p) * 4u;
     vec3 c = P.posAge.xyz;
     vec4 uv = P.uv;
     WriteVertex(v + 0u, c - right - up, color, vec2(uv.x, uv.y + uv.w));

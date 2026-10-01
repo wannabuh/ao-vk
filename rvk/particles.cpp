@@ -114,8 +114,9 @@ bool Device::CreateParticleResources(std::string* error)
     if (!buffer(particles * sizeof(GpuParticle), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 false, &m_particleState, &m_particleStateAllocation, nullptr))
         return false;
+    const VkDeviceSize drawn = VkDeviceSize(kParticleDrawnBlocks) * kParticlesPerBlock;
     for (uint32_t i = 0; i < kFramesInFlight; ++i)
-        if (!buffer(particles * 4 * kQuadStride, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        if (!buffer(drawn * 4 * kQuadStride, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                     false, &m_particleQuads[i], &m_particleQuadsAllocation[i], nullptr))
             return false;
     void* mapped = nullptr;
@@ -153,10 +154,20 @@ void Device::ParticleEmitter(uint64_t key, const float center[3], const Particle
     for (ParticleBlock& b : m_particleBlocks)
         if (b.key == key) { block = &b; break; }
     if (!block) {
-        // A free block, else the one unseen longest (whose particles then vanish).
+        // A free block, or one whose effect is gone and whose particles have died out. All busy: no particles for this
+        // effect (taking a busy block would make effects take turns, and both flicker).
+        double now = Clock();
         for (ParticleBlock& b : m_particleBlocks)
-            if (!block || (block->key && (!b.key || b.lastSeen < block->lastSeen)))
+            if (!b.key || (b.lastSeen + 1 < m_frameNumber && !ParticlesMayLive(b, now))) {
                 block = &b;
+                break;
+            }
+        if (!block) {
+            if (!m_particleFullLogged)
+                Log("particles: all %u effect blocks busy; further effects get none", kParticleBlocks);
+            m_particleFullLogged = true;
+            return;
+        }
         block->key = key;
         block->reset = true;
         block->havePrev = false;
@@ -205,6 +216,27 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
     }
     if (active.empty() || !m_particleParams.enable || !m_particlePipeline)
         return;
+    // More than can be drawn: the nearest to the camera (the others pause).
+    const auto& v = m_particleView.m;
+    float eye[3];
+    for (int i = 0; i < 3; ++i)
+        eye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
+    if (active.size() > kParticleDrawnBlocks) {
+        auto distance = [&](uint32_t i) {
+            const float* c = m_particleBlocks[i].center;
+            float dx = c[0] - eye[0], dy = c[1] - eye[1], dz = c[2] - eye[2];
+            return dx * dx + dy * dy + dz * dz;
+        };
+        std::nth_element(active.begin(), active.begin() + kParticleDrawnBlocks, active.end(),
+                         [&](uint32_t a, uint32_t b) { return distance(a) < distance(b); });
+        active.resize(kParticleDrawnBlocks);
+    }
+    // Particles per sprite changed: start over (particles beyond the old count hold stale state).
+    uint32_t perSprite = std::clamp(m_particleParams.perSprite, 1u, kParticleChildren);
+    if (perSprite != m_particleSimCount) {
+        for (ParticleBlock& b : m_particleBlocks) b.reset = true;
+        m_particleSimCount = perSprite;
+    }
 
     if (!m_particleStateCleared) {                // all particles start dead (life 0)
         vkCmdFillBuffer(cmd, m_particleState, 0, VK_WHOLE_SIZE, 0);
@@ -250,6 +282,7 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
         }
         b.reset = false;
         b.simulated = true;
+        b.quadRegion = k;
     }
 
     // Last frame's simulation (state) and the quad buffer's last use (two frames ago, fenced) come first.
@@ -281,16 +314,15 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_particlePipeline);
     vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_particleLayout, 0, 4, writes);
     const ParticleParams& p = m_particleParams;
-    const auto& v = m_particleView.m;
     float push[20] = {
-        dt, float(m_particleTime), float(std::min(p.perSprite, kParticleChildren)), float(m_frameNumber & 0xFFFFFF),
+        dt, float(m_particleTime), float(perSprite), float(m_frameNumber & 0xFFFFFF),
         p.size, p.life, p.curl, p.swirl,
         p.pull, p.drag, p.inherit, p.speed,
         v[0][0], v[1][0], v[2][0], p.scale,       // camera right: the view matrix's first column
         v[0][1], v[1][1], v[2][1], 0.0f,          // camera up: its second
     };
     vkCmdPushConstants(cmd, m_particleLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), push);
-    vkCmdDispatch(cmd, kParticlesPerBlock / kGroupSize, n, 1);
+    vkCmdDispatch(cmd, perSprite * kParticleSlots / kGroupSize, n, 1);
 
     mb.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     mb.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
@@ -353,14 +385,16 @@ void Device::DrawParticles(ParticleBlock& block, bool orphan)
     }
     block.drawnFrame = m_frameNumber;
     uint32_t index = uint32_t(&block - m_particleBlocks.data());
-    ExternalGeometry geometry{m_particleQuads[m_frameIndex], m_particleIndices, int32_t(index * kParticlesPerBlock * 4)};
+    ExternalGeometry geometry{m_particleQuads[m_frameIndex], m_particleIndices,
+                              int32_t(block.quadRegion * kParticlesPerBlock * 4)};
     d3d::Matrix world = m_world;                // the quads are in world space
     m_world = Identity();
     if (m_dumpFile)
         std::fprintf(m_dumpFile, "# particles of effect %llx (block %u)%s after draw %u\n", (unsigned long long)block.key,
                      index, orphan ? " - effect gone, fading out" : "", m_dumpDraw);
     m_external = &geometry;
-    Draw(d3d::TriangleList, kParticleFvf, nullptr, kParticlesPerBlock * 4, nullptr, kParticlesPerBlock * 6);
+    uint32_t quads = m_particleSimCount * kParticleSlots;   // only the particles in use
+    Draw(d3d::TriangleList, kParticleFvf, nullptr, quads * 4, nullptr, quads * 6);
     m_external = nullptr;
     m_world = world;
     ++m_particleDraws;

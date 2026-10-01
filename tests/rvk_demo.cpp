@@ -1203,7 +1203,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 // at frame F (no longer announced or drawn); its particles must fade out on their own. An interface quad follows the 3D.
 template <typename D>
 void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, const std::string& dump, bool particles,
-                     int endFrame)
+                     int endFrame, int effects)
 {
     std::vector<uint32_t> soft(32 * 32);
     for (int y = 0; y < 32; ++y)
@@ -1218,7 +1218,11 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
     dev.SetParticleParams(params);
     struct VtxSprite { float x, y, z; uint32_t color; float u, v; };
     struct VtxGround { float x, y, z; uint32_t color; };
-    const uint32_t kN = 24;
+    // --particle-effects N (stress): N effects on a grid, every one of their 128 sprites alive.
+    const uint32_t kN = effects > 1 ? 128 : 24;
+    const int side = int(std::ceil(std::sqrt(float(effects))));
+    LARGE_INTEGER freq, start, stop;
+    QueryPerformanceFrequency(&freq);
     for (int frame = 0; frame < frames; ++frame) {
         if (frame == frames - 1) {
             dev.RequestScreenshot(shot);
@@ -1246,11 +1250,16 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
         VtxGround ground[4] = {{-4, 0, -3, 0xFF303440}, {4, 0, -3, 0xFF303440}, {-4, 0, 5, 0xFF202430}, {4, 0, 5, 0xFF202430}};
         uint16_t gi[6] = {0, 1, 2, 1, 2, 3};
         dev.DrawIndexedPrimitive(TriangleList, FVF_XYZ | FVF_DIFFUSE, ground, 4, gi, 6);
+        if (frame == 10)
+            QueryPerformanceCounter(&start);
 
+        for (int e = 0; e < effects; ++e) {
         // The effect: its frame of reference moves (a walking character), sprites twinkle in its ring.
         float t = frame * 0.016f;
-        float cx = std::sin(t * 0.7f) * 0.8f, cz = 0.0f;
-        Device::ParticleSprite sprites[kN] = {};
+        float gx = effects > 1 ? (float(e % side) - 0.5f * float(side - 1)) * 0.9f : 0.0f;
+        float gz = effects > 1 ? float(e / side) * 0.9f : 0.0f;
+        float cx = std::sin(t * 0.7f) * 0.8f + gx, cz = gz;
+        Device::ParticleSprite sprites[128] = {};
         std::vector<VtxSprite> verts;
         std::vector<uint16_t> idx;
         float right[3] = {view.m[0][0], view.m[1][0], view.m[2][0]}, up[3] = {view.m[0][1], view.m[1][1], view.m[2][1]};
@@ -1263,7 +1272,7 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
             sp.size = 0.6f;
             sp.uv[0] = 0; sp.uv[1] = 0; sp.uv[2] = 1; sp.uv[3] = 1;
             sp.color = 0xC0B080FF;
-            sp.alive = ((frame / 12 + i) % 3) != 0;
+            sp.alive = effects > 1 || ((frame / 12 + i) % 3) != 0;
             if (!sp.alive) continue;
             uint16_t base = uint16_t(verts.size());
             float h = sp.size * 0.5f;
@@ -1277,7 +1286,7 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
         }
         float center[3] = {cx, 0.0f, cz};
         bool effect = endFrame < 0 || frame < endFrame;
-        if (effect) dev.ParticleEmitter(0x5EED, center, sprites, kN);
+        if (effect) dev.ParticleEmitter(0x5EED + uint64_t(e), center, sprites, kN);
         dev.SetRenderState(RS_ZWRITEENABLE, 0);
         dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
         dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
@@ -1293,6 +1302,7 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
             dev.DrawIndexedPrimitive(TriangleList, Device::kParticleFvf, verts.data(), uint32_t(verts.size()), idx.data(),
                                      uint32_t(idx.size()));
         dev.EndParticleEmitter();
+        }
         // Interface: a pre-transformed quad (the end of the 3D scene).
         struct VtxUi { float x, y, z, rhw; uint32_t color; };
         VtxUi ui[4] = {{20, 20, 0, 1, 0xFF4080C0}, {120, 20, 0, 1, 0xFF4080C0}, {20, 60, 0, 1, 0xFF4080C0}, {120, 60, 0, 1, 0xFF4080C0}};
@@ -1308,6 +1318,11 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
         if (frameMs > 0)
             Sleep(DWORD(frameMs));
     }
+    if constexpr (requires { dev.Sync(); }) dev.Sync();     // the threaded device: its work done
+    QueryPerformanceCounter(&stop);
+    if (frames > 10)
+        std::printf("particle test: %d effects, %.2f ms/frame over the last %d frames\n", effects,
+                    1000.0 * double(stop.QuadPart - start.QuadPart) / double(freq.QuadPart) / (frames - 10), frames - 10);
     dev.DestroyTexture(tex);
 }
 
@@ -1316,7 +1331,7 @@ int main(int argc, char** argv)
     bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false, pointShadowTest = false, pointShadowSun = false;
     int cacheTest = 0, frameMs = 0;
     bool particleTest = false, particlesOff = false;
-    int particleEnd = -1;
+    int particleEnd = -1, particleEffects = 1;
     uint32_t pointShadows = 4;
     float headroom = 1.0f;
     double fadeIn = 0.0;
@@ -1374,6 +1389,7 @@ int main(int argc, char** argv)
         else if (a == "--particle-test") particleTest = true;
         else if (a == "--particles-off") particlesOff = true;
         else if (a == "--particle-end" && i + 1 < argc) particleEnd = std::atoi(argv[++i]);
+        else if (a == "--particle-effects" && i + 1 < argc) particleEffects = std::atoi(argv[++i]);
     }
 
     HWND hwnd = nullptr;
@@ -1426,10 +1442,10 @@ int main(int argc, char** argv)
             if (!tdev.Init(nullptr, kWidth, kHeight, &error)) { std::printf("init failed: %s\n", error.c_str()); return 1; }
             tdev.SetHdr(hdr);
             tdev.SetBloom(bloom, 1.0f);
-            RunParticleTest(tdev, frames, frameMs, shot, dump, !particlesOff, particleEnd);
+            RunParticleTest(tdev, frames, frameMs, shot, dump, !particlesOff, particleEnd, particleEffects);
             tdev.Sync();
         } else {
-            RunParticleTest(dev, frames, frameMs, shot, dump, !particlesOff, particleEnd);
+            RunParticleTest(dev, frames, frameMs, shot, dump, !particlesOff, particleEnd, particleEffects);
         }
         std::printf("rendered; screenshot %s\n", shot.c_str());
         return 0;

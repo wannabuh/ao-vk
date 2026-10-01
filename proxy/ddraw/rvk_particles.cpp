@@ -73,8 +73,7 @@ void LoadTemplates()
     char buf[1024] = "";
     GetPrivateProfileStringA("Particles", "Templates", "", buf, sizeof(buf), rvk_settings::IniPath());
     if (!buf[0]) {
-        // Lesser Controlled Rage (its sparkles and the clones gfxtweak.py boost makes of them).
-        std::strcpy(buf, "43299,98700000-98700099");
+        std::strcpy(buf, "all");                  // or a list, e.g. 43299,98700000-98700099 (Lesser Controlled Rage)
         WritePrivateProfileStringA("Particles", "Templates", buf, rvk_settings::IniPath());
     }
     g_allTemplates = std::strstr(buf, "all") != nullptr;
