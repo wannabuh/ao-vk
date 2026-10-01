@@ -73,6 +73,8 @@ public:
     void SetHdrHeadroom(float headroom);
     void SetBloom(float strength, float threshold);
     void SetEffectGlow(float gain);
+    void SetAo(float strength, float radius);
+    float AoStrength() const { return m_aoStrength; }
     float EffectGlow() const { return m_effectGlow; }
     float BloomStrength() const { return m_bloomStrength; }
     float HdrHeadroom() const { return m_hdrHeadroom; }
@@ -149,7 +151,7 @@ private:
     uint32_t m_pointShadows = 0;
     bool m_hdr = false;
     float m_hdrHeadroom = 1.5f;
-    float m_bloomStrength = 1.5f, m_effectGlow = 1.0f;
+    float m_bloomStrength = 1.5f, m_effectGlow = 1.0f, m_aoStrength = 1.0f;
 };
 
 }  // namespace rvk

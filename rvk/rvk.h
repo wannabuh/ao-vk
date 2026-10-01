@@ -31,6 +31,7 @@ enum class Format : uint32_t {
     DXT1, DXT2, DXT3, DXT4, DXT5,
     RGBA16F,    // internal: the HDR scene target
     RG11B10F,   // internal: the HDR glow target (additive effects, for the bloom)
+    RG16F,      // internal: ambient occlusion (factor, view depth)
     Count
 };
 
@@ -155,6 +156,9 @@ public:
     void SetBloom(float strength, float threshold) { m_bloomStrength = strength; m_bloomThreshold = threshold; }
     // With HDR: how much the game's additive effects (light halos, spells, fire) feed the bloom, on top of light above
     // the threshold. 0 = only the threshold.
+    // With HDR: ambient occlusion from the depth buffer (hdr.cpp). strength 0 = off; radius in world units.
+    void SetAo(float strength, float radius) { m_aoStrength = strength; m_aoRadius = radius; }
+    float AoStrength() const { return m_aoStrength; }
     void SetEffectGlow(float gain) { if (m_effectGlow != gain) { m_effectGlow = gain; m_constantsDirty = true; } }
     float EffectGlow() const { return m_effectGlow; }
     float BloomStrength() const { return m_bloomStrength; }
@@ -442,8 +446,15 @@ private:
     VkPipelineLayout m_bloomLayout = VK_NULL_HANDLE;
     VkPipeline m_bloomDown = VK_NULL_HANDLE, m_bloomUp = VK_NULL_HANDLE;
     void RenderBloom(VkCommandBuffer cmd);
-    void FullscreenPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, VkPipelineLayout layout, Texture* src,
-                        Texture* src2, const float params[4], bool load);
+    // One full-target pass into dst reading src (binding 0) and src2 (binding 1), which must be readable already.
+    void FullscreenPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, VkImageView src, VkImageView src2,
+                        VkSampler sampler, const float* params, uint32_t paramBytes, bool load);
+    float m_aoStrength = 1.0f, m_aoRadius = 1.5f;
+    Texture* m_aoTex[2] = {};                    // half resolution: raw, blurred (ping-pong)
+    VkPipeline m_aoPipeline = VK_NULL_HANDLE, m_aoBlurPipeline = VK_NULL_HANDLE;
+    d3d::Matrix m_aoProj{};                      // the world camera's projection (first depth-writing 3D draw)
+    bool m_aoProjValid = false;
+    bool RenderAo(VkCommandBuffer cmd);          // false: no AO this frame
     bool CreateHdrResources(std::string* error);
     void DestroyHdrResources();
     void BeginScene();

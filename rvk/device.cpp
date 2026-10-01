@@ -423,7 +423,7 @@ bool Device::EnsureDepth(uint32_t width, uint32_t height)
     ci.arrayLayers = 1;
     ci.samples = VK_SAMPLE_COUNT_1_BIT;
     ci.tiling = VK_IMAGE_TILING_OPTIMAL;
-    ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;   // sampled: ambient occlusion
     VmaAllocationCreateInfo ac{};
     ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     ac.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;

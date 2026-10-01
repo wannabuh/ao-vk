@@ -356,6 +356,12 @@ void ThreadedDevice::SetBloom(float strength, float threshold)
     Enqueue([this, strength, threshold](const uint8_t*) { m_device.SetBloom(strength, threshold); });
 }
 
+void ThreadedDevice::SetAo(float strength, float radius)
+{
+    m_aoStrength = strength;
+    Enqueue([this, strength, radius](const uint8_t*) { m_device.SetAo(strength, radius); });
+}
+
 void ThreadedDevice::SetEffectGlow(float gain)
 {
     m_effectGlow = gain < 0.0f ? 0.0f : gain;

@@ -104,6 +104,10 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     GetEnvironmentVariableA("RANDYVK_BLOOM", bloom, sizeof(bloom));
     GetEnvironmentVariableA("RANDYVK_BLOOM_THRESHOLD", bloomThreshold, sizeof(bloomThreshold));
     device->SetBloom(float(std::atof(bloom)), float(std::atof(bloomThreshold)));
+    char aoStrength[16] = "1.0", aoRadius[16] = "1.5";
+    GetEnvironmentVariableA("RANDYVK_AO", aoStrength, sizeof(aoStrength));
+    GetEnvironmentVariableA("RANDYVK_AO_RADIUS", aoRadius, sizeof(aoRadius));
+    device->SetAo(float(std::atof(aoStrength)), float(std::atof(aoRadius)));
     char effectGlow[16] = "1.0";
     GetEnvironmentVariableA("RANDYVK_BLOOM_EFFECTS", effectGlow, sizeof(effectGlow));
     device->SetEffectGlow(float(std::atof(effectGlow)));
@@ -127,6 +131,7 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     RvkLog("rvk HDR scene + tone mapping: %s (knee %s, exposure %s, light headroom %s)", device->Hdr() ? "on" : "off", knee,
            exposure, hdrHeadroom);
     RvkLog("rvk bloom: strength %s, threshold %s, effects %s", bloom, bloomThreshold, effectGlow);
+    RvkLog("rvk ambient occlusion: strength %s, radius %s", aoStrength, aoRadius);
     return true;
 }
 
@@ -177,6 +182,18 @@ void RvkState::Present()
         RvkLog("sun shadows %s", device->Shadows() ? "on" : "off");
     }
     f7Down = f7;
+    // Ctrl+Shift+F3: ambient occlusion on / off (at the configured strength).
+    static bool f3Down;
+    bool f3 = chord && (GetAsyncKeyState(VK_F3) & 0x8000);
+    if (f3 && !f3Down) {
+        char a[16] = "1.0", r[16] = "1.5";
+        GetEnvironmentVariableA("RANDYVK_AO", a, sizeof(a));
+        GetEnvironmentVariableA("RANDYVK_AO_RADIUS", r, sizeof(r));
+        float on = float(std::atof(a));
+        device->SetAo(device->AoStrength() > 0.0f ? 0.0f : (on > 0.0f ? on : 1.0f), float(std::atof(r)));
+        RvkLog("ambient occlusion %s", device->AoStrength() > 0.0f ? "on" : "off");
+    }
+    f3Down = f3;
     // Ctrl+Shift+F4: bloom on / off (at the configured strength).
     static bool f4Down;
     static float bloomOn = 0.0f;

@@ -589,6 +589,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_scenePhase && m_target == m_scene) {
         if ((fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) {
             m_sceneSaw3D = true;
+            if (!m_aoProjValid && m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE]) {   // the world camera
+                m_aoProj = m_proj;
+                m_aoProjValid = true;
+            }
         } else if (m_sceneSaw3D) {
             m_sceneEndDraw = m_dumpDraw;
             m_sceneEndFvf = fvf;

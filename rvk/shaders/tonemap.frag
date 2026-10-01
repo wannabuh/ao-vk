@@ -4,8 +4,9 @@
 // the more they are overexposed, as bright light does.
 layout(set = 0, binding = 0) uniform sampler2D scene;
 layout(set = 0, binding = 1) uniform sampler2D bloom;   // half resolution, light above the bloom threshold, blurred
+layout(set = 0, binding = 2) uniform sampler2D ao;      // half resolution, ambient occlusion (1 = open)
 layout(push_constant) uniform Push {
-    vec4 params;        // knee, exposure, bloom strength, unused
+    vec4 params;        // knee, exposure, bloom strength, ambient occlusion on (1)
 } P;
 layout(location = 0) out vec4 outColor;
 
@@ -13,7 +14,9 @@ void main()
 {
     vec4 s = texelFetch(scene, ivec2(gl_FragCoord.xy), 0);
     vec3 glow = P.params.z > 0.0 ? texture(bloom, gl_FragCoord.xy / vec2(textureSize(scene, 0))).rgb * P.params.z : vec3(0.0);
-    vec3 c = max((s.rgb + glow) * P.params.y, vec3(0.0));
+    vec2 uv = gl_FragCoord.xy / vec2(textureSize(scene, 0));
+    float occlusion = P.params.w > 0.5 ? texture(ao, uv).r : 1.0;
+    vec3 c = max((s.rgb * occlusion + glow) * P.params.y, vec3(0.0));
     float m = max(c.r, max(c.g, c.b)), k = P.params.x;
     if (m > k) {
         float room = 1.0 - k;
