@@ -86,6 +86,7 @@
     X(vkCmdSetDepthCompareOp) \
     X(vkCmdSetDepthBias) \
     X(vkCmdClearDepthStencilImage) \
+    X(vkCmdClearColorImage) \
     X(vkCmdPushConstants) \
     X(vkCmdSetVertexInputEXT) \
     X(vkCmdSetColorBlendEnableEXT) \

@@ -53,6 +53,13 @@ Setting g_settings[] = {
     {"RVK_MBlur",      "Motion blur (exposure, fraction of 1/60 s; 0 = off)",             "HDR and effects", Float, 0, 2, 0.05f, 0.5f, "RANDYVK_MOTION_BLUR", 0},
     {"RVK_MBlurObj",   "Per-object motion blur (off = camera only)",                      "HDR and effects", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_MBlurNear",  "Camera motion blur: sharp nearer than (world units)",             "HDR and effects", Float, 2, 20, 0.5f, 8, "RANDYVK_MOTION_BLUR_NEAR", 0},
+    {"RVK_Dof",        "Depth of field",                                                   "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
+    {"RVK_DofBokeh",   "Bokeh (hexagonal highlights; off = smooth blur)",                 "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
+    {"RVK_DofNear",    "Blur in front of the focus too",                                  "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
+    {"RVK_DofAmount",  "Blur strength",                                                   "Depth of field", Float, 0, 2, 0.05f, 0.5f, nullptr, 0},
+    {"RVK_DofRadius",  "Largest blur (pixels at 1440 lines)",                             "Depth of field", Int, 4, 48, 1, 16, nullptr, 0},
+    {"RVK_DofFocus",   "Focus distance (0 = auto: your character)",                       "Depth of field", Float, 0, 200, 1, 0, nullptr, 0},
+    {"RVK_DofRange",   "In-focus band around it",                                         "Depth of field", Float, 0, 0.9f, 0.05f, 0.2f, nullptr, 0},
 };
 constexpr uint32_t kCount = sizeof(g_settings) / sizeof(g_settings[0]);
 
@@ -118,6 +125,9 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_Ao") || is("RVK_AoRadius")) d->SetAo(V("RVK_Ao"), V("RVK_AoRadius"));
     else if (is("RVK_MBlur") || is("RVK_MBlurNear")) d->SetMotionBlur(V("RVK_MBlur"), V("RVK_MBlurNear"));
     else if (is("RVK_MBlurObj")) d->SetMotionBlurMode(s.value != 0.0f ? 1u : 0u);
+    else if (std::strncmp(n, "RVK_Dof", 7) == 0)
+        d->SetDof(V("RVK_Dof") != 0.0f, V("RVK_DofBokeh") != 0.0f, V("RVK_DofNear") != 0.0f, V("RVK_DofAmount"),
+                  V("RVK_DofRadius"), V("RVK_DofFocus"), V("RVK_DofRange"));
 }
 
 }  // namespace

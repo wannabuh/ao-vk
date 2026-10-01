@@ -78,6 +78,7 @@ public:
     void SetAnisotropy(uint32_t level);
     void SetMotionBlur(float strength, float focusNear);
     void SetMotionBlurMode(uint32_t mode);
+    void SetDof(bool enable, bool bokeh, bool nearBlur, float strength, float radius, float focus, float range);
     uint32_t MotionBlurMode() const { return m_motionMode; }
     float MotionBlur() const { return m_motionBlur; }
     uint32_t Anisotropy() const { return m_anisotropy; }

@@ -172,6 +172,12 @@ public:
     void SetMotionBlurMode(uint32_t mode) { if (m_motionMode != mode) { m_motionMode = mode; m_frameLightsDirty = true; } }
     uint32_t MotionBlurMode() const { return m_motionMode; }
     float MotionBlur() const { return m_motionBlur; }
+    // With HDR: depth of field (hdr.cpp). strength: blur at full CoC (0..1+); radius: largest blur in pixels at 1440
+    // lines; focus: distance (0 = auto: the nearest surface near the screen centre - the player's character); range:
+    // the in-focus band around it; nearBlur: blur in front of the focus too; bokeh: hexagonal highlights.
+    void SetDof(bool enable, bool bokeh, bool nearBlur, float strength, float radius, float focus, float range)
+    { m_dof = enable; m_dofBokeh = bokeh; m_dofNear = nearBlur; m_dofStrength = strength; m_dofRadius = radius;
+      m_dofFocusDistance = focus; m_dofRange = range; }
     // With HDR: ambient occlusion from the depth buffer (hdr.cpp). strength 0 = off; radius in world units.
     void SetAo(float strength, float radius) { m_aoStrength = strength; m_aoRadius = radius; }
     float AoStrength() const { return m_aoStrength; }
@@ -506,6 +512,23 @@ private:
     bool m_prevViewProjValid = false;
     double m_prevSceneTime = 0.0;
     bool MotionBlurParams(float out[24]);        // reprojection + parameters for this frame; false: no blur
+    bool m_dof = false, m_dofBokeh = true, m_dofNear = true;
+    float m_dofStrength = 0.5f, m_dofRadius = 16.0f, m_dofFocusDistance = 0.0f, m_dofRange = 0.2f;
+    Texture* m_dofIn = nullptr;                  // the scene with its ambient occlusion
+    Texture* m_dofOut = nullptr;                 // ... with depth of field: what the tone mapping reads
+    Texture* m_dofHalf = nullptr;                // half resolution colour + circle of confusion
+    Texture* m_dofBlur = nullptr;                // half resolution blur + near-field reach
+    Texture* m_dofTiles[2] = {};                 // largest CoC per tile, per neighbourhood
+    Texture* m_dofFocus[2] = {};                 // focus distance (1x1), this and last frame's
+    uint32_t m_dofFocusIndex = 0;
+    double m_dofPrevTime = 0.0;
+    VkPipeline m_dofCompositePipeline = VK_NULL_HANDLE, m_dofFocusPipeline = VK_NULL_HANDLE,
+               m_dofPrefilterPipeline = VK_NULL_HANDLE, m_dofTilesPipeline = VK_NULL_HANDLE,
+               m_dofGatherPipeline = VK_NULL_HANDLE, m_dofFinalPipeline = VK_NULL_HANDLE;
+    bool RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, const float tonemapParams[8]);
+    void TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, Texture* scene, bool bloom, bool ao,
+                           const float params[8]);
+    void MakeDepthReadable(VkCommandBuffer cmd);
     bool m_aoProjValid = false;
     bool RenderAo(VkCommandBuffer cmd);          // false: no AO this frame
     bool CreateHdrResources(std::string* error);
