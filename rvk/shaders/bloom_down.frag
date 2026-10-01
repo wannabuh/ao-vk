@@ -8,13 +8,13 @@ layout(push_constant) uniform Push {
 } P;
 layout(location = 0) out vec4 outColor;
 
+// Only light above the threshold: the excess of the brightest channel, eased in over the first 0.1 above it (so
+// the glow doesn't switch on abruptly), nothing at or below it.
 vec3 Prefilter(vec3 c)
 {
-    float m = max(c.r, max(c.g, c.b)), t = P.params.z, knee = 0.25 * t;
-    float soft = clamp(m - t + knee, 0.0, 2.0 * knee);
-    soft = soft * soft / (4.0 * knee + 1e-5);
-    float w = max(soft, m - t) / max(m, 1e-5);
-    return c * w;
+    float m = max(c.r, max(c.g, c.b)), e = m - P.params.z, knee = 0.1;
+    float excess = e <= 0.0 ? 0.0 : e < knee ? e * e / (2.0 * knee) : e - 0.5 * knee;
+    return c * (excess / max(m, 1e-5));
 }
 
 float Weight(vec3 c) { return 1.0 / (1.0 + max(c.r, max(c.g, c.b))); }
