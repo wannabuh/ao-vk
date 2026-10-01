@@ -274,6 +274,10 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     if (!IsShadowCaster(primitive, fvf))
         return;
     UpdateFrameEye();
+    if (!m_frameViewProjValid) {                 // the world camera: taken at the first world object, not the sky
+        m_frameViewProj = MulMatrix(m_view, m_proj);
+        m_frameViewProjValid = true;
+    }
     ShadowCaster c;
     c.primitive = primitive;
     c.stride = stride;
@@ -413,7 +417,7 @@ void Device::ForgetCasterTexture(Texture* texture)
         else ++it;
 }
 
-// End of frame: drop streaks that were broken, and cached casters that are gone - ones reaching into the view
+// End of frame: drop streaks that were broken, and cached casters that are gone - ones in the middle of the view
 // that the game didn't draw (removed, or replaced by another level of detail) - or that are far away.
 void Device::UpdateCasterCache()
 {
@@ -430,9 +434,18 @@ void Device::UpdateCasterCache()
                 float d = std::max({e.boundsMin[j] - m_frameEye[j], 0.0f, m_frameEye[j] - e.boundsMax[j]});
                 d2 += d * d;
             }
-            // The game draws whatever reaches into the view: if any of it is in view and it wasn't drawn, it's gone.
-            if (d2 > 16.0f * m_shadowRange * m_shadowRange || BoxInClip(e.boundsMin, e.boundsMax, m_frameViewProj, true) != -1)
+            // The game draws whatever reaches into the view. A box test against the view is loose near the edges
+            // (it reports boxes just off screen as partly visible), so only the box's centre on screen counts as
+            // "the game would draw it": if it then wasn't drawn, it's gone.
+            float centre[3];
+            for (int j = 0; j < 3; ++j) centre[j] = 0.5f * (e.boundsMin[j] + e.boundsMax[j]);
+            if (d2 > 16.0f * m_shadowRange * m_shadowRange) {
+                ++m_forgottenFar;
                 ForgetCachedCaster(it);
+            } else if (m_frameViewProjValid && BoxInClip(centre, centre, m_frameViewProj, true) == 1) {
+                ++m_forgottenInView;
+                ForgetCachedCaster(it);
+            }
         }
         it = next;
     }

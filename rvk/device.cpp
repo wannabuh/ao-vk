@@ -919,6 +919,7 @@ void Device::BeginFrame()
     m_frameLightsDirty = true;
     m_constantsDirty = true;                     // shadow receiving depends on last frame's map
     m_frameEyeValid = false;
+    m_frameViewProjValid = false;
     m_inFrame = true;
     PrepareShadowMap(f.main);
     BeginRenderingOn(m_target);

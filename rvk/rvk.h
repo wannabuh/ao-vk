@@ -295,12 +295,14 @@ private:
     std::unordered_map<uint64_t, CachedCaster> m_casterCache;
     std::unordered_map<uint64_t, CasterStreak> m_casterStreaks;
     std::vector<std::pair<uint64_t, std::pair<VkBuffer, VmaAllocation_T*>>> m_deadBuffers;
-    d3d::Matrix m_frameViewProj{};               // the frame's camera (UpdateFrameEye)
+    d3d::Matrix m_frameViewProj{};               // the frame's camera, at its first shadow caster
+    bool m_frameViewProjValid = false;
     void CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertices, const uint16_t* indices);
     void ShadowCutout(uint32_t fvf, Texture** texture, int* texOffset, float* alphaRef) const;
     uint64_t CasterKey(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
                        const uint16_t* indices, uint32_t indexCount) const;
     uint32_t m_cachedCastersDrawn = 0;           // last shadow pass: remembered casters drawn (frame dumps)
+    uint32_t m_forgottenInView = 0, m_forgottenFar = 0;   // remembered casters forgotten so far (frame dumps)
     void UpdateCasterCache();
     void ForgetCachedCaster(std::unordered_map<uint64_t, CachedCaster>::iterator it);
     void ForgetCasterTexture(Texture* texture);

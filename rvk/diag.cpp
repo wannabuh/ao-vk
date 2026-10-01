@@ -38,8 +38,9 @@ void Device::BeginFrameDump()
 void Device::EndFrameDump()
 {
     if (!m_dumpFile) return;
-    std::fprintf(m_dumpFile, "# end: %u draws; %zu casters this frame, %zu remembered (%u drawn out of view last frame)\n",
-                 m_dumpDraw, m_casters.size(), m_casterCache.size(), m_cachedCastersDrawn);
+    std::fprintf(m_dumpFile, "# end: %u draws; %zu casters this frame, %zu remembered (%u drawn out of view last frame);"
+                             " forgotten since start: %u in view but not drawn, %u far away\n",
+                 m_dumpDraw, m_casters.size(), m_casterCache.size(), m_cachedCastersDrawn, m_forgottenInView, m_forgottenFar);
     std::fclose(m_dumpFile);
     m_dumpFile = nullptr;
 }

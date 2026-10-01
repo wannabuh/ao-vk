@@ -223,7 +223,6 @@ void Device::UpdateFrameEye()
         m_frameEye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
         m_frameForward[i] = v[i][2];
     }
-    m_frameViewProj = MulMatrix(m_view, m_proj);
     m_frameEyeValid = true;
 }
 
