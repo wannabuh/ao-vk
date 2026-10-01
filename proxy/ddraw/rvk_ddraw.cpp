@@ -95,6 +95,9 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     GetEnvironmentVariableA("RANDYVK_POINT_SHADOW_DAY", pointDay, sizeof(pointDay));
     device->SetPointShadows(uint32_t(std::max(0, std::atoi(pointShadows))));
     device->SetPointShadowStrength(float(std::atof(pointStrength)), float(std::atof(pointDay)));
+    char dumpVerts[16] = "0";         // frame dumps: vertices of draws with this many (RANDYVK_DUMP_VERTS)
+    GetEnvironmentVariableA("RANDYVK_DUMP_VERTS", dumpVerts, sizeof(dumpVerts));
+    device->SetDumpVertexCount(uint32_t(std::atoi(dumpVerts)));
     char headroom[16] = "1.25";
     GetEnvironmentVariableA("RANDYVK_LIGHT_HEADROOM", headroom, sizeof(headroom));
     device->SetLightHeadroom(float(std::atof(headroom)));

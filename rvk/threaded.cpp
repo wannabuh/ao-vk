@@ -339,6 +339,11 @@ void ThreadedDevice::SetPointShadowStrength(float strength, float dayFactor)
     Enqueue([this, strength, dayFactor](const uint8_t*) { m_device.SetPointShadowStrength(strength, dayFactor); });
 }
 
+void ThreadedDevice::SetDumpVertexCount(uint32_t count)
+{
+    Enqueue([this, count](const uint8_t*) { m_device.SetDumpVertexCount(count); });
+}
+
 void ThreadedDevice::SetLightHeadroom(float headroom)
 {
     Enqueue([this, headroom](const uint8_t*) { m_device.SetLightHeadroom(headroom); });

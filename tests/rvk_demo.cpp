@@ -996,6 +996,13 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
 }
 
 bool g_slabTest = false;   // --point-shadow-slab
+float g_off[3] = {};        // --world-offset x y z: the scene far from the origin, like Anarchy Online's world
+Matrix Offset()
+{
+    Matrix m = Identity();
+    m.m[3][0] = g_off[0]; m.m[3][1] = g_off[1]; m.m[3][2] = g_off[2];
+    return m;
+}
 
 // Point light shadow test (--point-shadow-test): night, a lamp among cubes. Left half: lit ground (per-pixel); right
 // half: the ground the way Anarchy Online draws it (unlit base pass + lightmap and lights multiplying pass). A small
@@ -1032,9 +1039,9 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
         dev.BeginFrame();
         dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
         dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF101828, 1.0f);
-        dev.SetTransform(View, LookAtLH({0, 13, -11}, {0, 0, 1.5f}, {0, 1, 0}));
+        dev.SetTransform(View, LookAtLH({g_off[0], g_off[1] + 13, g_off[2] - 11}, {g_off[0], g_off[1], g_off[2] + 1.5f}, {0, 1, 0}));
         dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 200.0f));
-        dev.SetTransform(World, Identity());
+        dev.SetTransform(World, Offset());
         dev.SetRenderState(RS_ZENABLE, 1);
         dev.SetRenderState(RS_ZWRITEENABLE, 1);
         dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
@@ -1052,6 +1059,14 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
         lamp.range = 9.0f;
         lamp.attenuation0 = 0.3f;
         lamp.attenuation1 = 0.08f;
+        if (g_slabTest) {                      // the player's light: 2 above the floor, 1 / (0.163 d), range 6.13
+            lamp.position = {-3.5f, 2.2f, 1.0f};
+            lamp.diffuse = {0.25f, 0.23f, 0.16f, 1};   // dimmed: the floor under it must not clip
+            lamp.range = 6.13f;
+            lamp.attenuation0 = 0.0f;
+            lamp.attenuation1 = 0.1631f;
+        }
+        lamp.position = {lamp.position.x + g_off[0], lamp.position.y + g_off[1], lamp.position.z + g_off[2]};
         dev.SetLight(0, lamp);
         dev.LightEnable(0, true);
         Light sunLight{};
@@ -1097,7 +1112,7 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
             const uint32_t kFvfSlab = FVF_XYZ | FVF_NORMAL | (1 << 8);
             std::vector<VtxSlab> sv;
             std::vector<uint16_t> si;
-            const float mn[3] = {-9, -6, -6}, mx[3] = {2, 0.2f, 8};
+            const float mn[3] = {-9, -18, -6}, mx[3] = {2, 0.2f, 8};
             for (int axis = 0; axis < 3; ++axis)
                 for (int side = 0; side < 2; ++side) {
                     int u = (axis + 1) % 3, w = (axis + 2) % 3;
@@ -1107,7 +1122,7 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
                         p[axis] = side ? mx[axis] : mn[axis];
                         p[u] = (k == 1 || k == 2) ? mx[u] : mn[u];
                         p[w] = k >= 2 ? mx[w] : mn[w];
-                        n[axis] = side ? 1.0f : -1.0f;
+                        n[axis] = side ? 2.0f : -2.0f;    // the city platforms' normals are 2 long
                         sv.push_back({p[0], p[1], p[2], n[0], n[1], n[2], p[u] / 3, p[w] / 3});
                     }
                     uint16_t q[6] = {0, 1, 2, 0, 2, 3};
@@ -1169,6 +1184,7 @@ int main(int argc, char** argv)
         else if (a == "--shadows") shadows = true;
         else if (a == "--shadow-test") shadowTest = shadows = true;
         else if (a == "--point-shadow-test") pointShadowTest = true;
+        else if (a == "--world-offset" && i + 3 < argc) { for (int k = 0; k < 3; ++k) g_off[k] = float(std::atof(argv[++i])); }
         else if (a == "--point-shadow-slab") g_slabTest = pointShadowTest = pointShadowSun = shadows = true;
         else if (a == "--point-shadow-sun") pointShadowTest = pointShadowSun = shadows = true;
         else if (a == "--frame-ms" && i + 1 < argc) frameMs = std::atoi(argv[++i]);

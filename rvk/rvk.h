@@ -103,6 +103,7 @@ public:
     bool ReadPixels(Texture* target, void* out);
     void RequestScreenshot(const std::string& bmpPath);   // saved during the next EndFrame()
     void RequestFrameDump(const std::string& path);       // the next frame's 3D draws, written as text (diag.cpp)
+    void SetDumpVertexCount(uint32_t count) { m_dumpVertexCount = count; }   // frame dumps list these draws' vertices
 
     // ---- D3D7-style interface (IDirect3DDevice7 semantics and enum values) ----
     void Clear(uint32_t flags, uint32_t argb, float z);
@@ -248,6 +249,7 @@ private:
     bool m_constantsDirty = true;
     bool m_pixelLighting = false, m_lightingDebug = false, m_lightOverride = false;
     float m_lightHeadroom = 1.0f;
+    uint32_t m_dumpVertexCount = 0;
     bool m_drawOverbright2x = false;              // the current draw is blended at 2x (F_OVERBRIGHT2X)
     bool Overbright2x(uint32_t fvf) const;
     uint64_t m_frameNumber = 0;

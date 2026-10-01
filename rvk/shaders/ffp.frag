@@ -15,9 +15,13 @@ float PointShadow(Light l, vec3 posW, vec3 n, float nl)
     vec3 d = posW - l.position.xyz;
     float dist = length(d);
     if (dist <= kPointShadowNear) return 1.0;
-    // World size of a cube texel at this distance (90 degree faces): offset along the normal against acne.
+    // World size of a cube texel at this distance (90 degree faces): offset along the normal against acne, more at
+    // grazing angles. The angle from the unit normal: game normals aren't always unit length (no NORMALIZENORMALS;
+    // some meshes have length-2 normals), and nl from the lighting would turn the offset into the surface.
     float texel = 2.0 * dist / float(textureSize(pointShadowMaps, 0).x);
-    d += normalize(n) * texel * (1.0 + 2.0 * (1.0 - nl));
+    vec3 nu = normalize(n);
+    float cosAngle = clamp(dot(nu, -d / dist), 0.0, 1.0);
+    d += nu * texel * (1.0 + 2.0 * (1.0 - cosAngle));
     vec3 a = abs(d);
     float w = max(a.x, max(a.y, a.z));
     float f = l.direction.w, nr = kPointShadowNear;

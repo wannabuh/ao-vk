@@ -150,6 +150,30 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
     if (minX <= maxX) std::fprintf(f, " | rect %.0f,%.0f-%.0f,%.0f", minX, minY, maxX, maxY);
     else std::fprintf(f, " | offscreen");
     std::fprintf(f, "\n");
+    // Geometry of draws with the vertex count asked for (RANDYVK_DUMP_VERTS): world-space positions, normals
+    // (through the world matrix, not normalised), texture coordinates of set 0; then the indices.
+    if (m_dumpVertexCount && vertexCount == m_dumpVertexCount) {
+        const uint8_t* v = static_cast<const uint8_t*>(vertices);
+        const auto& w = m_world.m;
+        for (uint32_t i = 0; i < vertexCount; ++i) {
+            const uint8_t* p = v + size_t(i) * layout.stride;
+            float pos[3], wp[3], nrm[3] = {}, wn[3] = {}, uv[2] = {};
+            std::memcpy(pos, p, 12);
+            if (layout.offset[1] >= 0) std::memcpy(nrm, p + layout.offset[1], 12);
+            if (layout.offset[4] >= 0) std::memcpy(uv, p + layout.offset[4], 8);
+            for (int j = 0; j < 3; ++j) {
+                wp[j] = pos[0] * w[0][j] + pos[1] * w[1][j] + pos[2] * w[2][j] + w[3][j];
+                wn[j] = nrm[0] * w[0][j] + nrm[1] * w[1][j] + nrm[2] * w[2][j];
+            }
+            std::fprintf(f, "V %u: %.3f %.3f %.3f n %.3f %.3f %.3f uv %.3f %.3f\n", i, wp[0], wp[1], wp[2], wn[0], wn[1],
+                         wn[2], uv[0], uv[1]);
+        }
+        if (indices) {
+            std::fprintf(f, "I");
+            for (uint32_t i = 0; i < indexCount; ++i) std::fprintf(f, " %u", indices[i]);
+            std::fprintf(f, "\n");
+        }
+    }
 }
 
 }  // namespace rvk
