@@ -79,9 +79,13 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     char pixelLighting[8] = "1";
     GetEnvironmentVariableA("RANDYVK_PIXEL_LIGHTING", pixelLighting, sizeof(pixelLighting));
     device->SetPixelLighting(pixelLighting[0] != '0');
+    char lightOverride[8] = "1";
+    GetEnvironmentVariableA("RANDYVK_LIGHT_OVERRIDE", lightOverride, sizeof(lightOverride));
+    device->SetLightOverride(lightOverride[0] != '0');
     gpuName = device->Info().gpu;
     RvkLog("rvk device %ux%u on %s (window %p, %s, %s lighting)", width, height, gpuName.c_str(), (void*)window,
            device->Threaded() ? "worker thread" : "calling thread", device->PixelLighting() ? "per-pixel" : "per-vertex");
+    RvkLog("rvk light override (frame's nearest lights for every lit draw): %s", device->LightOverride() ? "on" : "off");
     return true;
 }
 
@@ -124,6 +128,14 @@ void RvkState::Present()
     }
     f10Down = f10;
     f11Down = f11;
+    // Ctrl+Shift+F8: light override (frame's nearest lights vs. the game's per-object choice).
+    static bool f8Down;
+    bool f8 = chord && (GetAsyncKeyState(VK_F8) & 0x8000);
+    if (f8 && !f8Down) {
+        device->SetLightOverride(!device->LightOverride());
+        RvkLog("light override %s", device->LightOverride() ? "on" : "off");
+    }
+    f8Down = f8;
     // Ctrl+Shift+F9: dump the next frame's 3D draws + a screenshot next to the log (logs\rvk-frame-HHMMSS.*).
     static bool f9Down;
     bool f9 = chord && (GetAsyncKeyState(VK_F9) & 0x8000);

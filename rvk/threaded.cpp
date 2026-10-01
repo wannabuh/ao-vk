@@ -311,6 +311,12 @@ void ThreadedDevice::SetLightingDebug(bool enable)
     Enqueue([this, enable](const uint8_t*) { m_device.SetLightingDebug(enable); });
 }
 
+void ThreadedDevice::SetLightOverride(bool enable)
+{
+    m_lightOverride = enable;
+    Enqueue([this, enable](const uint8_t*) { m_device.SetLightOverride(enable); });
+}
+
 void ThreadedDevice::SetTexture(uint32_t stage, Texture* texture)
 {
     Enqueue([this, stage, texture](const uint8_t*) { m_device.SetTexture(stage, texture); });

@@ -123,6 +123,10 @@ public:
     // Diagnostic: tint each draw by how it is lit (lighting off / no local light / lit by a local light).
     void SetLightingDebug(bool enable) { if (m_lightingDebug != enable) { m_lightingDebug = enable; m_constantsDirty = true; } }
     bool LightingDebug() const { return m_lightingDebug; }
+    // Enhancement, with per-pixel lighting: every lit draw gets the frame's active point / spot lights nearest
+    // the camera instead of the (at most 8) the game enabled for it. Directional lights stay as the game set them.
+    void SetLightOverride(bool enable) { if (m_lightOverride != enable) { m_lightOverride = enable; m_constantsDirty = true; } }
+    bool LightOverride() const { return m_lightOverride; }
     void SetTexture(uint32_t stage, Texture* texture);
     // Null = the main target. Like D3D, resets the viewport to the whole target.
     void SetRenderTarget(Texture* target);
@@ -183,6 +187,7 @@ private:
         d3d::Light light{};
         bool enabled = false;
         float cosHalfTheta = 1.0f, cosHalfPhi = 1.0f;   // precomputed for the shader
+        uint64_t liveFrame = 0;                          // last frame the light was enabled for some draw
     };
 
     // What is currently set in the main command buffer, so unchanged state isn't re-issued (every Vulkan
@@ -220,7 +225,12 @@ private:
     // The big constant block is reused while nothing that feeds it changes (m_constantsDirty) and the ring
     // it lives in hasn't been restarted (m_ringGeneration counts restarts).
     bool m_constantsDirty = true;
-    bool m_pixelLighting = false, m_lightingDebug = false;
+    bool m_pixelLighting = false, m_lightingDebug = false, m_lightOverride = false;
+    uint64_t m_frameNumber = 0;
+    bool m_frameLightsDirty = true;
+    uint64_t m_frameLightsGeneration = ~0ull;
+    VkDeviceSize m_frameLightsOffset = 0;
+    VkDeviceSize WriteFrameLights();
     uint64_t m_ringGeneration = 0, m_constantsGeneration = ~0ull;
     VkDeviceSize m_constantsOffset = 0;
     uint32_t m_constantsFvf = ~0u;

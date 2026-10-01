@@ -27,6 +27,21 @@ void Copy4(float out[4], const d3d::Color& c)
     out[0] = c.r; out[1] = c.g; out[2] = c.b; out[3] = c.a;
 }
 
+void FillGpuLight(const d3d::Light& l, float cosHalfTheta, float cosHalfPhi, GpuLight& g)
+{
+    Copy4(g.diffuse, l.diffuse);
+    Copy4(g.specular, l.specular);
+    Copy4(g.ambient, l.ambient);
+    g.position[0] = l.position.x; g.position[1] = l.position.y; g.position[2] = l.position.z;
+    g.position[3] = float(l.type);
+    g.direction[0] = l.direction.x; g.direction[1] = l.direction.y; g.direction[2] = l.direction.z;
+    g.direction[3] = l.range;
+    g.atten[0] = l.attenuation0; g.atten[1] = l.attenuation1; g.atten[2] = l.attenuation2; g.atten[3] = l.falloff;
+    g.spot[0] = cosHalfTheta;
+    g.spot[1] = cosHalfPhi;
+    g.spot[2] = g.spot[3] = 0.0f;
+}
+
 float AsFloat(uint32_t v)
 {
     float f;
@@ -138,8 +153,11 @@ void Device::SetLight(uint32_t index, const d3d::Light& light)
 {
     if (index >= m_lights.size())
         m_lights.resize(index + 1);
-    m_lights[index].light = light;
-    if (m_lights[index].enabled)
+    LightSlot& slot = m_lights[index];
+    if (std::memcmp(&slot.light, &light, sizeof(light)) != 0 && slot.liveFrame + 1 >= m_frameNumber)
+        m_frameLightsDirty = true;
+    slot.light = light;
+    if (slot.enabled)
         m_constantsDirty = true;
     m_lights[index].cosHalfTheta = std::cos(light.theta * 0.5f);
     m_lights[index].cosHalfPhi = std::cos(light.phi * 0.5f);
@@ -149,10 +167,52 @@ void Device::LightEnable(uint32_t index, bool enable)
 {
     if (index >= m_lights.size())
         m_lights.resize(index + 1);
-    if (m_lights[index].enabled != enable) {
-        m_lights[index].enabled = enable;
+    LightSlot& slot = m_lights[index];
+    if (slot.enabled != enable) {
+        slot.enabled = enable;
         m_constantsDirty = true;
     }
+    if (enable) {
+        if (slot.liveFrame + 1 < m_frameNumber)    // newly active
+            m_frameLightsDirty = true;
+        slot.liveFrame = m_frameNumber;
+    }
+}
+
+// The frame's active point / spot lights (enabled for some draw this frame or the last), nearest first by the
+// distance from the camera to their sphere of influence.
+VkDeviceSize Device::WriteFrameLights()
+{
+    void* cpu;
+    VkDeviceSize offset = Allocate(sizeof(FrameLights), m_props.limits.minUniformBufferOffsetAlignment, &cpu);
+    m_frameLightsOffset = offset;
+    m_frameLightsGeneration = m_ringGeneration;
+    m_frameLightsDirty = false;
+    const auto& v = m_view.m;
+    float eye[3];
+    for (int i = 0; i < 3; ++i) eye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
+    struct Candidate { float key; uint32_t index; };
+    Candidate candidates[256];
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < m_lights.size() && count < 256; ++i) {
+        const LightSlot& s = m_lights[i];
+        if (s.liveFrame + 1 < m_frameNumber || s.light.type == d3d::LIGHT_DIRECTIONAL || s.light.range <= 0.0f)
+            continue;
+        float dx = s.light.position.x - eye[0], dy = s.light.position.y - eye[1], dz = s.light.position.z - eye[2];
+        candidates[count++] = {std::max(0.0f, std::sqrt(dx * dx + dy * dy + dz * dz) - s.light.range), i};
+    }
+    uint32_t used = std::min(count, kFrameLights);
+    std::partial_sort(candidates, candidates + used, candidates + count,
+                      [](const Candidate& a, const Candidate& b) { return a.key < b.key; });
+    auto* fl = static_cast<FrameLights*>(cpu);
+    fl->info[0] = used;
+    fl->info[1] = fl->info[2] = fl->info[3] = 0;
+    for (uint32_t k = 0; k < used; ++k)
+        {
+        const LightSlot& slot = m_lights[candidates[k].index];
+        FillGpuLight(slot.light, slot.cosHalfTheta, slot.cosHalfPhi, fl->lights[k]);
+    }
+    return offset;
 }
 
 void Device::SetTexture(uint32_t stage, Texture* texture)
@@ -408,8 +468,14 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 
     // Everything this draw puts in the ring buffer, reserved together so a flush can't split it.
     const VkDeviceSize uboAlign = m_props.limits.minUniformBufferOffsetAlignment;
-    EnsureRingSpace(sizeof(DrawConstants) + sizeof(DrawTransform) + VkDeviceSize(layout.stride) * vertexCount +
-                    VkDeviceSize(indexCount) * 2 + 2 * uboAlign + layout.stride + 32);
+    EnsureRingSpace(sizeof(DrawConstants) + sizeof(DrawTransform) + sizeof(FrameLights) +
+                    VkDeviceSize(layout.stride) * vertexCount + VkDeviceSize(indexCount) * 2 + 3 * uboAlign +
+                    layout.stride + 32);
+
+    // The frame's light list (binding 4): rebuilt when lights changed; always bound, as layouts require.
+    VkDeviceSize frameLightsOffset = m_frameLightsOffset;
+    if (m_frameLightsGeneration != m_ringGeneration || (m_frameLightsDirty && m_lightOverride && m_pixelLighting))
+        frameLightsOffset = WriteFrameLights();
 
     // Per-draw world matrix (small block).
     void* cpu;
@@ -466,6 +532,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_rs[d3d::RS_LIGHTING] && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) flags |= F_LIGHTING;
     if ((flags & F_LIGHTING) && m_pixelLighting) flags |= F_PERPIXEL;
     if (m_lightingDebug) flags |= F_DEBUGLIGHT;
+    bool override = (flags & F_PERPIXEL) && m_lightOverride;
+    if (override) flags |= F_LIGHTOVERRIDE;
     if (m_rs[d3d::RS_COLORVERTEX]) flags |= F_COLORVERTEX;
     if (m_rs[d3d::RS_SPECULARENABLE]) flags |= F_SPECULAR;
     if (m_rs[d3d::RS_NORMALIZENORMALS]) flags |= F_NORMALIZE;
@@ -499,20 +567,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         for (const LightSlot& slot : m_lights) {
             if (!slot.enabled || lightCount == kMaxLights)
                 continue;
-            const d3d::Light& l = slot.light;
-            GpuLight& g = c->lights[lightCount++];
-            Copy4(g.diffuse, l.diffuse);
-            Copy4(g.specular, l.specular);
-            Copy4(g.ambient, l.ambient);
-            g.position[0] = l.position.x; g.position[1] = l.position.y; g.position[2] = l.position.z;
-            g.position[3] = float(l.type);
-            if (l.type != d3d::LIGHT_DIRECTIONAL) ++localLights;
-            g.direction[0] = l.direction.x; g.direction[1] = l.direction.y; g.direction[2] = l.direction.z;
-            g.direction[3] = l.range;
-            g.atten[0] = l.attenuation0; g.atten[1] = l.attenuation1; g.atten[2] = l.attenuation2; g.atten[3] = l.falloff;
-            g.spot[0] = slot.cosHalfTheta;
-            g.spot[1] = slot.cosHalfPhi;
-            g.spot[2] = g.spot[3] = 0.0f;
+            if (override && slot.light.type != d3d::LIGHT_DIRECTIONAL)
+                continue;                        // replaced by the frame lights
+            FillGpuLight(slot.light, slot.cosHalfTheta, slot.cosHalfPhi, c->lights[lightCount++]);
+            if (slot.light.type != d3d::LIGHT_DIRECTIONAL) ++localLights;
         }
     c->lightInfo[0] = lightCount;
     c->lightInfo[1] = localLights;
@@ -539,8 +597,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         Texture* t = m_textures[s] ? m_textures[s] : m_blackTexture;
         images[s] = {SamplerFor(s), t->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     }
-    VkWriteDescriptorSet writes[4] = {};
-    for (int i = 0; i < 4; ++i) {
+    VkDescriptorBufferInfo frameLights{f.ring, frameLightsOffset, sizeof(FrameLights)};
+    VkWriteDescriptorSet writes[5] = {};
+    for (int i = 0; i < 5; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstBinding = uint32_t(i);
         writes[i].descriptorCount = 1;
@@ -552,7 +611,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[2].pImageInfo = &images[1];
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writes[3].pBufferInfo = &transform;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 4, writes);
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[4].pBufferInfo = &frameLights;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 5, writes);
 
     if (indices)
         vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);
