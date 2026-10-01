@@ -3,7 +3,26 @@
 From the decompiled code in `re/` (regenerate with `ghidra-scripts/DumpDecomp.java`). Addresses are
 the original image bases: randy31 0x10000000, DisplaySystem 0x10000000 (separate images).
 
-## 1. DisplaySystem drives the frame
+## 0. Who calls whom
+
+The game executable is `AnarchyOnline.exe` (it constructs `D3DDisplaySystem_t`; it already has
+IMAGE_FILE_LARGE_ADDRESS_AWARE). The per-frame chain found so far:
+
+```
+GUI.dll  SpriteList_t::ParseList            UI views update, SpriteRenderSystem_t::FrameProcess
+  DisplaySystem_t::Commit (export)          calls this+0x24 -> vtable+4, then:
+    DisplaySystem!FUN_10079a2e              the 3D frame below
+DisplaySystem!FUN_10001cdb (virtual)        Randy_t::Flip
+```
+
+The UI itself is drawn by GUI.dll through `WindowController_c::Render` (virtual, so the caller is not
+visible statically) → `View::_CallRender` (recursive over the view tree) →
+`ViewSurface_c::_CommitRendering(RViewPort_t*)`: batched screen-space quads, FVF 0x144
+(XYZRHW | DIFFUSE | TEX1, 28 bytes), from `DynamicVB_c`, grouped by `StateBlob_c` (3 blobs at GUI
+0x102767A0, 0x84 bytes each), texture and material, drawn with `render_t::RenderTriangleList`
+(indexed). Other GUI draws: `BrowserView_c::Render` (in-game browser, triangle strip) and a few virtual
+widget methods (triangle fans, line lists; probably map/radar). Where exactly the UI is drawn relative
+to the 3D passes is for the frame inspector to show.
 
 `DisplaySystem!FUN_10079a2e` (the per-frame render function):
 
@@ -96,6 +115,16 @@ Increments the frame counter `Randy_t+0x274`; windowed: `GetClientRect`/`ClientT
 (`FUN_1002428e`). On device loss: restores surfaces, re-applies `DeviceState`, bumps
 `s_nRestoreCount` path (`FUN_10041ede`).
 
+## 7. Device creation: `Randy_t::Initialize`
+
+The DisplaySystem-facing overload (`?Initialize@Randy_t@@SAPAV1@KKPAUHWND__@@0KKKKKKKKAAV...`) takes
+fullscreen flag, window handles, size and buffer depths. It initialises the statically linked
+**D3DX for DirectX 7** context (hardware level from the D3DX device index: -6 → `s_eHardwareLevel` 2,
+-5 → 1, -3/-4 → 0), then creates the primary surface "FrameBuffer": windowed `DDSCAPS_PRIMARYSURFACE`
+(0x200) + clipper, fullscreen a flip chain (caps 0x2218, flags 0x21). Colour depth 16/24/32 comes
+from the primary's pixel format. Offscreen render targets are set up in `FUN_100435e3`; the `Randy_t`
+object (0x298 bytes) is built by `FUN_10043365`. Errors go through `fun::DXError`.
+
 ## Where a Vulkan backend plugs in
 
 - Device + swapchain: `Randy_t::Initialize`, `Flip`, render targets (`SetRenderTarget`,
@@ -106,8 +135,7 @@ Increments the frame counter `Randy_t+0x274`; windowed: `GetClientRect`/`ClientT
 
 ## Open questions
 
-- Where GUI.dll draws the UI relative to this sequence (after the DisplaySystem frame, before Flip?).
+- Where GUI.dll draws the UI relative to this sequence (who calls `WindowController_c::Render`).
 - What the other three pass sequences are for (`Randy_t+0x288` values; probably quality settings / no
   offscreen support).
 - Where characters (`RCATMesh_t`) sit: Gamecode list 3 sites are the likely candidates.
-- Device creation in `Randy_t::Initialize` (not decompiled yet).
