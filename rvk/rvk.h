@@ -274,8 +274,32 @@ private:
     bool CreateShadowResources(std::string* error);
     void DestroyShadowResources();
     void PrepareShadowMap(VkCommandBuffer cmd);
-    void RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t stride, uint32_t vertexCount,
-                            VkDeviceSize vbOffset, uint32_t indexCount, VkDeviceSize ibOffset);
+    void RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
+                            VkDeviceSize vbOffset, const uint16_t* indices, uint32_t indexCount, VkDeviceSize ibOffset);
+    // Static casters remembered across frames, so objects the camera turned away from (and the game therefore
+    // no longer draws) keep casting. A caster drawn unchanged for kPromoteFrames frames in a row is copied here.
+    static constexpr uint32_t kPromoteFrames = 20, kMaxCachedCasters = 16384;
+    struct CachedCaster {
+        VkBuffer buffer;
+        VmaAllocation_T* allocation;
+        uint32_t primitive, stride, vertexCount, indexCount;
+        VkDeviceSize indexOffset;
+        d3d::Matrix world;
+        float boundsMin[3], boundsMax[3];        // world space
+        Texture* texture;
+        int texOffset;
+        float alphaRef;
+        uint64_t lastSeen;
+    };
+    struct CasterStreak { uint64_t lastFrame; uint32_t count; };
+    std::unordered_map<uint64_t, CachedCaster> m_casterCache;
+    std::unordered_map<uint64_t, CasterStreak> m_casterStreaks;
+    std::vector<std::pair<uint64_t, std::pair<VkBuffer, VmaAllocation_T*>>> m_deadBuffers;
+    d3d::Matrix m_frameViewProj{};               // the frame's camera (UpdateFrameEye)
+    void CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertices, const uint16_t* indices);
+    void UpdateCasterCache();
+    void ForgetCachedCaster(std::unordered_map<uint64_t, CachedCaster>::iterator it);
+    void ForgetCasterTexture(Texture* texture);
     void CaptureSun(const d3d::Light& light);
     bool ShadowReceiver(uint32_t fvf) const;
     bool IsShadowCaster(uint32_t primitive, uint32_t fvf) const;

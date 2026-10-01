@@ -772,7 +772,7 @@ void AddCube(std::vector<VtxMesh>& v, std::vector<uint16_t>& idx, float cx, floa
 }
 
 template <typename D>
-void RunShadowTest(D& dev, int frames, const std::string& shot)
+void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest)
 {
     auto groundPixels = Checker(64, 8, 0xFFC8C0B0, 0xFFA09888);
     auto fencePixels = Checker(64, 8, 0xFF806040, 0x00000000);
@@ -788,8 +788,16 @@ void RunShadowTest(D& dev, int frames, const std::string& shot)
         dev.BeginFrame();
         dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
         dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF6080A0, 1.0f);
-        dev.SetTransform(View, LookAtLH({0, 9, -14}, {0, 0, 2}, {0, 1, 0}));
-        dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 200.0f));
+        // --cache-test K: after K frames, look straight down past the big right cube (which the "game" then no
+        // longer draws, as it is out of view) at the tip of its shadow, which must stay if rvk remembered it.
+        bool topDown = cacheTest > 0 && frame >= cacheTest;
+        if (topDown) {
+            dev.SetTransform(View, LookAtLH({7.5f, 4, 6.5f}, {7.5f, 0, 6.5f}, {0, 0, 1}));
+            dev.SetTransform(Projection, PerspectiveLH(kPi / 4.5f, float(kWidth) / kHeight, 0.5f, 200.0f));
+        } else {
+            dev.SetTransform(View, LookAtLH({0, 9, -14}, {0, 0, 2}, {0, 1, 0}));
+            dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 200.0f));
+        }
         dev.SetTransform(World, Identity());
         dev.SetRenderState(RS_ZENABLE, 1);
         dev.SetRenderState(RS_ZWRITEENABLE, 1);
@@ -868,15 +876,17 @@ void RunShadowTest(D& dev, int frames, const std::string& shot)
         dev.SetTexture(0, ground);
         dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
         dev.SetRenderState(RS_LIGHTING, 1);
-        std::vector<VtxMesh> v;
-        std::vector<uint16_t> idx;
-        AddCube(v, idx, -5, 1, 2, 1);
-        AddCube(v, idx, -2, 2, 6, 2);
-        AddCube(v, idx, 4, 1.5f, 3, 1.5f);
-        AddCube(v, idx, 7, 0.5f, -2, 0.5f);
         dev.SetTexture(0, nullptr);
         dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
-        dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, v.data(), uint32_t(v.size()), idx.data(), uint32_t(idx.size()));
+        const float cubes[4][4] = {{-5, 1, 2, 1}, {-2, 2, 6, 2}, {4, 1.5f, 3, 1.5f}, {7, 0.5f, -2, 0.5f}};
+        for (int k = 0; k < 4; ++k) {                // one draw per object, like the game
+            if (k == 2 && topDown)
+                continue;
+            std::vector<VtxMesh> v;
+            std::vector<uint16_t> idx;
+            AddCube(v, idx, cubes[k][0], cubes[k][1], cubes[k][2], cubes[k][3]);
+            dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, v.data(), uint32_t(v.size()), idx.data(), uint32_t(idx.size()));
+        }
         // Alpha-tested fence: its shadow must have holes.
         dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
         dev.SetTexture(0, fence);
@@ -949,6 +959,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 int main(int argc, char** argv)
 {
     bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false;
+    int cacheTest = 0;
     int bench = 0;
     int frames = 3;
     std::string shot = "rvk_demo.bmp", dump;
@@ -962,6 +973,7 @@ int main(int argc, char** argv)
         else if (a == "--light-override") lightOverride = true;
         else if (a == "--shadows") shadows = true;
         else if (a == "--shadow-test") shadowTest = shadows = true;
+        else if (a == "--cache-test" && i + 1 < argc) { cacheTest = std::atoi(argv[++i]); shadowTest = shadows = true; }
         else if (a == "--dump" && i + 1 < argc) dump = argv[++i];
         else if (a == "--bench" && i + 1 < argc) bench = std::atoi(argv[++i]);
         else if (a == "--game-ms" && i + 1 < argc) g_benchGameMs = std::atof(argv[++i]);
@@ -1021,10 +1033,10 @@ int main(int argc, char** argv)
         tdev.SetLightOverride(lightOverride);
         tdev.SetShadows(shadows);
         if (!dump.empty()) tdev.RequestFrameDump(dump);
-        if (shadowTest) RunShadowTest(tdev, frames, shot);
+        if (shadowTest) RunShadowTest(tdev, frames, shot, cacheTest);
         else RunDemo(tdev, windowed, stress, frames, shot);
     } else if (shadowTest) {
-        RunShadowTest(dev, frames, shot);
+        RunShadowTest(dev, frames, shot, cacheTest);
     } else {
         RunDemo(dev, windowed, stress, frames, shot);
     }

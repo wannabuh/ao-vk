@@ -753,6 +753,12 @@ void Device::CollectGarbage()
         return true;
     });
     m_deadImages.erase(images, m_deadImages.end());
+    auto buffers = std::remove_if(m_deadBuffers.begin(), m_deadBuffers.end(), [&](auto& e) {
+        if (e.first > m_completed) return false;
+        vmaDestroyBuffer(m_allocator, e.second.first, e.second.second);
+        return true;
+    });
+    m_deadBuffers.erase(buffers, m_deadBuffers.end());
 }
 
 void Device::EnsureRingSpace(VkDeviceSize bytes)

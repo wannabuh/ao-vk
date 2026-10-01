@@ -29,13 +29,39 @@ struct ShadowPush {
     float alpha[4];
 };
 
-d3d::Matrix Mul(const d3d::Matrix& a, const d3d::Matrix& b)
+d3d::Matrix Mul(const d3d::Matrix& a, const d3d::Matrix& b) { return MulMatrix(a, b); }
+
+// Fast 64-bit hash of a byte range (identity of a caster's geometry).
+uint64_t HashBytes(const void* data, size_t size, uint64_t h)
 {
-    d3d::Matrix r{};
-    for (int i = 0; i < 4; ++i)
+    const uint8_t* p = static_cast<const uint8_t*>(data);
+    auto mix = [&](uint64_t w) { h ^= w; h *= 0x9E3779B97F4A7C15ull; h ^= h >> 29; };
+    for (; size >= 8; size -= 8, p += 8) { uint64_t w; std::memcpy(&w, p, 8); mix(w); }
+    uint64_t tail = 0;
+    std::memcpy(&tail, p, size);
+    mix(tail ^ (uint64_t(size) << 56));
+    return h;
+}
+
+// Clip-space test of a world-space box's corners against a view-projection: +1 all inside, -1 all outside one
+// plane, 0 otherwise.
+int BoxInClip(const float mn[3], const float mx[3], const d3d::Matrix& vp, bool depth)
+{
+    int outside[6] = {}, inside = 0;
+    for (int k = 0; k < 8; ++k) {
+        float p[3] = {(k & 1) ? mx[0] : mn[0], (k & 2) ? mx[1] : mn[1], (k & 4) ? mx[2] : mn[2]}, c[4];
         for (int j = 0; j < 4; ++j)
-            r.m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] + a.m[i][2] * b.m[2][j] + a.m[i][3] * b.m[3][j];
-    return r;
+            c[j] = p[0] * vp.m[0][j] + p[1] * vp.m[1][j] + p[2] * vp.m[2][j] + vp.m[3][j];
+        bool in = c[3] > 0.0f && std::fabs(c[0]) <= c[3] && std::fabs(c[1]) <= c[3] &&
+                  (!depth || (c[2] >= 0.0f && c[2] <= c[3]));
+        inside += in;
+        outside[0] += c[0] < -c[3]; outside[1] += c[0] > c[3];
+        outside[2] += c[1] < -c[3]; outside[3] += c[1] > c[3];
+        outside[4] += depth && c[2] < 0.0f; outside[5] += depth && c[2] > c[3];
+    }
+    if (inside == 8) return 1;
+    for (int o : outside) if (o == 8) return -1;
+    return 0;
 }
 
 void Normalize(float v[3])
@@ -54,6 +80,15 @@ void Cross(const float a[3], const float b[3], float out[3])
 float Dot(const float a[3], const float b[3]) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
 }  // namespace
+
+d3d::Matrix detail::MulMatrix(const d3d::Matrix& a, const d3d::Matrix& b)
+{
+    d3d::Matrix r{};
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            r.m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] + a.m[i][2] * b.m[2][j] + a.m[i][3] * b.m[3][j];
+    return r;
+}
 
 bool Device::CreateShadowResources(std::string* error)
 {
@@ -168,6 +203,10 @@ bool Device::CreateShadowResources(std::string* error)
 
 void Device::DestroyShadowResources()
 {
+    for (auto& [key, e] : m_casterCache) vmaDestroyBuffer(m_allocator, e.buffer, e.allocation);
+    m_casterCache.clear();
+    for (auto& [tag, b] : m_deadBuffers) vmaDestroyBuffer(m_allocator, b.first, b.second);
+    m_deadBuffers.clear();
     for (VkPipeline& p : m_shadowPipelines) if (p) { vkDestroyPipeline(m_device, p, nullptr); p = VK_NULL_HANDLE; }
     if (m_shadowPipelineLayout) vkDestroyPipelineLayout(m_device, m_shadowPipelineLayout, nullptr);
     if (m_shadowSetLayout) vkDestroyDescriptorSetLayout(m_device, m_shadowSetLayout, nullptr);
@@ -227,8 +266,9 @@ bool Device::IsShadowCaster(uint32_t primitive, uint32_t fvf) const
 }
 
 // Called by Draw for every draw, after its geometry went into the ring.
-void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t stride, uint32_t vertexCount,
-                                VkDeviceSize vbOffset, uint32_t indexCount, VkDeviceSize ibOffset)
+void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices,
+                                uint32_t vertexCount, VkDeviceSize vbOffset, const uint16_t* indices, uint32_t indexCount,
+                                VkDeviceSize ibOffset)
 {
     if (!IsShadowCaster(primitive, fvf))
         return;
@@ -257,6 +297,114 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
         }
     }
     m_casters.push_back(c);
+
+    // Static caster cache: identity = geometry, world matrix and cut-out texture.
+    uint64_t key = HashBytes(vertices, size_t(stride) * vertexCount, 0x5EEDull ^ (uint64_t(fvf) << 32) ^ primitive);
+    if (indexCount)
+        key = HashBytes(indices, size_t(indexCount) * 2, key);
+    key = HashBytes(&c.world, sizeof(c.world), key);
+    key = HashBytes(&c.texture, sizeof(c.texture), key ^ uint64_t(c.texOffset + 1));
+    auto cached = m_casterCache.find(key);
+    if (cached != m_casterCache.end()) {
+        cached->second.lastSeen = m_frameNumber;
+        return;
+    }
+    CasterStreak& streak = m_casterStreaks[key];
+    if (streak.lastFrame + 1 == m_frameNumber) ++streak.count;
+    else if (streak.lastFrame != m_frameNumber) streak.count = 1;
+    streak.lastFrame = m_frameNumber;
+    if (streak.count >= kPromoteFrames)
+        CacheCaster(key, c, vertices, indices);
+}
+
+void Device::CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertices, const uint16_t* indices)
+{
+    if (m_casterCache.size() >= kMaxCachedCasters)
+        return;
+    CachedCaster e{};
+    e.primitive = c.primitive;
+    e.stride = c.stride;
+    e.vertexCount = c.vertexCount;
+    e.indexCount = c.indexCount;
+    e.world = c.world;
+    e.texture = c.texture;
+    e.texOffset = c.texOffset;
+    e.alphaRef = c.alphaRef;
+    e.lastSeen = m_frameNumber;
+    // World-space bounds.
+    for (int i = 0; i < 3; ++i) { e.boundsMin[i] = 1e30f; e.boundsMax[i] = -1e30f; }
+    const uint8_t* v = static_cast<const uint8_t*>(vertices);
+    for (uint32_t i = 0; i < c.vertexCount; ++i) {
+        float p[3];
+        std::memcpy(p, v + size_t(i) * c.stride, sizeof(p));
+        for (int j = 0; j < 3; ++j) {
+            float w = p[0] * e.world.m[0][j] + p[1] * e.world.m[1][j] + p[2] * e.world.m[2][j] + e.world.m[3][j];
+            e.boundsMin[j] = std::min(e.boundsMin[j], w);
+            e.boundsMax[j] = std::max(e.boundsMax[j], w);
+        }
+    }
+    // Too far from the camera to matter (distant scenery): not worth keeping.
+    float d2 = 0.0f;
+    for (int j = 0; j < 3; ++j) {
+        float d = std::max({e.boundsMin[j] - m_frameEye[j], 0.0f, m_frameEye[j] - e.boundsMax[j]});
+        d2 += d * d;
+    }
+    if (d2 > 9.0f * m_shadowRange * m_shadowRange)
+        return;
+    VkDeviceSize vbBytes = VkDeviceSize(c.stride) * c.vertexCount;
+    e.indexOffset = (vbBytes + 3) & ~VkDeviceSize(3);
+    VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bi.size = e.indexOffset + VkDeviceSize(c.indexCount) * 2 + 4;
+    bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    VmaAllocationCreateInfo ac{};
+    ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    ac.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo info;
+    if (vmaCreateBuffer(m_allocator, &bi, &ac, &e.buffer, &e.allocation, &info) != VK_SUCCESS)
+        return;
+    auto* dst = static_cast<uint8_t*>(info.pMappedData);
+    std::memcpy(dst, vertices, vbBytes);
+    if (c.indexCount)
+        std::memcpy(dst + e.indexOffset, indices, size_t(c.indexCount) * 2);
+    m_casterCache.emplace(key, e);
+}
+
+void Device::ForgetCachedCaster(std::unordered_map<uint64_t, CachedCaster>::iterator it)
+{
+    m_deadBuffers.push_back({DeathTag(), {it->second.buffer, it->second.allocation}});
+    m_casterCache.erase(it);
+}
+
+void Device::ForgetCasterTexture(Texture* texture)
+{
+    for (auto it = m_casterCache.begin(); it != m_casterCache.end();)
+        if (it->second.texture == texture) { auto next = std::next(it); ForgetCachedCaster(it); it = next; }
+        else ++it;
+}
+
+// End of frame: drop streaks that were broken, and cached casters that are gone - ones reaching into the view
+// that the game didn't draw (removed, or replaced by another level of detail) - or that are far away.
+void Device::UpdateCasterCache()
+{
+    for (auto it = m_casterStreaks.begin(); it != m_casterStreaks.end();)
+        it = it->second.lastFrame == m_frameNumber ? std::next(it) : m_casterStreaks.erase(it);
+    if (!m_frameEyeValid)
+        return;
+    for (auto it = m_casterCache.begin(); it != m_casterCache.end();) {
+        CachedCaster& e = it->second;
+        auto next = std::next(it);
+        if (e.lastSeen != m_frameNumber) {
+            float d2 = 0.0f;
+            for (int j = 0; j < 3; ++j) {
+                float d = std::max({e.boundsMin[j] - m_frameEye[j], 0.0f, m_frameEye[j] - e.boundsMax[j]});
+                d2 += d * d;
+            }
+            // The game draws whatever reaches into the view: if any of it is in view and it wasn't drawn, it's gone.
+            if (d2 > 16.0f * m_shadowRange * m_shadowRange || BoxInClip(e.boundsMin, e.boundsMax, m_frameViewProj, true) != -1)
+                ForgetCachedCaster(it);
+        }
+        it = next;
+    }
 }
 
 // Whether a draw takes sun shadows: opaque or alpha-blended 3D geometry on the main target. Additive and
@@ -333,6 +481,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     m_shadowValid = false;
     if (!m_shadows || !haveSun || !m_frameEyeValid || m_casters.empty()) {
         m_casters.clear();
+        UpdateCasterCache();
         return;
     }
 
@@ -439,6 +588,58 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         else
             vkCmdDraw(cmd, c.vertexCount, 1, uint32_t(c.vbOffset / c.stride), 0);
     }
+    // Remembered static casters the game didn't draw this frame (out of view), if they reach into the map.
+    for (auto& [key, e] : m_casterCache) {
+        if (e.lastSeen == m_frameNumber || BoxInClip(e.boundsMin, e.boundsMax, lightViewProj, false) == -1)
+            continue;
+        int pipeline = e.texture ? 1 : 0;
+        if (pipeline != boundPipeline) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelines[pipeline]);
+            boundPipeline = pipeline;
+        }
+        if (e.primitive != boundPrimitive) {
+            vkCmdSetPrimitiveTopology(cmd, TopologyOf(e.primitive));
+            boundPrimitive = e.primitive;
+        }
+        if (e.stride != boundStride || e.texOffset != boundTexOffset) {
+            VkVertexInputBindingDescription2EXT bindings[2] = {
+                {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 0, e.stride, VK_VERTEX_INPUT_RATE_VERTEX, 1},
+                {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 1, 0, VK_VERTEX_INPUT_RATE_VERTEX, 1},
+            };
+            VkVertexInputAttributeDescription2EXT attrs[2] = {
+                {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT, nullptr, 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
+                {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT, nullptr, 1, 1, VK_FORMAT_R32G32_SFLOAT, 0},
+            };
+            if (e.texOffset >= 0) { attrs[1].binding = 0; attrs[1].offset = uint32_t(e.texOffset); }
+            vkCmdSetVertexInputEXT(cmd, 2, bindings, 2, attrs);
+            boundStride = e.stride;
+            boundTexOffset = e.texOffset;
+        }
+        if (e.texture && e.texture != boundTexture) {
+            VkDescriptorImageInfo image{SamplerFor(0), e.texture->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            w.dstBinding = 0;
+            w.descriptorCount = 1;
+            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w.pImageInfo = &image;
+            vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelineLayout, 0, 1, &w);
+            boundTexture = e.texture;
+        }
+        VkDeviceSize zero = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &e.buffer, &zero);
+        ShadowPush push;
+        push.worldLightViewProj = Mul(e.world, lightViewProj);
+        push.alpha[0] = e.alphaRef;
+        push.alpha[1] = push.alpha[2] = push.alpha[3] = 0.0f;
+        vkCmdPushConstants(cmd, m_shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(push), &push);
+        if (e.indexCount) {
+            vkCmdBindIndexBuffer(cmd, e.buffer, e.indexOffset, VK_INDEX_TYPE_UINT16);
+            vkCmdDrawIndexed(cmd, e.indexCount, 1, 0, 0, 0);
+        } else {
+            vkCmdDraw(cmd, e.vertexCount, 1, 0, 0);
+        }
+    }
     vkCmdEndRendering(cmd);
     ImageBarrier(cmd, m_shadowImage, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
@@ -449,6 +650,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     std::memcpy(m_shadowSunDir, m_sunDir, sizeof(m_sunDir));
     m_shadowValid = true;
     m_casters.clear();
+    UpdateCasterCache();
 }
 
 }  // namespace rvk
