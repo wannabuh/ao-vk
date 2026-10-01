@@ -5,6 +5,7 @@
 //
 //   randy_harness.exe [--frames N] [--shot out.bmp]
 #define WIN32_LEAN_AND_MEAN
+#define INITGUID
 #include <windows.h>
 #include <ddraw.h>
 #include <d3d.h>
@@ -293,6 +294,52 @@ int main(int argc, char** argv)
     void* texDxt = MakeTexture("harness_dxt1", 8, 8, D3DX_SF_DXT1, dxt1, 16);
     std::printf("textures: checker surface_t %p, dxt1 surface_t %p\n", SurfaceOf(texChecker), SurfaceOf(texDxt));
     TestProcessVertices(render);
+    {
+        auto* device = *static_cast<IDirect3DDevice7**>(render);
+        device->EnumTextureFormats([](LPDDPIXELFORMAT pf, LPVOID) -> HRESULT {
+            if (pf->dwFlags & DDPF_FOURCC)
+                std::printf("texfmt FOURCC %.4s\n", reinterpret_cast<const char*>(&pf->dwFourCC));
+            else
+                std::printf("texfmt flags %08lx %lubpp R %08lx G %08lx B %08lx A %08lx\n", pf->dwFlags, pf->dwRGBBitCount,
+                            pf->dwRBitMask, pf->dwGBitMask, pf->dwBBitMask, pf->dwRGBAlphaBitMask);
+            return D3DENUMRET_OK;
+        }, nullptr);
+        D3DDEVICEDESC7 d{};
+        device->GetCaps(&d);
+        std::printf("caps devcaps %08lx tri raster %08lx zcmp %08lx src %08lx dst %08lx shade %08lx tex %08lx filter %08lx "
+                    "blend %08lx addr %08lx\n", d.dwDevCaps, d.dpcTriCaps.dwRasterCaps, d.dpcTriCaps.dwZCmpCaps,
+                    d.dpcTriCaps.dwSrcBlendCaps, d.dpcTriCaps.dwDestBlendCaps, d.dpcTriCaps.dwShadeCaps,
+                    d.dpcTriCaps.dwTextureCaps, d.dpcTriCaps.dwTextureFilterCaps, d.dpcTriCaps.dwTextureBlendCaps,
+                    d.dpcTriCaps.dwTextureAddressCaps);
+        std::printf("caps misc %08lx render %08lx zdepth %08lx tex %lux%lu..%lux%lu repeat %lu aspect %lu aniso %lu "
+                    "fvf %08lx texop %08lx stages %u simul %u lights %lu clip %u blend %u vtx %08lx stencil %08lx\n",
+                    d.dpcTriCaps.dwMiscCaps, d.dwDeviceRenderBitDepth, d.dwDeviceZBufferBitDepth, d.dwMinTextureWidth,
+                    d.dwMinTextureHeight, d.dwMaxTextureWidth, d.dwMaxTextureHeight, d.dwMaxTextureRepeat,
+                    d.dwMaxTextureAspectRatio, d.dwMaxAnisotropy, d.dwFVFCaps, d.dwTextureOpCaps, d.wMaxTextureBlendStages,
+                    d.wMaxSimultaneousTextures, d.dwMaxActiveLights, d.wMaxUserClipPlanes, d.wMaxVertexBlendMatrices,
+                    d.dwVertexProcessingCaps, d.dwStencilCaps);
+        IDirect3D7* d3d = nullptr;
+        device->GetDirect3D(&d3d);
+        IDirectDraw7* dd = nullptr;
+        d3d->QueryInterface(IID_IDirectDraw7, reinterpret_cast<void**>(&dd));
+        DDCAPS c{};
+        c.dwSize = sizeof(c);
+        DDCAPS hel{};
+        hel.dwSize = sizeof(hel);
+        dd->GetCaps(&c, &hel);
+        std::printf("ddcaps caps %08lx caps2 %08lx ckey %08lx fx %08lx fxalpha %08lx pal %08lx svcaps %08lx alpha %lu/%lu z %08lx "
+                    "vidmem %lu ddscaps %08lx/%08lx fourcc %lu hel caps %08lx hel ddscaps %08lx\n", c.dwCaps, c.dwCaps2,
+                    c.dwCKeyCaps, c.dwFXCaps, c.dwFXAlphaCaps, c.dwPalCaps, c.dwSVCaps, c.dwAlphaBltConstBitDepths,
+                    c.dwAlphaBltPixelBitDepths, c.dwZBufferBitDepths, c.dwVidMemTotal, c.ddsCaps.dwCaps, c.ddsCaps.dwCaps2,
+                    c.dwNumFourCCCodes, hel.dwCaps, hel.ddsCaps.dwCaps);
+        dd->Release();
+        d3d->EnumZBufferFormats(IID_IDirect3DTnLHalDevice, [](LPDDPIXELFORMAT pf, LPVOID) -> HRESULT {
+            std::printf("zfmt flags %08lx bits %lu z %08lx stencil %08lx\n", pf->dwFlags, pf->dwZBufferBitDepth,
+                        pf->dwZBitMask, pf->dwStencilBitMask);
+            return D3DENUMRET_OK;
+        }, nullptr);
+        d3d->Release();
+    }
 
     for (int frame = 0; frame < frames; ++frame) {
         bool restored = false;

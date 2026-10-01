@@ -685,6 +685,10 @@ bool Device::CreateFrames(std::string* error)
         if (!Check(vmaCreateBuffer(m_allocator, &bi, &ac, &f.ring, &f.ringAllocation, &info), "ring buffer", error))
             return false;
         f.ringData = static_cast<uint8_t*>(info.pMappedData);
+        VkMemoryPropertyFlags props;
+        vmaGetMemoryTypeProperties(m_allocator, info.memoryType, &props);
+        Log("ring buffer: memory type %u (flags 0x%x%s)", info.memoryType, props,
+            (props & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) ? ", device-local = BAR window" : "");
     }
     return true;
 }

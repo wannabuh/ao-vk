@@ -190,61 +190,44 @@ void PixelFormatFor(rvk::Format format, DDPIXELFORMAT* pf)
 
 void FillDeviceDesc(D3DDEVICEDESC7* d, REFCLSID device)
 {
+    // The values D3D7 reports through D7VK on this GPU (tools: randy_harness prints both), so the game and its
+    // D3DX make the same decisions as with D3D7. rvk itself covers what the client actually uses.
     std::memset(d, 0, sizeof(*d));
-    d->dwDevCaps = D3DDEVCAPS_FLOATTLVERTEX | D3DDEVCAPS_EXECUTESYSTEMMEMORY | D3DDEVCAPS_TLVERTEXSYSTEMMEMORY |
-                   D3DDEVCAPS_TEXTUREVIDEOMEMORY | D3DDEVCAPS_DRAWPRIMTLVERTEX | D3DDEVCAPS_CANRENDERAFTERFLIP |
-                   D3DDEVCAPS_DRAWPRIMITIVES2 | D3DDEVCAPS_DRAWPRIMITIVES2EX | D3DDEVCAPS_HWRASTERIZATION |
-                   D3DDEVCAPS_CANBLTSYSTONONLOCAL | D3DDEVCAPS_TEXTURENONLOCALVIDMEM;
-    if (device == IID_IDirect3DTnLHalDevice)
-        d->dwDevCaps |= D3DDEVCAPS_HWTRANSFORMANDLIGHT;
+    d->dwDevCaps = 0x000BBEF1;
+    if (device != IID_IDirect3DTnLHalDevice)
+        d->dwDevCaps &= ~D3DDEVCAPS_HWTRANSFORMANDLIGHT;
     D3DPRIMCAPS prim{};
     prim.dwSize = sizeof(prim);
-    prim.dwMiscCaps = D3DPMISCCAPS_MASKZ | D3DPMISCCAPS_CULLNONE | D3DPMISCCAPS_CULLCW | D3DPMISCCAPS_CULLCCW;
-    prim.dwRasterCaps = D3DPRASTERCAPS_DITHER | D3DPRASTERCAPS_ZTEST | D3DPRASTERCAPS_FOGVERTEX | D3DPRASTERCAPS_FOGTABLE |
-                        D3DPRASTERCAPS_MIPMAPLODBIAS | D3DPRASTERCAPS_FOGRANGE | D3DPRASTERCAPS_ANISOTROPY |
-                        D3DPRASTERCAPS_WFOG | D3DPRASTERCAPS_ZFOG;
-    prim.dwZCmpCaps = prim.dwAlphaCmpCaps = D3DPCMPCAPS_NEVER | D3DPCMPCAPS_LESS | D3DPCMPCAPS_EQUAL | D3DPCMPCAPS_LESSEQUAL |
-                                           D3DPCMPCAPS_GREATER | D3DPCMPCAPS_NOTEQUAL | D3DPCMPCAPS_GREATEREQUAL | D3DPCMPCAPS_ALWAYS;
-    prim.dwSrcBlendCaps = prim.dwDestBlendCaps = 0x1FFF;     // all D3DPBLENDCAPS_*
-    prim.dwShadeCaps = D3DPSHADECAPS_COLORGOURAUDRGB | D3DPSHADECAPS_SPECULARGOURAUDRGB | D3DPSHADECAPS_ALPHAGOURAUDBLEND |
-                       D3DPSHADECAPS_FOGGOURAUD;
-    prim.dwTextureCaps = D3DPTEXTURECAPS_PERSPECTIVE | D3DPTEXTURECAPS_ALPHA | D3DPTEXTURECAPS_TRANSPARENCY |
-                         D3DPTEXTURECAPS_BORDER | D3DPTEXTURECAPS_ALPHAPALETTE | D3DPTEXTURECAPS_PROJECTED;
-    prim.dwTextureFilterCaps = D3DPTFILTERCAPS_NEAREST | D3DPTFILTERCAPS_LINEAR | D3DPTFILTERCAPS_MIPNEAREST |
-                               D3DPTFILTERCAPS_MIPLINEAR | D3DPTFILTERCAPS_LINEARMIPNEAREST | D3DPTFILTERCAPS_LINEARMIPLINEAR |
-                               D3DPTFILTERCAPS_MINFPOINT | D3DPTFILTERCAPS_MINFLINEAR | D3DPTFILTERCAPS_MIPFPOINT |
-                               D3DPTFILTERCAPS_MIPFLINEAR | D3DPTFILTERCAPS_MAGFPOINT | D3DPTFILTERCAPS_MAGFLINEAR;
-    prim.dwTextureBlendCaps = D3DPTBLENDCAPS_DECAL | D3DPTBLENDCAPS_MODULATE | D3DPTBLENDCAPS_DECALALPHA |
-                              D3DPTBLENDCAPS_MODULATEALPHA | D3DPTBLENDCAPS_ADD | D3DPTBLENDCAPS_COPY;
-    prim.dwTextureAddressCaps = D3DPTADDRESSCAPS_WRAP | D3DPTADDRESSCAPS_MIRROR | D3DPTADDRESSCAPS_CLAMP |
-                                D3DPTADDRESSCAPS_BORDER | D3DPTADDRESSCAPS_INDEPENDENTUV;
+    prim.dwMiscCaps = 0x00000072;
+    prim.dwRasterCaps = 0x003361B1;
+    prim.dwZCmpCaps = prim.dwAlphaCmpCaps = 0x000000FF;
+    prim.dwSrcBlendCaps = prim.dwDestBlendCaps = 0x00001FFF;
+    prim.dwShadeCaps = 0x000C528A;
+    prim.dwTextureCaps = 0x00000DDF;
+    prim.dwTextureFilterCaps = 0x0703073F;
+    prim.dwTextureBlendCaps = 0x000000FF;
+    prim.dwTextureAddressCaps = 0x0000001F;
     d->dpcLineCaps = d->dpcTriCaps = prim;
-    d->dwDeviceRenderBitDepth = DDBD_16 | DDBD_32;
-    d->dwDeviceZBufferBitDepth = DDBD_16 | DDBD_24 | DDBD_32;
+    d->dwDeviceRenderBitDepth = 0x00000700;
+    d->dwDeviceZBufferBitDepth = 0x00000600;
     d->dwMinTextureWidth = d->dwMinTextureHeight = 1;
-    d->dwMaxTextureWidth = d->dwMaxTextureHeight = 4096;
+    d->dwMaxTextureWidth = d->dwMaxTextureHeight = 8192;
     d->dwMaxTextureRepeat = 8192;
-    d->dwMaxTextureAspectRatio = 4096;
+    d->dwMaxTextureAspectRatio = 8192;
     d->dwMaxAnisotropy = 16;
     d->dvGuardBandLeft = d->dvGuardBandTop = -8192.0f;
     d->dvGuardBandRight = d->dvGuardBandBottom = 8192.0f;
-    d->dvExtentsAdjust = 0.0f;
-    d->dwStencilCaps = 0;
-    d->dwFVFCaps = 8;                                      // texture coordinate sets
-    d->dwTextureOpCaps = D3DTEXOPCAPS_DISABLE | D3DTEXOPCAPS_SELECTARG1 | D3DTEXOPCAPS_SELECTARG2 | D3DTEXOPCAPS_MODULATE |
-                         D3DTEXOPCAPS_MODULATE2X | D3DTEXOPCAPS_MODULATE4X | D3DTEXOPCAPS_ADD | D3DTEXOPCAPS_ADDSIGNED |
-                         D3DTEXOPCAPS_ADDSIGNED2X | D3DTEXOPCAPS_SUBTRACT | D3DTEXOPCAPS_ADDSMOOTH |
-                         D3DTEXOPCAPS_BLENDDIFFUSEALPHA | D3DTEXOPCAPS_BLENDTEXTUREALPHA | D3DTEXOPCAPS_BLENDFACTORALPHA |
-                         D3DTEXOPCAPS_BLENDCURRENTALPHA;
-    d->wMaxTextureBlendStages = 2;
-    d->wMaxSimultaneousTextures = 2;
-    d->dwMaxActiveLights = rvk::Device::kMaxLights;
+    d->dwStencilCaps = 0x000000FF;
+    d->dwFVFCaps = 0x00000008;
+    d->dwTextureOpCaps = 0x00FFFFFF;
+    d->wMaxTextureBlendStages = 8;
+    d->wMaxSimultaneousTextures = 8;
+    d->dwMaxActiveLights = 8;
     d->dvMaxVertexW = 1e10f;
     d->deviceGUID = device;
-    d->wMaxUserClipPlanes = 0;
-    d->wMaxVertexBlendMatrices = 0;
-    d->dwVertexProcessingCaps = D3DVTXPCAPS_TEXGEN | D3DVTXPCAPS_MATERIALSOURCE7 | D3DVTXPCAPS_DIRECTIONALLIGHTS |
-                                D3DVTXPCAPS_POSITIONALLIGHTS | D3DVTXPCAPS_LOCALVIEWER;
+    d->wMaxUserClipPlanes = 6;
+    d->wMaxVertexBlendMatrices = 4;
+    d->dwVertexProcessingCaps = 0x0000003F;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -374,26 +357,23 @@ HRESULT RDirectDraw::DoEnumDisplayModes(DWORD, LPDDSURFACEDESC2 filter, LPVOID c
 
 HRESULT RDirectDraw::DoGetCaps(LPDDCAPS driver, LPDDCAPS hel)
 {
-    auto fill = [](LPDDCAPS c, bool hw) {
+    // D7VK's values (it reports the same caps for the driver and the emulation layer).
+    auto fill = [](LPDDCAPS c) {
         DWORD size = c->dwSize ? c->dwSize : sizeof(DDCAPS);
         std::memset(c, 0, size);
         c->dwSize = size;
-        if (!hw) return;
-        c->dwCaps = DDCAPS_3D | DDCAPS_BLT | DDCAPS_BLTCOLORFILL | DDCAPS_BLTDEPTHFILL | DDCAPS_BLTSTRETCH |
-                    DDCAPS_COLORKEY | DDCAPS_CANBLTSYSMEM | DDCAPS_CANCLIP | DDCAPS_CANCLIPSTRETCHED | DDCAPS_ZBLTS |
-                    DDCAPS_BLTFOURCC;
-        c->dwCaps2 = DDCAPS2_CANRENDERWINDOWED | DDCAPS2_WIDESURFACES | DDCAPS2_NOPAGELOCKREQUIRED |
-                     DDCAPS2_FLIPNOVSYNC | DDCAPS2_PRIMARYGAMMA;
-        c->dwCKeyCaps = DDCKEYCAPS_SRCBLT;
-        c->dwFXCaps = DDFXCAPS_BLTSTRETCHX | DDFXCAPS_BLTSTRETCHY | DDFXCAPS_BLTSHRINKX | DDFXCAPS_BLTSHRINKY;
-        c->dwVidMemTotal = c->dwVidMemFree = 0x7FFF0000;
-        c->ddsCaps.dwCaps = DDSCAPS_3DDEVICE | DDSCAPS_BACKBUFFER | DDSCAPS_COMPLEX | DDSCAPS_FLIP | DDSCAPS_FRONTBUFFER |
-                            DDSCAPS_MIPMAP | DDSCAPS_OFFSCREENPLAIN | DDSCAPS_PRIMARYSURFACE | DDSCAPS_SYSTEMMEMORY |
-                            DDSCAPS_TEXTURE | DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM | DDSCAPS_ZBUFFER | DDSCAPS_PALETTE;
+        c->dwCaps = 0xF5408661;
+        c->dwCaps2 = 0x006A1801;
+        c->dwCKeyCaps = 0x00000201;
+        c->dwFXCaps = 0x0003FEC1;
+        c->dwPalCaps = 0x00000014;
+        c->dwZBufferBitDepths = 0x00000600;
+        c->dwVidMemTotal = c->dwVidMemFree = 2139095040;
+        c->ddsCaps.dwCaps = 0x3046737C;
         c->dwNumFourCCCodes = 5;
     };
-    if (driver) fill(driver, true);
-    if (hel) fill(hel, false);
+    if (driver) fill(driver);
+    if (hel) fill(hel);
     return DD_OK;
 }
 
@@ -500,7 +480,8 @@ HRESULT RDirect3D::DoCreateVertexBuffer(LPD3DVERTEXBUFFERDESC desc, LPDIRECT3DVE
 HRESULT RDirect3D::DoEnumZBufferFormats(REFCLSID, LPD3DENUMPIXELFORMATSCALLBACK cb, LPVOID ctx)
 {
     if (!cb) return DDERR_INVALIDPARAMS;
-    struct Z { DWORD bits, mask, stencil; } formats[] = {{16, 0xFFFF, 0}, {32, 0xFFFFFF00, 0}, {32, 0xFFFFFF00, 0xFF}, {32, 0xFFFFFFFF, 0}};
+    struct Z { DWORD bits, mask, stencil; } formats[] = {{16, 0xFFFF, 0}, {24, 0xFFFFFF, 0}, {32, 0xFFFFFF, 0},
+                                                         {32, 0xFFFFFF, 0xFF000000}};   // as D7VK reports them
     for (auto& z : formats) {
         DDPIXELFORMAT pf{};
         pf.dwSize = sizeof(pf);

@@ -97,7 +97,11 @@ HRESULT RSurface::Create(RDirectDraw* owner, const DDSURFACEDESC2& requested, RS
     rvk::Format format = rvk::Format::X8R8G8B8;
     bool convert24 = false, palettized = false;
     if (kind == Kind::Depth) {
-        // rvk has one D32 depth buffer; report back what was asked for.
+        // rvk has one D32 depth buffer; report back what was asked for. A 32-bit z-buffer with a full 32-bit
+        // mask is refused like D3D7 (D7VK) does, so the game falls back to 24-bit as it normally would.
+        if ((d.dwFlags & DDSD_PIXELFORMAT) && d.ddpfPixelFormat.dwZBufferBitDepth == 32 &&
+            d.ddpfPixelFormat.dwZBitMask == 0xFFFFFFFF)
+            return DDERR_INVALIDPIXELFORMAT;
     } else if (d.dwFlags & DDSD_PIXELFORMAT) {
         if (!FormatFromPixelFormat(d.ddpfPixelFormat, &format, &convert24, &palettized)) {
             RvkLog("CreateSurface: unsupported pixel format (flags 0x%lx, %lu bpp, fourcc %.4s)", d.ddpfPixelFormat.dwFlags,

@@ -106,10 +106,13 @@ HRESULT RDevice::DoGetCaps(LPD3DDEVICEDESC7 desc)
 HRESULT RDevice::DoEnumTextureFormats(LPD3DENUMPIXELFORMATSCALLBACK cb, LPVOID ctx)
 {
     if (!cb) return DDERR_INVALIDPARAMS;
-    static const rvk::Format formats[] = {rvk::Format::A8R8G8B8, rvk::Format::X8R8G8B8, rvk::Format::R5G6B5,
-                                          rvk::Format::X1R5G5B5, rvk::Format::A1R5G5B5, rvk::Format::A4R4G4B4,
-                                          rvk::Format::L8, rvk::Format::A8L8, rvk::Format::DXT1, rvk::Format::DXT2,
-                                          rvk::Format::DXT3, rvk::Format::DXT4, rvk::Format::DXT5};
+    // Same formats in the same order as D3D7 drivers report them (checked against D7VK): D3DX takes the first
+    // suitable one when the caller leaves the format open, and game code depends on the result (the planet
+    // map builder only copies 16-bit terrain textures). Bump-map formats are left out (unused, unsupported).
+    static const rvk::Format formats[] = {rvk::Format::X1R5G5B5, rvk::Format::A1R5G5B5, rvk::Format::A4R4G4B4,
+                                          rvk::Format::R5G6B5,   rvk::Format::X8R8G8B8, rvk::Format::A8R8G8B8,
+                                          rvk::Format::DXT1,     rvk::Format::DXT2,     rvk::Format::DXT3,
+                                          rvk::Format::DXT4,     rvk::Format::DXT5};
     for (rvk::Format f : formats) {
         DDPIXELFORMAT pf;
         PixelFormatFor(f, &pf);
