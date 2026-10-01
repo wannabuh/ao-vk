@@ -9,6 +9,7 @@
 #include <d3d.h>
 
 #include <cstdint>
+#include <cstdio>
 
 namespace rvkproxy {
 
@@ -20,6 +21,7 @@ bool ComTraceActive();
 unsigned ComMethodCount();
 const char* ComMethodName(unsigned index);
 uint32_t ComCallCount(unsigned index);
+void ComDetailSummary(FILE* f);           // argument summaries of selected calls (com_trace_detail.cpp)
 
 // ---- used by the generated wrappers ----
 void CountComCall(unsigned index);

@@ -217,6 +217,7 @@ void EndCapture()
         for (unsigned i = 0; i < rvkproxy::ComMethodCount(); ++i)
             if (uint32_t n = rvkproxy::ComCallCount(i))
                 std::fprintf(f, "  %6u  %s\n", n, rvkproxy::ComMethodName(i));
+        rvkproxy::ComDetailSummary(f);
     }
     std::fflush(f);
     g_events.clear();

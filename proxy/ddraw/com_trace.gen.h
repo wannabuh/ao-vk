@@ -11,6 +11,30 @@ class TraceIDirect3D7;
 class TraceIDirect3DDevice7;
 class TraceIDirect3DVertexBuffer7;
 
+void TraceDetail_IDirectDraw7_CreateSurface(TraceIDirectDraw7* self, HRESULT r, LPDDSURFACEDESC2 a0, LPDIRECTDRAWSURFACE7* a1, IUnknown* a2);
+void TraceDetail_IDirectDraw7_SetCooperativeLevel(TraceIDirectDraw7* self, HRESULT r, HWND a0, DWORD a1);
+void TraceDetail_IDirectDraw7_SetDisplayMode(TraceIDirectDraw7* self, HRESULT r, DWORD a0, DWORD a1, DWORD a2, DWORD a3, DWORD a4);
+void TraceDetail_IDirectDraw7_GetAvailableVidMem(TraceIDirectDraw7* self, HRESULT r, LPDDSCAPS2 a0, LPDWORD a1, LPDWORD a2);
+void TraceDetail_IDirectDrawSurface7_AddAttachedSurface(TraceIDirectDrawSurface7* self, HRESULT r, LPDIRECTDRAWSURFACE7 a0);
+void TraceDetail_IDirectDrawSurface7_Blt(TraceIDirectDrawSurface7* self, HRESULT r, LPRECT a0, LPDIRECTDRAWSURFACE7 a1, LPRECT a2, DWORD a3, LPDDBLTFX a4);
+void TraceDetail_IDirectDrawSurface7_BltFast(TraceIDirectDrawSurface7* self, HRESULT r, DWORD a0, DWORD a1, LPDIRECTDRAWSURFACE7 a2, LPRECT a3, DWORD a4);
+void TraceDetail_IDirectDrawSurface7_Flip(TraceIDirectDrawSurface7* self, HRESULT r, LPDIRECTDRAWSURFACE7 a0, DWORD a1);
+void TraceDetail_IDirectDrawSurface7_GetAttachedSurface(TraceIDirectDrawSurface7* self, HRESULT r, LPDDSCAPS2 a0, LPDIRECTDRAWSURFACE7* a1);
+void TraceDetail_IDirectDrawSurface7_GetDC(TraceIDirectDrawSurface7* self, HRESULT r, HDC* a0);
+void TraceDetail_IDirectDrawSurface7_Lock(TraceIDirectDrawSurface7* self, HRESULT r, LPRECT a0, LPDDSURFACEDESC2 a1, DWORD a2, HANDLE a3);
+void TraceDetail_IDirectDrawSurface7_SetColorKey(TraceIDirectDrawSurface7* self, HRESULT r, DWORD a0, LPDDCOLORKEY a1);
+void TraceDetail_IDirectDrawSurface7_SetPalette(TraceIDirectDrawSurface7* self, HRESULT r, LPDIRECTDRAWPALETTE a0);
+void TraceDetail_IDirectDrawSurface7_SetPrivateData(TraceIDirectDrawSurface7* self, HRESULT r, REFGUID a0, LPVOID a1, DWORD a2, DWORD a3);
+void TraceDetail_IDirect3D7_CreateDevice(TraceIDirect3D7* self, HRESULT r, REFCLSID a0, LPDIRECTDRAWSURFACE7 a1, LPDIRECT3DDEVICE7* a2);
+void TraceDetail_IDirect3D7_CreateVertexBuffer(TraceIDirect3D7* self, HRESULT r, LPD3DVERTEXBUFFERDESC a0, LPDIRECT3DVERTEXBUFFER7* a1, DWORD a2);
+void TraceDetail_IDirect3DDevice7_SetRenderTarget(TraceIDirect3DDevice7* self, HRESULT r, LPDIRECTDRAWSURFACE7 a0, DWORD a1);
+void TraceDetail_IDirect3DDevice7_PreLoad(TraceIDirect3DDevice7* self, HRESULT r, LPDIRECTDRAWSURFACE7 a0);
+void TraceDetail_IDirect3DDevice7_DrawPrimitive(TraceIDirect3DDevice7* self, HRESULT r, D3DPRIMITIVETYPE a0, DWORD a1, LPVOID a2, DWORD a3, DWORD a4);
+void TraceDetail_IDirect3DDevice7_DrawIndexedPrimitive(TraceIDirect3DDevice7* self, HRESULT r, D3DPRIMITIVETYPE a0, DWORD a1, LPVOID a2, DWORD a3, LPWORD a4, DWORD a5, DWORD a6);
+void TraceDetail_IDirect3DDevice7_Load(TraceIDirect3DDevice7* self, HRESULT r, LPDIRECTDRAWSURFACE7 a0, LPPOINT a1, LPDIRECTDRAWSURFACE7 a2, LPRECT a3, DWORD a4);
+void TraceDetail_IDirect3DVertexBuffer7_Lock(TraceIDirect3DVertexBuffer7* self, HRESULT r, DWORD a0, LPVOID* a1, LPDWORD a2);
+void TraceDetail_IDirect3DVertexBuffer7_ProcessVertices(TraceIDirect3DVertexBuffer7* self, HRESULT r, DWORD a0, DWORD a1, DWORD a2, LPDIRECT3DVERTEXBUFFER7 a3, DWORD a4, LPDIRECT3DDEVICE7 a5, DWORD a6);
+
 class TraceIDirectDraw7 final : public IDirectDraw7, public TraceBase<IDirectDraw7> {
 public:
     using TraceBase::TraceBase;
@@ -41,6 +65,7 @@ public:
     {
         CountComCall(6);
         HRESULT r = m_real->CreateSurface(a0, a1, a2);
+        TraceDetail_IDirectDraw7_CreateSurface(this, r, a0, a1, a2);
         if (SUCCEEDED(r) && a1 && *a1) *a1 = Wrap<TraceIDirectDrawSurface7>(*a1);
         return r;
     }
@@ -112,12 +137,16 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetCooperativeLevel(HWND a0, DWORD a1) override
     {
         CountComCall(20);
-        return m_real->SetCooperativeLevel(a0, a1);
+        HRESULT r = m_real->SetCooperativeLevel(a0, a1);
+        TraceDetail_IDirectDraw7_SetCooperativeLevel(this, r, a0, a1);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetDisplayMode(DWORD a0, DWORD a1, DWORD a2, DWORD a3, DWORD a4) override
     {
         CountComCall(21);
-        return m_real->SetDisplayMode(a0, a1, a2, a3, a4);
+        HRESULT r = m_real->SetDisplayMode(a0, a1, a2, a3, a4);
+        TraceDetail_IDirectDraw7_SetDisplayMode(this, r, a0, a1, a2, a3, a4);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE WaitForVerticalBlank(DWORD a0, HANDLE a1) override
     {
@@ -127,7 +156,9 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetAvailableVidMem(LPDDSCAPS2 a0, LPDWORD a1, LPDWORD a2) override
     {
         CountComCall(23);
-        return m_real->GetAvailableVidMem(a0, a1, a2);
+        HRESULT r = m_real->GetAvailableVidMem(a0, a1, a2);
+        TraceDetail_IDirectDraw7_GetAvailableVidMem(this, r, a0, a1, a2);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetSurfaceFromDC(HDC a0, LPDIRECTDRAWSURFACE7* a1) override
     {
@@ -173,7 +204,9 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE AddAttachedSurface(LPDIRECTDRAWSURFACE7 a0) override
     {
         CountComCall(33);
-        return m_real->AddAttachedSurface(Unwrap<TraceIDirectDrawSurface7>(a0));
+        HRESULT r = m_real->AddAttachedSurface(Unwrap<TraceIDirectDrawSurface7>(a0));
+        TraceDetail_IDirectDrawSurface7_AddAttachedSurface(this, r, a0);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE AddOverlayDirtyRect(LPRECT a0) override
     {
@@ -183,13 +216,17 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Blt(LPRECT a0, LPDIRECTDRAWSURFACE7 a1, LPRECT a2, DWORD a3, LPDDBLTFX a4) override
     {
         CountComCall(35);
-        return m_real->Blt(a0, Unwrap<TraceIDirectDrawSurface7>(a1), a2, a3, a4);
+        HRESULT r = m_real->Blt(a0, Unwrap<TraceIDirectDrawSurface7>(a1), a2, a3, a4);
+        TraceDetail_IDirectDrawSurface7_Blt(this, r, a0, a1, a2, a3, a4);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE BltBatch(LPDDBLTBATCH a0, DWORD a1, DWORD a2) override;   // manual, counter 36
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE BltFast(DWORD a0, DWORD a1, LPDIRECTDRAWSURFACE7 a2, LPRECT a3, DWORD a4) override
     {
         CountComCall(37);
-        return m_real->BltFast(a0, a1, Unwrap<TraceIDirectDrawSurface7>(a2), a3, a4);
+        HRESULT r = m_real->BltFast(a0, a1, Unwrap<TraceIDirectDrawSurface7>(a2), a3, a4);
+        TraceDetail_IDirectDrawSurface7_BltFast(this, r, a0, a1, a2, a3, a4);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DeleteAttachedSurface(DWORD a0, LPDIRECTDRAWSURFACE7 a1) override
     {
@@ -201,12 +238,15 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Flip(LPDIRECTDRAWSURFACE7 a0, DWORD a1) override
     {
         CountComCall(41);
-        return m_real->Flip(Unwrap<TraceIDirectDrawSurface7>(a0), a1);
+        HRESULT r = m_real->Flip(Unwrap<TraceIDirectDrawSurface7>(a0), a1);
+        TraceDetail_IDirectDrawSurface7_Flip(this, r, a0, a1);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetAttachedSurface(LPDDSCAPS2 a0, LPDIRECTDRAWSURFACE7* a1) override
     {
         CountComCall(42);
         HRESULT r = m_real->GetAttachedSurface(a0, a1);
+        TraceDetail_IDirectDrawSurface7_GetAttachedSurface(this, r, a0, a1);
         if (SUCCEEDED(r) && a1 && *a1) *a1 = Wrap<TraceIDirectDrawSurface7>(*a1);
         return r;
     }
@@ -235,7 +275,9 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetDC(HDC* a0) override
     {
         CountComCall(47);
-        return m_real->GetDC(a0);
+        HRESULT r = m_real->GetDC(a0);
+        TraceDetail_IDirectDrawSurface7_GetDC(this, r, a0);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetFlipStatus(DWORD a0) override
     {
@@ -277,7 +319,9 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Lock(LPRECT a0, LPDDSURFACEDESC2 a1, DWORD a2, HANDLE a3) override
     {
         CountComCall(55);
-        return m_real->Lock(a0, a1, a2, a3);
+        HRESULT r = m_real->Lock(a0, a1, a2, a3);
+        TraceDetail_IDirectDrawSurface7_Lock(this, r, a0, a1, a2, a3);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE ReleaseDC(HDC a0) override
     {
@@ -297,7 +341,9 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetColorKey(DWORD a0, LPDDCOLORKEY a1) override
     {
         CountComCall(59);
-        return m_real->SetColorKey(a0, a1);
+        HRESULT r = m_real->SetColorKey(a0, a1);
+        TraceDetail_IDirectDrawSurface7_SetColorKey(this, r, a0, a1);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetOverlayPosition(LONG a0, LONG a1) override
     {
@@ -307,7 +353,9 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetPalette(LPDIRECTDRAWPALETTE a0) override
     {
         CountComCall(61);
-        return m_real->SetPalette(Unwrap<TraceIDirectDrawPalette>(a0));
+        HRESULT r = m_real->SetPalette(Unwrap<TraceIDirectDrawPalette>(a0));
+        TraceDetail_IDirectDrawSurface7_SetPalette(this, r, a0);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Unlock(LPRECT a0) override
     {
@@ -348,7 +396,9 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID a0, LPVOID a1, DWORD a2, DWORD a3) override
     {
         CountComCall(70);
-        return m_real->SetPrivateData(a0, a1, a2, a3);
+        HRESULT r = m_real->SetPrivateData(a0, a1, a2, a3);
+        TraceDetail_IDirectDrawSurface7_SetPrivateData(this, r, a0, a1, a2, a3);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID a0, LPVOID a1, LPDWORD a2) override
     {
@@ -476,6 +526,7 @@ public:
     {
         CountComCall(99);
         HRESULT r = m_real->CreateDevice(a0, Unwrap<TraceIDirectDrawSurface7>(a1), a2);
+        TraceDetail_IDirect3D7_CreateDevice(this, r, a0, a1, a2);
         if (SUCCEEDED(r) && a2 && *a2) *a2 = Wrap<TraceIDirect3DDevice7>(*a2);
         return r;
     }
@@ -483,6 +534,7 @@ public:
     {
         CountComCall(100);
         HRESULT r = m_real->CreateVertexBuffer(a0, a1, a2);
+        TraceDetail_IDirect3D7_CreateVertexBuffer(this, r, a0, a1, a2);
         if (SUCCEEDED(r) && a1 && *a1) *a1 = Wrap<TraceIDirect3DVertexBuffer7>(*a1);
         return r;
     }
@@ -535,7 +587,9 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetRenderTarget(LPDIRECTDRAWSURFACE7 a0, DWORD a1) override
     {
         CountComCall(111);
-        return m_real->SetRenderTarget(Unwrap<TraceIDirectDrawSurface7>(a0), a1);
+        HRESULT r = m_real->SetRenderTarget(Unwrap<TraceIDirectDrawSurface7>(a0), a1);
+        TraceDetail_IDirect3DDevice7_SetRenderTarget(this, r, a0, a1);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetRenderTarget(LPDIRECTDRAWSURFACE7* a0) override
     {
@@ -617,17 +671,23 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE PreLoad(LPDIRECTDRAWSURFACE7 a0) override
     {
         CountComCall(127);
-        return m_real->PreLoad(Unwrap<TraceIDirectDrawSurface7>(a0));
+        HRESULT r = m_real->PreLoad(Unwrap<TraceIDirectDrawSurface7>(a0));
+        TraceDetail_IDirect3DDevice7_PreLoad(this, r, a0);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DrawPrimitive(D3DPRIMITIVETYPE a0, DWORD a1, LPVOID a2, DWORD a3, DWORD a4) override
     {
         CountComCall(128);
-        return m_real->DrawPrimitive(a0, a1, a2, a3, a4);
+        HRESULT r = m_real->DrawPrimitive(a0, a1, a2, a3, a4);
+        TraceDetail_IDirect3DDevice7_DrawPrimitive(this, r, a0, a1, a2, a3, a4);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DrawIndexedPrimitive(D3DPRIMITIVETYPE a0, DWORD a1, LPVOID a2, DWORD a3, LPWORD a4, DWORD a5, DWORD a6) override
     {
         CountComCall(129);
-        return m_real->DrawIndexedPrimitive(a0, a1, a2, a3, a4, a5, a6);
+        HRESULT r = m_real->DrawIndexedPrimitive(a0, a1, a2, a3, a4, a5, a6);
+        TraceDetail_IDirect3DDevice7_DrawIndexedPrimitive(this, r, a0, a1, a2, a3, a4, a5, a6);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetClipStatus(LPD3DCLIPSTATUS a0) override
     {
@@ -714,7 +774,9 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Load(LPDIRECTDRAWSURFACE7 a0, LPPOINT a1, LPDIRECTDRAWSURFACE7 a2, LPRECT a3, DWORD a4) override
     {
         CountComCall(146);
-        return m_real->Load(Unwrap<TraceIDirectDrawSurface7>(a0), a1, Unwrap<TraceIDirectDrawSurface7>(a2), a3, a4);
+        HRESULT r = m_real->Load(Unwrap<TraceIDirectDrawSurface7>(a0), a1, Unwrap<TraceIDirectDrawSurface7>(a2), a3, a4);
+        TraceDetail_IDirect3DDevice7_Load(this, r, a0, a1, a2, a3, a4);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE LightEnable(DWORD a0, BOOL a1) override
     {
@@ -753,7 +815,9 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Lock(DWORD a0, LPVOID* a1, LPDWORD a2) override
     {
         CountComCall(155);
-        return m_real->Lock(a0, a1, a2);
+        HRESULT r = m_real->Lock(a0, a1, a2);
+        TraceDetail_IDirect3DVertexBuffer7_Lock(this, r, a0, a1, a2);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Unlock() override
     {
@@ -763,7 +827,9 @@ public:
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE ProcessVertices(DWORD a0, DWORD a1, DWORD a2, LPDIRECT3DVERTEXBUFFER7 a3, DWORD a4, LPDIRECT3DDEVICE7 a5, DWORD a6) override
     {
         CountComCall(157);
-        return m_real->ProcessVertices(a0, a1, a2, Unwrap<TraceIDirect3DVertexBuffer7>(a3), a4, Unwrap<TraceIDirect3DDevice7>(a5), a6);
+        HRESULT r = m_real->ProcessVertices(a0, a1, a2, Unwrap<TraceIDirect3DVertexBuffer7>(a3), a4, Unwrap<TraceIDirect3DDevice7>(a5), a6);
+        TraceDetail_IDirect3DVertexBuffer7_ProcessVertices(this, r, a0, a1, a2, a3, a4, a5, a6);
+        return r;
     }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetVertexBufferDesc(LPD3DVERTEXBUFFERDESC a0) override
     {

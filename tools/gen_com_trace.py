@@ -47,6 +47,18 @@ MANUAL = {
 }
 
 
+# Methods whose arguments are logged (after the real call) by TraceDetail_<Interface>_<Method>(self, result, args...)
+# in com_trace.cpp.
+DETAIL = {
+    "IDirectDraw7": {"CreateSurface", "SetCooperativeLevel", "SetDisplayMode", "GetAvailableVidMem"},
+    "IDirectDrawSurface7": {"Lock", "Blt", "BltFast", "GetAttachedSurface", "SetPrivateData", "AddAttachedSurface",
+                            "Flip", "GetDC", "SetColorKey", "SetPalette"},
+    "IDirect3D7": {"CreateDevice", "CreateVertexBuffer"},
+    "IDirect3DDevice7": {"SetRenderTarget", "DrawPrimitive", "DrawIndexedPrimitive", "Load", "PreLoad"},
+    "IDirect3DVertexBuffer7": {"Lock", "ProcessVertices"},
+}
+
+
 def parse(header, name):
     text = (SDK / header).read_text(errors="replace")
     m = re.search(r"DECLARE_INTERFACE_\(\s*%s\s*,\s*\w+\s*\)\s*\{(.*?)\n\};" % name, text, re.S)
@@ -125,7 +137,12 @@ def main():
                 else:
                     call.append(n)
             body = [decl, "    {", f"        CountComCall({idx});"]
-            if post:
+            if mname in DETAIL.get(iface, set()):
+                body.append(f"        {ret} r = m_real->{mname}({', '.join(call)});")
+                body.append(f"        TraceDetail_{iface}_{mname}(this, r{''.join(', ' + n for _, n in params)});")
+                body += post
+                body.append("        return r;")
+            elif post:
                 body.append(f"        {ret} r = m_real->{mname}({', '.join(call)});")
                 body += post
                 body.append("        return r;")
@@ -141,6 +158,12 @@ def main():
     # Forward declarations so wrappers can reference each other.
     for _, iface in INTERFACES:
         lines.append(f"class Trace{iface};")
+    lines.append("")
+    for header, iface in INTERFACES:
+        for ret, mname, params in parse(header, iface):
+            if mname in DETAIL.get(iface, set()):
+                sig = "".join(f", {t} {n}" for t, n in params)
+                lines.append(f"void TraceDetail_{iface}_{mname}(Trace{iface}* self, {ret} r{sig});")
     lines.append("")
     lines += classes
     lines.append("#ifdef RVK_COM_TRACE_NAMES")
