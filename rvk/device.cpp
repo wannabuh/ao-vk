@@ -942,6 +942,7 @@ void Device::EndFrame()
     Frame& f = m_frames[m_frameIndex];
     EndRendering();
     RenderShadowMap(f.main);
+    FindCarriers();
     RenderPointShadowMaps(f.main);
     FinishShadowFrame();
     Transition(f.main, m_main, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);

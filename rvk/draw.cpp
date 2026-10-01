@@ -262,10 +262,10 @@ VkDeviceSize Device::WriteFrameLights()
     fl->shadowParams[3] = PointShadowStrength();
     fl->sunDir[0] = m_shadowSunDir[0]; fl->sunDir[1] = m_shadowSunDir[1]; fl->sunDir[2] = m_shadowSunDir[2];
     fl->sunDir[3] = m_lightHeadroom;
-    m_frameLightPositions.clear();
+    m_frameLightIndices.clear();
     for (uint32_t k = 0; k < used; ++k) {
         const CapturedLight& c = m_lightsPrev[candidates[k].index];
-        m_frameLightPositions.push_back(c.light.position);
+        m_frameLightIndices.push_back(candidates[k].index);
         FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k]);
         fl->lights[k].spot[2] = float(PointShadowLayer(c.light));   // its cube shadow map + 1, 0 = none
     }
@@ -290,18 +290,17 @@ bool Device::Overbright2x(uint32_t fvf) const
 }
 
 // A character with its own light (at head height): the light stays off the character itself, which it would
-// otherwise light from the inside out. Same test as the point shadows' carrier (pointshadow.cpp): a part smaller
-// than 3 units whose origin is within 0.2 sideways and 0 to 2.6 below the light. Returns frame light index + 1.
+// otherwise light from the inside out. Its parts are those of the carrier found last frame (FindCarriers), as for
+// the point shadows. Returns frame light index + 1.
 uint32_t Device::CarriedLight(uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t stride) const
 {
     if (!m_lightOverride || !m_pixelLighting || !m_rs[d3d::RS_LIGHTING] || m_target != m_main ||
         (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW || !WorldCamera())
         return 0;
     const auto& w = m_world.m;
-    for (uint32_t k = 0; k < m_frameLightPositions.size(); ++k) {
-        const d3d::Vector& p = m_frameLightPositions[k];
-        float dx = w[3][0] - p.x, dy = w[3][1] - p.y, dz = w[3][2] - p.z;
-        if (dx * dx + dz * dz >= 0.2f * 0.2f || dy <= -2.6f || dy >= 0.3f)
+    for (uint32_t k = 0; k < m_frameLightIndices.size(); ++k) {
+        const CapturedLight& c = m_lightsPrev[m_frameLightIndices[k]];
+        if (!IsCarrierPart(c, m_world, 0.0f))  // position only; the size is checked below
             continue;
         // Small: a character part, not a floor or building whose origin happens to lie under the light.
         float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
@@ -315,9 +314,7 @@ uint32_t Device::CarriedLight(uint32_t fvf, const void* vertices, uint32_t verte
                 mx[j] = std::max(mx[j], wq);
             }
         }
-        if (std::max({mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]}) < 3.0f)
-            return k + 1;
-        return 0;
+        return IsCarrierPart(c, m_world, std::max({mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]})) ? k + 1 : 0;
     }
     return 0;
 }

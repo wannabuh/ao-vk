@@ -260,10 +260,21 @@ private:
     uint64_t m_frameLightsGeneration = ~0ull;
     VkDeviceSize m_frameLightsOffset = 0;
     VkDeviceSize WriteFrameLights();
-    // The frame lights' positions in binding-4 order (WriteFrameLights), and which of them the current draw carries.
-    std::vector<d3d::Vector> m_frameLightPositions;
+    // The frame lights in binding-4 order, as indices into m_lightsPrev (WriteFrameLights), and which of them the
+    // current draw carries.
+    std::vector<uint32_t> m_frameLightIndices;
     uint32_t CarriedLight(uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t stride) const;
-    struct CapturedLight { d3d::Light light; float cosHalfTheta, cosHalfPhi; };
+    struct CapturedLight {
+        d3d::Light light;
+        float cosHalfTheta, cosHalfPhi;
+        bool hasCarrier = false;                 // a character carries it (FindCarriers): its origin
+        float carrier[3] = {};
+    };
+    // End of frame: for each light, the character carrying it - the body origin nearest under it. The game places a
+    // character's light up to ~0.4 sideways off the body while it moves, so a fixed radius around the light either
+    // misses the carrier or catches characters next to it.
+    void FindCarriers();
+    static bool IsCarrierPart(const CapturedLight& c, const d3d::Matrix& world, float extent);
     std::vector<CapturedLight> m_lightsCur, m_lightsPrev;   // point / spot lights used this / last frame
     void CaptureLight(LightSlot& slot);
 

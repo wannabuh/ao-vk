@@ -1143,7 +1143,7 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
             std::vector<uint16_t> ci;
             AddCube(cv, ci, 0.0f, 0.9f, 0.0f, 0.4f);
             Matrix carrier = Offset();
-            carrier.m[3][0] += lamp.position.x - g_off[0];
+            carrier.m[3][0] += lamp.position.x - g_off[0] + 0.4f;   // the game puts the light 0.4 off while moving
             carrier.m[3][1] += lamp.position.y - g_off[1] - 2.0f;
             carrier.m[3][2] += lamp.position.z - g_off[2];
             dev.SetTexture(0, nullptr);

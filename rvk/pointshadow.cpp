@@ -156,6 +156,47 @@ float Device::PointShadowStrength() const
     return m_pointShadowStrength * (1.0f + (m_pointShadowDay - 1.0f) * t);
 }
 
+bool Device::IsCarrierPart(const CapturedLight& c, const d3d::Matrix& world, float extent)
+{
+    if (!c.hasCarrier || extent >= 3.0f)
+        return false;
+    // The carrier's parts: the body (origin 2.1-2.2 under the light in the dumps) and its attachments (0.5-1.3 under,
+    // within ~0.3 of the body sideways).
+    float dx = world.m[3][0] - c.carrier[0], dz = world.m[3][2] - c.carrier[2];
+    float dy = world.m[3][1] - c.light.position.y;
+    return dx * dx + dz * dz < 0.5f * 0.5f && dy > -2.6f && dy < 0.3f;
+}
+
+void Device::FindCarriers()
+{
+    for (CapturedLight& c : m_lightsCur) {
+        c.hasCarrier = false;
+        if (c.light.range < 1.0f)
+            continue;
+        const d3d::Vector& p = c.light.position;
+        float best = 1.0f;                       // within 1 sideways
+        for (const ShadowItem& it : m_shadowItems) {
+            if (it.cached)                       // remembered copies may stand where the character was
+                continue;
+            float dy = it.world.m[3][1] - p.y;
+            if (dy <= -2.6f || dy >= -1.5f)     // a body's origin, under a head-height light
+                continue;
+            float dx = it.world.m[3][0] - p.x, dz = it.world.m[3][2] - p.z, d2 = dx * dx + dz * dz;
+            if (d2 >= best * best)
+                continue;
+            float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
+                                     it.boundsMax[2] - it.boundsMin[2]});
+            if (extent >= 3.0f)
+                continue;
+            best = std::sqrt(d2);
+            c.hasCarrier = true;
+            c.carrier[0] = it.world.m[3][0];
+            c.carrier[1] = it.world.m[3][1];
+            c.carrier[2] = it.world.m[3][2];
+        }
+    }
+}
+
 // Which cube (1-based; 0 = none) holds a frame light's shadow: lights are matched by their data, which the frame
 // light list copies unchanged from the set the cubes were rendered for.
 uint32_t Device::PointShadowLayer(const d3d::Light& l) const
@@ -226,20 +267,14 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             if (d2 > l.range * l.range)
                 continue;
             // Whatever carries the light would shadow everything around it: a lamp's housing (small, around the
-            // light), and a character with a light at head height. A character's parts (body and attachments) have
-            // their origin right under its light - within 0.15 sideways, 0.5 to 2.2 below in the dumps - so only
-            // that close counts; NPCs standing next to the carrier must keep casting. Big objects (buildings,
-            // platforms with their pillars) cast even when their box contains the light; the near plane clips
-            // geometry right at the light.
+            // light) and the character carrying a light at head height (FindCarriers). Characters next to the
+            // carrier keep casting. Big objects (buildings, platforms with their pillars) cast even when their box
+            // contains the light; the near plane clips geometry right at the light.
             float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
                                      it.boundsMax[2] - it.boundsMin[2]});
-            if (extent < 3.0f) {
-                float tx = it.world.m[3][0] - pos[0], ty = it.world.m[3][1] - pos[1], tz = it.world.m[3][2] - pos[2];
-                bool housing = d2 == 0.0f && extent < 1.5f;          // smaller than a character
-                bool carrier = tx * tx + tz * tz < 0.2f * 0.2f && ty > -2.6f && ty < 0.3f;
-                if (housing || carrier)
-                    continue;
-            }
+            bool housing = d2 == 0.0f && extent < 1.5f;              // smaller than a character
+            if (housing || IsCarrierPart(m_lightsCur[candidates[k].index], it.world, extent))
+                continue;
             inRange.push_back(i);
         }
         for (int face = 0; face < 6; ++face) {
