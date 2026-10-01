@@ -228,6 +228,8 @@ private:
     bool m_pixelLighting = false, m_lightingDebug = false, m_lightOverride = false;
     uint64_t m_frameNumber = 0;
     bool m_frameLightsDirty = true;
+    bool m_frameEyeValid = false;                // the camera the frame's light list is chosen from
+    float m_frameEye[3] = {};
     uint64_t m_frameLightsGeneration = ~0ull;
     VkDeviceSize m_frameLightsOffset = 0;
     VkDeviceSize WriteFrameLights();

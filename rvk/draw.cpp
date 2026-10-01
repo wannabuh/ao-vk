@@ -188,9 +188,14 @@ VkDeviceSize Device::WriteFrameLights()
     m_frameLightsOffset = offset;
     m_frameLightsGeneration = m_ringGeneration;
     m_frameLightsDirty = false;
-    const auto& v = m_view.m;
-    float eye[3];
-    for (int i = 0; i < 3; ++i) eye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
+    // One camera per frame: the view at the frame's first lit draw (the world). Rebuilds later in the frame
+    // may happen under other views (sky, 3D interface elements) and must not pick a different set of lights.
+    if (!m_frameEyeValid) {
+        const auto& v = m_view.m;
+        for (int i = 0; i < 3; ++i) m_frameEye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
+        m_frameEyeValid = true;
+    }
+    const float* eye = m_frameEye;
     struct Candidate { float key; uint32_t index; };
     Candidate candidates[256];
     uint32_t count = 0;
@@ -207,10 +212,15 @@ VkDeviceSize Device::WriteFrameLights()
     auto* fl = static_cast<FrameLights*>(cpu);
     fl->info[0] = used;
     fl->info[1] = fl->info[2] = fl->info[3] = 0;
-    for (uint32_t k = 0; k < used; ++k)
-        {
+    for (uint32_t k = 0; k < used; ++k) {
         const LightSlot& slot = m_lights[candidates[k].index];
         FillGpuLight(slot.light, slot.cosHalfTheta, slot.cosHalfPhi, fl->lights[k]);
+    }
+    if (m_dumpFile) {
+        std::fprintf(m_dumpFile, "FL at draw %u: %u of %u active lights, eye (%.1f %.1f %.1f):", m_dumpDraw, used, count,
+                     eye[0], eye[1], eye[2]);
+        for (uint32_t k = 0; k < used; ++k) std::fprintf(m_dumpFile, " %u", candidates[k].index);
+        std::fprintf(m_dumpFile, "\n");
     }
     return offset;
 }
@@ -473,8 +483,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                     layout.stride + 32);
 
     // The frame's light list (binding 4): rebuilt when lights changed; always bound, as layouts require.
-    VkDeviceSize frameLightsOffset = m_frameLightsOffset;
-    if (m_frameLightsGeneration != m_ringGeneration || (m_frameLightsDirty && m_lightOverride && m_pixelLighting))
+    // Only lit draws read it; the others bind any in-range part of the ring.
+    bool needLights = m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
+                      (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW;
+    VkDeviceSize frameLightsOffset = m_frameLightsGeneration == m_ringGeneration ? m_frameLightsOffset : 0;
+    if (needLights && (m_frameLightsDirty || m_frameLightsGeneration != m_ringGeneration))
         frameLightsOffset = WriteFrameLights();
 
     // Per-draw world matrix (small block).

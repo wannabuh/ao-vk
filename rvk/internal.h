@@ -43,7 +43,7 @@ enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE
                   F_LOCALVIEWER = 64, F_TEX0 = 128, F_TEX1 = 256, F_ALPHATEST = 512,
                   F_PERPIXEL = 1024, F_DEBUGLIGHT = 2048, F_LIGHTOVERRIDE = 4096 };
 
-constexpr uint32_t kFrameLights = 32;
+constexpr uint32_t kFrameLights = 64;
 struct FrameLights {               // binding 4
     uint32_t info[4];
     GpuLight lights[kFrameLights];

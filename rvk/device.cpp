@@ -905,6 +905,7 @@ void Device::BeginFrame()
     m_cache = StateCache{};
     ++m_frameNumber;
     m_frameLightsDirty = true;                   // the camera moved and lights came and went
+    m_frameEyeValid = false;
     m_inFrame = true;
     BeginRenderingOn(m_target);
     if (!m_dumpPath.empty())

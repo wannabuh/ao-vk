@@ -38,7 +38,7 @@ layout(set = 0, binding = 0, std140) uniform DrawConstants {
 // per-object choice of up to 8 lights, which drops lights on big objects such as the ground.
 layout(set = 0, binding = 4, std140) uniform FrameLights {
     uvec4 info;                 // count
-    Light lights[32];
+    Light lights[64];
 } FL;
 
 const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8u, F_FOG = 16u,
