@@ -1,4 +1,4 @@
-// rvk test scenes. Draws a 3x2 grid of tiles, each exercising part of the D3D7 feature set the game uses,
+// rvk test scenes. Draws a 3x3 grid of tiles, each exercising part of the D3D7 feature set the game uses,
 // through rvk's D3D7-shaped API only.
 //
 //   rvk_demo.exe [--window] [--frames N] [--shot out.bmp]
@@ -17,7 +17,7 @@ using namespace rvk::d3d;
 
 namespace {
 
-constexpr uint32_t kTile = 320, kCols = 3, kRows = 2;
+constexpr uint32_t kTile = 320, kCols = 3, kRows = 3;
 constexpr uint32_t kWidth = kTile * kCols, kHeight = kTile * kRows;
 constexpr float kPi = 3.14159265f;
 
@@ -143,12 +143,81 @@ std::vector<uint32_t> Stripes(uint32_t size)        // horizontal colour stripes
     return p;
 }
 
+// Format test textures, 8x8 each (drawn magnified). Expected look:
+//   R5G6B5 red->blue gradient | A1R5G5B5 green, right half transparent | A4R4G4B4 white, alpha ramp
+//   X8R8G8B8 yellow (alpha byte 0 ignored) | L8 grey ramp | A8 black with alpha ramp (over red)
+//   A8L8 grey ramp, bottom half transparent | DXT1 red/green/blue/white blocks | DXT5 white, alpha ramp
+std::vector<Texture*> MakeFormatTextures(Device& dev)
+{
+    std::vector<Texture*> out;
+    auto make = [&](Format f, const void* data, uint32_t pitch) {
+        Texture* t = dev.CreateTexture(8, 8, f, 1);
+        if (t) dev.UpdateTexture(t, 0, 0, 0, 8, 8, data, pitch);
+        out.push_back(t);
+    };
+    uint16_t p16[64];
+    for (int i = 0; i < 64; ++i) { int x = i % 8; p16[i] = uint16_t(((7 - x) * 31 / 7) << 11 | (x * 31 / 7)); }
+    make(Format::R5G6B5, p16, 16);
+    for (int i = 0; i < 64; ++i) p16[i] = uint16_t(((i % 8) < 4 ? 0x8000 : 0) | 0x03E0);
+    make(Format::A1R5G5B5, p16, 16);
+    for (int i = 0; i < 64; ++i) p16[i] = uint16_t((((i % 8) * 15 / 7) << 12) | 0x0FFF);
+    make(Format::A4R4G4B4, p16, 16);
+    uint32_t p32[64];
+    for (int i = 0; i < 64; ++i) p32[i] = 0x00FFFF00;
+    make(Format::X8R8G8B8, p32, 32);
+    uint8_t p8[64];
+    for (int i = 0; i < 64; ++i) p8[i] = uint8_t((i % 8) * 255 / 7);
+    make(Format::L8, p8, 8);
+    make(Format::A8, p8, 8);
+    for (int i = 0; i < 64; ++i) p16[i] = uint16_t(((i / 8) < 4 ? 0xFF00 : 0) | ((i % 8) * 255 / 7));
+    make(Format::A8L8, p16, 16);
+    // DXT1: 2x2 blocks, each solid (color0 = colour, color1 = 0, all indices 0).
+    uint8_t dxt1[4 * 8] = {};
+    const uint16_t colors[4] = {0xF800, 0x07E0, 0x001F, 0xFFFF};
+    for (int b = 0; b < 4; ++b) std::memcpy(dxt1 + b * 8, &colors[b], 2);
+    make(Format::DXT1, dxt1, 16);                     // pitch = one row of blocks (2 blocks x 8 bytes)
+    // DXT5: white, alpha 255..0 across x via the 8-value alpha palette (alpha0 = 255 > alpha1 = 0).
+    uint8_t dxt5[4 * 16] = {};
+    for (int b = 0; b < 4; ++b) {
+        uint8_t* blk = dxt5 + b * 16;
+        blk[0] = 255;
+        blk[1] = 0;
+        uint64_t bits = 0;
+        static const int colIndex[2][4] = {{0, 2, 3, 4}, {5, 6, 7, 1}};   // left/right block: 255 ... 0
+        for (int px = 0; px < 16; ++px)
+            bits |= uint64_t(colIndex[b % 2][px % 4]) << (3 * px);
+        std::memcpy(blk + 2, &bits, 6);
+        uint16_t white = 0xFFFF;
+        std::memcpy(blk + 8, &white, 2);
+    }
+    make(Format::DXT5, dxt5, 32);
+    return out;
+}
+
+// 64x64 texture with 7 levels; level 0 a white/grey checker, then solid red, green, blue, yellow, magenta, cyan.
+Texture* MakeMipTexture(Device& dev)
+{
+    Texture* t = dev.CreateTexture(64, 64, Format::A8R8G8B8, 7);
+    static const uint32_t colors[7] = {0, 0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFF00, 0xFFFF00FF, 0xFF00FFFF};
+    for (uint32_t level = 0; level < 7; ++level) {
+        uint32_t size = 64 >> level;
+        std::vector<uint32_t> pixels = level == 0 ? Checker(64, 8, 0xFFFFFFFF, 0xFF808080)
+                                                  : std::vector<uint32_t>(size * size, colors[level]);
+        dev.UpdateTexture(t, level, 0, 0, size, size, pixels.data(), size * 4);
+    }
+    return t;
+}
+
 struct Scene {
     Device& dev;
     Texture* checker;
     Texture* dot;
     Texture* stripes;
     Texture* gray;
+    Texture* target;        // 128x128 render target
+    std::vector<Texture*> formats;
+    Texture* mips;
+    VertexBuffer* vb;
     float time;
 
     void Tile(uint32_t col, uint32_t row, uint32_t clearColor)
@@ -408,6 +477,126 @@ struct Scene {
                               {0, 1.5f, 0, 0xFF00FF00}, {0, 0, 0, 0xFF4080FF}, {0, 0, 1.5f, 0xFF4080FF}};
         dev.DrawPrimitive(LineList, kFvfDiffuse, axes, 6);
     }
+
+    // Tile 7: render to texture mid-frame, then sample it. The tiles already drawn must survive the switch.
+    void RenderToTexture()
+    {
+        dev.SetRenderTarget(target);              // resets the viewport to the whole 128x128 target
+        dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF102040, 1.0f);
+        ResetState();
+        dev.SetRenderState(RS_ZENABLE, 0);
+        dev.SetTexture(0, nullptr);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG2);
+        std::vector<VtxRhwDiffuse> fan = {{64, 64, 0, 1, 0xFFFFFFFF}};
+        for (int i = 0; i <= 6; ++i) {
+            float a = i * 2 * kPi / 6 + time;
+            fan.push_back({64 + 56 * std::cos(a), 64 + 56 * std::sin(a), 0, 1, (i & 1) ? 0xFFFF8000u : 0xFF00C0FFu});
+        }
+        dev.DrawPrimitive(TriangleFan, kFvfRhwDiffuse, fan.data(), uint32_t(fan.size()));
+        VtxRhwDiffuse marker[4] = {{4, 4, 0, 1, 0xFFFF0000}, {20, 4, 0, 1, 0xFFFF0000}, {4, 20, 0, 1, 0xFFFF0000},
+                                   {20, 20, 0, 1, 0xFFFF0000}};   // red square marks the target's top-left
+        dev.DrawPrimitive(TriangleStrip, kFvfRhwDiffuse, marker, 4);
+
+        dev.SetRenderTarget(nullptr);
+        Tile(0, 2, 0xFF303030);
+        ResetState();
+        dev.SetRenderState(RS_ZENABLE, 0);
+        dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+        dev.SetTexture(0, target);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        const float y0 = 2 * kTile;
+        auto quad = [&](float x0, float yy, float size) {
+            VtxRhwDiffuseTex v[4] = {{x0, yy, 0, 1, 0xFFFFFFFF, 0, 0}, {x0 + size, yy, 0, 1, 0xFFFFFFFF, 1, 0},
+                                     {x0, yy + size, 0, 1, 0xFFFFFFFF, 0, 1}, {x0 + size, yy + size, 0, 1, 0xFFFFFFFF, 1, 1}};
+            dev.DrawPrimitive(TriangleStrip, kFvfRhwDiffuseTex, v, 4);
+        };
+        quad(16, y0 + 16, 128);                  // 1:1
+        quad(150, y0 + 100, 160);                // magnified
+        // Also through the 3D path, on a tilted quad.
+        dev.SetViewport({0, 2 * kTile + 160, 150, 160, 0.0f, 1.0f});
+        dev.SetRenderState(RS_ZENABLE, 1);
+        dev.SetTransform(Projection, PerspectiveLH(kPi / 3, 150.0f / 160.0f, 0.1f, 100.0f));
+        dev.SetTransform(World, RotateY(0.7f));
+        VtxDiffuseTex q[4] = {{-1, -1, 0, 0xFFFFFFFF, 0, 1}, {-1, 1, 0, 0xFFFFFFFF, 0, 0},
+                              {1, -1, 0, 0xFFFFFFFF, 1, 1}, {1, 1, 0, 0xFFFFFFFF, 1, 0}};
+        dev.DrawPrimitive(TriangleStrip, kFvfDiffuseTex, q, 4);
+        dev.SetTexture(0, nullptr);
+    }
+
+    // Tile 8: one quad per texture format (see MakeFormatTextures for what each should look like).
+    void Formats()
+    {
+        Tile(1, 2, 0xFF800000);                  // red background shows through alpha formats
+        ResetState();
+        dev.SetRenderState(RS_ZENABLE, 0);
+        dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+        dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+        dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_MAGFILTER, TFG_POINT);
+        dev.SetTextureStageState(0, TSS_MINFILTER, TFN_POINT);
+        for (size_t i = 0; i < formats.size(); ++i) {
+            if (!formats[i]) continue;
+            dev.SetTexture(0, formats[i]);
+            float x0 = kTile + 10 + (i % 3) * 102.0f, y0 = 2 * kTile + 10 + (i / 3) * 102.0f;
+            VtxRhwDiffuseTex v[4] = {{x0, y0, 0, 1, 0xFFFFFFFF, 0, 0}, {x0 + 96, y0, 0, 1, 0xFFFFFFFF, 1, 0},
+                                     {x0, y0 + 96, 0, 1, 0xFFFFFFFF, 0, 1}, {x0 + 96, y0 + 96, 0, 1, 0xFFFFFFFF, 1, 1}};
+            dev.DrawPrimitive(TriangleStrip, kFvfRhwDiffuseTex, v, 4);
+        }
+        dev.SetTexture(0, nullptr);
+    }
+
+    // Tile 9: mip levels on a receding plane (each level a different colour, so selection shows as bands),
+    // and vertex buffers: a VB drawn, rewritten, drawn again (the first draw keeps the old contents).
+    void MipsAndBuffers()
+    {
+        Tile(2, 2, 0xFF000000);
+        ResetState();
+        dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+        dev.SetViewport({2 * kTile, 2 * kTile, kTile, 200, 0.0f, 1.0f});
+        dev.SetTransform(View, LookAtLH({0, 1.0f, -1}, {0, 0.2f, 6}, {0, 1, 0}));
+        dev.SetTransform(Projection, PerspectiveLH(kPi / 3, kTile / 200.0f, 0.1f, 100.0f));
+        dev.SetTexture(0, mips);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_MAGFILTER, TFG_POINT);
+        dev.SetTextureStageState(0, TSS_MINFILTER, TFN_POINT);
+        dev.SetTextureStageState(0, TSS_MIPFILTER, TFP_POINT);
+        VtxDiffuseTex plane[4] = {{-3, 0, 0, 0xFFFFFFFF, 0, 0}, {-3, 0, 40, 0xFFFFFFFF, 0, 20},
+                                  {3, 0, 0, 0xFFFFFFFF, 3, 0}, {3, 0, 40, 0xFFFFFFFF, 3, 20}};
+        dev.DrawPrimitive(TriangleStrip, kFvfDiffuseTex, plane, 4);
+        dev.SetTextureStageState(0, TSS_MIPFILTER, TFP_NONE);
+        dev.SetTexture(0, nullptr);
+
+        // Vertex buffer: green quad drawn, then the same buffer rewritten red at another position.
+        dev.SetViewport({2 * kTile, 2 * kTile, kTile, kTile, 0.0f, 1.0f});
+        dev.SetRenderState(RS_ZENABLE, 0);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG2);
+        auto fill = [&](float x0, float y0, uint32_t color) {
+            auto* v = static_cast<VtxRhwDiffuse*>(dev.Lock(vb));
+            VtxRhwDiffuse q[4] = {{x0, y0, 0, 1, color}, {x0 + 80, y0, 0, 1, color}, {x0, y0 + 80, 0, 1, color},
+                                  {x0 + 80, y0 + 80, 0, 1, color}};
+            std::memcpy(v, q, sizeof(q));
+            dev.Unlock(vb);
+        };
+        const float x0 = 2 * kTile, y0 = 2 * kTile;
+        fill(x0 + 20, y0 + 220, 0xFF00FF00);
+        dev.DrawPrimitiveVB(TriangleStrip, vb, 0, 4);
+        fill(x0 + 120, y0 + 220, 0xFFFF0000);
+        dev.DrawPrimitiveVB(TriangleStrip, vb, 0, 4);
+        // Indexed draw from vertex 4 on: indices are relative to startVertex (blue quad).
+        auto* v = static_cast<VtxRhwDiffuse*>(dev.Lock(vb));
+        VtxRhwDiffuse q[4] = {{x0 + 220, y0 + 220, 0, 1, 0xFF0080FF}, {x0 + 300, y0 + 220, 0, 1, 0xFF0080FF},
+                              {x0 + 220, y0 + 300, 0, 1, 0xFF0080FF}, {x0 + 300, y0 + 300, 0, 1, 0xFF0080FF}};
+        std::memcpy(v + 4, q, sizeof(q));
+        dev.Unlock(vb);
+        uint16_t idx[6] = {0, 1, 2, 2, 1, 3};
+        dev.DrawIndexedPrimitiveVB(TriangleList, vb, 4, 4, idx, 6);
+    }
 };
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
@@ -458,7 +647,9 @@ int main(int argc, char** argv)
     auto stripePixels = Stripes(64);
     uint32_t grayPixel = 0xFF808080;
     Scene scene{dev, dev.CreateTexture(64, 64, checkerPixels.data()), dev.CreateTexture(64, 64, dotPixels.data()),
-                dev.CreateTexture(64, 64, stripePixels.data()), dev.CreateTexture(1, 1, &grayPixel), 0.0f};
+                dev.CreateTexture(64, 64, stripePixels.data()), dev.CreateTexture(1, 1, &grayPixel),
+                dev.CreateRenderTarget(128, 128), MakeFormatTextures(dev), MakeMipTexture(dev),
+                dev.CreateVertexBuffer(kFvfRhwDiffuse, 8), 0.0f};
 
     for (int frame = 0; windowed || frame < frames; ++frame) {
         if (windowed) {
@@ -481,10 +672,16 @@ int main(int argc, char** argv)
         scene.Fog();
         scene.Stages();
         scene.Primitives();
+        scene.RenderToTexture();
+        scene.Formats();
+        scene.MipsAndBuffers();
         dev.EndFrame();
     }
-    for (Texture* t : {scene.checker, scene.dot, scene.stripes, scene.gray})
+    for (Texture* t : {scene.checker, scene.dot, scene.stripes, scene.gray, scene.target, scene.mips})
         dev.DestroyTexture(t);
+    for (Texture* t : scene.formats)
+        dev.DestroyTexture(t);
+    dev.DestroyVertexBuffer(scene.vb);
     std::printf("rendered; screenshot %s\n", windowed ? "(none)" : shot.c_str());
     return 0;
 }
