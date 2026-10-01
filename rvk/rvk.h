@@ -381,7 +381,7 @@ private:
 
     // Point light shadows (pointshadow.cpp): a cube map per shadowed light, layers 6*i .. 6*i+5 of one cube array.
     static constexpr uint32_t kPointShadowSize = 1024;
-    static constexpr float kPointShadowNear = 0.05f;
+    static constexpr float kPointShadowNear = 0.25f;   // geometry closer to the light (its fixture) is clipped
     uint32_t m_pointShadows = 0;                 // lights to shadow (0 = off)
     float m_pointShadowStrength = 0.9f, m_pointShadowDay = 0.25f;
     float m_daylight = 0.0f;                     // smoothed sun brightness on flat ground (previous frames)

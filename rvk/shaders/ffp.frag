@@ -9,7 +9,7 @@ layout(set = 0, binding = 6) uniform samplerCubeArrayShadow pointShadowMaps;
 
 // Visibility of a frame light with a cube shadow map (l.spot.z = cube + 1): 1 = lit. Must match
 // Device::RenderPointShadowMaps (pointshadow.cpp): depth along the face's axis, near kPointShadowNear, far = range.
-const float kPointShadowNear = 0.05;
+const float kPointShadowNear = 0.25;
 float PointShadow(Light l, vec3 posW, vec3 n, float nl)
 {
     vec3 d = posW - l.position.xyz;
@@ -123,6 +123,16 @@ float SunVisibility(vec3 posW, vec3 n)
     return mix(sum / 9.0, 1.0, smoothstep(0.8, 1.0, edge));   // fade out towards the map's edge
 }
 
+// What local light adds to a clamped lit colour: as is up to 1, then rolling off smoothly towards the headroom.
+vec3 Headroom(vec3 lit, vec3 local)
+{
+    float room = FL.sunDir.w - 1.0;
+    vec3 total = lit + max(local, vec3(0.0));
+    vec3 over = max(total - 1.0, vec3(0.0));
+    vec3 soft = room > 0.0 ? room * (1.0 - exp(-over / room)) : vec3(0.0);
+    return min(total, vec3(1.0)) + soft - lit;
+}
+
 // D3D's texture stages (and specular add) on gDiffuse / gSpecular. maxColor: the stages' clamp (1 = D3D).
 vec4 Cascade(vec4 t0, vec4 t1, float maxColor)
 {
@@ -195,8 +205,8 @@ void main()
             // surfaces facing the sun while those facing away light up a lot.
             gDiffuse = clamp(vec4(lit, vDiffuse.a), 0.0, 1.0);
             gSpecular = clamp(vec4(litSpec, vSpecular.a), 0.0, 1.0);
-            gLocalDiffuse = clamp(local, vec3(0.0), FL.sunDir.w - gDiffuse.rgb);
-            gLocalSpecular = clamp(localSpec, vec3(0.0), FL.sunDir.w - gSpecular.rgb);
+            gLocalDiffuse = Headroom(gDiffuse.rgb, local);
+            gLocalSpecular = Headroom(gSpecular.rgb, localSpec);
         } else {
             gDiffuse = clamp(vec4(lit + local, vDiffuse.a), 0.0, 1.0);
             gSpecular = clamp(vec4(litSpec + localSpec, vSpecular.a), 0.0, 1.0);

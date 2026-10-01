@@ -995,6 +995,8 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
     dev.DestroyTexture(labelTex);
 }
 
+bool g_slabTest = false;   // --point-shadow-slab
+
 // Point light shadow test (--point-shadow-test): night, a lamp among cubes. Left half: lit ground (per-pixel); right
 // half: the ground the way Anarchy Online draws it (unlit base pass + lightmap and lights multiplying pass). A small
 // cube around the lamp (its housing) must not cast; the cubes around it must, in every direction (all cube faces).
@@ -1088,6 +1090,39 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
         dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
         dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
         dev.SetRenderState(RS_AMBIENT, 0xFF181818);
+        if (g_slabTest) {
+            // Like the city floors: a static platform (XYZ | NORMAL | TEX1) blended SRCALPHA/INVSRCALPHA with depth
+            // writes, its top 1 unit below the lamp, lit by material (ambient 0x6F).
+            struct VtxSlab { float x, y, z, nx, ny, nz, u, v; };
+            const uint32_t kFvfSlab = FVF_XYZ | FVF_NORMAL | (1 << 8);
+            std::vector<VtxSlab> sv;
+            std::vector<uint16_t> si;
+            const float mn[3] = {-9, -6, -6}, mx[3] = {2, 0.2f, 8};
+            for (int axis = 0; axis < 3; ++axis)
+                for (int side = 0; side < 2; ++side) {
+                    int u = (axis + 1) % 3, w = (axis + 2) % 3;
+                    uint16_t base = uint16_t(sv.size());
+                    for (int k = 0; k < 4; ++k) {
+                        float p[3], n[3] = {0, 0, 0};
+                        p[axis] = side ? mx[axis] : mn[axis];
+                        p[u] = (k == 1 || k == 2) ? mx[u] : mn[u];
+                        p[w] = k >= 2 ? mx[w] : mn[w];
+                        n[axis] = side ? 1.0f : -1.0f;
+                        sv.push_back({p[0], p[1], p[2], n[0], n[1], n[2], p[u] / 3, p[w] / 3});
+                    }
+                    uint16_t q[6] = {0, 1, 2, 0, 2, 3};
+                    for (uint16_t i : q) si.push_back(uint16_t(base + i));
+                }
+            dev.SetRenderState(RS_AMBIENT, 0xFF6F6F6F);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+            dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+            dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
+            dev.SetTexture(0, ground);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+            dev.DrawIndexedPrimitive(TriangleList, kFvfSlab, sv.data(), uint32_t(sv.size()), si.data(), uint32_t(si.size()));
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+            dev.SetRenderState(RS_AMBIENT, 0xFF181818);
+        }
         // Cubes all around the lamp, one draw each; the last is the lamp's housing (contains the light).
         dev.SetTexture(0, nullptr);
         dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
@@ -1134,6 +1169,7 @@ int main(int argc, char** argv)
         else if (a == "--shadows") shadows = true;
         else if (a == "--shadow-test") shadowTest = shadows = true;
         else if (a == "--point-shadow-test") pointShadowTest = true;
+        else if (a == "--point-shadow-slab") g_slabTest = pointShadowTest = pointShadowSun = shadows = true;
         else if (a == "--point-shadow-sun") pointShadowTest = pointShadowSun = shadows = true;
         else if (a == "--frame-ms" && i + 1 < argc) frameMs = std::atoi(argv[++i]);
         else if (a == "--cache-test" && i + 1 < argc) { cacheTest = std::atoi(argv[++i]); shadowTest = shadows = true; }
