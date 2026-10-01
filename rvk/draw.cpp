@@ -190,7 +190,7 @@ void Device::CopyTexture(Texture* dst, const Rect* dstRect, Texture* src, const 
     if (!dst) dst = m_main;
     if (!src) src = m_main;
     if (!dst->m_renderTarget || src == dst || FormatIsCompressed(src->m_format)) {
-        std::fprintf(stderr, "rvk: CopyTexture: unsupported source/destination combination\n");
+        Log("CopyTexture: unsupported source/destination combination\n");
         return;
     }
     VkCommandBuffer cmd = m_frames[m_frameIndex].main;

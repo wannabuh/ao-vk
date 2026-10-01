@@ -21,6 +21,10 @@ namespace rvk {
 
 class Device;
 
+// Diagnostics. Default: stderr, flushed per line. SetLogSink redirects (e.g. into the game's log file).
+void Log(const char* fmt, ...);
+void SetLogSink(void (*sink)(const char* line));
+
 // Texture formats (the D3DX 7 / DirectDraw pixel formats the client can create).
 enum class Format : uint32_t {
     A8R8G8B8, X8R8G8B8, R5G6B5, A1R5G5B5, X1R5G5B5, A4R4G4B4, L8, A8, A8L8,

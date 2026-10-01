@@ -16,6 +16,16 @@ HRESULT StubCall(unsigned index);                 // logs an unimplemented metho
 unsigned ComIndex(const char* name);              // counter index of "Interface::Method"
 void RvkLog(const char* fmt, ...);
 
+// One lock around every call into the rvk backend: the game may use DirectDraw from more than one thread
+// (D3D serialises internally too). Recursive, since methods call each other. Logs each new thread once.
+class ComScope {
+public:
+    explicit ComScope(unsigned methodIndex);
+    ~ComScope();
+    ComScope(const ComScope&) = delete;
+    ComScope& operator=(const ComScope&) = delete;
+};
+
 #include "com_stub.gen.h"
 
 // IUnknown for rvk objects: reference counting plus QueryInterface through Cast().
@@ -26,6 +36,7 @@ public:
     {
         static const unsigned index = ComIndex((std::string(B::kName) + "::QueryInterface").c_str());
         CountComCall(index);
+        ComScope scope(index);
         if (!out)
             return E_POINTER;
         *out = iid == IID_IUnknown ? static_cast<IUnknown*>(this) : Cast(iid);
@@ -47,6 +58,7 @@ public:
     {
         static const unsigned index = ComIndex((std::string(B::kName) + "::Release").c_str());
         CountComCall(index);
+        ComScope scope(index);
         ULONG r = --m_refs;
         if (r == 0)
             delete this;

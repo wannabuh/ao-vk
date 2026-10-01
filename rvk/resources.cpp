@@ -152,7 +152,7 @@ Texture* Device::CreateImage(uint32_t width, uint32_t height, Format format, uin
 Texture* Device::CreateTexture(uint32_t width, uint32_t height, Format format, uint32_t levels)
 {
     if (!m_formatSupported[size_t(format)]) {
-        std::fprintf(stderr, "rvk: texture format %u not supported by the GPU\n", uint32_t(format));
+        Log("texture format %u not supported by the GPU\n", uint32_t(format));
         return nullptr;
     }
     return CreateImage(width, height, format, levels, false);

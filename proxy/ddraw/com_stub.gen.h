@@ -6,85 +6,85 @@ public:
     virtual ~BaseIDirectDraw7() = default;
     static constexpr const char* kName = "IDirectDraw7";
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Compact() final
-    { CountComCall(3); return DoCompact(); }
+    { CountComCall(3); ComScope scope(3); return DoCompact(); }
     virtual HRESULT DoCompact() { return StubCall(3); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE CreateClipper(DWORD a0, LPDIRECTDRAWCLIPPER* a1, IUnknown* a2) final
-    { CountComCall(4); return DoCreateClipper(a0, a1, a2); }
+    { CountComCall(4); ComScope scope(4); return DoCreateClipper(a0, a1, a2); }
     virtual HRESULT DoCreateClipper(DWORD a0, LPDIRECTDRAWCLIPPER* a1, IUnknown* a2) { (void)a0; (void)a1; (void)a2; return StubCall(4); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE CreatePalette(DWORD a0, LPPALETTEENTRY a1, LPDIRECTDRAWPALETTE* a2, IUnknown* a3) final
-    { CountComCall(5); return DoCreatePalette(a0, a1, a2, a3); }
+    { CountComCall(5); ComScope scope(5); return DoCreatePalette(a0, a1, a2, a3); }
     virtual HRESULT DoCreatePalette(DWORD a0, LPPALETTEENTRY a1, LPDIRECTDRAWPALETTE* a2, IUnknown* a3) { (void)a0; (void)a1; (void)a2; (void)a3; return StubCall(5); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE CreateSurface(LPDDSURFACEDESC2 a0, LPDIRECTDRAWSURFACE7* a1, IUnknown* a2) final
-    { CountComCall(6); return DoCreateSurface(a0, a1, a2); }
+    { CountComCall(6); ComScope scope(6); return DoCreateSurface(a0, a1, a2); }
     virtual HRESULT DoCreateSurface(LPDDSURFACEDESC2 a0, LPDIRECTDRAWSURFACE7* a1, IUnknown* a2) { (void)a0; (void)a1; (void)a2; return StubCall(6); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DuplicateSurface(LPDIRECTDRAWSURFACE7 a0, LPDIRECTDRAWSURFACE7* a1) final
-    { CountComCall(7); return DoDuplicateSurface(a0, a1); }
+    { CountComCall(7); ComScope scope(7); return DoDuplicateSurface(a0, a1); }
     virtual HRESULT DoDuplicateSurface(LPDIRECTDRAWSURFACE7 a0, LPDIRECTDRAWSURFACE7* a1) { (void)a0; (void)a1; return StubCall(7); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE EnumDisplayModes(DWORD a0, LPDDSURFACEDESC2 a1, LPVOID a2, LPDDENUMMODESCALLBACK2 a3) final
-    { CountComCall(8); return DoEnumDisplayModes(a0, a1, a2, a3); }
+    { CountComCall(8); ComScope scope(8); return DoEnumDisplayModes(a0, a1, a2, a3); }
     virtual HRESULT DoEnumDisplayModes(DWORD a0, LPDDSURFACEDESC2 a1, LPVOID a2, LPDDENUMMODESCALLBACK2 a3) { (void)a0; (void)a1; (void)a2; (void)a3; return StubCall(8); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE EnumSurfaces(DWORD a0, LPDDSURFACEDESC2 a1, LPVOID a2, LPDDENUMSURFACESCALLBACK7 a3) final
-    { CountComCall(9); return DoEnumSurfaces(a0, a1, a2, a3); }
+    { CountComCall(9); ComScope scope(9); return DoEnumSurfaces(a0, a1, a2, a3); }
     virtual HRESULT DoEnumSurfaces(DWORD a0, LPDDSURFACEDESC2 a1, LPVOID a2, LPDDENUMSURFACESCALLBACK7 a3) { (void)a0; (void)a1; (void)a2; (void)a3; return StubCall(9); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE FlipToGDISurface() final
-    { CountComCall(10); return DoFlipToGDISurface(); }
+    { CountComCall(10); ComScope scope(10); return DoFlipToGDISurface(); }
     virtual HRESULT DoFlipToGDISurface() { return StubCall(10); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetCaps(LPDDCAPS a0, LPDDCAPS a1) final
-    { CountComCall(11); return DoGetCaps(a0, a1); }
+    { CountComCall(11); ComScope scope(11); return DoGetCaps(a0, a1); }
     virtual HRESULT DoGetCaps(LPDDCAPS a0, LPDDCAPS a1) { (void)a0; (void)a1; return StubCall(11); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetDisplayMode(LPDDSURFACEDESC2 a0) final
-    { CountComCall(12); return DoGetDisplayMode(a0); }
+    { CountComCall(12); ComScope scope(12); return DoGetDisplayMode(a0); }
     virtual HRESULT DoGetDisplayMode(LPDDSURFACEDESC2 a0) { (void)a0; return StubCall(12); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetFourCCCodes(LPDWORD a0, LPDWORD a1) final
-    { CountComCall(13); return DoGetFourCCCodes(a0, a1); }
+    { CountComCall(13); ComScope scope(13); return DoGetFourCCCodes(a0, a1); }
     virtual HRESULT DoGetFourCCCodes(LPDWORD a0, LPDWORD a1) { (void)a0; (void)a1; return StubCall(13); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetGDISurface(LPDIRECTDRAWSURFACE7* a0) final
-    { CountComCall(14); return DoGetGDISurface(a0); }
+    { CountComCall(14); ComScope scope(14); return DoGetGDISurface(a0); }
     virtual HRESULT DoGetGDISurface(LPDIRECTDRAWSURFACE7* a0) { (void)a0; return StubCall(14); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetMonitorFrequency(LPDWORD a0) final
-    { CountComCall(15); return DoGetMonitorFrequency(a0); }
+    { CountComCall(15); ComScope scope(15); return DoGetMonitorFrequency(a0); }
     virtual HRESULT DoGetMonitorFrequency(LPDWORD a0) { (void)a0; return StubCall(15); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetScanLine(LPDWORD a0) final
-    { CountComCall(16); return DoGetScanLine(a0); }
+    { CountComCall(16); ComScope scope(16); return DoGetScanLine(a0); }
     virtual HRESULT DoGetScanLine(LPDWORD a0) { (void)a0; return StubCall(16); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetVerticalBlankStatus(LPBOOL a0) final
-    { CountComCall(17); return DoGetVerticalBlankStatus(a0); }
+    { CountComCall(17); ComScope scope(17); return DoGetVerticalBlankStatus(a0); }
     virtual HRESULT DoGetVerticalBlankStatus(LPBOOL a0) { (void)a0; return StubCall(17); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Initialize(GUID* a0) final
-    { CountComCall(18); return DoInitialize(a0); }
+    { CountComCall(18); ComScope scope(18); return DoInitialize(a0); }
     virtual HRESULT DoInitialize(GUID* a0) { (void)a0; return StubCall(18); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE RestoreDisplayMode() final
-    { CountComCall(19); return DoRestoreDisplayMode(); }
+    { CountComCall(19); ComScope scope(19); return DoRestoreDisplayMode(); }
     virtual HRESULT DoRestoreDisplayMode() { return StubCall(19); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetCooperativeLevel(HWND a0, DWORD a1) final
-    { CountComCall(20); return DoSetCooperativeLevel(a0, a1); }
+    { CountComCall(20); ComScope scope(20); return DoSetCooperativeLevel(a0, a1); }
     virtual HRESULT DoSetCooperativeLevel(HWND a0, DWORD a1) { (void)a0; (void)a1; return StubCall(20); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetDisplayMode(DWORD a0, DWORD a1, DWORD a2, DWORD a3, DWORD a4) final
-    { CountComCall(21); return DoSetDisplayMode(a0, a1, a2, a3, a4); }
+    { CountComCall(21); ComScope scope(21); return DoSetDisplayMode(a0, a1, a2, a3, a4); }
     virtual HRESULT DoSetDisplayMode(DWORD a0, DWORD a1, DWORD a2, DWORD a3, DWORD a4) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; return StubCall(21); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE WaitForVerticalBlank(DWORD a0, HANDLE a1) final
-    { CountComCall(22); return DoWaitForVerticalBlank(a0, a1); }
+    { CountComCall(22); ComScope scope(22); return DoWaitForVerticalBlank(a0, a1); }
     virtual HRESULT DoWaitForVerticalBlank(DWORD a0, HANDLE a1) { (void)a0; (void)a1; return StubCall(22); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetAvailableVidMem(LPDDSCAPS2 a0, LPDWORD a1, LPDWORD a2) final
-    { CountComCall(23); return DoGetAvailableVidMem(a0, a1, a2); }
+    { CountComCall(23); ComScope scope(23); return DoGetAvailableVidMem(a0, a1, a2); }
     virtual HRESULT DoGetAvailableVidMem(LPDDSCAPS2 a0, LPDWORD a1, LPDWORD a2) { (void)a0; (void)a1; (void)a2; return StubCall(23); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetSurfaceFromDC(HDC a0, LPDIRECTDRAWSURFACE7* a1) final
-    { CountComCall(24); return DoGetSurfaceFromDC(a0, a1); }
+    { CountComCall(24); ComScope scope(24); return DoGetSurfaceFromDC(a0, a1); }
     virtual HRESULT DoGetSurfaceFromDC(HDC a0, LPDIRECTDRAWSURFACE7* a1) { (void)a0; (void)a1; return StubCall(24); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE RestoreAllSurfaces() final
-    { CountComCall(25); return DoRestoreAllSurfaces(); }
+    { CountComCall(25); ComScope scope(25); return DoRestoreAllSurfaces(); }
     virtual HRESULT DoRestoreAllSurfaces() { return StubCall(25); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE TestCooperativeLevel() final
-    { CountComCall(26); return DoTestCooperativeLevel(); }
+    { CountComCall(26); ComScope scope(26); return DoTestCooperativeLevel(); }
     virtual HRESULT DoTestCooperativeLevel() { return StubCall(26); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetDeviceIdentifier(LPDDDEVICEIDENTIFIER2 a0, DWORD a1) final
-    { CountComCall(27); return DoGetDeviceIdentifier(a0, a1); }
+    { CountComCall(27); ComScope scope(27); return DoGetDeviceIdentifier(a0, a1); }
     virtual HRESULT DoGetDeviceIdentifier(LPDDDEVICEIDENTIFIER2 a0, DWORD a1) { (void)a0; (void)a1; return StubCall(27); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE StartModeTest(LPSIZE a0, DWORD a1, DWORD a2) final
-    { CountComCall(28); return DoStartModeTest(a0, a1, a2); }
+    { CountComCall(28); ComScope scope(28); return DoStartModeTest(a0, a1, a2); }
     virtual HRESULT DoStartModeTest(LPSIZE a0, DWORD a1, DWORD a2) { (void)a0; (void)a1; (void)a2; return StubCall(28); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE EvaluateMode(DWORD a0, DWORD* a1) final
-    { CountComCall(29); return DoEvaluateMode(a0, a1); }
+    { CountComCall(29); ComScope scope(29); return DoEvaluateMode(a0, a1); }
     virtual HRESULT DoEvaluateMode(DWORD a0, DWORD* a1) { (void)a0; (void)a1; return StubCall(29); }
 };
 
@@ -93,142 +93,142 @@ public:
     virtual ~BaseIDirectDrawSurface7() = default;
     static constexpr const char* kName = "IDirectDrawSurface7";
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE AddAttachedSurface(LPDIRECTDRAWSURFACE7 a0) final
-    { CountComCall(33); return DoAddAttachedSurface(a0); }
+    { CountComCall(33); ComScope scope(33); return DoAddAttachedSurface(a0); }
     virtual HRESULT DoAddAttachedSurface(LPDIRECTDRAWSURFACE7 a0) { (void)a0; return StubCall(33); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE AddOverlayDirtyRect(LPRECT a0) final
-    { CountComCall(34); return DoAddOverlayDirtyRect(a0); }
+    { CountComCall(34); ComScope scope(34); return DoAddOverlayDirtyRect(a0); }
     virtual HRESULT DoAddOverlayDirtyRect(LPRECT a0) { (void)a0; return StubCall(34); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Blt(LPRECT a0, LPDIRECTDRAWSURFACE7 a1, LPRECT a2, DWORD a3, LPDDBLTFX a4) final
-    { CountComCall(35); return DoBlt(a0, a1, a2, a3, a4); }
+    { CountComCall(35); ComScope scope(35); return DoBlt(a0, a1, a2, a3, a4); }
     virtual HRESULT DoBlt(LPRECT a0, LPDIRECTDRAWSURFACE7 a1, LPRECT a2, DWORD a3, LPDDBLTFX a4) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; return StubCall(35); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE BltBatch(LPDDBLTBATCH a0, DWORD a1, DWORD a2) final
-    { CountComCall(36); return DoBltBatch(a0, a1, a2); }
+    { CountComCall(36); ComScope scope(36); return DoBltBatch(a0, a1, a2); }
     virtual HRESULT DoBltBatch(LPDDBLTBATCH a0, DWORD a1, DWORD a2) { (void)a0; (void)a1; (void)a2; return StubCall(36); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE BltFast(DWORD a0, DWORD a1, LPDIRECTDRAWSURFACE7 a2, LPRECT a3, DWORD a4) final
-    { CountComCall(37); return DoBltFast(a0, a1, a2, a3, a4); }
+    { CountComCall(37); ComScope scope(37); return DoBltFast(a0, a1, a2, a3, a4); }
     virtual HRESULT DoBltFast(DWORD a0, DWORD a1, LPDIRECTDRAWSURFACE7 a2, LPRECT a3, DWORD a4) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; return StubCall(37); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DeleteAttachedSurface(DWORD a0, LPDIRECTDRAWSURFACE7 a1) final
-    { CountComCall(38); return DoDeleteAttachedSurface(a0, a1); }
+    { CountComCall(38); ComScope scope(38); return DoDeleteAttachedSurface(a0, a1); }
     virtual HRESULT DoDeleteAttachedSurface(DWORD a0, LPDIRECTDRAWSURFACE7 a1) { (void)a0; (void)a1; return StubCall(38); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE EnumAttachedSurfaces(LPVOID a0, LPDDENUMSURFACESCALLBACK7 a1) final
-    { CountComCall(39); return DoEnumAttachedSurfaces(a0, a1); }
+    { CountComCall(39); ComScope scope(39); return DoEnumAttachedSurfaces(a0, a1); }
     virtual HRESULT DoEnumAttachedSurfaces(LPVOID a0, LPDDENUMSURFACESCALLBACK7 a1) { (void)a0; (void)a1; return StubCall(39); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE EnumOverlayZOrders(DWORD a0, LPVOID a1, LPDDENUMSURFACESCALLBACK7 a2) final
-    { CountComCall(40); return DoEnumOverlayZOrders(a0, a1, a2); }
+    { CountComCall(40); ComScope scope(40); return DoEnumOverlayZOrders(a0, a1, a2); }
     virtual HRESULT DoEnumOverlayZOrders(DWORD a0, LPVOID a1, LPDDENUMSURFACESCALLBACK7 a2) { (void)a0; (void)a1; (void)a2; return StubCall(40); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Flip(LPDIRECTDRAWSURFACE7 a0, DWORD a1) final
-    { CountComCall(41); return DoFlip(a0, a1); }
+    { CountComCall(41); ComScope scope(41); return DoFlip(a0, a1); }
     virtual HRESULT DoFlip(LPDIRECTDRAWSURFACE7 a0, DWORD a1) { (void)a0; (void)a1; return StubCall(41); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetAttachedSurface(LPDDSCAPS2 a0, LPDIRECTDRAWSURFACE7* a1) final
-    { CountComCall(42); return DoGetAttachedSurface(a0, a1); }
+    { CountComCall(42); ComScope scope(42); return DoGetAttachedSurface(a0, a1); }
     virtual HRESULT DoGetAttachedSurface(LPDDSCAPS2 a0, LPDIRECTDRAWSURFACE7* a1) { (void)a0; (void)a1; return StubCall(42); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetBltStatus(DWORD a0) final
-    { CountComCall(43); return DoGetBltStatus(a0); }
+    { CountComCall(43); ComScope scope(43); return DoGetBltStatus(a0); }
     virtual HRESULT DoGetBltStatus(DWORD a0) { (void)a0; return StubCall(43); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetCaps(LPDDSCAPS2 a0) final
-    { CountComCall(44); return DoGetCaps(a0); }
+    { CountComCall(44); ComScope scope(44); return DoGetCaps(a0); }
     virtual HRESULT DoGetCaps(LPDDSCAPS2 a0) { (void)a0; return StubCall(44); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetClipper(LPDIRECTDRAWCLIPPER* a0) final
-    { CountComCall(45); return DoGetClipper(a0); }
+    { CountComCall(45); ComScope scope(45); return DoGetClipper(a0); }
     virtual HRESULT DoGetClipper(LPDIRECTDRAWCLIPPER* a0) { (void)a0; return StubCall(45); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetColorKey(DWORD a0, LPDDCOLORKEY a1) final
-    { CountComCall(46); return DoGetColorKey(a0, a1); }
+    { CountComCall(46); ComScope scope(46); return DoGetColorKey(a0, a1); }
     virtual HRESULT DoGetColorKey(DWORD a0, LPDDCOLORKEY a1) { (void)a0; (void)a1; return StubCall(46); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetDC(HDC* a0) final
-    { CountComCall(47); return DoGetDC(a0); }
+    { CountComCall(47); ComScope scope(47); return DoGetDC(a0); }
     virtual HRESULT DoGetDC(HDC* a0) { (void)a0; return StubCall(47); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetFlipStatus(DWORD a0) final
-    { CountComCall(48); return DoGetFlipStatus(a0); }
+    { CountComCall(48); ComScope scope(48); return DoGetFlipStatus(a0); }
     virtual HRESULT DoGetFlipStatus(DWORD a0) { (void)a0; return StubCall(48); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetOverlayPosition(LPLONG a0, LPLONG a1) final
-    { CountComCall(49); return DoGetOverlayPosition(a0, a1); }
+    { CountComCall(49); ComScope scope(49); return DoGetOverlayPosition(a0, a1); }
     virtual HRESULT DoGetOverlayPosition(LPLONG a0, LPLONG a1) { (void)a0; (void)a1; return StubCall(49); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetPalette(LPDIRECTDRAWPALETTE* a0) final
-    { CountComCall(50); return DoGetPalette(a0); }
+    { CountComCall(50); ComScope scope(50); return DoGetPalette(a0); }
     virtual HRESULT DoGetPalette(LPDIRECTDRAWPALETTE* a0) { (void)a0; return StubCall(50); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetPixelFormat(LPDDPIXELFORMAT a0) final
-    { CountComCall(51); return DoGetPixelFormat(a0); }
+    { CountComCall(51); ComScope scope(51); return DoGetPixelFormat(a0); }
     virtual HRESULT DoGetPixelFormat(LPDDPIXELFORMAT a0) { (void)a0; return StubCall(51); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetSurfaceDesc(LPDDSURFACEDESC2 a0) final
-    { CountComCall(52); return DoGetSurfaceDesc(a0); }
+    { CountComCall(52); ComScope scope(52); return DoGetSurfaceDesc(a0); }
     virtual HRESULT DoGetSurfaceDesc(LPDDSURFACEDESC2 a0) { (void)a0; return StubCall(52); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Initialize(LPDIRECTDRAW a0, LPDDSURFACEDESC2 a1) final
-    { CountComCall(53); return DoInitialize(a0, a1); }
+    { CountComCall(53); ComScope scope(53); return DoInitialize(a0, a1); }
     virtual HRESULT DoInitialize(LPDIRECTDRAW a0, LPDDSURFACEDESC2 a1) { (void)a0; (void)a1; return StubCall(53); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE IsLost() final
-    { CountComCall(54); return DoIsLost(); }
+    { CountComCall(54); ComScope scope(54); return DoIsLost(); }
     virtual HRESULT DoIsLost() { return StubCall(54); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Lock(LPRECT a0, LPDDSURFACEDESC2 a1, DWORD a2, HANDLE a3) final
-    { CountComCall(55); return DoLock(a0, a1, a2, a3); }
+    { CountComCall(55); ComScope scope(55); return DoLock(a0, a1, a2, a3); }
     virtual HRESULT DoLock(LPRECT a0, LPDDSURFACEDESC2 a1, DWORD a2, HANDLE a3) { (void)a0; (void)a1; (void)a2; (void)a3; return StubCall(55); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE ReleaseDC(HDC a0) final
-    { CountComCall(56); return DoReleaseDC(a0); }
+    { CountComCall(56); ComScope scope(56); return DoReleaseDC(a0); }
     virtual HRESULT DoReleaseDC(HDC a0) { (void)a0; return StubCall(56); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Restore() final
-    { CountComCall(57); return DoRestore(); }
+    { CountComCall(57); ComScope scope(57); return DoRestore(); }
     virtual HRESULT DoRestore() { return StubCall(57); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetClipper(LPDIRECTDRAWCLIPPER a0) final
-    { CountComCall(58); return DoSetClipper(a0); }
+    { CountComCall(58); ComScope scope(58); return DoSetClipper(a0); }
     virtual HRESULT DoSetClipper(LPDIRECTDRAWCLIPPER a0) { (void)a0; return StubCall(58); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetColorKey(DWORD a0, LPDDCOLORKEY a1) final
-    { CountComCall(59); return DoSetColorKey(a0, a1); }
+    { CountComCall(59); ComScope scope(59); return DoSetColorKey(a0, a1); }
     virtual HRESULT DoSetColorKey(DWORD a0, LPDDCOLORKEY a1) { (void)a0; (void)a1; return StubCall(59); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetOverlayPosition(LONG a0, LONG a1) final
-    { CountComCall(60); return DoSetOverlayPosition(a0, a1); }
+    { CountComCall(60); ComScope scope(60); return DoSetOverlayPosition(a0, a1); }
     virtual HRESULT DoSetOverlayPosition(LONG a0, LONG a1) { (void)a0; (void)a1; return StubCall(60); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetPalette(LPDIRECTDRAWPALETTE a0) final
-    { CountComCall(61); return DoSetPalette(a0); }
+    { CountComCall(61); ComScope scope(61); return DoSetPalette(a0); }
     virtual HRESULT DoSetPalette(LPDIRECTDRAWPALETTE a0) { (void)a0; return StubCall(61); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Unlock(LPRECT a0) final
-    { CountComCall(62); return DoUnlock(a0); }
+    { CountComCall(62); ComScope scope(62); return DoUnlock(a0); }
     virtual HRESULT DoUnlock(LPRECT a0) { (void)a0; return StubCall(62); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE UpdateOverlay(LPRECT a0, LPDIRECTDRAWSURFACE7 a1, LPRECT a2, DWORD a3, LPDDOVERLAYFX a4) final
-    { CountComCall(63); return DoUpdateOverlay(a0, a1, a2, a3, a4); }
+    { CountComCall(63); ComScope scope(63); return DoUpdateOverlay(a0, a1, a2, a3, a4); }
     virtual HRESULT DoUpdateOverlay(LPRECT a0, LPDIRECTDRAWSURFACE7 a1, LPRECT a2, DWORD a3, LPDDOVERLAYFX a4) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; return StubCall(63); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE UpdateOverlayDisplay(DWORD a0) final
-    { CountComCall(64); return DoUpdateOverlayDisplay(a0); }
+    { CountComCall(64); ComScope scope(64); return DoUpdateOverlayDisplay(a0); }
     virtual HRESULT DoUpdateOverlayDisplay(DWORD a0) { (void)a0; return StubCall(64); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE UpdateOverlayZOrder(DWORD a0, LPDIRECTDRAWSURFACE7 a1) final
-    { CountComCall(65); return DoUpdateOverlayZOrder(a0, a1); }
+    { CountComCall(65); ComScope scope(65); return DoUpdateOverlayZOrder(a0, a1); }
     virtual HRESULT DoUpdateOverlayZOrder(DWORD a0, LPDIRECTDRAWSURFACE7 a1) { (void)a0; (void)a1; return StubCall(65); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetDDInterface(LPVOID* a0) final
-    { CountComCall(66); return DoGetDDInterface(a0); }
+    { CountComCall(66); ComScope scope(66); return DoGetDDInterface(a0); }
     virtual HRESULT DoGetDDInterface(LPVOID* a0) { (void)a0; return StubCall(66); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE PageLock(DWORD a0) final
-    { CountComCall(67); return DoPageLock(a0); }
+    { CountComCall(67); ComScope scope(67); return DoPageLock(a0); }
     virtual HRESULT DoPageLock(DWORD a0) { (void)a0; return StubCall(67); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE PageUnlock(DWORD a0) final
-    { CountComCall(68); return DoPageUnlock(a0); }
+    { CountComCall(68); ComScope scope(68); return DoPageUnlock(a0); }
     virtual HRESULT DoPageUnlock(DWORD a0) { (void)a0; return StubCall(68); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetSurfaceDesc(LPDDSURFACEDESC2 a0, DWORD a1) final
-    { CountComCall(69); return DoSetSurfaceDesc(a0, a1); }
+    { CountComCall(69); ComScope scope(69); return DoSetSurfaceDesc(a0, a1); }
     virtual HRESULT DoSetSurfaceDesc(LPDDSURFACEDESC2 a0, DWORD a1) { (void)a0; (void)a1; return StubCall(69); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID a0, LPVOID a1, DWORD a2, DWORD a3) final
-    { CountComCall(70); return DoSetPrivateData(a0, a1, a2, a3); }
+    { CountComCall(70); ComScope scope(70); return DoSetPrivateData(a0, a1, a2, a3); }
     virtual HRESULT DoSetPrivateData(REFGUID a0, LPVOID a1, DWORD a2, DWORD a3) { (void)a0; (void)a1; (void)a2; (void)a3; return StubCall(70); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID a0, LPVOID a1, LPDWORD a2) final
-    { CountComCall(71); return DoGetPrivateData(a0, a1, a2); }
+    { CountComCall(71); ComScope scope(71); return DoGetPrivateData(a0, a1, a2); }
     virtual HRESULT DoGetPrivateData(REFGUID a0, LPVOID a1, LPDWORD a2) { (void)a0; (void)a1; (void)a2; return StubCall(71); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE FreePrivateData(REFGUID a0) final
-    { CountComCall(72); return DoFreePrivateData(a0); }
+    { CountComCall(72); ComScope scope(72); return DoFreePrivateData(a0); }
     virtual HRESULT DoFreePrivateData(REFGUID a0) { (void)a0; return StubCall(72); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetUniquenessValue(LPDWORD a0) final
-    { CountComCall(73); return DoGetUniquenessValue(a0); }
+    { CountComCall(73); ComScope scope(73); return DoGetUniquenessValue(a0); }
     virtual HRESULT DoGetUniquenessValue(LPDWORD a0) { (void)a0; return StubCall(73); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE ChangeUniquenessValue() final
-    { CountComCall(74); return DoChangeUniquenessValue(); }
+    { CountComCall(74); ComScope scope(74); return DoChangeUniquenessValue(); }
     virtual HRESULT DoChangeUniquenessValue() { return StubCall(74); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetPriority(DWORD a0) final
-    { CountComCall(75); return DoSetPriority(a0); }
+    { CountComCall(75); ComScope scope(75); return DoSetPriority(a0); }
     virtual HRESULT DoSetPriority(DWORD a0) { (void)a0; return StubCall(75); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetPriority(LPDWORD a0) final
-    { CountComCall(76); return DoGetPriority(a0); }
+    { CountComCall(76); ComScope scope(76); return DoGetPriority(a0); }
     virtual HRESULT DoGetPriority(LPDWORD a0) { (void)a0; return StubCall(76); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetLOD(DWORD a0) final
-    { CountComCall(77); return DoSetLOD(a0); }
+    { CountComCall(77); ComScope scope(77); return DoSetLOD(a0); }
     virtual HRESULT DoSetLOD(DWORD a0) { (void)a0; return StubCall(77); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetLOD(LPDWORD a0) final
-    { CountComCall(78); return DoGetLOD(a0); }
+    { CountComCall(78); ComScope scope(78); return DoGetLOD(a0); }
     virtual HRESULT DoGetLOD(LPDWORD a0) { (void)a0; return StubCall(78); }
 };
 
@@ -237,22 +237,22 @@ public:
     virtual ~BaseIDirectDrawClipper() = default;
     static constexpr const char* kName = "IDirectDrawClipper";
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetClipList(LPRECT a0, LPRGNDATA a1, LPDWORD a2) final
-    { CountComCall(82); return DoGetClipList(a0, a1, a2); }
+    { CountComCall(82); ComScope scope(82); return DoGetClipList(a0, a1, a2); }
     virtual HRESULT DoGetClipList(LPRECT a0, LPRGNDATA a1, LPDWORD a2) { (void)a0; (void)a1; (void)a2; return StubCall(82); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetHWnd(HWND* a0) final
-    { CountComCall(83); return DoGetHWnd(a0); }
+    { CountComCall(83); ComScope scope(83); return DoGetHWnd(a0); }
     virtual HRESULT DoGetHWnd(HWND* a0) { (void)a0; return StubCall(83); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Initialize(LPDIRECTDRAW a0, DWORD a1) final
-    { CountComCall(84); return DoInitialize(a0, a1); }
+    { CountComCall(84); ComScope scope(84); return DoInitialize(a0, a1); }
     virtual HRESULT DoInitialize(LPDIRECTDRAW a0, DWORD a1) { (void)a0; (void)a1; return StubCall(84); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE IsClipListChanged(BOOL* a0) final
-    { CountComCall(85); return DoIsClipListChanged(a0); }
+    { CountComCall(85); ComScope scope(85); return DoIsClipListChanged(a0); }
     virtual HRESULT DoIsClipListChanged(BOOL* a0) { (void)a0; return StubCall(85); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetClipList(LPRGNDATA a0, DWORD a1) final
-    { CountComCall(86); return DoSetClipList(a0, a1); }
+    { CountComCall(86); ComScope scope(86); return DoSetClipList(a0, a1); }
     virtual HRESULT DoSetClipList(LPRGNDATA a0, DWORD a1) { (void)a0; (void)a1; return StubCall(86); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetHWnd(DWORD a0, HWND a1) final
-    { CountComCall(87); return DoSetHWnd(a0, a1); }
+    { CountComCall(87); ComScope scope(87); return DoSetHWnd(a0, a1); }
     virtual HRESULT DoSetHWnd(DWORD a0, HWND a1) { (void)a0; (void)a1; return StubCall(87); }
 };
 
@@ -261,16 +261,16 @@ public:
     virtual ~BaseIDirectDrawPalette() = default;
     static constexpr const char* kName = "IDirectDrawPalette";
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetCaps(LPDWORD a0) final
-    { CountComCall(91); return DoGetCaps(a0); }
+    { CountComCall(91); ComScope scope(91); return DoGetCaps(a0); }
     virtual HRESULT DoGetCaps(LPDWORD a0) { (void)a0; return StubCall(91); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetEntries(DWORD a0, DWORD a1, DWORD a2, LPPALETTEENTRY a3) final
-    { CountComCall(92); return DoGetEntries(a0, a1, a2, a3); }
+    { CountComCall(92); ComScope scope(92); return DoGetEntries(a0, a1, a2, a3); }
     virtual HRESULT DoGetEntries(DWORD a0, DWORD a1, DWORD a2, LPPALETTEENTRY a3) { (void)a0; (void)a1; (void)a2; (void)a3; return StubCall(92); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Initialize(LPDIRECTDRAW a0, DWORD a1, LPPALETTEENTRY a2) final
-    { CountComCall(93); return DoInitialize(a0, a1, a2); }
+    { CountComCall(93); ComScope scope(93); return DoInitialize(a0, a1, a2); }
     virtual HRESULT DoInitialize(LPDIRECTDRAW a0, DWORD a1, LPPALETTEENTRY a2) { (void)a0; (void)a1; (void)a2; return StubCall(93); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetEntries(DWORD a0, DWORD a1, DWORD a2, LPPALETTEENTRY a3) final
-    { CountComCall(94); return DoSetEntries(a0, a1, a2, a3); }
+    { CountComCall(94); ComScope scope(94); return DoSetEntries(a0, a1, a2, a3); }
     virtual HRESULT DoSetEntries(DWORD a0, DWORD a1, DWORD a2, LPPALETTEENTRY a3) { (void)a0; (void)a1; (void)a2; (void)a3; return StubCall(94); }
 };
 
@@ -279,19 +279,19 @@ public:
     virtual ~BaseIDirect3D7() = default;
     static constexpr const char* kName = "IDirect3D7";
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE EnumDevices(LPD3DENUMDEVICESCALLBACK7 a0, LPVOID a1) final
-    { CountComCall(98); return DoEnumDevices(a0, a1); }
+    { CountComCall(98); ComScope scope(98); return DoEnumDevices(a0, a1); }
     virtual HRESULT DoEnumDevices(LPD3DENUMDEVICESCALLBACK7 a0, LPVOID a1) { (void)a0; (void)a1; return StubCall(98); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE CreateDevice(REFCLSID a0, LPDIRECTDRAWSURFACE7 a1, LPDIRECT3DDEVICE7* a2) final
-    { CountComCall(99); return DoCreateDevice(a0, a1, a2); }
+    { CountComCall(99); ComScope scope(99); return DoCreateDevice(a0, a1, a2); }
     virtual HRESULT DoCreateDevice(REFCLSID a0, LPDIRECTDRAWSURFACE7 a1, LPDIRECT3DDEVICE7* a2) { (void)a0; (void)a1; (void)a2; return StubCall(99); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE CreateVertexBuffer(LPD3DVERTEXBUFFERDESC a0, LPDIRECT3DVERTEXBUFFER7* a1, DWORD a2) final
-    { CountComCall(100); return DoCreateVertexBuffer(a0, a1, a2); }
+    { CountComCall(100); ComScope scope(100); return DoCreateVertexBuffer(a0, a1, a2); }
     virtual HRESULT DoCreateVertexBuffer(LPD3DVERTEXBUFFERDESC a0, LPDIRECT3DVERTEXBUFFER7* a1, DWORD a2) { (void)a0; (void)a1; (void)a2; return StubCall(100); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE EnumZBufferFormats(REFCLSID a0, LPD3DENUMPIXELFORMATSCALLBACK a1, LPVOID a2) final
-    { CountComCall(101); return DoEnumZBufferFormats(a0, a1, a2); }
+    { CountComCall(101); ComScope scope(101); return DoEnumZBufferFormats(a0, a1, a2); }
     virtual HRESULT DoEnumZBufferFormats(REFCLSID a0, LPD3DENUMPIXELFORMATSCALLBACK a1, LPVOID a2) { (void)a0; (void)a1; (void)a2; return StubCall(101); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE EvictManagedTextures() final
-    { CountComCall(102); return DoEvictManagedTextures(); }
+    { CountComCall(102); ComScope scope(102); return DoEvictManagedTextures(); }
     virtual HRESULT DoEvictManagedTextures() { return StubCall(102); }
 };
 
@@ -300,142 +300,142 @@ public:
     virtual ~BaseIDirect3DDevice7() = default;
     static constexpr const char* kName = "IDirect3DDevice7";
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetCaps(LPD3DDEVICEDESC7 a0) final
-    { CountComCall(106); return DoGetCaps(a0); }
+    { CountComCall(106); ComScope scope(106); return DoGetCaps(a0); }
     virtual HRESULT DoGetCaps(LPD3DDEVICEDESC7 a0) { (void)a0; return StubCall(106); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE EnumTextureFormats(LPD3DENUMPIXELFORMATSCALLBACK a0, LPVOID a1) final
-    { CountComCall(107); return DoEnumTextureFormats(a0, a1); }
+    { CountComCall(107); ComScope scope(107); return DoEnumTextureFormats(a0, a1); }
     virtual HRESULT DoEnumTextureFormats(LPD3DENUMPIXELFORMATSCALLBACK a0, LPVOID a1) { (void)a0; (void)a1; return StubCall(107); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE BeginScene() final
-    { CountComCall(108); return DoBeginScene(); }
+    { CountComCall(108); ComScope scope(108); return DoBeginScene(); }
     virtual HRESULT DoBeginScene() { return StubCall(108); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE EndScene() final
-    { CountComCall(109); return DoEndScene(); }
+    { CountComCall(109); ComScope scope(109); return DoEndScene(); }
     virtual HRESULT DoEndScene() { return StubCall(109); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetDirect3D(LPDIRECT3D7* a0) final
-    { CountComCall(110); return DoGetDirect3D(a0); }
+    { CountComCall(110); ComScope scope(110); return DoGetDirect3D(a0); }
     virtual HRESULT DoGetDirect3D(LPDIRECT3D7* a0) { (void)a0; return StubCall(110); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetRenderTarget(LPDIRECTDRAWSURFACE7 a0, DWORD a1) final
-    { CountComCall(111); return DoSetRenderTarget(a0, a1); }
+    { CountComCall(111); ComScope scope(111); return DoSetRenderTarget(a0, a1); }
     virtual HRESULT DoSetRenderTarget(LPDIRECTDRAWSURFACE7 a0, DWORD a1) { (void)a0; (void)a1; return StubCall(111); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetRenderTarget(LPDIRECTDRAWSURFACE7* a0) final
-    { CountComCall(112); return DoGetRenderTarget(a0); }
+    { CountComCall(112); ComScope scope(112); return DoGetRenderTarget(a0); }
     virtual HRESULT DoGetRenderTarget(LPDIRECTDRAWSURFACE7* a0) { (void)a0; return StubCall(112); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Clear(DWORD a0, LPD3DRECT a1, DWORD a2, D3DCOLOR a3, D3DVALUE a4, DWORD a5) final
-    { CountComCall(113); return DoClear(a0, a1, a2, a3, a4, a5); }
+    { CountComCall(113); ComScope scope(113); return DoClear(a0, a1, a2, a3, a4, a5); }
     virtual HRESULT DoClear(DWORD a0, LPD3DRECT a1, DWORD a2, D3DCOLOR a3, D3DVALUE a4, DWORD a5) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; return StubCall(113); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetTransform(D3DTRANSFORMSTATETYPE a0, LPD3DMATRIX a1) final
-    { CountComCall(114); return DoSetTransform(a0, a1); }
+    { CountComCall(114); ComScope scope(114); return DoSetTransform(a0, a1); }
     virtual HRESULT DoSetTransform(D3DTRANSFORMSTATETYPE a0, LPD3DMATRIX a1) { (void)a0; (void)a1; return StubCall(114); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetTransform(D3DTRANSFORMSTATETYPE a0, LPD3DMATRIX a1) final
-    { CountComCall(115); return DoGetTransform(a0, a1); }
+    { CountComCall(115); ComScope scope(115); return DoGetTransform(a0, a1); }
     virtual HRESULT DoGetTransform(D3DTRANSFORMSTATETYPE a0, LPD3DMATRIX a1) { (void)a0; (void)a1; return StubCall(115); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetViewport(LPD3DVIEWPORT7 a0) final
-    { CountComCall(116); return DoSetViewport(a0); }
+    { CountComCall(116); ComScope scope(116); return DoSetViewport(a0); }
     virtual HRESULT DoSetViewport(LPD3DVIEWPORT7 a0) { (void)a0; return StubCall(116); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE MultiplyTransform(D3DTRANSFORMSTATETYPE a0, LPD3DMATRIX a1) final
-    { CountComCall(117); return DoMultiplyTransform(a0, a1); }
+    { CountComCall(117); ComScope scope(117); return DoMultiplyTransform(a0, a1); }
     virtual HRESULT DoMultiplyTransform(D3DTRANSFORMSTATETYPE a0, LPD3DMATRIX a1) { (void)a0; (void)a1; return StubCall(117); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetViewport(LPD3DVIEWPORT7 a0) final
-    { CountComCall(118); return DoGetViewport(a0); }
+    { CountComCall(118); ComScope scope(118); return DoGetViewport(a0); }
     virtual HRESULT DoGetViewport(LPD3DVIEWPORT7 a0) { (void)a0; return StubCall(118); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetMaterial(LPD3DMATERIAL7 a0) final
-    { CountComCall(119); return DoSetMaterial(a0); }
+    { CountComCall(119); ComScope scope(119); return DoSetMaterial(a0); }
     virtual HRESULT DoSetMaterial(LPD3DMATERIAL7 a0) { (void)a0; return StubCall(119); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetMaterial(LPD3DMATERIAL7 a0) final
-    { CountComCall(120); return DoGetMaterial(a0); }
+    { CountComCall(120); ComScope scope(120); return DoGetMaterial(a0); }
     virtual HRESULT DoGetMaterial(LPD3DMATERIAL7 a0) { (void)a0; return StubCall(120); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetLight(DWORD a0, LPD3DLIGHT7 a1) final
-    { CountComCall(121); return DoSetLight(a0, a1); }
+    { CountComCall(121); ComScope scope(121); return DoSetLight(a0, a1); }
     virtual HRESULT DoSetLight(DWORD a0, LPD3DLIGHT7 a1) { (void)a0; (void)a1; return StubCall(121); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetLight(DWORD a0, LPD3DLIGHT7 a1) final
-    { CountComCall(122); return DoGetLight(a0, a1); }
+    { CountComCall(122); ComScope scope(122); return DoGetLight(a0, a1); }
     virtual HRESULT DoGetLight(DWORD a0, LPD3DLIGHT7 a1) { (void)a0; (void)a1; return StubCall(122); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetRenderState(D3DRENDERSTATETYPE a0, DWORD a1) final
-    { CountComCall(123); return DoSetRenderState(a0, a1); }
+    { CountComCall(123); ComScope scope(123); return DoSetRenderState(a0, a1); }
     virtual HRESULT DoSetRenderState(D3DRENDERSTATETYPE a0, DWORD a1) { (void)a0; (void)a1; return StubCall(123); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetRenderState(D3DRENDERSTATETYPE a0, LPDWORD a1) final
-    { CountComCall(124); return DoGetRenderState(a0, a1); }
+    { CountComCall(124); ComScope scope(124); return DoGetRenderState(a0, a1); }
     virtual HRESULT DoGetRenderState(D3DRENDERSTATETYPE a0, LPDWORD a1) { (void)a0; (void)a1; return StubCall(124); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE BeginStateBlock() final
-    { CountComCall(125); return DoBeginStateBlock(); }
+    { CountComCall(125); ComScope scope(125); return DoBeginStateBlock(); }
     virtual HRESULT DoBeginStateBlock() { return StubCall(125); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE EndStateBlock(LPDWORD a0) final
-    { CountComCall(126); return DoEndStateBlock(a0); }
+    { CountComCall(126); ComScope scope(126); return DoEndStateBlock(a0); }
     virtual HRESULT DoEndStateBlock(LPDWORD a0) { (void)a0; return StubCall(126); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE PreLoad(LPDIRECTDRAWSURFACE7 a0) final
-    { CountComCall(127); return DoPreLoad(a0); }
+    { CountComCall(127); ComScope scope(127); return DoPreLoad(a0); }
     virtual HRESULT DoPreLoad(LPDIRECTDRAWSURFACE7 a0) { (void)a0; return StubCall(127); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DrawPrimitive(D3DPRIMITIVETYPE a0, DWORD a1, LPVOID a2, DWORD a3, DWORD a4) final
-    { CountComCall(128); return DoDrawPrimitive(a0, a1, a2, a3, a4); }
+    { CountComCall(128); ComScope scope(128); return DoDrawPrimitive(a0, a1, a2, a3, a4); }
     virtual HRESULT DoDrawPrimitive(D3DPRIMITIVETYPE a0, DWORD a1, LPVOID a2, DWORD a3, DWORD a4) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; return StubCall(128); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DrawIndexedPrimitive(D3DPRIMITIVETYPE a0, DWORD a1, LPVOID a2, DWORD a3, LPWORD a4, DWORD a5, DWORD a6) final
-    { CountComCall(129); return DoDrawIndexedPrimitive(a0, a1, a2, a3, a4, a5, a6); }
+    { CountComCall(129); ComScope scope(129); return DoDrawIndexedPrimitive(a0, a1, a2, a3, a4, a5, a6); }
     virtual HRESULT DoDrawIndexedPrimitive(D3DPRIMITIVETYPE a0, DWORD a1, LPVOID a2, DWORD a3, LPWORD a4, DWORD a5, DWORD a6) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6; return StubCall(129); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetClipStatus(LPD3DCLIPSTATUS a0) final
-    { CountComCall(130); return DoSetClipStatus(a0); }
+    { CountComCall(130); ComScope scope(130); return DoSetClipStatus(a0); }
     virtual HRESULT DoSetClipStatus(LPD3DCLIPSTATUS a0) { (void)a0; return StubCall(130); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetClipStatus(LPD3DCLIPSTATUS a0) final
-    { CountComCall(131); return DoGetClipStatus(a0); }
+    { CountComCall(131); ComScope scope(131); return DoGetClipStatus(a0); }
     virtual HRESULT DoGetClipStatus(LPD3DCLIPSTATUS a0) { (void)a0; return StubCall(131); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DrawPrimitiveStrided(D3DPRIMITIVETYPE a0, DWORD a1, LPD3DDRAWPRIMITIVESTRIDEDDATA a2, DWORD a3, DWORD a4) final
-    { CountComCall(132); return DoDrawPrimitiveStrided(a0, a1, a2, a3, a4); }
+    { CountComCall(132); ComScope scope(132); return DoDrawPrimitiveStrided(a0, a1, a2, a3, a4); }
     virtual HRESULT DoDrawPrimitiveStrided(D3DPRIMITIVETYPE a0, DWORD a1, LPD3DDRAWPRIMITIVESTRIDEDDATA a2, DWORD a3, DWORD a4) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; return StubCall(132); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DrawIndexedPrimitiveStrided(D3DPRIMITIVETYPE a0, DWORD a1, LPD3DDRAWPRIMITIVESTRIDEDDATA a2, DWORD a3, LPWORD a4, DWORD a5, DWORD a6) final
-    { CountComCall(133); return DoDrawIndexedPrimitiveStrided(a0, a1, a2, a3, a4, a5, a6); }
+    { CountComCall(133); ComScope scope(133); return DoDrawIndexedPrimitiveStrided(a0, a1, a2, a3, a4, a5, a6); }
     virtual HRESULT DoDrawIndexedPrimitiveStrided(D3DPRIMITIVETYPE a0, DWORD a1, LPD3DDRAWPRIMITIVESTRIDEDDATA a2, DWORD a3, LPWORD a4, DWORD a5, DWORD a6) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6; return StubCall(133); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DrawPrimitiveVB(D3DPRIMITIVETYPE a0, LPDIRECT3DVERTEXBUFFER7 a1, DWORD a2, DWORD a3, DWORD a4) final
-    { CountComCall(134); return DoDrawPrimitiveVB(a0, a1, a2, a3, a4); }
+    { CountComCall(134); ComScope scope(134); return DoDrawPrimitiveVB(a0, a1, a2, a3, a4); }
     virtual HRESULT DoDrawPrimitiveVB(D3DPRIMITIVETYPE a0, LPDIRECT3DVERTEXBUFFER7 a1, DWORD a2, DWORD a3, DWORD a4) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; return StubCall(134); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DrawIndexedPrimitiveVB(D3DPRIMITIVETYPE a0, LPDIRECT3DVERTEXBUFFER7 a1, DWORD a2, DWORD a3, LPWORD a4, DWORD a5, DWORD a6) final
-    { CountComCall(135); return DoDrawIndexedPrimitiveVB(a0, a1, a2, a3, a4, a5, a6); }
+    { CountComCall(135); ComScope scope(135); return DoDrawIndexedPrimitiveVB(a0, a1, a2, a3, a4, a5, a6); }
     virtual HRESULT DoDrawIndexedPrimitiveVB(D3DPRIMITIVETYPE a0, LPDIRECT3DVERTEXBUFFER7 a1, DWORD a2, DWORD a3, LPWORD a4, DWORD a5, DWORD a6) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6; return StubCall(135); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE ComputeSphereVisibility(LPD3DVECTOR a0, LPD3DVALUE a1, DWORD a2, DWORD a3, LPDWORD a4) final
-    { CountComCall(136); return DoComputeSphereVisibility(a0, a1, a2, a3, a4); }
+    { CountComCall(136); ComScope scope(136); return DoComputeSphereVisibility(a0, a1, a2, a3, a4); }
     virtual HRESULT DoComputeSphereVisibility(LPD3DVECTOR a0, LPD3DVALUE a1, DWORD a2, DWORD a3, LPDWORD a4) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; return StubCall(136); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetTexture(DWORD a0, LPDIRECTDRAWSURFACE7* a1) final
-    { CountComCall(137); return DoGetTexture(a0, a1); }
+    { CountComCall(137); ComScope scope(137); return DoGetTexture(a0, a1); }
     virtual HRESULT DoGetTexture(DWORD a0, LPDIRECTDRAWSURFACE7* a1) { (void)a0; (void)a1; return StubCall(137); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetTexture(DWORD a0, LPDIRECTDRAWSURFACE7 a1) final
-    { CountComCall(138); return DoSetTexture(a0, a1); }
+    { CountComCall(138); ComScope scope(138); return DoSetTexture(a0, a1); }
     virtual HRESULT DoSetTexture(DWORD a0, LPDIRECTDRAWSURFACE7 a1) { (void)a0; (void)a1; return StubCall(138); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetTextureStageState(DWORD a0, D3DTEXTURESTAGESTATETYPE a1, LPDWORD a2) final
-    { CountComCall(139); return DoGetTextureStageState(a0, a1, a2); }
+    { CountComCall(139); ComScope scope(139); return DoGetTextureStageState(a0, a1, a2); }
     virtual HRESULT DoGetTextureStageState(DWORD a0, D3DTEXTURESTAGESTATETYPE a1, LPDWORD a2) { (void)a0; (void)a1; (void)a2; return StubCall(139); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetTextureStageState(DWORD a0, D3DTEXTURESTAGESTATETYPE a1, DWORD a2) final
-    { CountComCall(140); return DoSetTextureStageState(a0, a1, a2); }
+    { CountComCall(140); ComScope scope(140); return DoSetTextureStageState(a0, a1, a2); }
     virtual HRESULT DoSetTextureStageState(DWORD a0, D3DTEXTURESTAGESTATETYPE a1, DWORD a2) { (void)a0; (void)a1; (void)a2; return StubCall(140); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE ValidateDevice(LPDWORD a0) final
-    { CountComCall(141); return DoValidateDevice(a0); }
+    { CountComCall(141); ComScope scope(141); return DoValidateDevice(a0); }
     virtual HRESULT DoValidateDevice(LPDWORD a0) { (void)a0; return StubCall(141); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE ApplyStateBlock(DWORD a0) final
-    { CountComCall(142); return DoApplyStateBlock(a0); }
+    { CountComCall(142); ComScope scope(142); return DoApplyStateBlock(a0); }
     virtual HRESULT DoApplyStateBlock(DWORD a0) { (void)a0; return StubCall(142); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE CaptureStateBlock(DWORD a0) final
-    { CountComCall(143); return DoCaptureStateBlock(a0); }
+    { CountComCall(143); ComScope scope(143); return DoCaptureStateBlock(a0); }
     virtual HRESULT DoCaptureStateBlock(DWORD a0) { (void)a0; return StubCall(143); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE DeleteStateBlock(DWORD a0) final
-    { CountComCall(144); return DoDeleteStateBlock(a0); }
+    { CountComCall(144); ComScope scope(144); return DoDeleteStateBlock(a0); }
     virtual HRESULT DoDeleteStateBlock(DWORD a0) { (void)a0; return StubCall(144); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE CreateStateBlock(D3DSTATEBLOCKTYPE a0, LPDWORD a1) final
-    { CountComCall(145); return DoCreateStateBlock(a0, a1); }
+    { CountComCall(145); ComScope scope(145); return DoCreateStateBlock(a0, a1); }
     virtual HRESULT DoCreateStateBlock(D3DSTATEBLOCKTYPE a0, LPDWORD a1) { (void)a0; (void)a1; return StubCall(145); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Load(LPDIRECTDRAWSURFACE7 a0, LPPOINT a1, LPDIRECTDRAWSURFACE7 a2, LPRECT a3, DWORD a4) final
-    { CountComCall(146); return DoLoad(a0, a1, a2, a3, a4); }
+    { CountComCall(146); ComScope scope(146); return DoLoad(a0, a1, a2, a3, a4); }
     virtual HRESULT DoLoad(LPDIRECTDRAWSURFACE7 a0, LPPOINT a1, LPDIRECTDRAWSURFACE7 a2, LPRECT a3, DWORD a4) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; return StubCall(146); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE LightEnable(DWORD a0, BOOL a1) final
-    { CountComCall(147); return DoLightEnable(a0, a1); }
+    { CountComCall(147); ComScope scope(147); return DoLightEnable(a0, a1); }
     virtual HRESULT DoLightEnable(DWORD a0, BOOL a1) { (void)a0; (void)a1; return StubCall(147); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetLightEnable(DWORD a0, BOOL* a1) final
-    { CountComCall(148); return DoGetLightEnable(a0, a1); }
+    { CountComCall(148); ComScope scope(148); return DoGetLightEnable(a0, a1); }
     virtual HRESULT DoGetLightEnable(DWORD a0, BOOL* a1) { (void)a0; (void)a1; return StubCall(148); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE SetClipPlane(DWORD a0, D3DVALUE* a1) final
-    { CountComCall(149); return DoSetClipPlane(a0, a1); }
+    { CountComCall(149); ComScope scope(149); return DoSetClipPlane(a0, a1); }
     virtual HRESULT DoSetClipPlane(DWORD a0, D3DVALUE* a1) { (void)a0; (void)a1; return StubCall(149); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetClipPlane(DWORD a0, D3DVALUE* a1) final
-    { CountComCall(150); return DoGetClipPlane(a0, a1); }
+    { CountComCall(150); ComScope scope(150); return DoGetClipPlane(a0, a1); }
     virtual HRESULT DoGetClipPlane(DWORD a0, D3DVALUE* a1) { (void)a0; (void)a1; return StubCall(150); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetInfo(DWORD a0, LPVOID a1, DWORD a2) final
-    { CountComCall(151); return DoGetInfo(a0, a1, a2); }
+    { CountComCall(151); ComScope scope(151); return DoGetInfo(a0, a1, a2); }
     virtual HRESULT DoGetInfo(DWORD a0, LPVOID a1, DWORD a2) { (void)a0; (void)a1; (void)a2; return StubCall(151); }
 };
 
@@ -444,22 +444,22 @@ public:
     virtual ~BaseIDirect3DVertexBuffer7() = default;
     static constexpr const char* kName = "IDirect3DVertexBuffer7";
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Lock(DWORD a0, LPVOID* a1, LPDWORD a2) final
-    { CountComCall(155); return DoLock(a0, a1, a2); }
+    { CountComCall(155); ComScope scope(155); return DoLock(a0, a1, a2); }
     virtual HRESULT DoLock(DWORD a0, LPVOID* a1, LPDWORD a2) { (void)a0; (void)a1; (void)a2; return StubCall(155); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Unlock() final
-    { CountComCall(156); return DoUnlock(); }
+    { CountComCall(156); ComScope scope(156); return DoUnlock(); }
     virtual HRESULT DoUnlock() { return StubCall(156); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE ProcessVertices(DWORD a0, DWORD a1, DWORD a2, LPDIRECT3DVERTEXBUFFER7 a3, DWORD a4, LPDIRECT3DDEVICE7 a5, DWORD a6) final
-    { CountComCall(157); return DoProcessVertices(a0, a1, a2, a3, a4, a5, a6); }
+    { CountComCall(157); ComScope scope(157); return DoProcessVertices(a0, a1, a2, a3, a4, a5, a6); }
     virtual HRESULT DoProcessVertices(DWORD a0, DWORD a1, DWORD a2, LPDIRECT3DVERTEXBUFFER7 a3, DWORD a4, LPDIRECT3DDEVICE7 a5, DWORD a6) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6; return StubCall(157); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE GetVertexBufferDesc(LPD3DVERTEXBUFFERDESC a0) final
-    { CountComCall(158); return DoGetVertexBufferDesc(a0); }
+    { CountComCall(158); ComScope scope(158); return DoGetVertexBufferDesc(a0); }
     virtual HRESULT DoGetVertexBufferDesc(LPD3DVERTEXBUFFERDESC a0) { (void)a0; return StubCall(158); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE Optimize(LPDIRECT3DDEVICE7 a0, DWORD a1) final
-    { CountComCall(159); return DoOptimize(a0, a1); }
+    { CountComCall(159); ComScope scope(159); return DoOptimize(a0, a1); }
     virtual HRESULT DoOptimize(LPDIRECT3DDEVICE7 a0, DWORD a1) { (void)a0; (void)a1; return StubCall(159); }
     COM_DECLSPEC_NOTHROW HRESULT STDMETHODCALLTYPE ProcessVerticesStrided(DWORD a0, DWORD a1, DWORD a2, LPD3DDRAWPRIMITIVESTRIDEDDATA a3, DWORD a4, LPDIRECT3DDEVICE7 a5, DWORD a6) final
-    { CountComCall(160); return DoProcessVerticesStrided(a0, a1, a2, a3, a4, a5, a6); }
+    { CountComCall(160); ComScope scope(160); return DoProcessVerticesStrided(a0, a1, a2, a3, a4, a5, a6); }
     virtual HRESULT DoProcessVerticesStrided(DWORD a0, DWORD a1, DWORD a2, LPD3DDRAWPRIMITIVESTRIDEDDATA a3, DWORD a4, LPDIRECT3DDEVICE7 a5, DWORD a6) { (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6; return StubCall(160); }
 };
 

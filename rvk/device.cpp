@@ -2,10 +2,34 @@
 #include "internal.h"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 
 namespace rvk {
+
+namespace {
+void (*g_logSink)(const char*) = nullptr;
+}
+
+void SetLogSink(void (*sink)(const char*)) { g_logSink = sink; }
+
+void Log(const char* fmt, ...)
+{
+    char line[1024];
+    va_list args;
+    va_start(args, fmt);
+    std::vsnprintf(line, sizeof(line), fmt, args);
+    va_end(args);
+    size_t n = std::strlen(line);
+    if (n && line[n - 1] == '\n') line[n - 1] = 0;
+    if (g_logSink) {
+        g_logSink(line);
+    } else {
+        std::fprintf(stderr, "rvk: %s\n", line);
+        std::fflush(stderr);
+    }
+}
 
 using namespace vk;
 using namespace detail;
@@ -43,6 +67,23 @@ void LayoutUse(VkImageLayout layout, VkPipelineStageFlags2* stage, VkAccessFlags
         *stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
         *access = 0;
         break;
+    }
+}
+
+// vkWaitForFences that reports a stuck GPU instead of hanging silently (messages go to stderr, which the
+// launcher wrapper writes to the Wine log).
+void WaitFence(VkDevice device, VkFence fence, const char* what)
+{
+    for (int seconds = 1;; ++seconds) {
+        VkResult r = vkWaitForFences(device, 1, &fence, VK_TRUE, 1000000000ull);
+        if (r != VK_TIMEOUT) {
+            if (seconds > 1)
+                Log("%s finished after %d s\n", what, seconds);
+            if (r != VK_SUCCESS)
+                Log("waiting for %s failed: VkResult %d\n", what, r);
+            return;
+        }
+        Log("still waiting for %s after %d s\n", what, seconds);
     }
 }
 
@@ -460,7 +501,7 @@ bool Device::SetWindow(HWND window)
     VkBool32 present = VK_FALSE;
     vkGetPhysicalDeviceSurfaceSupportKHR(m_physical, m_queueFamily, m_surface, &present);
     if (!present || !CreateSwapchain(&error)) {
-        std::fprintf(stderr, "rvk: SetWindow failed: %s\n", present ? error.c_str() : "queue cannot present");
+        Log("SetWindow failed: %s\n", present ? error.c_str() : "queue cannot present");
         return false;
     }
     return true;
@@ -491,7 +532,17 @@ bool Device::CreateSwapchain(std::string* error)
     ci.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     ci.preTransform = caps.currentTransform;
     ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    ci.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    // MAILBOX or IMMEDIATE like D7VK: a FIFO swapchain can block indefinitely on Wayland when the
+    // compositor stops sending frame callbacks (e.g. while the window is hidden or not focused).
+    uint32_t modeCount = 0;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(m_physical, m_surface, &modeCount, nullptr);
+    std::vector<VkPresentModeKHR> modes(modeCount);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(m_physical, m_surface, &modeCount, modes.data());
+    auto hasMode = [&](VkPresentModeKHR m) { return std::find(modes.begin(), modes.end(), m) != modes.end(); };
+    ci.presentMode = hasMode(VK_PRESENT_MODE_MAILBOX_KHR)     ? VK_PRESENT_MODE_MAILBOX_KHR
+                     : hasMode(VK_PRESENT_MODE_IMMEDIATE_KHR) ? VK_PRESENT_MODE_IMMEDIATE_KHR
+                                                              : VK_PRESENT_MODE_FIFO_KHR;
+    Log("swapchain %ux%u, present mode %d\n", m_swapExtent.width, m_swapExtent.height, ci.presentMode);
     ci.clipped = VK_TRUE;
     if (!Check(vkCreateSwapchainKHR(m_device, &ci, nullptr, &m_swapchain), "vkCreateSwapchainKHR", error))
         return false;
@@ -662,7 +713,7 @@ VkDeviceSize Device::Allocate(VkDeviceSize size, VkDeviceSize alignment, void** 
     Frame& f = m_frames[m_frameIndex];
     VkDeviceSize offset = (f.ringOffset + alignment - 1) & ~(alignment - 1);
     if (offset + size > kRingSize) {
-        std::fprintf(stderr, "rvk: per-frame ring buffer full (%llu bytes)\n", (unsigned long long)kRingSize);
+        Log("per-frame ring buffer full (%llu bytes)\n", (unsigned long long)kRingSize);
         offset = 0;     // overwrites this frame's data; visible corruption rather than a crash
     }
     f.ringOffset = offset + size;
@@ -677,7 +728,7 @@ void Device::EnsureRingSpace(VkDeviceSize bytes)
     if (f.ringOffset + needed <= kRingSize)
         return;
     if (needed > kRingSize) {
-        std::fprintf(stderr, "rvk: %llu bytes do not fit in the %llu-byte ring buffer\n",
+        Log("%llu bytes do not fit in the %llu-byte ring buffer\n",
                      (unsigned long long)bytes, (unsigned long long)kRingSize);
         return;
     }
@@ -692,11 +743,11 @@ void Device::EnsureRingSpace(VkDeviceSize bytes)
         si.commandBufferCount = 1;
         si.pCommandBuffers = &f.upload;
         vkQueueSubmit(m_queue, 1, &si, f.fence);
-        vkWaitForFences(m_device, 1, &f.fence, VK_TRUE, UINT64_MAX);
+        WaitFence(m_device, f.fence, "GPU frame work");
         // Leave the fence signalled: BeginFrame waits on it before using this slot.
         f.uploadsRecorded = false;
     } else {
-        vkWaitForFences(m_device, 1, &f.fence, VK_TRUE, UINT64_MAX);
+        WaitFence(m_device, f.fence, "GPU frame work");
     }
     f.ringOffset = 0;
 }
@@ -708,7 +759,7 @@ VkCommandBuffer Device::UploadCommands()
         if (!m_inFrame) {
             // Between frames this slot's previous submission may still be running: wait for it before
             // reusing its command buffer and ring buffer. BeginFrame keeps what is recorded here.
-            vkWaitForFences(m_device, 1, &f.fence, VK_TRUE, UINT64_MAX);
+            WaitFence(m_device, f.fence, "GPU frame work");
             f.ringOffset = 0;
         }
         VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -777,7 +828,7 @@ void Device::SetRenderTarget(Texture* target)
     if (!target)
         target = m_main;
     if (!target->m_renderTarget) {
-        std::fprintf(stderr, "rvk: SetRenderTarget: not a render target\n");
+        Log("SetRenderTarget: not a render target\n");
         return;
     }
     if (target != m_target && m_inFrame) {
@@ -798,12 +849,12 @@ void Device::BeginFrame()
         DestroySwapchain();
         std::string error;
         if (!CreateSwapchain(&error))
-            std::fprintf(stderr, "rvk: swapchain recreation failed: %s\n", error.c_str());
+            Log("swapchain recreation failed: %s\n", error.c_str());
         m_swapchainStale = false;
     }
     Frame& f = m_frames[m_frameIndex];
     bool uploadsPending = f.uploadsRecorded;          // recorded between frames, already waited for
-    vkWaitForFences(m_device, 1, &f.fence, VK_TRUE, UINT64_MAX);
+    WaitFence(m_device, f.fence, "GPU frame work");
     vkResetFences(m_device, 1, &f.fence);
     for (Texture* t : f.pendingDestroy)
         DestroyTextureNow(t);
@@ -840,8 +891,14 @@ void Device::EndFrame()
     uint32_t imageIndex = 0;
     bool present = false;
     if (m_swapchain) {
-        VkResult r = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, f.imageAvailable, VK_NULL_HANDLE, &imageIndex);
+        // Bounded wait: if no image comes within 250 ms, skip presenting this frame instead of freezing.
+        VkResult r = vkAcquireNextImageKHR(m_device, m_swapchain, 250000000ull, f.imageAvailable, VK_NULL_HANDLE, &imageIndex);
         present = r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR;
+        if (r == VK_TIMEOUT || r == VK_NOT_READY) {
+            static int timeouts;
+            if (timeouts++ < 20)
+                Log("no swapchain image within 250 ms, frame not presented\n");
+        }
         if (r == VK_SUBOPTIMAL_KHR || r == VK_ERROR_OUT_OF_DATE_KHR)
             m_swapchainStale = true;
     }
@@ -893,7 +950,7 @@ void Device::EndFrame()
             m_swapchainStale = true;
     }
     if (screenshot) {
-        vkWaitForFences(m_device, 1, &f.fence, VK_TRUE, UINT64_MAX);
+        WaitFence(m_device, f.fence, "GPU frame work");
         SaveScreenshot();
         m_screenshotPath.clear();
     }
@@ -918,7 +975,7 @@ void Device::SubmitAndWait()
     si.commandBufferCount = n;
     si.pCommandBuffers = cmds;
     vkQueueSubmit(m_queue, 1, &si, f.fence);
-    vkWaitForFences(m_device, 1, &f.fence, VK_TRUE, UINT64_MAX);
+    WaitFence(m_device, f.fence, "GPU frame work");
     vkResetFences(m_device, 1, &f.fence);
     VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     b.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

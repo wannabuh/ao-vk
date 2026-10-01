@@ -3,11 +3,29 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <algorithm>
 #include <cstring>
+#include <mutex>
 
 namespace rvkproxy {
 
 RvkState g_rvk;
+
+namespace {
+std::recursive_mutex g_comMutex;
+}
+
+ComScope::ComScope(unsigned methodIndex)
+{
+    g_comMutex.lock();
+    thread_local bool seen = false;
+    if (!seen) {
+        seen = true;
+        RvkLog("thread %lu calls DirectDraw/Direct3D (first call: %s)", GetCurrentThreadId(), ComMethodName(methodIndex));
+    }
+}
+
+ComScope::~ComScope() { g_comMutex.unlock(); }
 
 void RvkLog(const char* fmt, ...)
 {
@@ -36,6 +54,7 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
             device->EndFrame();
         return device->Resize(width, height);
     }
+    rvk::SetLogSink([](const char* line) { RvkLog("rvk: %s", line); });
     device = new rvk::Device;
     std::string error;
     if (!device->Init(window, width, height, &error)) {
@@ -74,6 +93,14 @@ void RvkState::Present()
         return;
     Frame();                  // a present without any rendering still shows a frame
     device->EndFrame();
+    // Heartbeat: shows whether frames keep coming (a frozen picture vs. a hung game).
+    static unsigned frames;
+    static DWORD lastTick = GetTickCount();
+    if (++frames % 600 == 0) {
+        DWORD now = GetTickCount();
+        RvkLog("presented %u frames (%.1f fps over the last 600)", frames, 600000.0 / std::max<DWORD>(now - lastTick, 1));
+        lastTick = now;
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -492,6 +519,7 @@ HRESULT RDirect3D::DoEnumZBufferFormats(REFCLSID, LPD3DENUMPIXELFORMATSCALLBACK 
 
 HRESULT WINAPI RvkDirectDrawCreateEx(GUID*, LPVOID* out, REFIID iid, IUnknown*)
 {
+    ComScope scope(ComMethodCount() - 2);
     if (!out) return DDERR_INVALIDPARAMS;
     if (iid != IID_IDirectDraw7) {
         RvkLog("DirectDrawCreateEx for a non-IDirectDraw7 interface");
@@ -503,6 +531,7 @@ HRESULT WINAPI RvkDirectDrawCreateEx(GUID*, LPVOID* out, REFIID iid, IUnknown*)
 
 HRESULT WINAPI RvkDirectDrawEnumerateExA(LPDDENUMCALLBACKEXA cb, LPVOID ctx, DWORD)
 {
+    ComScope scope(ComMethodCount() - 1);
     if (!cb) return DDERR_INVALIDPARAMS;
     char desc[] = "Primary Display Driver", name[] = "display";
     cb(nullptr, desc, name, ctx, nullptr);
