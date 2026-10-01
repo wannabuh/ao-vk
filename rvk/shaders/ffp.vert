@@ -24,6 +24,8 @@ layout(location = 7) out vec3 vMatEmissive;
 layout(location = 8) out vec3 vPosW;
 layout(location = 9) out vec4 vNormalW;      // xyz direction, w = length the vertex path would light with
 layout(location = 10) out vec2 vSet0;        // texture coordinate set 0 as is (the ground's base texture, F_BUMPBASE)
+layout(location = 11) out vec4 vClip;        // motion vectors: clip position now
+layout(location = 12) out vec4 vPrevClip;    // ... and last frame (previous world matrix and camera)
 
 float FogFactor(uint mode, float d)
 {
@@ -83,6 +85,8 @@ void main()
     vPosW = vec3(0.0);
     vNormalW = vec4(0.0);
 
+    vClip = vec4(0.0, 0.0, 0.0, 1.0);
+    vPrevClip = vClip;
     if (rhw) {
         // Screen-space vertex. The Vulkan viewport is the D3D one shifted by half a pixel (D3D pixel
         // centres are at integer coordinates), so position relative to it.
@@ -98,6 +102,8 @@ void main()
         vec4 posW = D.world * vec4(inPos.xyz, 1.0);
         vec4 pv = C.view * posW;
         gl_Position = C.proj * pv;
+        vClip = gl_Position;
+        vPrevClip = D.motion.x > 0.5 ? FL.prevViewProj * (D.prevWorld * vec4(inPos.xyz, 1.0)) : gl_Position;
         posV = pv.xyz;
         vec3 normalW = mat3(D.world) * (hasNormal ? inNormal : vec3(0.0));
         if ((C.flags.x & F_NORMALIZE) != 0u && dot(normalW, normalW) > 0.0)

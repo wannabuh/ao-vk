@@ -52,6 +52,8 @@ layout(location = 7) in vec3 vMatEmissive;
 layout(location = 8) in vec3 vPosW;
 layout(location = 9) in vec4 vNormalW;
 layout(location = 10) in vec2 vSet0;
+layout(location = 11) in vec4 vClip;
+layout(location = 12) in vec4 vPrevClip;
 
 // Lit vertex colours: the interpolated ones, or computed here for per-pixel lighting.
 vec4 gDiffuse, gSpecular;
@@ -64,6 +66,7 @@ layout(location = 0) out vec4 outColor;
 #ifdef RVK_GLOW
 layout(location = 1) out vec4 outGlow;     // HDR scene only: the glow attachment (F_GLOW)
 layout(location = 2) out vec4 outLocal;    // HDR scene only: the fraction of the colour local lights gave it
+layout(location = 3) out vec4 outMotion;   // HDR scene only: screen motion since last frame, pixels (solid geometry)
 #endif
 
 vec4 Arg(uint a, vec4 current, vec4 tex)
@@ -312,6 +315,9 @@ void main()
     outGlow = vec4(glow, 0.0);
     // Blended with this fragment's alpha like the colour (attachment 2's blend state follows the colour's).
     outLocal = vec4(gLocalFraction, 0.0, 0.0, current.a);
+    // Motion vectors (written by depth-writing draws only, see the blend state): where this point was last frame.
+    vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
+    outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * C.viewport.zw * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
 #endif
     if ((C.flags.x & F_OVERBRIGHT2X) != 0u)
         current.rgb *= 0.5;                               // blended as dst * src * 2

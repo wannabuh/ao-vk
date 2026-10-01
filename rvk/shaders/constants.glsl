@@ -11,6 +11,8 @@ struct Light {
 // rewritten when render state changes.
 layout(set = 0, binding = 3, std140) uniform DrawTransform {
     mat4 world;                 // raw D3DMATRIX memory: GLSL M * v == D3D v * M
+    mat4 prevWorld;             // the same object's world matrix last frame (motion vectors)
+    vec4 motion;                // x: 1 = world camera, write its motion (else 0 motion)
 } D;
 
 layout(set = 0, binding = 0, std140) uniform DrawConstants {
@@ -41,6 +43,7 @@ layout(set = 0, binding = 4, std140) uniform FrameLights {
     mat4 shadowViewProj;        // world -> shadow map (raw D3DMATRIX memory)
     vec4 shadowParams;          // enabled, strength, texel size (world units), point light shadow strength
     vec4 sunDir;                // direction the sunlight travels; w = light headroom (F_OVERBRIGHT)
+    mat4 prevViewProj;          // the world camera last frame (motion vectors; raw D3DMATRIX memory)
     Light lights[64];
 } FL;
 

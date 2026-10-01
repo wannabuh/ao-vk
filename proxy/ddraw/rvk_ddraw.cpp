@@ -108,6 +108,9 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     GetEnvironmentVariableA("RANDYVK_MOTION_BLUR", motionBlur, sizeof(motionBlur));
     GetEnvironmentVariableA("RANDYVK_MOTION_BLUR_NEAR", motionNear, sizeof(motionNear));
     device->SetMotionBlur(float(std::atof(motionBlur)), float(std::atof(motionNear)));
+    char motionMode[16] = "object";
+    GetEnvironmentVariableA("RANDYVK_MOTION_BLUR_MODE", motionMode, sizeof(motionMode));
+    device->SetMotionBlurMode(std::strcmp(motionMode, "camera") == 0 ? 0u : 1u);
     char anisotropy[16] = "16";
     GetEnvironmentVariableA("RANDYVK_ANISOTROPY", anisotropy, sizeof(anisotropy));
     device->SetAnisotropy(uint32_t(std::max(1, std::atoi(anisotropy))));
@@ -144,7 +147,8 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     RvkLog("rvk ambient occlusion: strength %s, radius %s", aoStrength, aoRadius);
     RvkLog("rvk generated normals (bump): %s", bump);
     RvkLog("rvk anisotropic filtering: %sx", anisotropy);
-    RvkLog("rvk motion blur: %s (sharp nearer than %s)", motionBlur, motionNear);
+    RvkLog("rvk motion blur: %s, %s mode (camera mode: sharp nearer than %s)", motionBlur,
+           device->MotionBlurMode() ? "object" : "camera", motionNear);
     return true;
 }
 
@@ -207,6 +211,14 @@ void RvkState::Present()
         RvkLog("motion blur %s", device->MotionBlur() > 0.0f ? "on" : "off");
     }
     mDown = m;
+    // Ctrl+Shift+N: motion blur mode, camera / per object.
+    static bool nDown;
+    bool nKey = chord && (GetAsyncKeyState('N') & 0x8000);
+    if (nKey && !nDown) {
+        device->SetMotionBlurMode(device->MotionBlurMode() ? 0u : 1u);
+        RvkLog("motion blur mode: %s", device->MotionBlurMode() ? "per object" : "camera");
+    }
+    nDown = nKey;
     // Ctrl+Shift+F1: anisotropic filtering on (configured level, at least 2) / off.
     static bool f1Down;
     static uint32_t anisotropyOn = 0;

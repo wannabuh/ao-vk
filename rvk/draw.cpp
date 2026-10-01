@@ -262,6 +262,7 @@ VkDeviceSize Device::WriteFrameLights()
     fl->shadowParams[3] = PointShadowStrength();
     fl->sunDir[0] = m_shadowSunDir[0]; fl->sunDir[1] = m_shadowSunDir[1]; fl->sunDir[2] = m_shadowSunDir[2];
     fl->sunDir[3] = m_hdr ? m_hdrHeadroom : m_lightHeadroom;
+    fl->prevViewProj = m_prevViewProj;           // the world camera last frame (motion vectors)
     m_frameLightIndices.clear();
     for (uint32_t k = 0; k < used; ++k) {
         const CapturedLight& c = m_lightsPrev[candidates[k].index];
@@ -294,6 +295,31 @@ uint64_t Device::TerrainChunkKey(const void* vertices, uint32_t vertexCount, uin
         for (uint32_t b = 0; b < 12; ++b)
             h = (h ^ v[size_t(i) * stride + b]) * 1099511628211ull;
     return h;
+}
+
+// Motion vectors (per-object motion blur): solid 3D geometry of the world camera in the HDR scene, given a camera last
+// frame to compare with.
+bool Device::MotionVectorDraw(uint32_t fvf) const
+{
+    return m_motionMode == 1 && m_motionBlur > 0.0f && m_prevViewProjValid && m_target == m_scene && m_aoProjValid &&
+           (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW && m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE] &&
+           std::memcmp(&m_proj, &m_aoProj, sizeof(m_proj)) == 0 && std::memcmp(&m_view, &m_aoView, sizeof(m_view)) == 0;
+}
+
+// A mesh's identity across frames, independent of where it is and of its (CPU-skinned) vertices: format, sizes,
+// a sample of its indices, its texture.
+uint64_t Device::MotionKey(uint32_t primitive, uint32_t fvf, uint32_t vertexCount, const uint16_t* indices,
+                           uint32_t indexCount) const
+{
+    uint64_t h = 1469598103934665603ull ^ (uint64_t(fvf) << 40) ^ (uint64_t(primitive) << 32) ^ vertexCount;
+    h = (h ^ indexCount) * 1099511628211ull;
+    if (indices) {
+        uint32_t step = indexCount > 32 ? indexCount / 32 : 1;
+        for (uint32_t i = 0; i < indexCount; i += step)
+            h = (h ^ indices[i]) * 1099511628211ull;
+    }
+    uintptr_t texture = reinterpret_cast<uintptr_t>(m_textures[0]);
+    return (h ^ uint64_t(texture)) * 1099511628211ull;
 }
 
 // An additive effect drawn into the HDR scene (light halos, spells, fire: blend ONE or SRCALPHA onto ONE) feeds the
@@ -561,6 +587,16 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
         c.dst = dst;
     }
     if (pipelineClass >= 3) {
+        // Attachment 3, the motion vectors: written by solid (depth-writing) geometry, kept by everything else.
+        uint32_t keep = m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE] ? 0u : 1u;
+        if (c.motionKeep != keep) {
+            VkBool32 e = keep;
+            vkCmdSetColorBlendEnableEXT(cmd, 3, 1, &e);
+            VkColorBlendEquationEXT eq{VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD,
+                                       VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD};
+            vkCmdSetColorBlendEquationEXT(cmd, 3, 1, &eq);
+            c.motionKeep = keep;
+        }
         // Attachment 2, the local-light fraction: blended like the colour, so it stays the fraction of the final
         // colour - except for multiplying passes (the ground's lightmap + lights pass: its fraction replaces the
         // unlit base pass's) and additive effects (they don't light the surface under them: kept).
@@ -669,9 +705,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 
     // The frame's light list (binding 4): rebuilt when lights changed; always bound, as layouts require.
     // Only lit draws read it; the others bind any in-range part of the ring.
+    bool motion = MotionVectorDraw(fvf);       // reads the last frame's camera from the frame block
     bool needLights = (m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
                        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) || ShadowReceiver(fvf) ||
-                      ShadowCompensated(fvf);
+                      ShadowCompensated(fvf) || motion;
     VkDeviceSize frameLightsOffset = m_frameLightsGeneration == m_ringGeneration ? m_frameLightsOffset : 0;
     if (needLights && (m_frameLightsDirty || m_frameLightsGeneration != m_ringGeneration))   // once per frame
         frameLightsOffset = WriteFrameLights();
@@ -679,7 +716,32 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // Per-draw world matrix (small block).
     void* cpu;
     VkDeviceSize transformOffset = Allocate(sizeof(DrawTransform), uboAlign, &cpu);
-    std::memcpy(cpu, &m_world, sizeof(m_world));
+    auto* drawTransform = static_cast<DrawTransform*>(cpu);
+    drawTransform->world = m_world;
+    drawTransform->prevWorld = m_world;
+    drawTransform->motion[0] = motion ? 1.0f : 0.0f;
+    drawTransform->motion[1] = drawTransform->motion[2] = drawTransform->motion[3] = 0.0f;
+    if (motion) {
+        // Motion vectors: the same object last frame - same mesh, nearest to where this one is (within 3 units). Not
+        // found (new, or a different level of detail): its current matrix, i.e. it moved with the world.
+        uint64_t key = MotionKey(primitive, fvf, vertexCount, indices, indexCount);
+        auto it = m_motionPrev.find(key);
+        if (it != m_motionPrev.end()) {
+            MotionEntry* best = nullptr;
+            float bestD2 = 9.0f;
+            for (MotionEntry& e : it->second) {
+                if (e.used) continue;
+                float dx = e.world.m[3][0] - m_world.m[3][0], dy = e.world.m[3][1] - m_world.m[3][1],
+                      dz = e.world.m[3][2] - m_world.m[3][2], d2 = dx * dx + dy * dy + dz * dz;
+                if (d2 < bestD2) { bestD2 = d2; best = &e; }
+            }
+            if (best) {
+                drawTransform->prevWorld = best->world;
+                best->used = true;
+            }
+        }
+        m_motionCur[key].push_back({m_world, false});
+    }
 
     // The big constant block: reused unless something feeding it changed since it was written.
     uint32_t texMask = (m_textures[0] ? 1u : 0u) | (m_textures[1] ? 2u : 0u);

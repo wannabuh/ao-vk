@@ -77,6 +77,8 @@ public:
     void SetBump(float strength);
     void SetAnisotropy(uint32_t level);
     void SetMotionBlur(float strength, float focusNear);
+    void SetMotionBlurMode(uint32_t mode);
+    uint32_t MotionBlurMode() const { return m_motionMode; }
     float MotionBlur() const { return m_motionBlur; }
     uint32_t Anisotropy() const { return m_anisotropy; }
     float Bump() const { return m_bump; }
@@ -160,6 +162,7 @@ private:
     float m_bloomStrength = 1.5f, m_effectGlow = 1.0f, m_aoStrength = 1.0f, m_bump = 0.0f;
     uint32_t m_anisotropy = 1;
     float m_motionBlur = 0.0f;
+    uint32_t m_motionMode = 0;
 };
 
 }  // namespace rvk

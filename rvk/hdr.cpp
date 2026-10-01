@@ -37,6 +37,15 @@ const uint32_t kAoBlurSpirv[] = {
 const uint32_t kMotionBlurSpirv[] = {
 #include "motion_blur.frag.inc"
 };
+const uint32_t kTileMaxSpirv[] = {
+#include "motion_tilemax.frag.inc"
+};
+const uint32_t kNeighbourMaxSpirv[] = {
+#include "motion_neighbourmax.frag.inc"
+};
+const uint32_t kObjectBlurSpirv[] = {
+#include "motion_object.frag.inc"
+};
 
 }  // namespace
 
@@ -81,7 +90,7 @@ bool Device::CreateHdrResources(std::string* error)
         return Check(vkCreatePipelineLayout(m_device, &pl, nullptr, out), "post pipeline layout", error);
     };
     if (!setLayout(5, &m_tonemapSetLayout) || !pipelineLayout(m_tonemapSetLayout, &m_tonemapLayout) ||
-        !setLayout(2, &m_bloomSetLayout) || !pipelineLayout(m_bloomSetLayout, &m_bloomLayout))
+        !setLayout(4, &m_bloomSetLayout) || !pipelineLayout(m_bloomSetLayout, &m_bloomLayout))
         return false;
 
     auto module = [&](const uint32_t* code, size_t size, VkShaderModule* out) {
@@ -157,7 +166,13 @@ bool Device::CreateHdrResources(std::string* error)
               fullscreen(kAoSpirv, sizeof(kAoSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout, &m_aoPipeline) &&
               fullscreen(kAoBlurSpirv, sizeof(kAoBlurSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout,
                          &m_aoBlurPipeline) &&
-              fullscreen(kMotionBlurSpirv, sizeof(kMotionBlurSpirv), kColorFormat, false, m_bloomLayout, &m_motionPipeline);
+              fullscreen(kMotionBlurSpirv, sizeof(kMotionBlurSpirv), kColorFormat, false, m_bloomLayout, &m_motionPipeline) &&
+              fullscreen(kTileMaxSpirv, sizeof(kTileMaxSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout,
+                         &m_tileMaxPipeline) &&
+              fullscreen(kNeighbourMaxSpirv, sizeof(kNeighbourMaxSpirv), GetFormatInfo(Format::RG16F).vk, false,
+                         m_bloomLayout, &m_neighbourMaxPipeline) &&
+              fullscreen(kObjectBlurSpirv, sizeof(kObjectBlurSpirv), kColorFormat, false, m_bloomLayout,
+                         &m_objectBlurPipeline);
     vkDestroyShaderModule(m_device, vert, nullptr);
     return ok;
 }
@@ -169,7 +184,10 @@ void Device::DestroyHdrResources()
     for (Texture*& t : m_aoTex)
         if (t) { DestroyTextureNow(t); t = nullptr; }
     if (m_tonemapped) { DestroyTextureNow(m_tonemapped); m_tonemapped = nullptr; }
-    for (VkPipeline* p : {&m_bloomDown, &m_bloomUp, &m_aoPipeline, &m_aoBlurPipeline, &m_motionPipeline})
+    for (Texture*& t : m_motionTiles)
+        if (t) { DestroyTextureNow(t); t = nullptr; }
+    for (VkPipeline* p : {&m_bloomDown, &m_bloomUp, &m_aoPipeline, &m_aoBlurPipeline, &m_motionPipeline,
+                          &m_tileMaxPipeline, &m_neighbourMaxPipeline, &m_objectBlurPipeline})
         if (*p) { vkDestroyPipeline(m_device, *p, nullptr); *p = VK_NULL_HANDLE; }
     if (m_bloomLayout) vkDestroyPipelineLayout(m_device, m_bloomLayout, nullptr);
     if (m_bloomSetLayout) vkDestroyDescriptorSetLayout(m_device, m_bloomSetLayout, nullptr);
@@ -194,6 +212,8 @@ void Device::BeginScene()
 {
     m_sceneSaw3D = false;
     m_aoProjValid = false;
+    m_motionPrev.swap(m_motionCur);              // last frame's objects, for matching this frame's
+    m_motionCur.clear();
     m_glowCleared = false;
     m_glowDraws = 0;
     m_sceneEndDraw = 0;
@@ -281,8 +301,11 @@ void Device::EndScene()
                          VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
             m_depthLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         }
-        FullscreenPass(cmd, m_ldrMain, m_motionPipeline, m_tonemapped->m_view, m_depthView, m_pointSampler, motion,
-                       sizeof(motion), false);
+        if (m_motionMode == 1)
+            RenderObjectMotionBlur(cmd, motion);
+        else
+            FullscreenPass(cmd, m_ldrMain, m_motionPipeline, m_tonemapped->m_view, m_depthView, m_pointSampler, motion,
+                           sizeof(motion), false);
     }
     m_cache = StateCache{};                      // pipeline, viewport and scissor changed
     m_main = m_ldrMain;
@@ -295,7 +318,8 @@ void Device::EndScene()
 
 // One full-target pass: dst <- pipeline(src, src2). load: keep dst's contents (blended onto) instead of overwriting.
 void Device::FullscreenPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, VkImageView src, VkImageView src2,
-                            VkSampler sampler, const float* params, uint32_t paramBytes, bool load)
+                            VkSampler sampler, const float* params, uint32_t paramBytes, bool load, VkImageView src3,
+                            VkImageView src4)
 {
     Transition(cmd, dst, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
@@ -314,16 +338,19 @@ void Device::FullscreenPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeli
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    VkDescriptorImageInfo images[2] = {{sampler, src, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-                                       {sampler, src2, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
-    VkWriteDescriptorSet w[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
-    for (uint32_t i = 0; i < 2; ++i) {
+    // Unused bindings get the first image (the layouts have four).
+    VkImageView views[4] = {src, src2, src3 ? src3 : src, src4 ? src4 : src};
+    VkDescriptorImageInfo images[4];
+    VkWriteDescriptorSet w[4] = {};
+    for (uint32_t i = 0; i < 4; ++i) {
+        images[i] = {sampler, views[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         w[i].dstBinding = i;
         w[i].descriptorCount = 1;
         w[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         w[i].pImageInfo = &images[i];
     }
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_bloomLayout, 0, 2, w);
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_bloomLayout, 0, 4, w);
     vkCmdPushConstants(cmd, m_bloomLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, paramBytes, params);
     vkCmdDraw(cmd, 3, 1, 0, 0);
     vkCmdEndRendering(cmd);
@@ -399,6 +426,35 @@ void Device::RenderBloom(VkCommandBuffer cmd)
         FullscreenPass(cmd, m_bloomLevels[i], m_bloomUp, smaller->m_view, smaller->m_view, m_linearSampler, params, 16, true);
     }
     Transition(cmd, m_bloomLevels[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+// Per-object motion blur from the motion vectors: strongest motion per tile, of each tile's neighbourhood, then the
+// reconstruction filter from m_tonemapped into the main target. The depth buffer is readable (EndScene).
+void Device::RenderObjectMotionBlur(VkCommandBuffer cmd, const float params[24])
+{
+    uint32_t tw = (m_scene->m_width + kMotionTile - 1) / kMotionTile, th = (m_scene->m_height + kMotionTile - 1) / kMotionTile;
+    if (!m_motionTiles[0] || m_motionTiles[0]->m_width != tw || m_motionTiles[0]->m_height != th) {
+        for (Texture*& t : m_motionTiles) {
+            if (t) DestroyTexture(t);
+            t = CreateImage(tw, th, Format::RG16F, 1, true);
+        }
+    }
+    if (!m_motionTiles[0] || !m_motionTiles[1]) {
+        FullscreenPass(cmd, m_ldrMain, m_motionPipeline, m_tonemapped->m_view, m_depthView, m_pointSampler, params, 96, false);
+        return;
+    }
+    // The blur reaches at most a tile beyond its own: cap the motion at two tiles.
+    float p[24];
+    std::memcpy(p, params, sizeof(p));
+    p[17] = std::min(p[17], float(2 * kMotionTile));
+    Transition(cmd, m_motionVectors, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    FullscreenPass(cmd, m_motionTiles[0], m_tileMaxPipeline, m_motionVectors->m_view, m_depthView, m_pointSampler, p, 96, false);
+    Transition(cmd, m_motionTiles[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    FullscreenPass(cmd, m_motionTiles[1], m_neighbourMaxPipeline, m_motionTiles[0]->m_view, m_motionTiles[0]->m_view,
+                   m_pointSampler, p, 96, false);
+    Transition(cmd, m_motionTiles[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    FullscreenPass(cmd, m_ldrMain, m_objectBlurPipeline, m_tonemapped->m_view, m_depthView, m_pointSampler, p, 96, false,
+                   m_motionVectors->m_view, m_motionTiles[1]->m_view);
 }
 
 // This frame's camera against the last one's: the reprojection matrix (current clip -> previous clip) and the blur

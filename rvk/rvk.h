@@ -167,6 +167,10 @@ public:
     // With HDR: camera motion blur (hdr.cpp). strength = exposure as a fraction of 1/60 s (0 = off); nothing nearer
     // than focusNear (the player's character, followed by the camera) is blurred.
     void SetMotionBlur(float strength, float focusNear) { m_motionBlur = strength; m_motionNear = focusNear; }
+    // Motion blur mode: 0 = camera (from depth and the two cameras), 1 = per object (motion vectors: objects moving
+    // through the world blur too, matched across frames by mesh; the character the camera follows stays sharp).
+    void SetMotionBlurMode(uint32_t mode) { if (m_motionMode != mode) { m_motionMode = mode; m_frameLightsDirty = true; } }
+    uint32_t MotionBlurMode() const { return m_motionMode; }
     float MotionBlur() const { return m_motionBlur; }
     // With HDR: ambient occlusion from the depth buffer (hdr.cpp). strength 0 = off; radius in world units.
     void SetAo(float strength, float radius) { m_aoStrength = strength; m_aoRadius = radius; }
@@ -259,6 +263,7 @@ private:
         bool buffersBound = false;
         bool glowBlendSet = false;               // attachment 1 (glow) blend state, HDR pipelines
         uint32_t fractionEnable = ~0u, fractionSrc = ~0u, fractionDst = ~0u;   // attachment 2 (local-light fraction)
+        uint32_t motionKeep = ~0u;               // attachment 3 (motion vectors): 1 = kept (draw doesn't write)
     };
 
     bool CreateInstance(std::string* error);
@@ -472,13 +477,25 @@ private:
     void RenderBloom(VkCommandBuffer cmd);
     // One full-target pass into dst reading src (binding 0) and src2 (binding 1), which must be readable already.
     void FullscreenPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, VkImageView src, VkImageView src2,
-                        VkSampler sampler, const float* params, uint32_t paramBytes, bool load);
+                        VkSampler sampler, const float* params, uint32_t paramBytes, bool load,
+                        VkImageView src3 = VK_NULL_HANDLE, VkImageView src4 = VK_NULL_HANDLE);
+    void RenderObjectMotionBlur(VkCommandBuffer cmd, const float params[24]);
     float m_aoStrength = 1.0f, m_aoRadius = 1.5f;
     Texture* m_aoTex[2] = {};                    // half resolution: raw, blurred (ping-pong)
     VkPipeline m_aoPipeline = VK_NULL_HANDLE, m_aoBlurPipeline = VK_NULL_HANDLE;
     d3d::Matrix m_aoProj{};                      // the world camera's projection (first depth-writing 3D draw)
     d3d::Matrix m_aoView{};                      // ... and view
     float m_motionBlur = 0.0f, m_motionNear = 8.0f;
+    uint32_t m_motionMode = 0;
+    Texture* m_motionVectors = nullptr;          // fourth scene attachment: screen motion since last frame (pixels)
+    Texture* m_motionTiles[2] = {};              // per 32-pixel tile: strongest motion, then of the 3x3 neighbourhood
+    VkPipeline m_tileMaxPipeline = VK_NULL_HANDLE, m_neighbourMaxPipeline = VK_NULL_HANDLE, m_objectBlurPipeline = VK_NULL_HANDLE;
+    static constexpr uint32_t kMotionTile = 32;
+    // Matching draws across frames (motion vectors): last frame's and this frame's world matrices by mesh key.
+    struct MotionEntry { d3d::Matrix world; bool used; };
+    std::unordered_map<uint64_t, std::vector<MotionEntry>> m_motionPrev, m_motionCur;
+    bool MotionVectorDraw(uint32_t fvf) const;   // this draw writes motion vectors
+    uint64_t MotionKey(uint32_t primitive, uint32_t fvf, uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount) const;
     Texture* m_tonemapped = nullptr;             // with motion blur: the tone mapped scene, blurred into m_ldrMain
     VkPipeline m_motionPipeline = VK_NULL_HANDLE;
     d3d::Matrix m_prevViewProj{};                // the last frame's world camera

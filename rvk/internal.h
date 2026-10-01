@@ -37,6 +37,8 @@ struct DrawConstants {
 static_assert(sizeof(DrawConstants) % 16 == 0, "std140 block size");
 struct DrawTransform {
     d3d::Matrix world;
+    d3d::Matrix prevWorld;         // motion vectors: the object's world matrix last frame
+    float motion[4];               // x: 1 = drawn with the world camera
 };
 
 enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE = 8, F_FOG = 16, F_RANGEFOG = 32,
@@ -53,6 +55,7 @@ struct FrameLights {               // binding 4: per-frame data (constants.glsl 
     d3d::Matrix shadowViewProj;
     float shadowParams[4];         // enabled, strength, texel size (world units), point light shadow strength
     float sunDir[4];               // w: light headroom (F_OVERBRIGHT)
+    d3d::Matrix prevViewProj;      // motion vectors: the world camera last frame
     GpuLight lights[kFrameLights];
 };
 

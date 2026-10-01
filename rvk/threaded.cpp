@@ -362,6 +362,12 @@ void ThreadedDevice::SetMotionBlur(float strength, float focusNear)
     Enqueue([this, strength, focusNear](const uint8_t*) { m_device.SetMotionBlur(strength, focusNear); });
 }
 
+void ThreadedDevice::SetMotionBlurMode(uint32_t mode)
+{
+    m_motionMode = mode;
+    Enqueue([this, mode](const uint8_t*) { m_device.SetMotionBlurMode(mode); });
+}
+
 void ThreadedDevice::SetAnisotropy(uint32_t level)
 {
     m_anisotropy = level < 1 ? 1 : level;
