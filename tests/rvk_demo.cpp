@@ -838,6 +838,18 @@ void RunShadowTest(D& dev, int frames, const std::string& shot)
                         {4, 3, 9, 0, 0, -1, 0xFFFFFFFF, 1, 0}, {4, 0, 9, 0, 0, -1, 0xFFFFFFFF, 1, 1}};
         dev.DrawPrimitive(TriangleFan, kFvfMesh, f, 4);
         dev.SetRenderState(RS_ALPHATESTENABLE, 0);
+        // A static object drawn the way Anarchy Online draws most of them: alpha-blended but writing depth. Its
+        // texture's transparent cells must cut holes into its shadow.
+        {
+            std::vector<VtxMesh> sv;
+            std::vector<uint16_t> si;
+            AddCube(sv, si, -8, 1.2f, -3, 1.2f);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+            dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+            dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
+            dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, sv.data(), uint32_t(sv.size()), si.data(), uint32_t(si.size()));
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        }
         // Anarchy Online's blob shadow (GfxVisualSimpleShadow_c, 8 segments) under the small cube: rvk hides it
         // once sun shadows are available (from the second frame).
         dev.SetRenderState(RS_LIGHTING, 0);

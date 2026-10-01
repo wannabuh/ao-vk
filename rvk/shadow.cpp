@@ -198,13 +198,19 @@ void Device::PrepareShadowMap(VkCommandBuffer cmd)
     m_shadowImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
-// Opaque (or alpha-tested) 3D triangles drawn into the main target with depth writes. That leaves out the
-// sky, effects, transparent surfaces and pre-transformed (XYZRHW) geometry.
+// 3D triangles drawn into the main target with depth writes: opaque, alpha-tested, or alpha-blended the way
+// Anarchy Online draws most static objects (blended, but writing depth - solid apart from the texture's cut-out
+// parts). That leaves out the sky, effects, see-through surfaces and pre-transformed (XYZRHW) geometry.
 bool Device::IsShadowCaster(uint32_t primitive, uint32_t fvf) const
 {
-    return m_shadows && m_target == m_main && TopologyClassOf(primitive) == 2 &&
-           (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ && m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE] &&
-           !m_rs[d3d::RS_ALPHABLENDENABLE];
+    if (!m_shadows || m_target != m_main || TopologyClassOf(primitive) != 2 ||
+        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || !m_rs[d3d::RS_ZENABLE] || !m_rs[d3d::RS_ZWRITEENABLE])
+        return false;
+    if (!m_rs[d3d::RS_ALPHABLENDENABLE])
+        return true;
+    bool alphaBlend = m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA;
+    bool translucentMaterial = m_rs[d3d::RS_LIGHTING] && m_material.diffuse.a < 0.5f;     // glass and the like
+    return alphaBlend && !translucentMaterial;
 }
 
 // Called by Draw for every draw, after its geometry went into the ring.
@@ -226,12 +232,15 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     c.texture = nullptr;
     c.texOffset = -1;
     c.alphaRef = -1.0f;
-    if (m_rs[d3d::RS_ALPHATESTENABLE] && m_textures[0]) {
+    bool alphaTest = m_rs[d3d::RS_ALPHATESTENABLE] != 0, alphaBlend = m_rs[d3d::RS_ALPHABLENDENABLE] != 0;
+    if ((alphaTest || alphaBlend) && m_textures[0]) {
         FvfLayout layout = DecodeFvf(fvf);
         c.texOffset = layout.offset[4];
         if (c.texOffset >= 0) {
+            // Cut out where the texture is transparent: the alpha test's reference, or half for blended surfaces.
             c.texture = m_textures[0];
-            c.alphaRef = float(m_rs[d3d::RS_ALPHAREF] & 0xFF) / 255.0f;
+            float ref = alphaTest ? float(m_rs[d3d::RS_ALPHAREF] & 0xFF) / 255.0f : 0.0f;
+            c.alphaRef = alphaBlend ? std::max(ref, 0.5f) : ref;
         }
     }
     m_casters.push_back(c);
