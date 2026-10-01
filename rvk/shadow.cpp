@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <climits>
 #include <cstring>
 
 namespace rvk {
@@ -282,28 +283,10 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     c.ibOffset = ibOffset;
     c.world = m_world;
     c.generation = m_ringGeneration;
-    c.texture = nullptr;
-    c.texOffset = -1;
-    c.alphaRef = -1.0f;
-    bool alphaTest = m_rs[d3d::RS_ALPHATESTENABLE] != 0, alphaBlend = m_rs[d3d::RS_ALPHABLENDENABLE] != 0;
-    if ((alphaTest || alphaBlend) && m_textures[0]) {
-        FvfLayout layout = DecodeFvf(fvf);
-        c.texOffset = layout.offset[4];
-        if (c.texOffset >= 0) {
-            // Cut out where the texture is transparent: the alpha test's reference, or half for blended surfaces.
-            c.texture = m_textures[0];
-            float ref = alphaTest ? float(m_rs[d3d::RS_ALPHAREF] & 0xFF) / 255.0f : 0.0f;
-            c.alphaRef = alphaBlend ? std::max(ref, 0.5f) : ref;
-        }
-    }
+    ShadowCutout(fvf, &c.texture, &c.texOffset, &c.alphaRef);
     m_casters.push_back(c);
 
-    // Static caster cache: identity = geometry, world matrix and cut-out texture.
-    uint64_t key = HashBytes(vertices, size_t(stride) * vertexCount, 0x5EEDull ^ (uint64_t(fvf) << 32) ^ primitive);
-    if (indexCount)
-        key = HashBytes(indices, size_t(indexCount) * 2, key);
-    key = HashBytes(&c.world, sizeof(c.world), key);
-    key = HashBytes(&c.texture, sizeof(c.texture), key ^ uint64_t(c.texOffset + 1));
+    uint64_t key = CasterKey(primitive, fvf, stride, vertices, vertexCount, indices, indexCount);
     auto cached = m_casterCache.find(key);
     if (cached != m_casterCache.end()) {
         cached->second.lastSeen = m_frameNumber;
@@ -315,6 +298,54 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     streak.lastFrame = m_frameNumber;
     if (streak.count >= kPromoteFrames)
         CacheCaster(key, c, vertices, indices);
+}
+
+// Alpha-tested and alpha-blended casters are cut out where texture 0 is transparent: the alpha test's reference,
+// or half for blended surfaces.
+void Device::ShadowCutout(uint32_t fvf, Texture** texture, int* texOffset, float* alphaRef) const
+{
+    *texture = nullptr;
+    *texOffset = -1;
+    *alphaRef = -1.0f;
+    bool alphaTest = m_rs[d3d::RS_ALPHATESTENABLE] != 0, alphaBlend = m_rs[d3d::RS_ALPHABLENDENABLE] != 0;
+    if (!(alphaTest || alphaBlend) || !m_textures[0])
+        return;
+    int offset = DecodeFvf(fvf).offset[4];
+    if (offset < 0)
+        return;
+    *texture = m_textures[0];
+    *texOffset = offset;
+    float ref = alphaTest ? float(m_rs[d3d::RS_ALPHAREF] & 0xFF) / 255.0f : 0.0f;
+    *alphaRef = alphaBlend ? std::max(ref, 0.5f) : ref;
+}
+
+// Identity of a caster across frames: mesh structure (format, counts, indices), placement (world matrix), cut-out
+// texture and its bounds rounded to 4 units - but not the exact vertices, so plants swaying in the wind (whose
+// vertices change every frame) are still the same caster.
+uint64_t Device::CasterKey(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
+                           const uint16_t* indices, uint32_t indexCount) const
+{
+    Texture* texture;
+    int texOffset;
+    float alphaRef;
+    ShadowCutout(fvf, &texture, &texOffset, &alphaRef);
+    int32_t bounds[6] = {INT32_MAX, INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN, INT32_MIN};
+    const uint8_t* v = static_cast<const uint8_t*>(vertices);
+    for (uint32_t i = 0; i < vertexCount; ++i) {
+        float p[3];
+        std::memcpy(p, v + size_t(i) * stride, sizeof(p));
+        for (int j = 0; j < 3; ++j) {
+            int32_t q = int32_t(std::floor(p[j] * 0.25f));
+            bounds[j] = std::min(bounds[j], q);
+            bounds[3 + j] = std::max(bounds[3 + j], q);
+        }
+    }
+    uint64_t key = 0x5EEDull ^ (uint64_t(fvf) << 32) ^ (uint64_t(primitive) << 24) ^ vertexCount;
+    key = HashBytes(bounds, sizeof(bounds), key);
+    if (indexCount)
+        key = HashBytes(indices, size_t(indexCount) * 2, key ^ indexCount);
+    key = HashBytes(&m_world, sizeof(m_world), key);
+    return HashBytes(&texture, sizeof(texture), key ^ uint64_t(texOffset + 1));
 }
 
 void Device::CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertices, const uint16_t* indices)
@@ -589,9 +620,11 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
             vkCmdDraw(cmd, c.vertexCount, 1, uint32_t(c.vbOffset / c.stride), 0);
     }
     // Remembered static casters the game didn't draw this frame (out of view), if they reach into the map.
+    m_cachedCastersDrawn = 0;
     for (auto& [key, e] : m_casterCache) {
         if (e.lastSeen == m_frameNumber || BoxInClip(e.boundsMin, e.boundsMax, lightViewProj, false) == -1)
             continue;
+        ++m_cachedCastersDrawn;
         int pipeline = e.texture ? 1 : 0;
         if (pipeline != boundPipeline) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelines[pipeline]);

@@ -38,7 +38,8 @@ void Device::BeginFrameDump()
 void Device::EndFrameDump()
 {
     if (!m_dumpFile) return;
-    std::fprintf(m_dumpFile, "# end: %u draws\n", m_dumpDraw);
+    std::fprintf(m_dumpFile, "# end: %u draws; %zu casters this frame, %zu remembered (%u drawn out of view last frame)\n",
+                 m_dumpDraw, m_casters.size(), m_casterCache.size(), m_cachedCastersDrawn);
     std::fclose(m_dumpFile);
     m_dumpFile = nullptr;
 }
@@ -49,7 +50,8 @@ static void Mul(const d3d::Matrix& m, const float in[4], float out[4])
         out[c] = in[0] * m.m[0][c] + in[1] * m.m[1][c] + in[2] * m.m[2][c] + in[3] * m.m[3][c];
 }
 
-void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t indexCount)
+void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount, const uint16_t* indices,
+                      uint32_t indexCount)
 {
     uint32_t n = m_dumpDraw++;
     if ((fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW) return;     // 2D
@@ -129,6 +131,12 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
                  m_rs[d3d::RS_ZFUNC], m_world.m[3][0], m_world.m[3][1], m_world.m[3][2]);
     if (IsShadowCaster(primitive, fvf) || ShadowReceiver(fvf))
         std::fprintf(f, " | shadow %s%s", IsShadowCaster(primitive, fvf) ? "C" : "", ShadowReceiver(fvf) ? "R" : "");
+    if (IsShadowCaster(primitive, fvf)) {
+        uint64_t key = CasterKey(primitive, fvf, layout.stride, vertices, vertexCount, indices, indexCount);
+        auto streak = m_casterStreaks.find(key);
+        if (m_casterCache.count(key)) std::fprintf(f, " remembered");
+        else std::fprintf(f, " seen %u", streak != m_casterStreaks.end() ? streak->second.count : 0u);
+    }
     if (minX <= maxX) std::fprintf(f, " | rect %.0f,%.0f-%.0f,%.0f", minX, minY, maxX, maxY);
     else std::fprintf(f, " | offscreen");
     std::fprintf(f, "\n");

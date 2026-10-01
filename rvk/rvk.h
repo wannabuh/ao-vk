@@ -297,6 +297,10 @@ private:
     std::vector<std::pair<uint64_t, std::pair<VkBuffer, VmaAllocation_T*>>> m_deadBuffers;
     d3d::Matrix m_frameViewProj{};               // the frame's camera (UpdateFrameEye)
     void CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertices, const uint16_t* indices);
+    void ShadowCutout(uint32_t fvf, Texture** texture, int* texOffset, float* alphaRef) const;
+    uint64_t CasterKey(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
+                       const uint16_t* indices, uint32_t indexCount) const;
+    uint32_t m_cachedCastersDrawn = 0;           // last shadow pass: remembered casters drawn (frame dumps)
     void UpdateCasterCache();
     void ForgetCachedCaster(std::unordered_map<uint64_t, CachedCaster>::iterator it);
     void ForgetCasterTexture(Texture* texture);
@@ -386,7 +390,8 @@ private:
     std::vector<bool> m_dumpedLightValid;
     void BeginFrameDump();
     void EndFrameDump();
-    void DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t indexCount);
+    void DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount, const uint16_t* indices,
+                  uint32_t indexCount);
     VkBuffer m_readback = VK_NULL_HANDLE;
     VmaAllocation_T* m_readbackAllocation = nullptr;
     void* m_readbackData = nullptr;

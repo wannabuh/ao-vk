@@ -510,7 +510,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (!m_inFrame || !vertexCount)
         return;
     if (m_dumpFile)
-        DumpDraw(primitive, fvf, vertices, vertexCount, indexCount);
+        DumpDraw(primitive, fvf, vertices, vertexCount, indices, indexCount);
     if (IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount))
         return;                                  // replaced by sun shadows
     Frame& f = m_frames[m_frameIndex];

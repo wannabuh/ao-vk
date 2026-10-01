@@ -885,6 +885,9 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest)
             std::vector<VtxMesh> v;
             std::vector<uint16_t> idx;
             AddCube(v, idx, cubes[k][0], cubes[k][1], cubes[k][2], cubes[k][3]);
+            if (k == 2 && cacheTest > 0)             // swaying like a plant: its vertices change every frame
+                for (VtxMesh& m : v)
+                    if (m.y > 1.0f) m.x += 0.15f * std::sin(frame * 0.7f);
             dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, v.data(), uint32_t(v.size()), idx.data(), uint32_t(idx.size()));
         }
         // Alpha-tested fence: its shadow must have holes.
