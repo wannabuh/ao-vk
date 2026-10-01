@@ -222,6 +222,8 @@ public:
         float adapt = 1.0f;
         float follow = 0.7f;                     // how much young particles follow their sprite's motion (0..1)
         float brightness = 2.0f;                 // colour multiplier (smaller particles cover less: they need more)
+        float trail = 0.05f;                     // motion trails: seconds of motion each particle is stretched over (0 = off)
+        float trailMax = 6.0f;                   // longest trail, in particle sizes
     };
     void SetParticleParams(const ParticleParams& params) { m_particleParams = params; }
     const ParticleParams& GetParticleParams() const { return m_particleParams; }

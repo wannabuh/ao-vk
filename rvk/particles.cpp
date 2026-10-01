@@ -361,8 +361,8 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
         dt, float(m_particleTime), float(perSprite), float(m_frameNumber & 0xFFFFFF),
         p.size, p.life, p.curl, p.swirl,
         0.0f, p.drag, std::clamp(p.follow, 0.0f, 1.0f), p.speed,
-        v[0][0], v[1][0], v[2][0], 0.0f,          // camera right: the view matrix's first column
-        v[0][1], v[1][1], v[2][1], 0.0f,          // camera up: its second
+        v[0][0], v[1][0], v[2][0], std::max(p.trail, 0.0f),     // camera right: the view matrix's first column
+        v[0][1], v[1][1], v[2][1], std::max(p.trailMax, 1.0f),  // camera up: its second
     };
     vkCmdPushConstants(cmd, m_particleLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), push);
     vkCmdDispatch(cmd, perSprite * kParticleSlots / kGroupSize, n, 1);

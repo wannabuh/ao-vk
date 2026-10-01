@@ -45,8 +45,8 @@ layout(push_constant) uniform Params {
     vec4 a;             // dt, time, particles per sprite, frame number
     vec4 b;             // size factor, life, curl speed, swirl speed
     vec4 c;             // -, drag, follow (how much young particles follow their sprite), launch speed
-    vec4 right;         // camera right (world)
-    vec4 up;            // camera up (world)
+    vec4 right;         // camera right (world); w: trail length (seconds of motion shown, 0 = round sprites)
+    vec4 up;            // camera up (world); w: longest trail, in particle sizes
 } pc;
 
 uint Hash(uint x)
@@ -182,13 +182,27 @@ void main()
     float t = live ? P.posAge.w / P.velLife.w : 1.0;
     float fade = live ? smoothstep(0.0, 0.1, t) * (1.0 - smoothstep(0.55, 1.0, t)) : 0.0;
     float extent = live ? uintBitsToFloat(P.meta.y) * 0.5 * (1.0 - 0.4 * t) : 0.0;
+    // Motion trail: the quad is stretched back along the particle's motion across the screen (velocity aligned), its
+    // head at the particle. Longer streaks cover more pixels, so they are dimmed a little to keep their brightness.
+    vec2 screenVel = vec2(dot(P.velLife.xyz, pc.right.xyz), dot(P.velLife.xyz, pc.up.xyz));
+    float speed = length(screenVel);
+    float trail = min(speed * pc.right.w, extent * 2.0 * pc.up.w);
+    vec3 along = pc.right.xyz, across = pc.up.xyz;
+    if (trail > extent * 0.05 && speed > 1e-4) {
+        vec2 d = screenVel / speed;
+        along = d.x * pc.right.xyz + d.y * pc.up.xyz;      // screen direction of motion, in world space
+        across = -d.y * pc.right.xyz + d.x * pc.up.xyz;
+        fade *= inversesqrt(1.0 + trail / (2.0 * extent));
+    } else {
+        trail = 0.0;
+    }
     uint color = (P.meta.x & 0x00FFFFFFu) | (uint(float(P.meta.x >> 24) * fade + 0.5) << 24);
-    vec3 right = pc.right.xyz * extent, up = pc.up.xyz * extent;
+    vec3 head = along * extent, tail = -along * (extent + trail), side = across * extent;
     uint v = (list * PER_BLOCK + p) * 4u;
     vec3 c = P.posAge.xyz;
     vec4 uv = P.uv;
-    WriteVertex(v + 0u, c - right - up, color, vec2(uv.x, uv.y + uv.w));
-    WriteVertex(v + 1u, c + right - up, color, vec2(uv.x + uv.z, uv.y + uv.w));
-    WriteVertex(v + 2u, c - right + up, color, vec2(uv.x, uv.y));
-    WriteVertex(v + 3u, c + right + up, color, vec2(uv.x + uv.z, uv.y));
+    WriteVertex(v + 0u, c + tail - side, color, vec2(uv.x, uv.y + uv.w));
+    WriteVertex(v + 1u, c + head - side, color, vec2(uv.x + uv.z, uv.y + uv.w));
+    WriteVertex(v + 2u, c + tail + side, color, vec2(uv.x, uv.y));
+    WriteVertex(v + 3u, c + head + side, color, vec2(uv.x + uv.z, uv.y));
 }
