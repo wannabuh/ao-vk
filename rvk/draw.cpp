@@ -154,13 +154,15 @@ void Device::SetLight(uint32_t index, const d3d::Light& light)
     if (index >= m_lights.size())
         m_lights.resize(index + 1);
     LightSlot& slot = m_lights[index];
-    if (std::memcmp(&slot.light, &light, sizeof(light)) != 0 && slot.liveFrame + 1 >= m_frameNumber)
-        m_frameLightsDirty = true;
+    if (std::memcmp(&slot.light, &light, sizeof(light)) != 0)
+        ++slot.version;
     slot.light = light;
-    if (slot.enabled)
+    slot.cosHalfTheta = std::cos(light.theta * 0.5f);
+    slot.cosHalfPhi = std::cos(light.phi * 0.5f);
+    if (slot.enabled) {
         m_constantsDirty = true;
-    m_lights[index].cosHalfTheta = std::cos(light.theta * 0.5f);
-    m_lights[index].cosHalfPhi = std::cos(light.phi * 0.5f);
+        CaptureLight(slot);
+    }
 }
 
 void Device::LightEnable(uint32_t index, bool enable)
@@ -172,15 +174,41 @@ void Device::LightEnable(uint32_t index, bool enable)
         slot.enabled = enable;
         m_constantsDirty = true;
     }
-    if (enable) {
-        if (slot.liveFrame + 1 < m_frameNumber)    // newly active
-            m_frameLightsDirty = true;
-        slot.liveFrame = m_frameNumber;
-    }
+    if (enable)
+        CaptureLight(slot);
 }
 
-// The frame's active point / spot lights (enabled for some draw this frame or the last), nearest first by the
-// distance from the camera to their sphere of influence.
+// Collects the point / spot lights the game uses during a frame, by what they are rather than by slot: Randy
+// reassigns light slots while it draws (more so while the camera moves), so a slot's content at any one moment
+// says little. Same colours / range / attenuation at nearly the same place = the same light (its latest data).
+void Device::CaptureLight(LightSlot& slot)
+{
+    if (slot.capturedFrame == m_frameNumber && slot.capturedVersion == slot.version)
+        return;
+    slot.capturedFrame = m_frameNumber;
+    slot.capturedVersion = slot.version;
+    const d3d::Light& l = slot.light;
+    if (l.type == d3d::LIGHT_DIRECTIONAL || l.range <= 0.0f)
+        return;
+    auto sameKind = [](const d3d::Light& a, const d3d::Light& b) {
+        d3d::Light x = a, y = b;
+        x.position = y.position = {};
+        return std::memcmp(&x, &y, sizeof(x)) == 0;
+    };
+    for (CapturedLight& c : m_lightsCur) {
+        float dx = c.light.position.x - l.position.x, dy = c.light.position.y - l.position.y,
+              dz = c.light.position.z - l.position.z;
+        if (dx * dx + dy * dy + dz * dz < 0.25f && sameKind(c.light, l)) {
+            c.light = l;
+            return;
+        }
+    }
+    if (m_lightsCur.size() < 512)
+        m_lightsCur.push_back({l, slot.cosHalfTheta, slot.cosHalfPhi});
+}
+
+// The point / spot lights the game used during the previous frame (complete, so every draw of this frame gets
+// the same list), nearest first by the distance from the camera to their sphere of influence.
 VkDeviceSize Device::WriteFrameLights()
 {
     void* cpu;
@@ -188,8 +216,8 @@ VkDeviceSize Device::WriteFrameLights()
     m_frameLightsOffset = offset;
     m_frameLightsGeneration = m_ringGeneration;
     m_frameLightsDirty = false;
-    // One camera per frame: the view at the frame's first lit draw (the world). Rebuilds later in the frame
-    // may happen under other views (sky, 3D interface elements) and must not pick a different set of lights.
+    // One camera per frame: the view at the frame's first lit draw (the world), not that of later draws
+    // under other views (sky, 3D interface elements).
     if (!m_frameEyeValid) {
         const auto& v = m_view.m;
         for (int i = 0; i < 3; ++i) m_frameEye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
@@ -197,14 +225,12 @@ VkDeviceSize Device::WriteFrameLights()
     }
     const float* eye = m_frameEye;
     struct Candidate { float key; uint32_t index; };
-    Candidate candidates[256];
+    Candidate candidates[512];
     uint32_t count = 0;
-    for (uint32_t i = 0; i < m_lights.size() && count < 256; ++i) {
-        const LightSlot& s = m_lights[i];
-        if (s.liveFrame + 1 < m_frameNumber || s.light.type == d3d::LIGHT_DIRECTIONAL || s.light.range <= 0.0f)
-            continue;
-        float dx = s.light.position.x - eye[0], dy = s.light.position.y - eye[1], dz = s.light.position.z - eye[2];
-        candidates[count++] = {std::max(0.0f, std::sqrt(dx * dx + dy * dy + dz * dz) - s.light.range), i};
+    for (uint32_t i = 0; i < m_lightsPrev.size(); ++i) {
+        const d3d::Light& l = m_lightsPrev[i].light;
+        float dx = l.position.x - eye[0], dy = l.position.y - eye[1], dz = l.position.z - eye[2];
+        candidates[count++] = {std::max(0.0f, std::sqrt(dx * dx + dy * dy + dz * dz) - l.range), i};
     }
     uint32_t used = std::min(count, kFrameLights);
     std::partial_sort(candidates, candidates + used, candidates + count,
@@ -213,13 +239,16 @@ VkDeviceSize Device::WriteFrameLights()
     fl->info[0] = used;
     fl->info[1] = fl->info[2] = fl->info[3] = 0;
     for (uint32_t k = 0; k < used; ++k) {
-        const LightSlot& slot = m_lights[candidates[k].index];
-        FillGpuLight(slot.light, slot.cosHalfTheta, slot.cosHalfPhi, fl->lights[k]);
+        const CapturedLight& c = m_lightsPrev[candidates[k].index];
+        FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k]);
     }
     if (m_dumpFile) {
-        std::fprintf(m_dumpFile, "FL at draw %u: %u of %u active lights, eye (%.1f %.1f %.1f):", m_dumpDraw, used, count,
-                     eye[0], eye[1], eye[2]);
-        for (uint32_t k = 0; k < used; ++k) std::fprintf(m_dumpFile, " %u", candidates[k].index);
+        std::fprintf(m_dumpFile, "FL at draw %u: %u of %u lights captured last frame, eye (%.1f %.1f %.1f):", m_dumpDraw,
+                     used, count, eye[0], eye[1], eye[2]);
+        for (uint32_t k = 0; k < used; ++k) {
+            const d3d::Light& l = m_lightsPrev[candidates[k].index].light;
+            std::fprintf(m_dumpFile, " (%.1f %.1f %.1f r%.1f)", l.position.x, l.position.y, l.position.z, l.range);
+        }
         std::fprintf(m_dumpFile, "\n");
     }
     return offset;
@@ -487,7 +516,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     bool needLights = m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
                       (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW;
     VkDeviceSize frameLightsOffset = m_frameLightsGeneration == m_ringGeneration ? m_frameLightsOffset : 0;
-    if (needLights && (m_frameLightsDirty || m_frameLightsGeneration != m_ringGeneration))
+    if (needLights && (m_frameLightsDirty || m_frameLightsGeneration != m_ringGeneration))   // once per frame
         frameLightsOffset = WriteFrameLights();
 
     // Per-draw world matrix (small block).

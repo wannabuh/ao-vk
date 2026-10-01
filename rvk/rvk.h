@@ -187,7 +187,9 @@ private:
         d3d::Light light{};
         bool enabled = false;
         float cosHalfTheta = 1.0f, cosHalfPhi = 1.0f;   // precomputed for the shader
-        uint64_t liveFrame = 0;                          // last frame the light was enabled for some draw
+        uint32_t version = 0;                            // bumped when the light data changes
+        uint64_t capturedFrame = ~0ull;                  // CaptureLight: last capture (frame, version)
+        uint32_t capturedVersion = 0;
     };
 
     // What is currently set in the main command buffer, so unchanged state isn't re-issued (every Vulkan
@@ -233,6 +235,9 @@ private:
     uint64_t m_frameLightsGeneration = ~0ull;
     VkDeviceSize m_frameLightsOffset = 0;
     VkDeviceSize WriteFrameLights();
+    struct CapturedLight { d3d::Light light; float cosHalfTheta, cosHalfPhi; };
+    std::vector<CapturedLight> m_lightsCur, m_lightsPrev;   // point / spot lights used this / last frame
+    void CaptureLight(LightSlot& slot);
     uint64_t m_ringGeneration = 0, m_constantsGeneration = ~0ull;
     VkDeviceSize m_constantsOffset = 0;
     uint32_t m_constantsFvf = ~0u;

@@ -904,7 +904,9 @@ void Device::BeginFrame()
     vkBeginCommandBuffer(f.main, &b);
     m_cache = StateCache{};
     ++m_frameNumber;
-    m_frameLightsDirty = true;                   // the camera moved and lights came and went
+    m_lightsPrev.swap(m_lightsCur);              // last frame's complete light set lights this frame
+    m_lightsCur.clear();
+    m_frameLightsDirty = true;
     m_frameEyeValid = false;
     m_inFrame = true;
     BeginRenderingOn(m_target);
