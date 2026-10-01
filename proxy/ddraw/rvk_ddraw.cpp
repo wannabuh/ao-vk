@@ -89,18 +89,19 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     GetEnvironmentVariableA("RANDYVK_SHADOW_RANGE", range, sizeof(range));
     device->SetShadows(shadows[0] != '0');
     device->SetShadowParams(float(std::atof(strength)), float(std::atof(range)));
-    char pointShadows[8] = "4", pointStrength[16] = "0.9";
+    char pointShadows[8] = "4", pointStrength[16] = "0.9", pointDay[16] = "0.25";
     GetEnvironmentVariableA("RANDYVK_POINT_SHADOWS", pointShadows, sizeof(pointShadows));
     GetEnvironmentVariableA("RANDYVK_POINT_SHADOW_STRENGTH", pointStrength, sizeof(pointStrength));
+    GetEnvironmentVariableA("RANDYVK_POINT_SHADOW_DAY", pointDay, sizeof(pointDay));
     device->SetPointShadows(uint32_t(std::max(0, std::atoi(pointShadows))));
-    device->SetPointShadowStrength(float(std::atof(pointStrength)));
+    device->SetPointShadowStrength(float(std::atof(pointStrength)), float(std::atof(pointDay)));
     gpuName = device->Info().gpu;
     RvkLog("rvk device %ux%u on %s (window %p, %s, %s lighting)", width, height, gpuName.c_str(), (void*)window,
            device->Threaded() ? "worker thread" : "calling thread", device->PixelLighting() ? "per-pixel" : "per-vertex");
     RvkLog("rvk light override (frame's nearest lights for every lit draw): %s", device->LightOverride() ? "on" : "off");
     RvkLog("rvk sun shadows: %s (strength %s, range %s)", device->Shadows() ? "on" : "off", strength, range);
-    RvkLog("rvk point light shadows: %u lights (strength %s; needs per-pixel lighting + light override)",
-           device->PointShadows(), pointStrength);
+    RvkLog("rvk point light shadows: %u lights (strength %s, x%s in daylight; needs per-pixel lighting + light override)",
+           device->PointShadows(), pointStrength, pointDay);
     return true;
 }
 

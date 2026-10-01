@@ -136,7 +136,9 @@ public:
     // (cube shadow maps, pointshadow.cpp; 0 = off). strength = how much of such a light a shadow takes away (0..1).
     void SetPointShadows(uint32_t count) { m_pointShadows = count < kMaxPointShadows ? count : kMaxPointShadows; }
     uint32_t PointShadows() const { return m_pointShadows; }
-    void SetPointShadowStrength(float strength) { m_pointShadowStrength = strength; }
+    // dayFactor: the strength left in full daylight. Under a bright sun the scene is already at full brightness
+    // around a light, so its shadows only show where the sun's are (they'd look cut off there); they fade instead.
+    void SetPointShadowStrength(float strength, float dayFactor) { m_pointShadowStrength = strength; m_pointShadowDay = dayFactor; }
     static constexpr uint32_t kMaxPointShadows = 4;
     void SetTexture(uint32_t stage, Texture* texture);
     // Null = the main target. Like D3D, resets the viewport to the whole target.
@@ -372,7 +374,9 @@ private:
     static constexpr uint32_t kPointShadowSize = 1024;
     static constexpr float kPointShadowNear = 0.05f;
     uint32_t m_pointShadows = 0;                 // lights to shadow (0 = off)
-    float m_pointShadowStrength = 0.9f;
+    float m_pointShadowStrength = 0.9f, m_pointShadowDay = 0.25f;
+    float m_daylight = 0.0f;                     // smoothed sun brightness on flat ground (previous frames)
+    float PointShadowStrength() const;
     VkImage m_cubeImage = VK_NULL_HANDLE;
     VmaAllocation_T* m_cubeAllocation = nullptr;
     VkImageView m_cubeArrayView = VK_NULL_HANDLE;

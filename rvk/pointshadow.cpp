@@ -148,6 +148,14 @@ void Device::PreparePointShadowMaps(VkCommandBuffer cmd)
     m_cubeLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
+// Point shadows fade from full strength (night, weak sun) to m_pointShadowDay of it in full daylight.
+float Device::PointShadowStrength() const
+{
+    float t = std::clamp((m_daylight - 0.1f) / 0.35f, 0.0f, 1.0f);
+    t = t * t * (3.0f - 2.0f * t);
+    return m_pointShadowStrength * (1.0f + (m_pointShadowDay - 1.0f) * t);
+}
+
 // Which cube (1-based; 0 = none) holds a frame light's shadow: lights are matched by their data, which the frame
 // light list copies unchanged from the set the cubes were rendered for.
 uint32_t Device::PointShadowLayer(const d3d::Light& l) const

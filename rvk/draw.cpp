@@ -257,7 +257,7 @@ VkDeviceSize Device::WriteFrameLights()
     fl->shadowParams[0] = m_shadowValid ? 1.0f : 0.0f;
     fl->shadowParams[1] = m_shadowStrength;
     fl->shadowParams[2] = 2.0f * m_shadowRange / float(kShadowSize);
-    fl->shadowParams[3] = m_pointShadowStrength;
+    fl->shadowParams[3] = PointShadowStrength();
     fl->sunDir[0] = m_shadowSunDir[0]; fl->sunDir[1] = m_shadowSunDir[1]; fl->sunDir[2] = m_shadowSunDir[2];
     fl->sunDir[3] = 0.0f;
     for (uint32_t k = 0; k < used; ++k) {

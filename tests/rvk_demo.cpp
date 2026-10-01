@@ -999,11 +999,12 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
 // half: the ground the way Anarchy Online draws it (unlit base pass + lightmap and lights multiplying pass). A small
 // cube around the lamp (its housing) must not cast; the cubes around it must, in every direction (all cube faces).
 template <typename D>
-void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::string& dump)
+void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::string& dump, bool sun)
 {
     auto groundPixels = Checker(64, 8, 0xFFC8C0B0, 0xFFA09888);
     Texture* ground = dev.CreateTexture(64, 64, groundPixels.data());
-    std::vector<uint32_t> lightmapPixels(64, 0xFF202020);
+    // --point-shadow-sun: daytime - a sun (with its shadows) and a brighter lightmap with the sun baked in.
+    std::vector<uint32_t> lightmapPixels(64, sun ? 0xFFE8E8E8 : 0xFF202020);
     Texture* lightmap = dev.CreateTexture(8, 8, lightmapPixels.data());
     struct VtxTerrain { float x, y, z, nx, ny, nz, u0, v0, u1, v1; };
     const uint32_t kFvfTerrain = FVF_XYZ | FVF_NORMAL | (2 << 8);
@@ -1051,6 +1052,12 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
         lamp.attenuation1 = 0.08f;
         dev.SetLight(0, lamp);
         dev.LightEnable(0, true);
+        Light sunLight{};
+        sunLight.type = LIGHT_DIRECTIONAL;
+        sunLight.diffuse = {0.6f, 0.57f, 0.5f, 1};
+        sunLight.direction = {-0.5f, -0.6f, 0.62f};
+        dev.SetLight(1, sunLight);
+        dev.LightEnable(1, sun);
         dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
         dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
         dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
@@ -1084,8 +1091,9 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
         // Cubes all around the lamp, one draw each; the last is the lamp's housing (contains the light).
         dev.SetTexture(0, nullptr);
         dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
-        const float cubes[7][4] = {{-3, 0.6f, 1, 0.6f}, {3, 0.6f, 1, 0.6f}, {0, 0.5f, 4, 0.5f}, {0, 0.5f, -2.5f, 0.5f},
-                                   {-2, 0.4f, -1, 0.4f}, {1.8f, 1.0f, 3.2f, 0.3f}, {0, 1.2f, 1, 0.25f}};
+        const float cubes[8][4] = {{-3, 0.6f, 1, 0.6f}, {3, 0.6f, 1, 0.6f}, {0, 0.5f, 4, 0.5f}, {0, 0.5f, -2.5f, 0.5f},
+                                   {-2, 0.4f, -1, 0.4f}, {1.8f, 1.0f, 3.2f, 0.3f}, {0, 1.2f, 1, 0.25f},
+                                   {sun ? 5.0f : 100.0f, 1.5f, -5.5f, 1.5f}};   // a pillar's top: its sun shadow crosses the lamp's
         for (auto& c : cubes) {
             std::vector<VtxMesh> v;
             std::vector<uint16_t> idx;
@@ -1108,7 +1116,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 
 int main(int argc, char** argv)
 {
-    bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false, pointShadowTest = false;
+    bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false, pointShadowTest = false, pointShadowSun = false;
     int cacheTest = 0, frameMs = 0;
     uint32_t pointShadows = 4;
     int bench = 0;
@@ -1125,6 +1133,7 @@ int main(int argc, char** argv)
         else if (a == "--shadows") shadows = true;
         else if (a == "--shadow-test") shadowTest = shadows = true;
         else if (a == "--point-shadow-test") pointShadowTest = true;
+        else if (a == "--point-shadow-sun") pointShadowTest = pointShadowSun = shadows = true;
         else if (a == "--frame-ms" && i + 1 < argc) frameMs = std::atoi(argv[++i]);
         else if (a == "--cache-test" && i + 1 < argc) { cacheTest = std::atoi(argv[++i]); shadowTest = shadows = true; }
         else if (a == "--dump" && i + 1 < argc) dump = argv[++i];
@@ -1163,7 +1172,7 @@ int main(int argc, char** argv)
         dev.SetPixelLighting(true);
         dev.SetLightOverride(true);
         dev.SetPointShadows(pointShadows);
-        RunPointShadowTest(dev, frames, shot, dump);
+        RunPointShadowTest(dev, frames, shot, dump, pointShadowSun);
         std::printf("rendered; screenshot %s\n", shot.c_str());
         return 0;
     }

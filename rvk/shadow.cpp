@@ -841,6 +841,9 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
 // After all shadow passes of the frame.
 void Device::FinishShadowFrame()
 {
+    // Daylight for point shadows: the sun's brightness on flat ground, smoothed so a frame without it doesn't pop.
+    float daylight = m_sunLuminance * std::max(0.0f, -m_sunDir[1]);
+    m_daylight += (daylight - m_daylight) * 0.1f;
     m_casters.clear();
     m_shadowItems.clear();
     UpdateCasterCache();

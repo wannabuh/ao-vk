@@ -41,7 +41,8 @@ void Device::EndFrameDump()
     std::fprintf(m_dumpFile, "# end: %u draws; %zu casters this frame, %zu remembered (%u drawn out of view last frame);"
                              " forgotten since start: %u in view but not drawn, %u far away\n",
                  m_dumpDraw, m_casters.size(), m_casterCache.size(), m_cachedCastersDrawn, m_forgottenInView, m_forgottenFar);
-    std::fprintf(m_dumpFile, "# point shadows (rendered last frame, %u caster draws):", m_pointShadowDraws);
+    std::fprintf(m_dumpFile, "# point shadows (rendered last frame, %u caster draws; daylight %.2f -> strength %.2f):",
+                 m_pointShadowDraws, m_daylight, PointShadowStrength());
     for (uint32_t i = 0; i < m_pointShadowCount; ++i) {
         const PointShadowLight& l = m_pointShadowLights[i];
         std::fprintf(m_dumpFile, " cube %u at (%.1f %.1f %.1f) r%.1f;", i + 1, l.position[0], l.position[1], l.position[2], l.range);
