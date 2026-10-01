@@ -100,6 +100,10 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     device->SetDumpVertexCount(uint32_t(std::atoi(dumpVerts)));
     char hdr[8] = "1", knee[16] = "0.85", exposure[16] = "1.0", hdrHeadroom[16] = "1.5";
     GetEnvironmentVariableA("RANDYVK_HDR_HEADROOM", hdrHeadroom, sizeof(hdrHeadroom));
+    char bloom[16] = "1.5", bloomThreshold[16] = "1.0";
+    GetEnvironmentVariableA("RANDYVK_BLOOM", bloom, sizeof(bloom));
+    GetEnvironmentVariableA("RANDYVK_BLOOM_THRESHOLD", bloomThreshold, sizeof(bloomThreshold));
+    device->SetBloom(float(std::atof(bloom)), float(std::atof(bloomThreshold)));
     device->SetHdrHeadroom(float(std::atof(hdrHeadroom)));
     GetEnvironmentVariableA("RANDYVK_HDR", hdr, sizeof(hdr));
     GetEnvironmentVariableA("RANDYVK_TONEMAP_KNEE", knee, sizeof(knee));
@@ -119,6 +123,7 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     RvkLog("rvk light headroom (local lights above the game's clamp): %s", headroom);
     RvkLog("rvk HDR scene + tone mapping: %s (knee %s, exposure %s, light headroom %s)", device->Hdr() ? "on" : "off", knee,
            exposure, hdrHeadroom);
+    RvkLog("rvk bloom: strength %s, threshold %s", bloom, bloomThreshold);
     return true;
 }
 
@@ -169,6 +174,36 @@ void RvkState::Present()
         RvkLog("sun shadows %s", device->Shadows() ? "on" : "off");
     }
     f7Down = f7;
+    // Ctrl+Shift+F4: bloom on / off (at the configured strength).
+    static bool f4Down;
+    static float bloomOn = 0.0f;
+    static const float bloomThresholdOn = [] {
+        char t[16] = "1.0";
+        GetEnvironmentVariableA("RANDYVK_BLOOM_THRESHOLD", t, sizeof(t));
+        return float(std::atof(t));
+    }();
+    bool f4 = chord && (GetAsyncKeyState(VK_F4) & 0x8000);
+    if (f4 && !f4Down) {
+        if (!bloomOn) {
+            char b[16] = "1.5";
+            GetEnvironmentVariableA("RANDYVK_BLOOM", b, sizeof(b));
+            bloomOn = float(std::atof(b));
+            if (bloomOn <= 0.0f) bloomOn = 1.5f;
+        }
+        device->SetBloom(device->BloomStrength() > 0.0f ? 0.0f : bloomOn, bloomThresholdOn);
+        RvkLog("bloom %s", device->BloomStrength() > 0.0f ? "on" : "off");
+    }
+    f4Down = f4;
+    // Ctrl+Shift+Home / End: bloom strength up / down by 0.25.
+    static bool homeDown, endDown;
+    bool home = chord && (GetAsyncKeyState(VK_HOME) & 0x8000), end = chord && (GetAsyncKeyState(VK_END) & 0x8000);
+    if ((home && !homeDown) || (end && !endDown)) {
+        float s = device->BloomStrength() + (home ? 0.25f : -0.25f);
+        device->SetBloom(s < 0.0f ? 0.0f : s, bloomThresholdOn);
+        RvkLog("bloom strength %.2f", device->BloomStrength());
+    }
+    homeDown = home;
+    endDown = end;
     // Ctrl+Shift+F5: HDR scene + tone mapping.
     static bool f5Down;
     bool f5 = chord && (GetAsyncKeyState(VK_F5) & 0x8000);

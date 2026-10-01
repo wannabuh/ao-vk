@@ -3,15 +3,17 @@
 // brighter ones roll off smoothly towards 1 by their brightest channel, which keeps their hue, and lose saturation
 // the more they are overexposed, as bright light does.
 layout(set = 0, binding = 0) uniform sampler2D scene;
+layout(set = 0, binding = 1) uniform sampler2D bloom;   // half resolution, light above the bloom threshold, blurred
 layout(push_constant) uniform Push {
-    vec4 params;        // knee, exposure
+    vec4 params;        // knee, exposure, bloom strength, unused
 } P;
 layout(location = 0) out vec4 outColor;
 
 void main()
 {
     vec4 s = texelFetch(scene, ivec2(gl_FragCoord.xy), 0);
-    vec3 c = max(s.rgb * P.params.y, vec3(0.0));
+    vec3 glow = P.params.z > 0.0 ? texture(bloom, gl_FragCoord.xy / vec2(textureSize(scene, 0))).rgb * P.params.z : vec3(0.0);
+    vec3 c = max((s.rgb + glow) * P.params.y, vec3(0.0));
     float m = max(c.r, max(c.g, c.b)), k = P.params.x;
     if (m > k) {
         float room = 1.0 - k;

@@ -150,6 +150,9 @@ public:
     void SetHdr(bool enable) { m_hdr = enable; m_constantsDirty = true; m_frameLightsDirty = true; }
     bool Hdr() const { return m_hdr; }
     void SetTonemap(float knee, float exposure) { m_tonemapKnee = knee; m_exposure = exposure; }
+    // With HDR: glow around light above the threshold (hdr.cpp). strength 0 = off.
+    void SetBloom(float strength, float threshold) { m_bloomStrength = strength; m_bloomThreshold = threshold; }
+    float BloomStrength() const { return m_bloomStrength; }
     // With HDR: how bright local lights may make a surface (1 = the game's clamp; soft roll-off towards it).
     void SetHdrHeadroom(float headroom) { m_hdrHeadroom = headroom < 1.0f ? 1.0f : headroom; m_frameLightsDirty = true; }
     float HdrHeadroom() const { return m_hdrHeadroom; }
@@ -421,7 +424,15 @@ private:
     VkDescriptorSetLayout m_tonemapSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_tonemapLayout = VK_NULL_HANDLE;
     VkPipeline m_tonemapPipeline = VK_NULL_HANDLE;
-    VkSampler m_pointSampler = VK_NULL_HANDLE;
+    VkSampler m_pointSampler = VK_NULL_HANDLE, m_linearSampler = VK_NULL_HANDLE;
+    float m_bloomStrength = 1.5f, m_bloomThreshold = 1.0f;
+    std::vector<Texture*> m_bloomLevels;         // half resolution and down, float
+    VkDescriptorSetLayout m_bloomSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout m_bloomLayout = VK_NULL_HANDLE;
+    VkPipeline m_bloomDown = VK_NULL_HANDLE, m_bloomUp = VK_NULL_HANDLE;
+    void RenderBloom(VkCommandBuffer cmd);
+    void FullscreenPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, VkPipelineLayout layout, Texture* src,
+                        const float params[4], bool load);
     bool CreateHdrResources(std::string* error);
     void DestroyHdrResources();
     void BeginScene();

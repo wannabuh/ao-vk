@@ -71,6 +71,8 @@ public:
     bool Hdr() const { return m_hdr; }
     void SetTonemap(float knee, float exposure);
     void SetHdrHeadroom(float headroom);
+    void SetBloom(float strength, float threshold);
+    float BloomStrength() const { return m_bloomStrength; }
     float HdrHeadroom() const { return m_hdrHeadroom; }
     void SetDumpVertexCount(uint32_t count);
     void SetTexture(uint32_t stage, Texture* texture);
@@ -145,6 +147,7 @@ private:
     uint32_t m_pointShadows = 0;
     bool m_hdr = false;
     float m_hdrHeadroom = 1.5f;
+    float m_bloomStrength = 1.5f;
 };
 
 }  // namespace rvk

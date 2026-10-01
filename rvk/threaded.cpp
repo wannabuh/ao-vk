@@ -350,6 +350,12 @@ void ThreadedDevice::SetHdr(bool enable)
     Enqueue([this, enable](const uint8_t*) { m_device.SetHdr(enable); });
 }
 
+void ThreadedDevice::SetBloom(float strength, float threshold)
+{
+    m_bloomStrength = strength;
+    Enqueue([this, strength, threshold](const uint8_t*) { m_device.SetBloom(strength, threshold); });
+}
+
 void ThreadedDevice::SetHdrHeadroom(float headroom)
 {
     m_hdrHeadroom = headroom < 1.0f ? 1.0f : headroom;
