@@ -164,6 +164,10 @@ public:
     // Enhancement: anisotropic filtering level for linearly filtered textures (1 = off, up to the GPU's limit, 16).
     void SetAnisotropy(uint32_t level);
     uint32_t Anisotropy() const { return m_anisotropy; }
+    // With HDR: camera motion blur (hdr.cpp). strength = exposure as a fraction of 1/60 s (0 = off); nothing nearer
+    // than focusNear (the player's character, followed by the camera) is blurred.
+    void SetMotionBlur(float strength, float focusNear) { m_motionBlur = strength; m_motionNear = focusNear; }
+    float MotionBlur() const { return m_motionBlur; }
     // With HDR: ambient occlusion from the depth buffer (hdr.cpp). strength 0 = off; radius in world units.
     void SetAo(float strength, float radius) { m_aoStrength = strength; m_aoRadius = radius; }
     float AoStrength() const { return m_aoStrength; }
@@ -473,6 +477,15 @@ private:
     Texture* m_aoTex[2] = {};                    // half resolution: raw, blurred (ping-pong)
     VkPipeline m_aoPipeline = VK_NULL_HANDLE, m_aoBlurPipeline = VK_NULL_HANDLE;
     d3d::Matrix m_aoProj{};                      // the world camera's projection (first depth-writing 3D draw)
+    d3d::Matrix m_aoView{};                      // ... and view
+    float m_motionBlur = 0.0f, m_motionNear = 8.0f;
+    Texture* m_tonemapped = nullptr;             // with motion blur: the tone mapped scene, blurred into m_ldrMain
+    VkPipeline m_motionPipeline = VK_NULL_HANDLE;
+    d3d::Matrix m_prevViewProj{};                // the last frame's world camera
+    float m_prevEye[3] = {};
+    bool m_prevViewProjValid = false;
+    double m_prevSceneTime = 0.0;
+    bool MotionBlurParams(float out[24]);        // reprojection + parameters for this frame; false: no blur
     bool m_aoProjValid = false;
     bool RenderAo(VkCommandBuffer cmd);          // false: no AO this frame
     bool CreateHdrResources(std::string* error);

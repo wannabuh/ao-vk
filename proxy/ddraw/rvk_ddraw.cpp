@@ -104,6 +104,10 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     GetEnvironmentVariableA("RANDYVK_BLOOM", bloom, sizeof(bloom));
     GetEnvironmentVariableA("RANDYVK_BLOOM_THRESHOLD", bloomThreshold, sizeof(bloomThreshold));
     device->SetBloom(float(std::atof(bloom)), float(std::atof(bloomThreshold)));
+    char motionBlur[16] = "0.5", motionNear[16] = "8";
+    GetEnvironmentVariableA("RANDYVK_MOTION_BLUR", motionBlur, sizeof(motionBlur));
+    GetEnvironmentVariableA("RANDYVK_MOTION_BLUR_NEAR", motionNear, sizeof(motionNear));
+    device->SetMotionBlur(float(std::atof(motionBlur)), float(std::atof(motionNear)));
     char anisotropy[16] = "16";
     GetEnvironmentVariableA("RANDYVK_ANISOTROPY", anisotropy, sizeof(anisotropy));
     device->SetAnisotropy(uint32_t(std::max(1, std::atoi(anisotropy))));
@@ -140,6 +144,7 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     RvkLog("rvk ambient occlusion: strength %s, radius %s", aoStrength, aoRadius);
     RvkLog("rvk generated normals (bump): %s", bump);
     RvkLog("rvk anisotropic filtering: %sx", anisotropy);
+    RvkLog("rvk motion blur: %s (sharp nearer than %s)", motionBlur, motionNear);
     return true;
 }
 
@@ -190,6 +195,18 @@ void RvkState::Present()
         RvkLog("sun shadows %s", device->Shadows() ? "on" : "off");
     }
     f7Down = f7;
+    // Ctrl+Shift+M: motion blur on (configured strength) / off.
+    static bool mDown;
+    bool m = chord && (GetAsyncKeyState('M') & 0x8000);
+    if (m && !mDown) {
+        char s[16] = "0.5", nr[16] = "8";
+        GetEnvironmentVariableA("RANDYVK_MOTION_BLUR", s, sizeof(s));
+        GetEnvironmentVariableA("RANDYVK_MOTION_BLUR_NEAR", nr, sizeof(nr));
+        float on = float(std::atof(s));
+        device->SetMotionBlur(device->MotionBlur() > 0.0f ? 0.0f : (on > 0.0f ? on : 0.5f), float(std::atof(nr)));
+        RvkLog("motion blur %s", device->MotionBlur() > 0.0f ? "on" : "off");
+    }
+    mDown = m;
     // Ctrl+Shift+F1: anisotropic filtering on (configured level, at least 2) / off.
     static bool f1Down;
     static uint32_t anisotropyOn = 0;

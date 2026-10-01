@@ -76,6 +76,8 @@ public:
     void SetAo(float strength, float radius);
     void SetBump(float strength);
     void SetAnisotropy(uint32_t level);
+    void SetMotionBlur(float strength, float focusNear);
+    float MotionBlur() const { return m_motionBlur; }
     uint32_t Anisotropy() const { return m_anisotropy; }
     float Bump() const { return m_bump; }
     float AoStrength() const { return m_aoStrength; }
@@ -157,6 +159,7 @@ private:
     float m_hdrHeadroom = 1.5f;
     float m_bloomStrength = 1.5f, m_effectGlow = 1.0f, m_aoStrength = 1.0f, m_bump = 0.0f;
     uint32_t m_anisotropy = 1;
+    float m_motionBlur = 0.0f;
 };
 
 }  // namespace rvk

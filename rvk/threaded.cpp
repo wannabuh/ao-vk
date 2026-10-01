@@ -356,6 +356,12 @@ void ThreadedDevice::SetBloom(float strength, float threshold)
     Enqueue([this, strength, threshold](const uint8_t*) { m_device.SetBloom(strength, threshold); });
 }
 
+void ThreadedDevice::SetMotionBlur(float strength, float focusNear)
+{
+    m_motionBlur = strength;
+    Enqueue([this, strength, focusNear](const uint8_t*) { m_device.SetMotionBlur(strength, focusNear); });
+}
+
 void ThreadedDevice::SetAnisotropy(uint32_t level)
 {
     m_anisotropy = level < 1 ? 1 : level;

@@ -79,6 +79,7 @@ void ImageBarrier(VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect,
                   VkAccessFlags2 dstAccess);
 d3d::Matrix Identity();
 d3d::Matrix MulMatrix(const d3d::Matrix& a, const d3d::Matrix& b);   // D3D order: v * a * b
+bool InvertMatrix(const d3d::Matrix& m, d3d::Matrix* out);
 VkPrimitiveTopology TopologyOf(uint32_t d3dPrimitive);
 uint32_t TopologyClassOf(uint32_t d3dPrimitive);   // 0 points, 1 lines, 2 triangles
 // Clip-space test of a world-space box's corners against a view-projection: +1 all inside, -1 all outside one

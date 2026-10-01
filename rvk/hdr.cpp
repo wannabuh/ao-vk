@@ -34,6 +34,9 @@ const uint32_t kAoSpirv[] = {
 const uint32_t kAoBlurSpirv[] = {
 #include "ao_blur.frag.inc"
 };
+const uint32_t kMotionBlurSpirv[] = {
+#include "motion_blur.frag.inc"
+};
 
 }  // namespace
 
@@ -69,7 +72,7 @@ bool Device::CreateHdrResources(std::string* error)
         return Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, out), "post set layout", error);
     };
     auto pipelineLayout = [&](VkDescriptorSetLayout set, VkPipelineLayout* out) {
-        VkPushConstantRange push{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32};
+        VkPushConstantRange push{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128};
         VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         pl.setLayoutCount = 1;
         pl.pSetLayouts = &set;
@@ -153,7 +156,8 @@ bool Device::CreateHdrResources(std::string* error)
               fullscreen(kBloomUpSpirv, sizeof(kBloomUpSpirv), hdrFormat, true, m_bloomLayout, &m_bloomUp) &&
               fullscreen(kAoSpirv, sizeof(kAoSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout, &m_aoPipeline) &&
               fullscreen(kAoBlurSpirv, sizeof(kAoBlurSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout,
-                         &m_aoBlurPipeline);
+                         &m_aoBlurPipeline) &&
+              fullscreen(kMotionBlurSpirv, sizeof(kMotionBlurSpirv), kColorFormat, false, m_bloomLayout, &m_motionPipeline);
     vkDestroyShaderModule(m_device, vert, nullptr);
     return ok;
 }
@@ -164,7 +168,8 @@ void Device::DestroyHdrResources()
     m_bloomLevels.clear();
     for (Texture*& t : m_aoTex)
         if (t) { DestroyTextureNow(t); t = nullptr; }
-    for (VkPipeline* p : {&m_bloomDown, &m_bloomUp, &m_aoPipeline, &m_aoBlurPipeline})
+    if (m_tonemapped) { DestroyTextureNow(m_tonemapped); m_tonemapped = nullptr; }
+    for (VkPipeline* p : {&m_bloomDown, &m_bloomUp, &m_aoPipeline, &m_aoBlurPipeline, &m_motionPipeline})
         if (*p) { vkDestroyPipeline(m_device, *p, nullptr); *p = VK_NULL_HANDLE; }
     if (m_bloomLayout) vkDestroyPipelineLayout(m_device, m_bloomLayout, nullptr);
     if (m_bloomSetLayout) vkDestroyDescriptorSetLayout(m_device, m_bloomSetLayout, nullptr);
@@ -216,9 +221,18 @@ void Device::EndScene()
         RenderBloom(cmd);
     bool ao = RenderAo(cmd);
     Transition(cmd, m_localFraction, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    Transition(cmd, m_ldrMain, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    // With motion blur the tone mapping goes to an intermediate image, which the blur reads into the main target.
+    float motion[24];
+    bool blur = MotionBlurParams(motion);
+    if (blur && (!m_tonemapped || m_tonemapped->m_width != m_ldrMain->m_width || m_tonemapped->m_height != m_ldrMain->m_height)) {
+        if (m_tonemapped) DestroyTexture(m_tonemapped);
+        m_tonemapped = CreateImage(m_ldrMain->m_width, m_ldrMain->m_height, Format::A8R8G8B8, 1, true);
+        blur = m_tonemapped != nullptr;
+    }
+    Texture* toned = blur ? m_tonemapped : m_ldrMain;
+    Transition(cmd, toned, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-    color.imageView = m_ldrMain->m_view;
+    color.imageView = toned->m_view;
     color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     color.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -258,6 +272,18 @@ void Device::EndScene()
     vkCmdPushConstants(cmd, m_tonemapLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(params), params);
     vkCmdDraw(cmd, 3, 1, 0, 0);
     vkCmdEndRendering(cmd);
+    if (blur) {
+        Transition(cmd, m_tonemapped, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        if (m_depthLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {   // the AO pass didn't make it readable
+            ImageBarrier(cmd, m_depth, VK_IMAGE_ASPECT_DEPTH_BIT, m_depthLayout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                         VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                         VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+            m_depthLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        }
+        FullscreenPass(cmd, m_ldrMain, m_motionPipeline, m_tonemapped->m_view, m_depthView, m_pointSampler, motion,
+                       sizeof(motion), false);
+    }
     m_cache = StateCache{};                      // pipeline, viewport and scissor changed
     m_main = m_ldrMain;
     if (wasMain)
@@ -373,6 +399,46 @@ void Device::RenderBloom(VkCommandBuffer cmd)
         FullscreenPass(cmd, m_bloomLevels[i], m_bloomUp, smaller->m_view, smaller->m_view, m_linearSampler, params, 16, true);
     }
     Transition(cmd, m_bloomLevels[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+// This frame's camera against the last one's: the reprojection matrix (current clip -> previous clip) and the blur
+// parameters for motion_blur.frag. Remembers this frame's camera for the next.
+bool Device::MotionBlurParams(float out[24])
+{
+    double now = SwayClock(), dt = now - m_prevSceneTime;
+    m_prevSceneTime = now;
+    bool perspective = m_aoProjValid && m_aoProj.m[2][3] == 1.0f && m_aoProj.m[3][3] == 0.0f;
+    if (!perspective) {
+        m_prevViewProjValid = false;
+        return false;
+    }
+    d3d::Matrix viewProj = MulMatrix(m_aoView, m_aoProj);
+    const auto& v = m_aoView.m;
+    float eye[3];
+    for (int i = 0; i < 3; ++i) eye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
+    bool have = m_prevViewProjValid && m_motionBlur > 0.0f && m_depth;
+    float jump2 = 0.0f;
+    for (int i = 0; i < 3; ++i) jump2 += (eye[i] - m_prevEye[i]) * (eye[i] - m_prevEye[i]);
+    d3d::Matrix inverse, reproject;
+    if (have && (jump2 > 25.0f || !InvertMatrix(viewProj, &inverse)))   // a teleport / zone change: no blur
+        have = false;
+    if (have) {
+        reproject = MulMatrix(inverse, m_prevViewProj);
+        std::memcpy(out, &reproject, 64);
+        dt = std::clamp(dt, 1.0 / 500.0, 0.25);
+        out[16] = float(m_motionBlur / 60.0 / dt);        // per-frame motion -> motion during the exposure
+        out[17] = 0.04f * float(m_scene->m_width);        // at most 4% of the screen width
+        out[18] = m_motionNear;
+        out[19] = m_motionNear * 1.5f;
+        out[20] = m_aoProj.m[2][2];
+        out[21] = m_aoProj.m[3][2];
+        out[22] = float(m_scene->m_width);
+        out[23] = float(m_scene->m_height);
+    }
+    m_prevViewProj = viewProj;
+    std::memcpy(m_prevEye, eye, sizeof(eye));
+    m_prevViewProjValid = true;
+    return have;
 }
 
 }  // namespace rvk

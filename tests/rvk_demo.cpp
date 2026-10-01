@@ -752,6 +752,8 @@ void RunDemo(D& dev, bool windowed, bool stress, int frames, const std::string& 
     dev.DestroyVertexBuffer(scene.vb);
 }
 
+float g_cameraYaw = 0.0f;  // --camera-yaw: the shadow test's camera turns this much a frame (motion blur)
+
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
 // (left) and unlit like Anarchy Online's ground base pass (right) - from a camera above and behind.
 void AddCube(std::vector<VtxMesh>& v, std::vector<uint16_t>& idx, float cx, float cy, float cz, float h)
@@ -798,6 +800,11 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
         if (topDown) {
             dev.SetTransform(View, LookAtLH({7.5f, 4, 6.5f}, {7.5f, 0, 6.5f}, {0, 0, 1}));
             dev.SetTransform(Projection, PerspectiveLH(kPi / 4.5f, float(kWidth) / kHeight, 0.5f, 200.0f));
+        } else if (g_cameraYaw != 0.0f) {
+            // --camera-yaw r: the camera turns r radians a frame around the scene (motion blur test).
+            float a = g_cameraYaw * float(frame), ex = 16.6f * std::sin(a), ez = 2.0f - 16.6f * std::cos(a);
+            dev.SetTransform(View, LookAtLH({ex, 9, ez}, {0, 0, 2}, {0, 1, 0}));
+            dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 200.0f));
         } else {
             dev.SetTransform(View, LookAtLH({0, 9, -14}, {0, 0, 2}, {0, 1, 0}));
             dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 200.0f));
@@ -1190,6 +1197,7 @@ int main(int argc, char** argv)
     bool hdr = false;
     float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, bump = 0.0f;
     uint32_t anisotropy = 1;
+    float motionBlur = 0.0f;
     float knee = 0.85f;
     int bench = 0;
     int frames = 3;
@@ -1215,6 +1223,8 @@ int main(int argc, char** argv)
         else if (a == "--game-ms" && i + 1 < argc) g_benchGameMs = std::atof(argv[++i]);
         else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
         else if (a == "--hdr") hdr = true;
+        else if (a == "--motion-blur" && i + 1 < argc) { motionBlur = float(std::atof(argv[++i])); hdr = true; }
+        else if (a == "--camera-yaw" && i + 1 < argc) g_cameraYaw = float(std::atof(argv[++i]));
         else if (a == "--aniso" && i + 1 < argc) anisotropy = uint32_t(std::atoi(argv[++i]));
         else if (a == "--bump" && i + 1 < argc) bump = float(std::atof(argv[++i]));
         else if (a == "--ao" && i + 1 < argc) { ao = float(std::atof(argv[++i])); hdr = true; }
@@ -1260,6 +1270,7 @@ int main(int argc, char** argv)
     dev.SetAo(ao, aoRadius);
     dev.SetBump(bump);
     dev.SetAnisotropy(anisotropy);
+    dev.SetMotionBlur(motionBlur, 8.0f);
     dev.SetPointShadowFadeIn(fadeIn);    // frames here are milliseconds apart: no fade-in unless asked
     if (pointShadowTest) {               // needs per-pixel lighting with the light override
         dev.SetPixelLighting(true);
