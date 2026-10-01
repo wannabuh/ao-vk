@@ -1,7 +1,7 @@
 // Direct3D 7 lighting equation, shared by the per-vertex (ffp.vert) and per-pixel (ffp.frag) paths.
 // Requires constants.glsl. Accumulates the light terms; the caller combines them with the material colours.
-void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScale, inout vec3 ambient, inout vec3 diff,
-                     inout vec3 spec)
+void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScale, float localScale, inout vec3 ambient,
+                     inout vec3 diff, inout vec3 spec)
 {
     uint type = uint(l.position.w);
     vec3 L;
@@ -15,7 +15,7 @@ void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScal
         if (dist > l.direction.w) return;
         L = d / max(dist, 1e-6);
         float denom = l.atten.x + l.atten.y * dist + l.atten.z * dist * dist;
-        att = denom > 0.0 ? 1.0 / denom : 1.0;
+        att = (denom > 0.0 ? 1.0 / denom : 1.0) * localScale;
         // D3D cuts lights off at their range. Per vertex the cut-off is smeared over the triangles; per
         // pixel it would draw a hard circle, so fade the light out towards its range instead.
         if ((C.flags.x & F_PERPIXEL) != 0u) {
@@ -39,12 +39,13 @@ void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScal
     }
 }
 
-void AccumulateLights(vec3 posW, vec3 normalW, float sunScale, inout vec3 ambient, inout vec3 diff, inout vec3 spec)
+void AccumulateLights(vec3 posW, vec3 normalW, float sunScale, float localScale, inout vec3 ambient, inout vec3 diff,
+                      inout vec3 spec)
 {
     vec3 toEye = (C.flags.x & F_LOCALVIEWER) != 0u ? normalize(C.eyePos.xyz - posW) : -C.eyeDir.xyz;
     for (uint i = 0u; i < C.lightInfo.x; ++i)
-        AccumulateLight(C.lights[i], posW, normalW, toEye, sunScale, ambient, diff, spec);
+        AccumulateLight(C.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diff, spec);
     if ((C.flags.x & F_LIGHTOVERRIDE) != 0u)
         for (uint i = 0u; i < FL.info.x; ++i)
-            AccumulateLight(FL.lights[i], posW, normalW, toEye, sunScale, ambient, diff, spec);
+            AccumulateLight(FL.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diff, spec);
 }

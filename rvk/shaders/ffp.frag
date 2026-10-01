@@ -111,9 +111,13 @@ void main()
     gDiffuse = vDiffuse;
     gSpecular = vSpecular;
     // Shadow: lit draws scale the sunlight (per-pixel lighting), others darken their final colour.
-    float shade = 1.0;
-    if ((C.flags.x & F_SHADOW) != 0u)
+    float shade = 1.0, localScale = 1.0;
+    if ((C.flags.x & (F_SHADOW | F_SHADOWCOMP)) != 0u)
         shade = 1.0 - (1.0 - SunVisibility(vPosW, vNormalW.xyz)) * FL.shadowParams.y;
+    if ((C.flags.x & F_SHADOWCOMP) != 0u) {
+        localScale = 1.0 / max(shade, 0.05);
+        shade = 1.0;
+    }
     bool shadeSun = (C.flags.x & (F_PERPIXEL | F_LIGHTING)) == (F_PERPIXEL | F_LIGHTING);
     if ((C.flags.x & F_PERPIXEL) != 0u) {
         // Interpolated normals shrink between vertices; restore the length the vertex path lights with
@@ -122,7 +126,7 @@ void main()
         float len2 = dot(n, n);
         n = len2 > 0.0 ? n * (vNormalW.w * inversesqrt(len2)) : vec3(0.0);
         vec3 ambient = C.ambient.rgb, diff = vec3(0.0), spec = vec3(0.0);
-        AccumulateLights(vPosW, n, shadeSun ? shade : 1.0, ambient, diff, spec);
+        AccumulateLights(vPosW, n, shadeSun ? shade : 1.0, localScale, ambient, diff, spec);
         gDiffuse = clamp(vec4(vMatEmissive + vMatAmbient * ambient + vDiffuse.rgb * diff, vDiffuse.a), 0.0, 1.0);
         gSpecular = clamp(vec4(vSpecular.rgb * spec, vSpecular.a), 0.0, 1.0);
     }

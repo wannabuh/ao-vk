@@ -198,6 +198,17 @@ void Device::PrepareShadowMap(VkCommandBuffer cmd)
     m_shadowImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
+// AnarchyGround_t: world-space chunks (identity world matrix) of position, normal and two texture sets. The
+// ground doesn't cast: its lightmap has the hills' shading baked in, and coarse chunks of the ground's levels of
+// detail overlap finer ones and would cast blocky shadows onto them.
+bool Device::IsTerrain(uint32_t fvf) const
+{
+    if (fvf != (d3d::FVF_XYZ | d3d::FVF_NORMAL | (2u << 8)))
+        return false;
+    const auto& w = m_world.m;
+    return w[3][0] == 0.0f && w[3][1] == 0.0f && w[3][2] == 0.0f && w[0][0] == 1.0f && w[1][1] == 1.0f && w[2][2] == 1.0f;
+}
+
 // 3D triangles drawn into the main target with depth writes: opaque, alpha-tested, or alpha-blended the way
 // Anarchy Online draws most static objects (blended, but writing depth - solid apart from the texture's cut-out
 // parts). That leaves out the sky, effects, see-through surfaces and pre-transformed (XYZRHW) geometry.
@@ -205,6 +216,8 @@ bool Device::IsShadowCaster(uint32_t primitive, uint32_t fvf) const
 {
     if (!m_shadows || m_target != m_main || TopologyClassOf(primitive) != 2 ||
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || !m_rs[d3d::RS_ZENABLE] || !m_rs[d3d::RS_ZWRITEENABLE])
+        return false;
+    if (IsTerrain(fvf))
         return false;
     if (!m_rs[d3d::RS_ALPHABLENDENABLE])
         return true;
@@ -285,6 +298,18 @@ bool Device::IsBlobShadow(uint32_t primitive, uint32_t fvf, const void* vertices
             return false;
     }
     return true;
+}
+
+// A multiplying pass over a shadow receiver - the ground's lightmap + local lights pass (blend ZERO/SRCCOLOR).
+// The surface under it was already darkened by the shadow, which would darken the local lights too; such a
+// pass divides its local lights by the same shadow factor so only the (baked) sunlight ends up shadowed.
+bool Device::ShadowCompensated(uint32_t fvf) const
+{
+    if (!m_shadows || !m_shadowValid || m_target != m_main || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ ||
+        !m_rs[d3d::RS_ZENABLE] || !m_rs[d3d::RS_ALPHABLENDENABLE])
+        return false;
+    uint32_t src = m_rs[d3d::RS_SRCBLEND], dst = m_rs[d3d::RS_DESTBLEND];
+    return (src == d3d::BLEND_ZERO && dst == d3d::BLEND_SRCCOLOR) || (src == d3d::BLEND_DESTCOLOR && dst == d3d::BLEND_ZERO);
 }
 
 // The sun for the next frame's shadows: the brightest directional light used during this frame.

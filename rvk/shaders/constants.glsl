@@ -49,4 +49,5 @@ const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8
            F_PERPIXEL = 1024u,    // lighting evaluated in ffp.frag (set together with F_LIGHTING)
            F_DEBUGLIGHT = 2048u,  // tint draws by how they are lit (Device::SetLightingDebug)
            F_LIGHTOVERRIDE = 4096u, // point / spot lights come from FL (the frame's nearest lights), not C.lights
-           F_SHADOW = 8192u;        // receives sun shadows (FL.shadow*, shadow map at binding 5)
+           F_SHADOW = 8192u,        // receives sun shadows (FL.shadow*, shadow map at binding 5)
+           F_SHADOWCOMP = 16384u;   // multiplies a shadowed surface: local lights divided by its shadow factor

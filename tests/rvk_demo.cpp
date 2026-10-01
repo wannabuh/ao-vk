@@ -779,6 +779,8 @@ void RunShadowTest(D& dev, int frames, const std::string& shot)
     Texture* ground = dev.CreateTexture(64, 64, groundPixels.data());
     Texture* fence = dev.CreateTexture(64, 64, fencePixels.data());
     std::vector<uint32_t> blobPixels(64, 0xFFFFFFFF);
+    std::vector<uint32_t> lightmapPixels(64, 0xFFC0C0C0);
+    Texture* lightmap = dev.CreateTexture(8, 8, lightmapPixels.data());
     Texture* blobTex = dev.CreateTexture(8, 8, blobPixels.data());
     for (int frame = 0; frame < frames; ++frame) {
         if (frame == frames - 1)
@@ -811,13 +813,60 @@ void RunShadowTest(D& dev, int frames, const std::string& shot)
         dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
         dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
         dev.SetTexture(0, ground);
-        for (int half = 0; half < 2; ++half) {
-            float x0 = half ? 0.0f : -20.0f, x1 = half ? 20.0f : 0.0f;
-            VtxMesh q[4] = {{x0, 0, -10, 0, 1, 0, 0xFFFFFFFF, 0, 0}, {x1, 0, -10, 0, 1, 0, 0xFFFFFFFF, 5, 0},
-                            {x1, 0, 20, 0, 1, 0, 0xFFFFFFFF, 5, 7.5f}, {x0, 0, 20, 0, 1, 0, 0xFFFFFFFF, 0, 7.5f}};
-            dev.SetRenderState(RS_LIGHTING, half ? 0 : 1);
+        {   // left: lit ground
+            VtxMesh q[4] = {{-20, 0, -10, 0, 1, 0, 0xFFFFFFFF, 0, 0}, {0, 0, -10, 0, 1, 0, 0xFFFFFFFF, 5, 0},
+                            {0, 0, 20, 0, 1, 0, 0xFFFFFFFF, 5, 7.5f}, {-20, 0, 20, 0, 1, 0, 0xFFFFFFFF, 0, 7.5f}};
+            dev.SetRenderState(RS_LIGHTING, 1);
             dev.DrawPrimitive(TriangleFan, kFvfMesh, q, 4);
         }
+        // right: like AnarchyGround_t - world-space terrain (FVF 0x212), an unlit base pass, then a multiplying
+        // pass of lightmap + local lights (ZERO/SRCCOLOR, depth EQUAL) with a point light inside a cube's shadow.
+        struct VtxTerrain { float x, y, z, nx, ny, nz, u0, v0, u1, v1; };
+        const uint32_t kFvfTerrain = FVF_XYZ | FVF_NORMAL | (2 << 8);
+        std::vector<VtxTerrain> terrain;
+        std::vector<uint16_t> tidx;
+        const int cells = 16;
+        for (int j = 0; j <= cells; ++j)
+            for (int i = 0; i <= cells; ++i) {
+                float x = 20.0f * i / cells, z = -10.0f + 30.0f * j / cells;
+                terrain.push_back({x, 0, z, 0, 1, 0, x / 4, z / 4, 0.5f, 0.5f});
+            }
+        for (int j = 0; j < cells; ++j)
+            for (int i = 0; i < cells; ++i) {
+                uint16_t a = uint16_t(j * (cells + 1) + i), b = uint16_t(a + 1), c = uint16_t(a + cells + 1), d = uint16_t(c + 1);
+                uint16_t q[6] = {a, c, b, b, c, d};
+                tidx.insert(tidx.end(), q, q + 6);
+            }
+        dev.SetRenderState(RS_LIGHTING, 0);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
+        dev.DrawIndexedPrimitive(TriangleList, kFvfTerrain, terrain.data(), uint32_t(terrain.size()), tidx.data(), uint32_t(tidx.size()));
+        Light lamp{};
+        lamp.type = LIGHT_POINT;
+        lamp.diffuse = {1.0f, 0.8f, 0.4f, 1};
+        lamp.position = {6.5f, 0.6f, 6.0f};
+        lamp.range = 4.0f;
+        lamp.attenuation1 = 0.4f;
+        dev.SetLight(1, lamp);
+        dev.LightEnable(0, false);
+        dev.LightEnable(1, true);
+        dev.SetRenderState(RS_LIGHTING, 1);
+        dev.SetRenderState(RS_AMBIENT, 0);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+        dev.SetRenderState(RS_SRCBLEND, BLEND_ZERO);
+        dev.SetRenderState(RS_DESTBLEND, BLEND_SRCCOLOR);
+        dev.SetRenderState(RS_ZFUNC, CMP_EQUAL);
+        dev.SetTexture(0, lightmap);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_ADD);
+        dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 1);
+        dev.DrawIndexedPrimitive(TriangleList, kFvfTerrain, terrain.data(), uint32_t(terrain.size()), tidx.data(), uint32_t(tidx.size()));
+        dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 0);
+        dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        dev.SetRenderState(RS_AMBIENT, 0xFF505050);
+        dev.LightEnable(1, false);
+        dev.LightEnable(0, true);
+        dev.SetTexture(0, ground);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
         dev.SetRenderState(RS_LIGHTING, 1);
         std::vector<VtxMesh> v;
         std::vector<uint16_t> idx;
@@ -886,6 +935,7 @@ void RunShadowTest(D& dev, int frames, const std::string& shot)
     dev.DestroyTexture(ground);
     dev.DestroyTexture(fence);
     dev.DestroyTexture(blobTex);
+    dev.DestroyTexture(lightmap);
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)

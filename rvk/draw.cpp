@@ -538,7 +538,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // The frame's light list (binding 4): rebuilt when lights changed; always bound, as layouts require.
     // Only lit draws read it; the others bind any in-range part of the ring.
     bool needLights = (m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
-                       (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) || ShadowReceiver(fvf);
+                       (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) || ShadowReceiver(fvf) ||
+                      ShadowCompensated(fvf);
     VkDeviceSize frameLightsOffset = m_frameLightsGeneration == m_ringGeneration ? m_frameLightsOffset : 0;
     if (needLights && (m_frameLightsDirty || m_frameLightsGeneration != m_ringGeneration))   // once per frame
         frameLightsOffset = WriteFrameLights();
@@ -601,6 +602,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     bool override = (flags & F_PERPIXEL) && m_lightOverride;
     if (override) flags |= F_LIGHTOVERRIDE;
     if (ShadowReceiver(fvf)) flags |= F_SHADOW;
+    else if (ShadowCompensated(fvf)) flags |= F_SHADOWCOMP;
     if (m_rs[d3d::RS_COLORVERTEX]) flags |= F_COLORVERTEX;
     if (m_rs[d3d::RS_SPECULARENABLE]) flags |= F_SPECULAR;
     if (m_rs[d3d::RS_NORMALIZENORMALS]) flags |= F_NORMALIZE;
