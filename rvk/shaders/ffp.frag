@@ -111,11 +111,15 @@ void main()
     gDiffuse = vDiffuse;
     gSpecular = vSpecular;
     // Shadow: lit draws scale the sunlight (per-pixel lighting), others darken their final colour.
-    float shade = 1.0, localScale = 1.0;
-    if ((C.flags.x & (F_SHADOW | F_SHADOWCOMP)) != 0u)
+    float shade = 1.0, localScale = 1.0, texShade = 1.0;
+    if ((C.flags.x & (F_SHADOW | F_SHADOWCOMP | F_SHADOWTEX)) != 0u)
         shade = 1.0 - (1.0 - SunVisibility(vPosW, vNormalW.xyz)) * FL.shadowParams.y;
     if ((C.flags.x & F_SHADOWCOMP) != 0u) {
         localScale = 1.0 / max(shade, 0.05);
+        shade = 1.0;
+    }
+    if ((C.flags.x & F_SHADOWTEX) != 0u) {
+        texShade = shade;
         shade = 1.0;
     }
     bool shadeSun = (C.flags.x & (F_PERPIXEL | F_LIGHTING)) == (F_PERPIXEL | F_LIGHTING);
@@ -135,6 +139,7 @@ void main()
         uint colorOp = C.stageA[s].x;
         if (colorOp == 1u) break;                         // DISABLE ends the cascade
         vec4 tex = Sample(s);
+        if (s == 0u) tex.rgb *= texShade;
         vec3 rgb = Op(colorOp, Arg(C.stageA[s].y, current, tex), Arg(C.stageA[s].z, current, tex), current, tex).rgb;
         uint alphaOp = C.stageA[s].w;
         float a = alphaOp == 1u ? current.a

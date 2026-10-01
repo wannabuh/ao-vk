@@ -512,6 +512,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         DumpDraw(primitive, fvf, vertices, vertexCount, indices, indexCount);
     if (IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount))
         return;                                  // replaced by sun shadows
+    if (IsTerrain(fvf) && IsMultiplyPass())
+        m_terrainLitPassCur = true;
     Frame& f = m_frames[m_frameIndex];
     VkCommandBuffer cmd = f.main;
     FvfLayout layout = DecodeFvf(fvf);
@@ -604,6 +606,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     bool override = (flags & F_PERPIXEL) && m_lightOverride;
     if (override) flags |= F_LIGHTOVERRIDE;
     if (ShadowReceiver(fvf)) flags |= F_SHADOW;
+    else if (ShadowInLightmap(fvf)) flags |= F_SHADOWTEX;
     else if (ShadowCompensated(fvf)) flags |= F_SHADOWCOMP;
     if (m_rs[d3d::RS_COLORVERTEX]) flags |= F_COLORVERTEX;
     if (m_rs[d3d::RS_SPECULARENABLE]) flags |= F_SPECULAR;

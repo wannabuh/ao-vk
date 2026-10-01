@@ -853,7 +853,7 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
         lamp.diffuse = {1.0f, 0.8f, 0.4f, 1};
         lamp.position = {6.5f, 0.6f, 6.0f};
         lamp.range = 4.0f;
-        lamp.attenuation1 = 0.4f;
+        lamp.attenuation1 = 0.15f;                    // bright enough to fill the shadow in near it
         dev.SetLight(1, lamp);
         // The sun stays enabled, as the game leaves it when there are 8 lights or fewer; rvk keeps it off terrain.
         dev.LightEnable(1, true);

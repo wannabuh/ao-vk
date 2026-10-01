@@ -920,6 +920,8 @@ void Device::BeginFrame()
     m_constantsDirty = true;                     // shadow receiving depends on last frame's map
     m_frameEyeValid = false;
     m_frameViewProjValid = false;
+    m_terrainLitPassPrev = m_terrainLitPassCur;
+    m_terrainLitPassCur = false;
     m_inFrame = true;
     PrepareShadowMap(f.main);
     BeginRenderingOn(m_target);

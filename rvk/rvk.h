@@ -320,6 +320,9 @@ private:
     bool IsShadowCaster(uint32_t primitive, uint32_t fvf) const;
     bool IsTerrain(uint32_t fvf) const;
     bool ShadowCompensated(uint32_t fvf) const;
+    bool ShadowInLightmap(uint32_t fvf) const;
+    bool IsMultiplyPass() const;
+    bool m_terrainLitPassCur = false, m_terrainLitPassPrev = false;   // the ground had a lightmap + lights pass
     bool IsBlobShadow(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t indexCount) const;
     void RenderShadowMap(VkCommandBuffer cmd);
     uint64_t m_ringGeneration = 0, m_constantsGeneration = ~0ull;

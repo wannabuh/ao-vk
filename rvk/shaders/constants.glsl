@@ -50,4 +50,5 @@ const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8
            F_DEBUGLIGHT = 2048u,  // tint draws by how they are lit (Device::SetLightingDebug)
            F_LIGHTOVERRIDE = 4096u, // point / spot lights come from FL (the frame's nearest lights), not C.lights
            F_SHADOW = 8192u,        // receives sun shadows (FL.shadow*, shadow map at binding 5)
-           F_SHADOWCOMP = 16384u;   // multiplies a shadowed surface: local lights divided by its shadow factor
+           F_SHADOWCOMP = 16384u,   // multiplies a shadowed surface: local lights divided by its shadow factor
+           F_SHADOWTEX = 32768u;    // the shadow darkens texture stage 0 (the ground's lightmap) only

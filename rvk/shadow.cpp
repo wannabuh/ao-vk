@@ -501,9 +501,26 @@ bool Device::ShadowReceiver(uint32_t fvf) const
         !m_rs[d3d::RS_ZENABLE])
         return false;
     if (!m_rs[d3d::RS_ALPHABLENDENABLE])
-        return true;
+        // The ground's base pass, where a lightmap + lights pass follows (it did last frame): that pass takes the
+        // shadow instead (ShadowInLightmap), so local lights can fill shadows in.
+        return !(IsTerrain(fvf) && m_terrainLitPassPrev);
     uint32_t src = m_rs[d3d::RS_SRCBLEND], dst = m_rs[d3d::RS_DESTBLEND];
     return (src == d3d::BLEND_SRCALPHA && dst == d3d::BLEND_INVSRCALPHA) || (src == d3d::BLEND_ONE && dst == d3d::BLEND_ZERO);
+}
+
+bool Device::IsMultiplyPass() const
+{
+    uint32_t src = m_rs[d3d::RS_SRCBLEND], dst = m_rs[d3d::RS_DESTBLEND];
+    return m_rs[d3d::RS_ALPHABLENDENABLE] &&
+           ((src == d3d::BLEND_ZERO && dst == d3d::BLEND_SRCCOLOR) || (src == d3d::BLEND_DESTCOLOR && dst == d3d::BLEND_ZERO));
+}
+
+// The ground's lightmap + lights pass (multiplying the base pass): the shadow darkens its lightmap - the baked
+// sunlight - before the lights are added and the sum is clamped, so a light (the player's) fills shadows in:
+// ground = base * min(1, lightmap * shadow + ambient + lights).
+bool Device::ShadowInLightmap(uint32_t fvf) const
+{
+    return m_shadows && m_shadowValid && m_target == m_main && m_rs[d3d::RS_ZENABLE] && IsTerrain(fvf) && IsMultiplyPass();
 }
 
 // Anarchy Online's round blob shadow under characters (GfxVisualSimpleShadow_c): a black, alpha-blended disc of
@@ -539,11 +556,8 @@ bool Device::IsBlobShadow(uint32_t primitive, uint32_t fvf, const void* vertices
 // pass divides its local lights by the same shadow factor so only the (baked) sunlight ends up shadowed.
 bool Device::ShadowCompensated(uint32_t fvf) const
 {
-    if (!m_shadows || !m_shadowValid || m_target != m_main || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ ||
-        !m_rs[d3d::RS_ZENABLE] || !m_rs[d3d::RS_ALPHABLENDENABLE])
-        return false;
-    uint32_t src = m_rs[d3d::RS_SRCBLEND], dst = m_rs[d3d::RS_DESTBLEND];
-    return (src == d3d::BLEND_ZERO && dst == d3d::BLEND_SRCCOLOR) || (src == d3d::BLEND_DESTCOLOR && dst == d3d::BLEND_ZERO);
+    return m_shadows && m_shadowValid && m_target == m_main && (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ &&
+           m_rs[d3d::RS_ZENABLE] && IsMultiplyPass();
 }
 
 // The sun for the next frame's shadows: the brightest directional light used during this frame.
