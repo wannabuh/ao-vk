@@ -1208,7 +1208,7 @@ int main(int argc, char** argv)
     float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, bump = 0.0f;
     uint32_t anisotropy = 1;
     float motionBlur = 0.0f, dof = 0.0f, dofFocus = 0.0f;
-    bool dofBokeh = true;
+    bool dofBokeh = true, dofFar = true;
     uint32_t motionMode = 0;
     float knee = 0.85f;
     int bench = 0;
@@ -1237,6 +1237,7 @@ int main(int argc, char** argv)
         else if (a == "--hdr") hdr = true;
         else if (a == "--dof" && i + 1 < argc) { dof = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--dof-smooth") dofBokeh = false;
+        else if (a == "--dof-no-far") dofFar = false;
         else if (a == "--dof-focus" && i + 1 < argc) dofFocus = float(std::atof(argv[++i]));
         else if (a == "--motion-blur" && i + 1 < argc) { motionBlur = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--motion-mode" && i + 1 < argc) motionMode = uint32_t(std::atoi(argv[++i]));
@@ -1290,7 +1291,7 @@ int main(int argc, char** argv)
     dev.SetAnisotropy(anisotropy);
     dev.SetMotionBlur(motionBlur, 8.0f);
     dev.SetMotionBlurMode(motionMode);
-    dev.SetDof(dof > 0.0f, dofBokeh, true, dof, 16.0f, dofFocus, 0.2f);
+    dev.SetDof(dof > 0.0f, dofBokeh, true, dof, 16.0f, dofFocus, 0.2f, dofFar, 3.0f);
     dev.SetPointShadowFadeIn(fadeIn);    // frames here are milliseconds apart: no fade-in unless asked
     if (pointShadowTest) {               // needs per-pixel lighting with the light override
         dev.SetPixelLighting(true);

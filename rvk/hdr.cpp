@@ -405,8 +405,9 @@ bool Device::RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, const float ton
     // time, manual focus.
     float radius = m_dofRadius * float(h) / 1440.0f;
     float p[12] = {m_aoProj.m[2][2], m_aoProj.m[3][2], float(w), float(h),
-                   m_dofStrength, radius, std::clamp(m_dofRange, 0.0f, 0.95f), float((m_dofNear ? 1 : 0) | (m_dofBokeh ? 2 : 0)),
-                   float(dt), m_dofFocusDistance, 0.0f, 0.0f};
+                   m_dofStrength, radius, std::clamp(m_dofRange, 0.0f, 0.95f),
+                   float((m_dofNear ? 1 : 0) | (m_dofBokeh ? 2 : 0) | (m_dofFar ? 4 : 0)),
+                   float(dt), m_dofFocusDistance, std::max(m_dofCloseFocus, 0.01f), 0.0f};
     // 2. Focus distance, eased from last frame's.
     Texture* prevFocus = m_dofFocus[m_dofFocusIndex];
     Texture* focus = m_dofFocus[m_dofFocusIndex ^ 1];

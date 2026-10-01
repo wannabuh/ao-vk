@@ -55,7 +55,9 @@ Setting g_settings[] = {
     {"RVK_MBlurNear",  "Camera motion blur: sharp nearer than (world units)",             "HDR and effects", Float, 2, 20, 0.5f, 8, "RANDYVK_MOTION_BLUR_NEAR", 0},
     {"RVK_Dof",        "Depth of field",                                                   "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_DofBokeh",   "Bokeh (hexagonal highlights; off = smooth blur)",                 "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
-    {"RVK_DofNear",    "Blur in front of the focus too",                                  "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
+    {"RVK_DofNear",    "Blur in front of the focus",                                      "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
+    {"RVK_DofFar",     "Blur behind the focus (always)",                                  "Depth of field", Bool, 0, 1, 1, 0, nullptr, 0},
+    {"RVK_DofMacro",   "Close focus: blur behind it when nearer than (world units)",      "Depth of field", Float, 0, 10, 0.5f, 3, nullptr, 0},
     {"RVK_DofAmount",  "Blur strength",                                                   "Depth of field", Float, 0, 2, 0.05f, 0.5f, nullptr, 0},
     {"RVK_DofRadius",  "Largest blur (pixels at 1440 lines)",                             "Depth of field", Int, 4, 48, 1, 16, nullptr, 0},
     {"RVK_DofFocus",   "Focus distance (0 = auto: your character)",                       "Depth of field", Float, 0, 200, 1, 0, nullptr, 0},
@@ -127,7 +129,7 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_MBlurObj")) d->SetMotionBlurMode(s.value != 0.0f ? 1u : 0u);
     else if (std::strncmp(n, "RVK_Dof", 7) == 0)
         d->SetDof(V("RVK_Dof") != 0.0f, V("RVK_DofBokeh") != 0.0f, V("RVK_DofNear") != 0.0f, V("RVK_DofAmount"),
-                  V("RVK_DofRadius"), V("RVK_DofFocus"), V("RVK_DofRange"));
+                  V("RVK_DofRadius"), V("RVK_DofFocus"), V("RVK_DofRange"), V("RVK_DofFar") != 0.0f, V("RVK_DofMacro"));
 }
 
 }  // namespace

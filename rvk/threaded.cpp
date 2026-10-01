@@ -362,9 +362,10 @@ void ThreadedDevice::SetMotionBlur(float strength, float focusNear)
     Enqueue([this, strength, focusNear](const uint8_t*) { m_device.SetMotionBlur(strength, focusNear); });
 }
 
-void ThreadedDevice::SetDof(bool enable, bool bokeh, bool nearBlur, float strength, float radius, float focus, float range)
+void ThreadedDevice::SetDof(bool enable, bool bokeh, bool nearBlur, float strength, float radius, float focus, float range,
+                            bool farBlur, float closeFocus)
 {
-    Enqueue([=](const uint8_t*) { m_device.SetDof(enable, bokeh, nearBlur, strength, radius, focus, range); });
+    Enqueue([=](const uint8_t*) { m_device.SetDof(enable, bokeh, nearBlur, strength, radius, focus, range, farBlur, closeFocus); });
 }
 
 void ThreadedDevice::SetMotionBlurMode(uint32_t mode)

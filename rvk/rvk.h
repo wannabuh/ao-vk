@@ -175,9 +175,11 @@ public:
     // With HDR: depth of field (hdr.cpp). strength: blur at full CoC (0..1+); radius: largest blur in pixels at 1440
     // lines; focus: distance (0 = auto: the nearest surface near the screen centre - the player's character); range:
     // the in-focus band around it; nearBlur: blur in front of the focus too; bokeh: hexagonal highlights.
-    void SetDof(bool enable, bool bokeh, bool nearBlur, float strength, float radius, float focus, float range)
+    // farBlur: blur behind the focus always; otherwise only when the focus is nearer than closeFocus.
+    void SetDof(bool enable, bool bokeh, bool nearBlur, float strength, float radius, float focus, float range,
+                bool farBlur, float closeFocus)
     { m_dof = enable; m_dofBokeh = bokeh; m_dofNear = nearBlur; m_dofStrength = strength; m_dofRadius = radius;
-      m_dofFocusDistance = focus; m_dofRange = range; }
+      m_dofFocusDistance = focus; m_dofRange = range; m_dofFar = farBlur; m_dofCloseFocus = closeFocus; }
     // With HDR: ambient occlusion from the depth buffer (hdr.cpp). strength 0 = off; radius in world units.
     void SetAo(float strength, float radius) { m_aoStrength = strength; m_aoRadius = radius; }
     float AoStrength() const { return m_aoStrength; }
@@ -512,7 +514,8 @@ private:
     bool m_prevViewProjValid = false;
     double m_prevSceneTime = 0.0;
     bool MotionBlurParams(float out[24]);        // reprojection + parameters for this frame; false: no blur
-    bool m_dof = false, m_dofBokeh = true, m_dofNear = true;
+    bool m_dof = false, m_dofBokeh = true, m_dofNear = true, m_dofFar = false;
+    float m_dofCloseFocus = 3.0f;
     float m_dofStrength = 0.5f, m_dofRadius = 16.0f, m_dofFocusDistance = 0.0f, m_dofRange = 0.2f;
     Texture* m_dofIn = nullptr;                  // the scene with its ambient occlusion
     Texture* m_dofOut = nullptr;                 // ... with depth of field: what the tone mapping reads
