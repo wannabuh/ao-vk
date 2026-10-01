@@ -45,9 +45,9 @@ uint64_t HashBytes(const void* data, size_t size, uint64_t h)
     return h;
 }
 
-// Clip-space test of a world-space box's corners against a view-projection: +1 all inside, -1 all outside one
-// plane, 0 otherwise.
-int BoxInClip(const float mn[3], const float mx[3], const d3d::Matrix& vp, bool depth)
+}  // namespace
+
+int detail::BoxInClip(const float mn[3], const float mx[3], const d3d::Matrix& vp, bool depth)
 {
     int outside[6] = {}, inside = 0;
     for (int k = 0; k < 8; ++k) {
@@ -65,6 +65,8 @@ int BoxInClip(const float mn[3], const float mx[3], const d3d::Matrix& vp, bool 
     for (int o : outside) if (o == 8) return -1;
     return 0;
 }
+
+namespace {
 
 void Normalize(float v[3])
 {
@@ -291,7 +293,7 @@ bool Device::IsShadowCaster(uint32_t primitive, uint32_t fvf) const
 {
     if (m_drawIsLabel)
         return false;
-    if (!m_shadows || m_target != m_main || TopologyClassOf(primitive) != 2 ||
+    if (!(m_shadows || m_pointShadows) || m_target != m_main || TopologyClassOf(primitive) != 2 ||
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || !m_rs[d3d::RS_ZENABLE] || !m_rs[d3d::RS_ZWRITEENABLE])
         return false;
     if (IsTerrain(fvf))
@@ -332,10 +334,9 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     c.world = m_world;
     c.generation = m_ringGeneration;
     ShadowCutout(fvf, &c.texture, &c.texOffset, &c.alphaRef);
+    uint64_t key = CasterKey(primitive, fvf, stride, vertices, vertexCount, indices, indexCount, c.boundsMin, c.boundsMax);
+    c.key = key;
     m_casters.push_back(c);
-
-    uint64_t key = CasterKey(primitive, fvf, stride, vertices, vertexCount, indices, indexCount);
-    m_casters.back().key = key;
     auto cached = m_casterCache.find(key);
     if (cached != m_casterCache.end()) {
         CachedCaster& e = cached->second;
@@ -382,22 +383,26 @@ void Device::ShadowCutout(uint32_t fvf, Texture** texture, int* texOffset, float
 // and its bounds rounded to 4 units - but not the exact vertices or world matrix, so plants swaying in the wind
 // (by vertices or by a tilting world matrix) are still the same caster.
 uint64_t Device::CasterKey(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
-                           const uint16_t* indices, uint32_t indexCount) const
+                           const uint16_t* indices, uint32_t indexCount, float boundsMin[3], float boundsMax[3]) const
 {
     Texture* texture;
     int texOffset;
     float alphaRef;
     ShadowCutout(fvf, &texture, &texOffset, &alphaRef);
-    int32_t bounds[6] = {INT32_MAX, INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN, INT32_MIN};
+    for (int j = 0; j < 3; ++j) { boundsMin[j] = 1e30f; boundsMax[j] = -1e30f; }
     const uint8_t* v = static_cast<const uint8_t*>(vertices);
     for (uint32_t i = 0; i < vertexCount; ++i) {
         float p[3];
         std::memcpy(p, v + size_t(i) * stride, sizeof(p));
         for (int j = 0; j < 3; ++j) {
-            int32_t q = int32_t(std::floor(p[j] * 0.25f));
-            bounds[j] = std::min(bounds[j], q);
-            bounds[3 + j] = std::max(bounds[3 + j], q);
+            boundsMin[j] = std::min(boundsMin[j], p[j]);
+            boundsMax[j] = std::max(boundsMax[j], p[j]);
         }
+    }
+    int32_t bounds[6];
+    for (int j = 0; j < 3; ++j) {
+        bounds[j] = vertexCount ? int32_t(std::floor(boundsMin[j] * 0.25f)) : INT32_MAX;
+        bounds[3 + j] = vertexCount ? int32_t(std::floor(boundsMax[j] * 0.25f)) : INT32_MIN;
     }
     uint64_t key = 0x5EEDull ^ (uint64_t(fvf) << 32) ^ (uint64_t(primitive) << 24) ^ vertexCount;
     key = HashBytes(bounds, sizeof(bounds), key);
@@ -600,6 +605,141 @@ void Device::CaptureSun(const d3d::Light& l)
     std::memcpy(m_sunDir, d, sizeof(d));
 }
 
+// A model-space box through a matrix: the world-space box around it.
+static void TransformBounds(const float mn[3], const float mx[3], const d3d::Matrix& m, float outMin[3], float outMax[3])
+{
+    for (int j = 0; j < 3; ++j) {
+        float c = m.m[3][j], e = 0.0f;
+        for (int i = 0; i < 3; ++i) {
+            float centre = 0.5f * (mn[i] + mx[i]), half = 0.5f * (mx[i] - mn[i]);
+            c += centre * m.m[i][j];
+            e += half * std::fabs(m.m[i][j]);
+        }
+        outMin[j] = c - e;
+        outMax[j] = c + e;
+    }
+}
+
+// End of frame: what the shadow passes draw - this frame's casters (the world camera's, still in the ring) and the
+// remembered static casters the game didn't draw this frame (out of view, or overwritten by a mid-frame flush).
+void Device::CollectShadowItems()
+{
+    m_shadowItems.clear();
+    uint32_t world = 0;
+    for (uint32_t i = 1; i < m_casterViews.size(); ++i)
+        if (m_casterViews[i].count > m_casterViews[world].count) world = i;
+    std::vector<uint64_t> staleKeys;
+    for (const ShadowCaster& c : m_casters) {
+        if (c.view != world)
+            continue;
+        if (c.generation != m_ringGeneration) {  // the ring restarted since (mid-frame flush): data overwritten
+            staleKeys.push_back(c.key);          // drawn from the caster cache instead, if remembered
+            continue;
+        }
+        ShadowItem it;
+        it.buffer = VK_NULL_HANDLE;
+        it.vbOffset = c.vbOffset;
+        it.ibOffset = c.ibOffset;
+        it.primitive = c.primitive;
+        it.stride = c.stride;
+        it.vertexCount = c.vertexCount;
+        it.indexCount = c.indexCount;
+        it.texture = c.texture;
+        it.texOffset = c.texOffset;
+        it.alphaRef = c.alphaRef;
+        it.world = c.world;
+        TransformBounds(c.boundsMin, c.boundsMax, c.world, it.boundsMin, it.boundsMax);
+        it.cached = false;
+        m_shadowItems.push_back(it);
+    }
+    for (auto& [key, e] : m_casterCache) {
+        if (e.lastSeen == m_frameNumber && std::find(staleKeys.begin(), staleKeys.end(), key) == staleKeys.end())
+            continue;                            // drawn this frame: in the list above
+        ShadowItem it;
+        it.buffer = e.buffer;
+        it.vbOffset = 0;
+        it.ibOffset = e.indexOffset;
+        it.primitive = e.primitive;
+        it.stride = e.stride;
+        it.vertexCount = e.vertexCount;
+        it.indexCount = e.indexCount;
+        it.texture = e.texture;
+        it.texOffset = e.texOffset;
+        it.alphaRef = e.alphaRef;
+        it.world = SwayPose(e);
+        std::memcpy(it.boundsMin, e.boundsMin, sizeof(it.boundsMin));
+        std::memcpy(it.boundsMax, e.boundsMax, sizeof(it.boundsMax));
+        it.cached = true;
+        m_shadowItems.push_back(it);
+    }
+}
+
+// Draws one caster into the shadow map being rendered (the shadow pipelines, depth only).
+void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowItem& item, const d3d::Matrix& lightViewProj)
+{
+    int pipeline = item.texture ? 1 : 0;
+    if (pipeline != bind.pipeline) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelines[pipeline]);
+        bind.pipeline = pipeline;
+    }
+    if (item.primitive != bind.primitive) {
+        vkCmdSetPrimitiveTopology(cmd, TopologyOf(item.primitive));
+        bind.primitive = item.primitive;
+    }
+    if (item.stride != bind.stride || item.texOffset != bind.texOffset) {
+        VkVertexInputBindingDescription2EXT bindings[2] = {
+            {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 0, item.stride, VK_VERTEX_INPUT_RATE_VERTEX, 1},
+            {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 1, 0, VK_VERTEX_INPUT_RATE_VERTEX, 1},
+        };
+        VkVertexInputAttributeDescription2EXT attrs[2] = {
+            {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT, nullptr, 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
+            {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT, nullptr, 1, 1, VK_FORMAT_R32G32_SFLOAT, 0},
+        };
+        if (item.texOffset >= 0) { attrs[1].binding = 0; attrs[1].offset = uint32_t(item.texOffset); }
+        vkCmdSetVertexInputEXT(cmd, 2, bindings, 2, attrs);
+        bind.stride = item.stride;
+        bind.texOffset = item.texOffset;
+    }
+    if (item.texture && item.texture != bind.texture) {
+        VkDescriptorImageInfo image{SamplerFor(0), item.texture->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        w.dstBinding = 0;
+        w.descriptorCount = 1;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        w.pImageInfo = &image;
+        vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelineLayout, 0, 1, &w);
+        bind.texture = item.texture;
+    }
+    // Ring casters address their data inside the ring bound at offset 0; cached ones have their own buffer.
+    VkBuffer vb = item.buffer ? item.buffer : m_frames[m_frameIndex].ring;
+    if (vb != bind.vb) {
+        VkBuffer buffers[2] = {vb, m_nullBuffer};
+        VkDeviceSize offsets[2] = {0, 0};
+        vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
+        bind.vb = vb;
+    }
+    ShadowPush push;
+    push.worldLightViewProj = Mul(item.world, lightViewProj);
+    push.alpha[0] = item.alphaRef;
+    push.alpha[1] = push.alpha[2] = push.alpha[3] = 0.0f;
+    vkCmdPushConstants(cmd, m_shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       sizeof(push), &push);
+    if (item.indexCount) {
+        VkDeviceSize ibOffset = item.buffer ? item.ibOffset : 0;
+        if (vb != bind.ib || ibOffset != bind.ibOffset) {
+            vkCmdBindIndexBuffer(cmd, vb, ibOffset, VK_INDEX_TYPE_UINT16);
+            bind.ib = vb;
+            bind.ibOffset = ibOffset;
+        }
+        if (item.buffer)
+            vkCmdDrawIndexed(cmd, item.indexCount, 1, 0, 0, 0);
+        else
+            vkCmdDrawIndexed(cmd, item.indexCount, 1, uint32_t(item.ibOffset / 2), int32_t(item.vbOffset / item.stride), 0);
+    } else {
+        vkCmdDraw(cmd, item.vertexCount, 1, item.buffer ? 0 : uint32_t(item.vbOffset / item.stride), 0);
+    }
+}
+
 // End of frame, after the main pass: render this frame's casters from the sun into the map for the next frame.
 void Device::RenderShadowMap(VkCommandBuffer cmd)
 {
@@ -621,11 +761,13 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         m_shadowWorldProj = m_casterViews[world].proj;
         std::memcpy(m_frameEye, eye, sizeof(eye));             // also what caster cache eviction measures from
     }
-    if (!m_shadows || !haveSun || !m_frameViewProjValid || m_casters.empty()) {
-        m_casters.clear();
-        UpdateCasterCache();
+    if (!m_frameViewProjValid || m_casters.empty()) {
+        m_shadowItems.clear();
         return;
     }
+    CollectShadowItems();
+    if (!m_shadows || !haveSun)
+        return;
 
     // Light view: z along the sun's direction, the map centred ahead of the camera, snapped to texels.
     float z[3] = {m_sunDir[0], m_sunDir[1], m_sunDir[2]};
@@ -673,123 +815,17 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdSetDepthBias(cmd, 2.0f, 0.0f, 2.5f);
-    Frame& f = m_frames[m_frameIndex];
-    VkBuffer buffers[2] = {f.ring, m_nullBuffer};
-    VkDeviceSize offsets[2] = {0, 0};
-    vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
-    vkCmdBindIndexBuffer(cmd, f.ring, 0, VK_INDEX_TYPE_UINT16);
 
-    std::vector<uint64_t> staleKeys;
-    int boundPipeline = -1;
-    uint32_t boundStride = ~0u, boundPrimitive = ~0u;
-    int boundTexOffset = -2;
-    Texture* boundTexture = nullptr;
-    for (const ShadowCaster& c : m_casters) {
-        if (c.view != world)
-            continue;
-        if (c.generation != m_ringGeneration) {  // the ring restarted since (mid-frame flush): data overwritten
-            staleKeys.push_back(c.key);          // drawn from the caster cache instead, if remembered
-            continue;
-        }
-        int pipeline = c.texture ? 1 : 0;
-        if (pipeline != boundPipeline) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelines[pipeline]);
-            boundPipeline = pipeline;
-        }
-        if (c.primitive != boundPrimitive) {
-            vkCmdSetPrimitiveTopology(cmd, TopologyOf(c.primitive));
-            boundPrimitive = c.primitive;
-        }
-        if (c.stride != boundStride || c.texOffset != boundTexOffset) {
-            VkVertexInputBindingDescription2EXT bindings[2] = {
-                {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 0, c.stride, VK_VERTEX_INPUT_RATE_VERTEX, 1},
-                {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 1, 0, VK_VERTEX_INPUT_RATE_VERTEX, 1},
-            };
-            VkVertexInputAttributeDescription2EXT attrs[2] = {
-                {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT, nullptr, 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
-                {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT, nullptr, 1, 1, VK_FORMAT_R32G32_SFLOAT, 0},
-            };
-            if (c.texOffset >= 0) { attrs[1].binding = 0; attrs[1].offset = uint32_t(c.texOffset); }
-            vkCmdSetVertexInputEXT(cmd, 2, bindings, 2, attrs);
-            boundStride = c.stride;
-            boundTexOffset = c.texOffset;
-        }
-        if (c.texture && c.texture != boundTexture) {
-            VkDescriptorImageInfo image{SamplerFor(0), c.texture->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-            VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-            w.dstBinding = 0;
-            w.descriptorCount = 1;
-            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            w.pImageInfo = &image;
-            vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelineLayout, 0, 1, &w);
-            boundTexture = c.texture;
-        }
-        ShadowPush push;
-        push.worldLightViewProj = Mul(c.world, lightViewProj);
-        push.alpha[0] = c.alphaRef;
-        push.alpha[1] = push.alpha[2] = push.alpha[3] = 0.0f;
-        vkCmdPushConstants(cmd, m_shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(push), &push);
-        if (c.indexCount)
-            vkCmdDrawIndexed(cmd, c.indexCount, 1, uint32_t(c.ibOffset / 2), int32_t(c.vbOffset / c.stride), 0);
-        else
-            vkCmdDraw(cmd, c.vertexCount, 1, uint32_t(c.vbOffset / c.stride), 0);
-    }
-    // Remembered static casters the game didn't draw this frame (out of view), if they reach into the map.
+    ShadowBind bind;
     m_cachedCastersDrawn = 0;
-    for (auto& [key, e] : m_casterCache) {
-        bool drawnThisFrame = e.lastSeen == m_frameNumber &&
-                              std::find(staleKeys.begin(), staleKeys.end(), key) == staleKeys.end();
-        if (drawnThisFrame || BoxInClip(e.boundsMin, e.boundsMax, lightViewProj, false) == -1)
-            continue;
-        ++m_cachedCastersDrawn;
-        int pipeline = e.texture ? 1 : 0;
-        if (pipeline != boundPipeline) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelines[pipeline]);
-            boundPipeline = pipeline;
+    for (const ShadowItem& item : m_shadowItems) {
+        // Remembered casters only if they reach into the map (the game's own casters are near the camera anyway).
+        if (item.cached) {
+            if (BoxInClip(item.boundsMin, item.boundsMax, lightViewProj, false) == -1)
+                continue;
+            ++m_cachedCastersDrawn;
         }
-        if (e.primitive != boundPrimitive) {
-            vkCmdSetPrimitiveTopology(cmd, TopologyOf(e.primitive));
-            boundPrimitive = e.primitive;
-        }
-        if (e.stride != boundStride || e.texOffset != boundTexOffset) {
-            VkVertexInputBindingDescription2EXT bindings[2] = {
-                {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 0, e.stride, VK_VERTEX_INPUT_RATE_VERTEX, 1},
-                {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 1, 0, VK_VERTEX_INPUT_RATE_VERTEX, 1},
-            };
-            VkVertexInputAttributeDescription2EXT attrs[2] = {
-                {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT, nullptr, 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
-                {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT, nullptr, 1, 1, VK_FORMAT_R32G32_SFLOAT, 0},
-            };
-            if (e.texOffset >= 0) { attrs[1].binding = 0; attrs[1].offset = uint32_t(e.texOffset); }
-            vkCmdSetVertexInputEXT(cmd, 2, bindings, 2, attrs);
-            boundStride = e.stride;
-            boundTexOffset = e.texOffset;
-        }
-        if (e.texture && e.texture != boundTexture) {
-            VkDescriptorImageInfo image{SamplerFor(0), e.texture->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-            VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-            w.dstBinding = 0;
-            w.descriptorCount = 1;
-            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            w.pImageInfo = &image;
-            vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelineLayout, 0, 1, &w);
-            boundTexture = e.texture;
-        }
-        VkDeviceSize zero = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &e.buffer, &zero);
-        ShadowPush push;
-        push.worldLightViewProj = Mul(SwayPose(e), lightViewProj);
-        push.alpha[0] = e.alphaRef;
-        push.alpha[1] = push.alpha[2] = push.alpha[3] = 0.0f;
-        vkCmdPushConstants(cmd, m_shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(push), &push);
-        if (e.indexCount) {
-            vkCmdBindIndexBuffer(cmd, e.buffer, e.indexOffset, VK_INDEX_TYPE_UINT16);
-            vkCmdDrawIndexed(cmd, e.indexCount, 1, 0, 0, 0);
-        } else {
-            vkCmdDraw(cmd, e.vertexCount, 1, 0, 0);
-        }
+        DrawShadowItem(cmd, bind, item, lightViewProj);
     }
     vkCmdEndRendering(cmd);
     ImageBarrier(cmd, m_shadowImage, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
@@ -800,7 +836,13 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     m_shadowViewProj = lightViewProj;
     std::memcpy(m_shadowSunDir, m_sunDir, sizeof(m_sunDir));
     m_shadowValid = true;
+}
+
+// After all shadow passes of the frame.
+void Device::FinishShadowFrame()
+{
     m_casters.clear();
+    m_shadowItems.clear();
     UpdateCasterCache();
 }
 

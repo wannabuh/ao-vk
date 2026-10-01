@@ -132,6 +132,12 @@ public:
     void SetShadows(bool enable) { if (m_shadows != enable) { m_shadows = enable; m_constantsDirty = true; } }
     bool Shadows() const { return m_shadows; }
     void SetShadowParams(float strength, float range) { m_shadowStrength = strength; m_shadowRange = range; }
+    // Enhancement, with the light override: shadows from up to `count` of the frame's point lights nearest the camera
+    // (cube shadow maps, pointshadow.cpp; 0 = off). strength = how much of such a light a shadow takes away (0..1).
+    void SetPointShadows(uint32_t count) { m_pointShadows = count < kMaxPointShadows ? count : kMaxPointShadows; }
+    uint32_t PointShadows() const { return m_pointShadows; }
+    void SetPointShadowStrength(float strength) { m_pointShadowStrength = strength; }
+    static constexpr uint32_t kMaxPointShadows = 4;
     void SetTexture(uint32_t stage, Texture* texture);
     // Null = the main target. Like D3D, resets the viewport to the whole target.
     void SetRenderTarget(Texture* target);
@@ -257,7 +263,32 @@ private:
         float alphaRef;
         uint64_t key;                            // caster cache identity
         uint32_t view;                           // index into m_casterViews
+        float boundsMin[3], boundsMax[3];        // model space
     };
+    // One caster as the shadow passes draw it: from this frame's ring or from the caster cache (own buffer).
+    struct ShadowItem {
+        VkBuffer buffer;                         // VK_NULL_HANDLE: the frame's ring
+        VkDeviceSize vbOffset, ibOffset;         // ring: byte offsets; cached: index data offset in `buffer`
+        uint32_t primitive, stride, vertexCount, indexCount;
+        Texture* texture;
+        int texOffset;
+        float alphaRef;
+        d3d::Matrix world;
+        float boundsMin[3], boundsMax[3];        // world space
+        bool cached;                             // remembered, not drawn by the game this frame
+    };
+    std::vector<ShadowItem> m_shadowItems;       // EndFrame: what the shadow passes draw
+    // What a shadow pass has bound, so unchanged state isn't re-issued.
+    struct ShadowBind {
+        int pipeline = -1, texOffset = -2;
+        uint32_t stride = ~0u, primitive = ~0u;
+        Texture* texture = nullptr;
+        VkBuffer vb = VK_NULL_HANDLE, ib = VK_NULL_HANDLE;
+        VkDeviceSize ibOffset = ~0ull;
+    };
+    void CollectShadowItems();
+    void DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowItem& item, const d3d::Matrix& lightViewProj);
+    void FinishShadowFrame();
     // The cameras casters were drawn with this frame; the shadow map follows the one most casters share (the
     // world's), so 3D interface elements drawn with their own camera neither move the map nor cast into it.
     struct CasterView { d3d::Matrix view, proj; uint32_t count; };
@@ -318,7 +349,7 @@ private:
     void CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertices, const uint16_t* indices);
     void ShadowCutout(uint32_t fvf, Texture** texture, int* texOffset, float* alphaRef) const;
     uint64_t CasterKey(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
-                       const uint16_t* indices, uint32_t indexCount) const;
+                       const uint16_t* indices, uint32_t indexCount, float boundsMin[3], float boundsMax[3]) const;
     uint32_t m_cachedCastersDrawn = 0;           // last shadow pass: remembered casters drawn (frame dumps)
     uint32_t m_forgottenInView = 0, m_forgottenFar = 0;   // remembered casters forgotten so far (frame dumps)
     void UpdateCasterCache();
@@ -336,6 +367,27 @@ private:
     bool m_terrainLitPassCur = false, m_terrainLitPassPrev = false;   // the ground had a lightmap + lights pass
     bool IsBlobShadow(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t indexCount) const;
     void RenderShadowMap(VkCommandBuffer cmd);
+
+    // Point light shadows (pointshadow.cpp): a cube map per shadowed light, layers 6*i .. 6*i+5 of one cube array.
+    static constexpr uint32_t kPointShadowSize = 1024;
+    static constexpr float kPointShadowNear = 0.05f;
+    uint32_t m_pointShadows = 0;                 // lights to shadow (0 = off)
+    float m_pointShadowStrength = 0.9f;
+    VkImage m_cubeImage = VK_NULL_HANDLE;
+    VmaAllocation_T* m_cubeAllocation = nullptr;
+    VkImageView m_cubeArrayView = VK_NULL_HANDLE;
+    VkSampler m_cubeSampler = VK_NULL_HANDLE;
+    VkImageView m_cubeFaceViews[kMaxPointShadows * 6] = {};
+    VkImageLayout m_cubeLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    struct PointShadowLight { float position[3], range; };
+    PointShadowLight m_pointShadowLights[kMaxPointShadows] = {};   // the lights the cubes hold (for this frame)
+    uint32_t m_pointShadowCount = 0;
+    uint32_t m_pointShadowDraws = 0;             // last pass: caster draws into the cubes (frame dumps)
+    bool CreatePointShadowResources(std::string* error);
+    void DestroyPointShadowResources();
+    void PreparePointShadowMaps(VkCommandBuffer cmd);
+    void RenderPointShadowMaps(VkCommandBuffer cmd);
+    uint32_t PointShadowLayer(const d3d::Light& light) const;   // cube index + 1 the light's shadow is in, or 0
     uint64_t m_ringGeneration = 0, m_constantsGeneration = ~0ull;
     VkDeviceSize m_constantsOffset = 0;
     uint32_t m_constantsFvf = ~0u;

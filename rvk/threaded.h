@@ -63,6 +63,9 @@ public:
     void SetShadows(bool enable);
     bool Shadows() const { return m_shadows; }
     void SetShadowParams(float strength, float range);
+    void SetPointShadows(uint32_t count);
+    uint32_t PointShadows() const { return m_pointShadows; }
+    void SetPointShadowStrength(float strength);
     void SetTexture(uint32_t stage, Texture* texture);
     void SetRenderTarget(Texture* target);
     Texture* GetRenderTarget() const { return m_target; }
@@ -132,6 +135,7 @@ private:
     d3d::Viewport m_viewport{};
     Texture* m_target = nullptr;
     bool m_pixelLighting = false, m_lightingDebug = false, m_lightOverride = false, m_shadows = false;
+    uint32_t m_pointShadows = 0;
 };
 
 }  // namespace rvk

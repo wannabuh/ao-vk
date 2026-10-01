@@ -995,6 +995,109 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
     dev.DestroyTexture(labelTex);
 }
 
+// Point light shadow test (--point-shadow-test): night, a lamp among cubes. Left half: lit ground (per-pixel); right
+// half: the ground the way Anarchy Online draws it (unlit base pass + lightmap and lights multiplying pass). A small
+// cube around the lamp (its housing) must not cast; the cubes around it must, in every direction (all cube faces).
+template <typename D>
+void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::string& dump)
+{
+    auto groundPixels = Checker(64, 8, 0xFFC8C0B0, 0xFFA09888);
+    Texture* ground = dev.CreateTexture(64, 64, groundPixels.data());
+    std::vector<uint32_t> lightmapPixels(64, 0xFF202020);
+    Texture* lightmap = dev.CreateTexture(8, 8, lightmapPixels.data());
+    struct VtxTerrain { float x, y, z, nx, ny, nz, u0, v0, u1, v1; };
+    const uint32_t kFvfTerrain = FVF_XYZ | FVF_NORMAL | (2 << 8);
+    std::vector<VtxTerrain> terrain;
+    std::vector<uint16_t> tidx;
+    const int cells = 16;
+    for (int j = 0; j <= cells; ++j)
+        for (int i = 0; i <= cells; ++i) {
+            float x = 12.0f * i / cells, z = -8.0f + 20.0f * j / cells;
+            terrain.push_back({x, 0, z, 0, 1, 0, x / 4, z / 4, 0.5f, 0.5f});
+        }
+    for (int j = 0; j < cells; ++j)
+        for (int i = 0; i < cells; ++i) {
+            uint16_t a = uint16_t(j * (cells + 1) + i), b = uint16_t(a + 1), c = uint16_t(a + cells + 1), d = uint16_t(c + 1);
+            uint16_t q[6] = {a, c, b, b, c, d};
+            tidx.insert(tidx.end(), q, q + 6);
+        }
+    for (int frame = 0; frame < frames; ++frame) {
+        if (frame == frames - 1) {
+            dev.RequestScreenshot(shot);
+            if (!dump.empty()) dev.RequestFrameDump(dump);
+        }
+        dev.BeginFrame();
+        dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
+        dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF101828, 1.0f);
+        dev.SetTransform(View, LookAtLH({0, 13, -11}, {0, 0, 1.5f}, {0, 1, 0}));
+        dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 200.0f));
+        dev.SetTransform(World, Identity());
+        dev.SetRenderState(RS_ZENABLE, 1);
+        dev.SetRenderState(RS_ZWRITEENABLE, 1);
+        dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+        dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        dev.SetRenderState(RS_ALPHATESTENABLE, 0);
+        dev.SetRenderState(RS_AMBIENT, 0xFF181818);
+        dev.SetRenderState(RS_DIFFUSEMATERIALSOURCE, MCS_MATERIAL);
+        Material mat{{1, 1, 1, 1}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}, 0.0f};
+        dev.SetMaterial(mat);
+        Light lamp{};
+        lamp.type = LIGHT_POINT;
+        lamp.diffuse = {1.0f, 0.85f, 0.6f, 1};
+        lamp.position = {0.0f, 1.2f, 1.0f};
+        lamp.range = 9.0f;
+        lamp.attenuation0 = 0.3f;
+        lamp.attenuation1 = 0.08f;
+        dev.SetLight(0, lamp);
+        dev.LightEnable(0, true);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+        dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+        dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
+        dev.SetTexture(0, ground);
+        {   // left: lit ground
+            VtxMesh q[4] = {{-12, 0, -8, 0, 1, 0, 0xFFFFFFFF, 0, 0}, {0, 0, -8, 0, 1, 0, 0xFFFFFFFF, 3, 0},
+                            {0, 0, 12, 0, 1, 0, 0xFFFFFFFF, 3, 5}, {-12, 0, 12, 0, 1, 0, 0xFFFFFFFF, 0, 5}};
+            dev.SetRenderState(RS_LIGHTING, 1);
+            dev.DrawPrimitive(TriangleFan, kFvfMesh, q, 4);
+        }
+        // right: terrain base pass, then lightmap + lights multiplying it
+        dev.SetRenderState(RS_LIGHTING, 0);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
+        dev.DrawIndexedPrimitive(TriangleList, kFvfTerrain, terrain.data(), uint32_t(terrain.size()), tidx.data(), uint32_t(tidx.size()));
+        dev.SetRenderState(RS_LIGHTING, 1);
+        dev.SetRenderState(RS_AMBIENT, 0);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+        dev.SetRenderState(RS_SRCBLEND, BLEND_ZERO);
+        dev.SetRenderState(RS_DESTBLEND, BLEND_SRCCOLOR);
+        dev.SetRenderState(RS_ZFUNC, CMP_EQUAL);
+        dev.SetTexture(0, lightmap);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_ADD);
+        dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 1);
+        dev.DrawIndexedPrimitive(TriangleList, kFvfTerrain, terrain.data(), uint32_t(terrain.size()), tidx.data(), uint32_t(tidx.size()));
+        dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 0);
+        dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        dev.SetRenderState(RS_AMBIENT, 0xFF181818);
+        // Cubes all around the lamp, one draw each; the last is the lamp's housing (contains the light).
+        dev.SetTexture(0, nullptr);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+        const float cubes[7][4] = {{-3, 0.6f, 1, 0.6f}, {3, 0.6f, 1, 0.6f}, {0, 0.5f, 4, 0.5f}, {0, 0.5f, -2.5f, 0.5f},
+                                   {-2, 0.4f, -1, 0.4f}, {1.8f, 1.0f, 3.2f, 0.3f}, {0, 1.2f, 1, 0.25f}};
+        for (auto& c : cubes) {
+            std::vector<VtxMesh> v;
+            std::vector<uint16_t> idx;
+            AddCube(v, idx, c[0], c[1], c[2], c[3]);
+            dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, v.data(), uint32_t(v.size()), idx.data(), uint32_t(idx.size()));
+        }
+        dev.EndFrame();
+    }
+    dev.DestroyTexture(ground);
+    dev.DestroyTexture(lightmap);
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 {
     if (msg == WM_DESTROY) { PostQuitMessage(0); return 0; }
@@ -1005,8 +1108,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 
 int main(int argc, char** argv)
 {
-    bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false;
+    bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false, pointShadowTest = false;
     int cacheTest = 0, frameMs = 0;
+    uint32_t pointShadows = 4;
     int bench = 0;
     int frames = 3;
     std::string shot = "rvk_demo.bmp", dump;
@@ -1020,12 +1124,14 @@ int main(int argc, char** argv)
         else if (a == "--light-override") lightOverride = true;
         else if (a == "--shadows") shadows = true;
         else if (a == "--shadow-test") shadowTest = shadows = true;
+        else if (a == "--point-shadow-test") pointShadowTest = true;
         else if (a == "--frame-ms" && i + 1 < argc) frameMs = std::atoi(argv[++i]);
         else if (a == "--cache-test" && i + 1 < argc) { cacheTest = std::atoi(argv[++i]); shadowTest = shadows = true; }
         else if (a == "--dump" && i + 1 < argc) dump = argv[++i];
         else if (a == "--bench" && i + 1 < argc) bench = std::atoi(argv[++i]);
         else if (a == "--game-ms" && i + 1 < argc) g_benchGameMs = std::atof(argv[++i]);
         else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
+        else if (a == "--point-shadows" && i + 1 < argc) pointShadows = uint32_t(std::atoi(argv[++i]));
         else if (a == "--shot" && i + 1 < argc) shot = argv[++i];
     }
 
@@ -1053,6 +1159,14 @@ int main(int argc, char** argv)
     dev.SetLightingDebug(lightingDebug);
     dev.SetLightOverride(lightOverride);
     dev.SetShadows(shadows);
+    if (pointShadowTest) {               // needs per-pixel lighting with the light override
+        dev.SetPixelLighting(true);
+        dev.SetLightOverride(true);
+        dev.SetPointShadows(pointShadows);
+        RunPointShadowTest(dev, frames, shot, dump);
+        std::printf("rendered; screenshot %s\n", shot.c_str());
+        return 0;
+    }
     if (!dump.empty() && !shadowTest) dev.RequestFrameDump(dump);
     std::printf("GPU: %s (Vulkan %u.%u), driver %s\n", dev.Info().gpu.c_str(), VK_API_VERSION_MAJOR(dev.Info().apiVersion),
                 VK_API_VERSION_MINOR(dev.Info().apiVersion), dev.Info().driver.c_str());

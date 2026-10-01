@@ -1,11 +1,41 @@
 #version 450
 // Direct3D 7 fixed-function pixel processing: two texture stages, specular add, fog, alpha test.
 #include "constants.glsl"
-#include "lighting.glsl"
 
 layout(set = 0, binding = 1) uniform sampler2D tex0;
 layout(set = 0, binding = 2) uniform sampler2D tex1;
 layout(set = 0, binding = 5) uniform sampler2DShadow shadowMap;
+layout(set = 0, binding = 6) uniform samplerCubeArrayShadow pointShadowMaps;
+
+// Visibility of a frame light with a cube shadow map (l.spot.z = cube + 1): 1 = lit. Must match
+// Device::RenderPointShadowMaps (pointshadow.cpp): depth along the face's axis, near kPointShadowNear, far = range.
+const float kPointShadowNear = 0.05;
+float PointShadow(Light l, vec3 posW, vec3 n, float nl)
+{
+    vec3 d = posW - l.position.xyz;
+    float dist = length(d);
+    if (dist <= kPointShadowNear) return 1.0;
+    // World size of a cube texel at this distance (90 degree faces): offset along the normal against acne.
+    float texel = 2.0 * dist / float(textureSize(pointShadowMaps, 0).x);
+    d += normalize(n) * texel * (1.0 + 2.0 * (1.0 - nl));
+    vec3 a = abs(d);
+    float w = max(a.x, max(a.y, a.z));
+    float f = l.direction.w, nr = kPointShadowNear;
+    float ref = f / (f - nr) - f * nr / ((f - nr) * w);
+    // 4 taps around the direction, each 2x2 comparison-filtered.
+    vec3 dirN = d / length(d);
+    vec3 t1 = normalize(cross(dirN, abs(dirN.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+    vec3 t2 = cross(dirN, t1);
+    float r = 0.75 * texel;
+    float layer = l.spot.z - 1.0, s = 0.0;
+    s += texture(pointShadowMaps, vec4(d + (t1 + t2) * r, layer), ref);
+    s += texture(pointShadowMaps, vec4(d + (t1 - t2) * r, layer), ref);
+    s += texture(pointShadowMaps, vec4(d - (t1 + t2) * r, layer), ref);
+    s += texture(pointShadowMaps, vec4(d - (t1 - t2) * r, layer), ref);
+    return 1.0 - (1.0 - 0.25 * s) * FL.shadowParams.w;
+}
+
+#include "lighting.glsl"
 
 layout(location = 0) in vec4 vDiffuse;
 layout(location = 1) in vec4 vSpecular;

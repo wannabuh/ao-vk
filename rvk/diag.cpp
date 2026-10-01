@@ -41,6 +41,12 @@ void Device::EndFrameDump()
     std::fprintf(m_dumpFile, "# end: %u draws; %zu casters this frame, %zu remembered (%u drawn out of view last frame);"
                              " forgotten since start: %u in view but not drawn, %u far away\n",
                  m_dumpDraw, m_casters.size(), m_casterCache.size(), m_cachedCastersDrawn, m_forgottenInView, m_forgottenFar);
+    std::fprintf(m_dumpFile, "# point shadows (rendered last frame, %u caster draws):", m_pointShadowDraws);
+    for (uint32_t i = 0; i < m_pointShadowCount; ++i) {
+        const PointShadowLight& l = m_pointShadowLights[i];
+        std::fprintf(m_dumpFile, " cube %u at (%.1f %.1f %.1f) r%.1f;", i + 1, l.position[0], l.position[1], l.position[2], l.range);
+    }
+    std::fprintf(m_dumpFile, "\n");
     std::fclose(m_dumpFile);
     m_dumpFile = nullptr;
 }
@@ -134,7 +140,8 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
         std::fprintf(f, " | shadow %s%s%s", IsShadowCaster(primitive, fvf) ? "C" : "", ShadowReceiver(fvf) ? "R" : "",
                      ShadowInLightmap(fvf) ? "L" : ShadowCompensated(fvf) ? "M" : "");
     if (IsShadowCaster(primitive, fvf)) {
-        uint64_t key = CasterKey(primitive, fvf, layout.stride, vertices, vertexCount, indices, indexCount);
+        float mn[3], mx[3];
+        uint64_t key = CasterKey(primitive, fvf, layout.stride, vertices, vertexCount, indices, indexCount, mn, mx);
         auto streak = m_casterStreaks.find(key);
         if (m_casterCache.count(key)) std::fprintf(f, " remembered");
         else std::fprintf(f, " seen %u", streak != m_casterStreaks.end() ? streak->second.count : 0u);

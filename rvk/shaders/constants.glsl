@@ -4,7 +4,7 @@ struct Light {
     vec4 position;      // xyz world space, w = D3DLIGHTTYPE
     vec4 direction;     // xyz world space, w = range
     vec4 atten;         // attenuation0, attenuation1, attenuation2, falloff
-    vec4 spot;          // cos(theta/2), cos(phi/2)
+    vec4 spot;          // cos(theta/2), cos(phi/2), frame lights: point shadow cube + 1 (0 = none)
 };
 
 // Changes on nearly every draw, so it has its own small block (binding 3); the big block below is only
@@ -39,7 +39,7 @@ layout(set = 0, binding = 0, std140) uniform DrawConstants {
 layout(set = 0, binding = 4, std140) uniform FrameLights {
     uvec4 info;                 // count
     mat4 shadowViewProj;        // world -> shadow map (raw D3DMATRIX memory)
-    vec4 shadowParams;          // enabled, strength, texel size (world units)
+    vec4 shadowParams;          // enabled, strength, texel size (world units), point light shadow strength
     vec4 sunDir;                // direction the sunlight travels
     Light lights[64];
 } FL;

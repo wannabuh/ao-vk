@@ -1,6 +1,8 @@
 #version 450
 // Direct3D 7 fixed-function vertex processing.
 #include "constants.glsl"
+// Point light shadows are only looked up per pixel (ffp.frag); per-vertex lighting uses the game's lights, which have none.
+float PointShadow(Light l, vec3 posW, vec3 normalW, float nl) { return 1.0; }
 #include "lighting.glsl"
 
 layout(location = 0) in vec4 inPos;

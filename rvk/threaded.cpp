@@ -328,6 +328,17 @@ void ThreadedDevice::SetShadowParams(float strength, float range)
     Enqueue([this, strength, range](const uint8_t*) { m_device.SetShadowParams(strength, range); });
 }
 
+void ThreadedDevice::SetPointShadows(uint32_t count)
+{
+    m_pointShadows = count < Device::kMaxPointShadows ? count : Device::kMaxPointShadows;
+    Enqueue([this, count](const uint8_t*) { m_device.SetPointShadows(count); });
+}
+
+void ThreadedDevice::SetPointShadowStrength(float strength)
+{
+    Enqueue([this, strength](const uint8_t*) { m_device.SetPointShadowStrength(strength); });
+}
+
 void ThreadedDevice::SetTexture(uint32_t stage, Texture* texture)
 {
     Enqueue([this, stage, texture](const uint8_t*) { m_device.SetTexture(stage, texture); });

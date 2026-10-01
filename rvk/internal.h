@@ -49,7 +49,7 @@ constexpr uint32_t kFrameLights = 64;
 struct FrameLights {               // binding 4: per-frame data (constants.glsl FrameLights)
     uint32_t info[4];
     d3d::Matrix shadowViewProj;
-    float shadowParams[4];         // enabled, strength, texel size (world units), unused
+    float shadowParams[4];         // enabled, strength, texel size (world units), point light shadow strength
     float sunDir[4];
     GpuLight lights[kFrameLights];
 };
@@ -79,5 +79,8 @@ d3d::Matrix Identity();
 d3d::Matrix MulMatrix(const d3d::Matrix& a, const d3d::Matrix& b);   // D3D order: v * a * b
 VkPrimitiveTopology TopologyOf(uint32_t d3dPrimitive);
 uint32_t TopologyClassOf(uint32_t d3dPrimitive);   // 0 points, 1 lines, 2 triangles
+// Clip-space test of a world-space box's corners against a view-projection: +1 all inside, -1 all outside one
+// plane, 0 otherwise. depth: also test the near and far planes.
+int BoxInClip(const float mn[3], const float mx[3], const d3d::Matrix& vp, bool depth);
 
 }  // namespace rvk::detail

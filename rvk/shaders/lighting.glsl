@@ -1,5 +1,6 @@
 // Direct3D 7 lighting equation, shared by the per-vertex (ffp.vert) and per-pixel (ffp.frag) paths.
-// Requires constants.glsl. Accumulates the light terms; the caller combines them with the material colours.
+// Requires constants.glsl and a function float PointShadow(Light l, vec3 posW, vec3 normalW, float nl) (visibility of
+// a frame light with a cube shadow map). Accumulates the light terms; the caller combines them with the material colours.
 void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScale, float localScale, inout vec3 ambient,
                      inout vec3 diff, inout vec3 spec)
 {
@@ -32,6 +33,8 @@ void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScal
     }
     ambient += att * l.ambient.rgb;
     float nl = max(dot(normalW, L), 0.0);
+    if (l.spot.z > 0.0 && nl > 0.0 && att > 0.0)
+        att *= PointShadow(l, posW, normalW, nl);   // shadows take the light's diffuse and specular, not its ambient
     diff += att * nl * l.diffuse.rgb;
     if ((C.flags.x & F_SPECULAR) != 0u && nl > 0.0) {
         float nh = max(dot(normalW, normalize(L + toEye)), 0.0);

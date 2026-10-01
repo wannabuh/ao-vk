@@ -89,11 +89,18 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     GetEnvironmentVariableA("RANDYVK_SHADOW_RANGE", range, sizeof(range));
     device->SetShadows(shadows[0] != '0');
     device->SetShadowParams(float(std::atof(strength)), float(std::atof(range)));
+    char pointShadows[8] = "4", pointStrength[16] = "0.9";
+    GetEnvironmentVariableA("RANDYVK_POINT_SHADOWS", pointShadows, sizeof(pointShadows));
+    GetEnvironmentVariableA("RANDYVK_POINT_SHADOW_STRENGTH", pointStrength, sizeof(pointStrength));
+    device->SetPointShadows(uint32_t(std::max(0, std::atoi(pointShadows))));
+    device->SetPointShadowStrength(float(std::atof(pointStrength)));
     gpuName = device->Info().gpu;
     RvkLog("rvk device %ux%u on %s (window %p, %s, %s lighting)", width, height, gpuName.c_str(), (void*)window,
            device->Threaded() ? "worker thread" : "calling thread", device->PixelLighting() ? "per-pixel" : "per-vertex");
     RvkLog("rvk light override (frame's nearest lights for every lit draw): %s", device->LightOverride() ? "on" : "off");
     RvkLog("rvk sun shadows: %s (strength %s, range %s)", device->Shadows() ? "on" : "off", strength, range);
+    RvkLog("rvk point light shadows: %u lights (strength %s; needs per-pixel lighting + light override)",
+           device->PointShadows(), pointStrength);
     return true;
 }
 
@@ -144,6 +151,20 @@ void RvkState::Present()
         RvkLog("sun shadows %s", device->Shadows() ? "on" : "off");
     }
     f7Down = f7;
+    // Ctrl+Shift+F6: point light shadows (off / the configured number of lights, at least 1).
+    static bool f6Down;
+    static uint32_t pointShadowsOn = 0;
+    bool f6 = chord && (GetAsyncKeyState(VK_F6) & 0x8000);
+    if (f6 && !f6Down) {
+        if (device->PointShadows()) {
+            pointShadowsOn = device->PointShadows();
+            device->SetPointShadows(0);
+        } else {
+            device->SetPointShadows(pointShadowsOn ? pointShadowsOn : rvk::Device::kMaxPointShadows);
+        }
+        RvkLog("point light shadows: %u lights", device->PointShadows());
+    }
+    f6Down = f6;
     // Ctrl+Shift+F8: light override (frame's nearest lights vs. the game's per-object choice).
     static bool f8Down;
     bool f8 = chord && (GetAsyncKeyState(VK_F8) & 0x8000);
