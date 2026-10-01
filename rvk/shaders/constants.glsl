@@ -38,6 +38,9 @@ layout(set = 0, binding = 0, std140) uniform DrawConstants {
 // per-object choice of up to 8 lights, which drops lights on big objects such as the ground.
 layout(set = 0, binding = 4, std140) uniform FrameLights {
     uvec4 info;                 // count
+    mat4 shadowViewProj;        // world -> shadow map (raw D3DMATRIX memory)
+    vec4 shadowParams;          // enabled, strength, texel size (world units)
+    vec4 sunDir;                // direction the sunlight travels
     Light lights[64];
 } FL;
 
@@ -45,4 +48,5 @@ const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8
            F_RANGEFOG = 32u, F_LOCALVIEWER = 64u, F_TEX0 = 128u, F_TEX1 = 256u, F_ALPHATEST = 512u,
            F_PERPIXEL = 1024u,    // lighting evaluated in ffp.frag (set together with F_LIGHTING)
            F_DEBUGLIGHT = 2048u,  // tint draws by how they are lit (Device::SetLightingDebug)
-           F_LIGHTOVERRIDE = 4096u; // point / spot lights come from FL (the frame's nearest lights), not C.lights
+           F_LIGHTOVERRIDE = 4096u, // point / spot lights come from FL (the frame's nearest lights), not C.lights
+           F_SHADOW = 8192u;        // receives sun shadows (FL.shadow*, shadow map at binding 5)

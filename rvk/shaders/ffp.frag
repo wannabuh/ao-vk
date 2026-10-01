@@ -5,6 +5,7 @@
 
 layout(set = 0, binding = 1) uniform sampler2D tex0;
 layout(set = 0, binding = 2) uniform sampler2D tex1;
+layout(set = 0, binding = 5) uniform sampler2DShadow shadowMap;
 
 layout(location = 0) in vec4 vDiffuse;
 layout(location = 1) in vec4 vSpecular;
@@ -66,6 +67,30 @@ vec4 Sample(uint stage)
     return stage == 0u ? texture(tex0, tc.xy) : texture(tex1, tc.xy);
 }
 
+// Sun visibility at a surface point: 1 = lit, 0 = in shadow. 3x3 taps of 2x2 comparison filtering.
+float SunVisibility(vec3 posW, vec3 n)
+{
+    vec3 L = -FL.sunDir.xyz;
+    float texel = FL.shadowParams.z;
+    if (dot(n, n) > 0.0) {
+        n = normalize(n);
+        float nl = dot(n, L);
+        if (nl <= 0.0) return 1.0;                        // faces away: the light equation / lightmap handles it
+        posW += n * texel * (1.5 + 2.0 * (1.0 - nl));     // normal offset against self-shadowing
+    }
+    vec4 sc = FL.shadowViewProj * vec4(posW, 1.0);
+    vec3 ndc = sc.xyz / sc.w;
+    float edge = max(abs(ndc.x), abs(ndc.y));
+    if (edge >= 1.0 || ndc.z <= 0.0 || ndc.z >= 1.0) return 1.0;
+    vec2 uv = ndc.xy * 0.5 + 0.5;
+    vec2 ts = 1.0 / vec2(textureSize(shadowMap, 0));
+    float sum = 0.0;
+    for (int y = -1; y <= 1; ++y)
+        for (int x = -1; x <= 1; ++x)
+            sum += texture(shadowMap, vec3(uv + vec2(x, y) * ts, ndc.z));
+    return mix(sum / 9.0, 1.0, smoothstep(0.8, 1.0, edge));   // fade out towards the map's edge
+}
+
 bool AlphaPass(float a)
 {
     float a8 = floor(a * 255.0 + 0.5), ref = C.misc.y;
@@ -85,6 +110,11 @@ void main()
 {
     gDiffuse = vDiffuse;
     gSpecular = vSpecular;
+    // Shadow: lit draws scale the sunlight (per-pixel lighting), others darken their final colour.
+    float shade = 1.0;
+    if ((C.flags.x & F_SHADOW) != 0u)
+        shade = 1.0 - (1.0 - SunVisibility(vPosW, vNormalW.xyz)) * FL.shadowParams.y;
+    bool shadeSun = (C.flags.x & (F_PERPIXEL | F_LIGHTING)) == (F_PERPIXEL | F_LIGHTING);
     if ((C.flags.x & F_PERPIXEL) != 0u) {
         // Interpolated normals shrink between vertices; restore the length the vertex path lights with
         // (1 with NORMALIZENORMALS, otherwise whatever the world matrix made of the vertex normal).
@@ -92,7 +122,7 @@ void main()
         float len2 = dot(n, n);
         n = len2 > 0.0 ? n * (vNormalW.w * inversesqrt(len2)) : vec3(0.0);
         vec3 ambient = C.ambient.rgb, diff = vec3(0.0), spec = vec3(0.0);
-        AccumulateLights(vPosW, n, ambient, diff, spec);
+        AccumulateLights(vPosW, n, shadeSun ? shade : 1.0, ambient, diff, spec);
         gDiffuse = clamp(vec4(vMatEmissive + vMatAmbient * ambient + vDiffuse.rgb * diff, vDiffuse.a), 0.0, 1.0);
         gSpecular = clamp(vec4(vSpecular.rgb * spec, vSpecular.a), 0.0, 1.0);
     }
@@ -109,6 +139,8 @@ void main()
     }
     if ((C.flags.x & F_SPECULAR) != 0u)
         current.rgb = min(current.rgb + gSpecular.rgb, 1.0);
+    if (!shadeSun)
+        current.rgb *= shade;
     if ((C.flags.x & F_FOG) != 0u) {
         float f = vFogFactor;
         uint table = C.flags.z;

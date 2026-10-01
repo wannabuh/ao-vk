@@ -100,6 +100,9 @@ uint32_t TopologyClass(uint32_t p)
 
 }  // namespace
 
+VkPrimitiveTopology detail::TopologyOf(uint32_t p) { return Topology(p); }
+uint32_t detail::TopologyClassOf(uint32_t p) { return TopologyClass(p); }
+
 // ---------------------------------------------------------------------------------------------------
 // State
 
@@ -188,6 +191,8 @@ void Device::CaptureLight(LightSlot& slot)
     slot.capturedFrame = m_frameNumber;
     slot.capturedVersion = slot.version;
     const d3d::Light& l = slot.light;
+    if (l.type == d3d::LIGHT_DIRECTIONAL)
+        CaptureSun(l);
     if (l.type == d3d::LIGHT_DIRECTIONAL || l.range <= 0.0f)
         return;
     auto sameKind = [](const d3d::Light& a, const d3d::Light& b) {
@@ -207,6 +212,20 @@ void Device::CaptureLight(LightSlot& slot)
         m_lightsCur.push_back({l, slot.cosHalfTheta, slot.cosHalfPhi});
 }
 
+// The frame's camera (for choosing lights and placing the shadow map): the view at the frame's first lit draw
+// or shadow caster, i.e. the world - not that of later draws under other views (sky, 3D interface elements).
+void Device::UpdateFrameEye()
+{
+    if (m_frameEyeValid)
+        return;
+    const auto& v = m_view.m;
+    for (int i = 0; i < 3; ++i) {
+        m_frameEye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
+        m_frameForward[i] = v[i][2];
+    }
+    m_frameEyeValid = true;
+}
+
 // The point / spot lights the game used during the previous frame (complete, so every draw of this frame gets
 // the same list), nearest first by the distance from the camera to their sphere of influence.
 VkDeviceSize Device::WriteFrameLights()
@@ -218,11 +237,7 @@ VkDeviceSize Device::WriteFrameLights()
     m_frameLightsDirty = false;
     // One camera per frame: the view at the frame's first lit draw (the world), not that of later draws
     // under other views (sky, 3D interface elements).
-    if (!m_frameEyeValid) {
-        const auto& v = m_view.m;
-        for (int i = 0; i < 3; ++i) m_frameEye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
-        m_frameEyeValid = true;
-    }
+    UpdateFrameEye();
     const float* eye = m_frameEye;
     struct Candidate { float key; uint32_t index; };
     Candidate candidates[512];
@@ -238,6 +253,13 @@ VkDeviceSize Device::WriteFrameLights()
     auto* fl = static_cast<FrameLights*>(cpu);
     fl->info[0] = used;
     fl->info[1] = fl->info[2] = fl->info[3] = 0;
+    fl->shadowViewProj = m_shadowViewProj;
+    fl->shadowParams[0] = m_shadowValid ? 1.0f : 0.0f;
+    fl->shadowParams[1] = m_shadowStrength;
+    fl->shadowParams[2] = 2.0f * m_shadowRange / float(kShadowSize);
+    fl->shadowParams[3] = 0.0f;
+    fl->sunDir[0] = m_shadowSunDir[0]; fl->sunDir[1] = m_shadowSunDir[1]; fl->sunDir[2] = m_shadowSunDir[2];
+    fl->sunDir[3] = 0.0f;
     for (uint32_t k = 0; k < used; ++k) {
         const CapturedLight& c = m_lightsPrev[candidates[k].index];
         FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k]);
@@ -513,8 +535,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 
     // The frame's light list (binding 4): rebuilt when lights changed; always bound, as layouts require.
     // Only lit draws read it; the others bind any in-range part of the ring.
-    bool needLights = m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
-                      (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW;
+    bool needLights = (m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
+                       (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) || ShadowReceiver(fvf);
     VkDeviceSize frameLightsOffset = m_frameLightsGeneration == m_ringGeneration ? m_frameLightsOffset : 0;
     if (needLights && (m_frameLightsDirty || m_frameLightsGeneration != m_ringGeneration))   // once per frame
         frameLightsOffset = WriteFrameLights();
@@ -576,6 +598,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_lightingDebug) flags |= F_DEBUGLIGHT;
     bool override = (flags & F_PERPIXEL) && m_lightOverride;
     if (override) flags |= F_LIGHTOVERRIDE;
+    if (ShadowReceiver(fvf)) flags |= F_SHADOW;
     if (m_rs[d3d::RS_COLORVERTEX]) flags |= F_COLORVERTEX;
     if (m_rs[d3d::RS_SPECULARENABLE]) flags |= F_SPECULAR;
     if (m_rs[d3d::RS_NORMALIZENORMALS]) flags |= F_NORMALIZE;
@@ -630,6 +653,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         std::memcpy(cpu, indices, size_t(indexCount) * 2);
     }
 
+    RecordShadowCaster(primitive, fvf, layout.stride, vertexCount, vbOffset, indices ? indexCount : 0, ibOffset);
     ApplyDynamicState(primitive, fvf, layout.stride);
 
     VkDescriptorBufferInfo ubo{f.ring, uboOffset, sizeof(DrawConstants)};
@@ -640,8 +664,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         images[s] = {SamplerFor(s), t->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     }
     VkDescriptorBufferInfo frameLights{f.ring, frameLightsOffset, sizeof(FrameLights)};
-    VkWriteDescriptorSet writes[5] = {};
-    for (int i = 0; i < 5; ++i) {
+    VkDescriptorImageInfo shadow{m_shadowSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet writes[6] = {};
+    for (int i = 0; i < 6; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstBinding = uint32_t(i);
         writes[i].descriptorCount = 1;
@@ -655,7 +680,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[3].pBufferInfo = &transform;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writes[4].pBufferInfo = &frameLights;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 5, writes);
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[5].pImageInfo = &shadow;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 6, writes);
 
     if (indices)
         vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);

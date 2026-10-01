@@ -123,6 +123,8 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
     if (m_rs[d3d::RS_ALPHABLENDENABLE]) std::fprintf(f, " | blend %u/%u", m_rs[d3d::RS_SRCBLEND], m_rs[d3d::RS_DESTBLEND]);
     std::fprintf(f, " | z %u/%u/%u | at (%.1f %.1f %.1f)", m_rs[d3d::RS_ZENABLE], m_rs[d3d::RS_ZWRITEENABLE],
                  m_rs[d3d::RS_ZFUNC], m_world.m[3][0], m_world.m[3][1], m_world.m[3][2]);
+    if (IsShadowCaster(primitive, fvf) || ShadowReceiver(fvf))
+        std::fprintf(f, " | shadow %s%s", IsShadowCaster(primitive, fvf) ? "C" : "", ShadowReceiver(fvf) ? "R" : "");
     if (minX <= maxX) std::fprintf(f, " | rect %.0f,%.0f-%.0f,%.0f", minX, minY, maxX, maxY);
     else std::fprintf(f, " | offscreen");
     std::fprintf(f, "\n");

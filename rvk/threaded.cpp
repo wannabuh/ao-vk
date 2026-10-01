@@ -317,6 +317,17 @@ void ThreadedDevice::SetLightOverride(bool enable)
     Enqueue([this, enable](const uint8_t*) { m_device.SetLightOverride(enable); });
 }
 
+void ThreadedDevice::SetShadows(bool enable)
+{
+    m_shadows = enable;
+    Enqueue([this, enable](const uint8_t*) { m_device.SetShadows(enable); });
+}
+
+void ThreadedDevice::SetShadowParams(float strength, float range)
+{
+    Enqueue([this, strength, range](const uint8_t*) { m_device.SetShadowParams(strength, range); });
+}
+
 void ThreadedDevice::SetTexture(uint32_t stage, Texture* texture)
 {
     Enqueue([this, stage, texture](const uint8_t*) { m_device.SetTexture(stage, texture); });

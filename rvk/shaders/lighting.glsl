@@ -1,12 +1,14 @@
 // Direct3D 7 lighting equation, shared by the per-vertex (ffp.vert) and per-pixel (ffp.frag) paths.
 // Requires constants.glsl. Accumulates the light terms; the caller combines them with the material colours.
-void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, inout vec3 ambient, inout vec3 diff, inout vec3 spec)
+void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScale, inout vec3 ambient, inout vec3 diff,
+                     inout vec3 spec)
 {
     uint type = uint(l.position.w);
     vec3 L;
     float att = 1.0;
     if (type == 3u) {
         L = -normalize(l.direction.xyz);
+        att = sunScale;                          // shadowed sunlight (1 = unshadowed)
     } else {
         vec3 d = l.position.xyz - posW;
         float dist = length(d);
@@ -37,12 +39,12 @@ void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, inout vec3 am
     }
 }
 
-void AccumulateLights(vec3 posW, vec3 normalW, inout vec3 ambient, inout vec3 diff, inout vec3 spec)
+void AccumulateLights(vec3 posW, vec3 normalW, float sunScale, inout vec3 ambient, inout vec3 diff, inout vec3 spec)
 {
     vec3 toEye = (C.flags.x & F_LOCALVIEWER) != 0u ? normalize(C.eyePos.xyz - posW) : -C.eyeDir.xyz;
     for (uint i = 0u; i < C.lightInfo.x; ++i)
-        AccumulateLight(C.lights[i], posW, normalW, toEye, ambient, diff, spec);
+        AccumulateLight(C.lights[i], posW, normalW, toEye, sunScale, ambient, diff, spec);
     if ((C.flags.x & F_LIGHTOVERRIDE) != 0u)
         for (uint i = 0u; i < FL.info.x; ++i)
-            AccumulateLight(FL.lights[i], posW, normalW, toEye, ambient, diff, spec);
+            AccumulateLight(FL.lights[i], posW, normalW, toEye, sunScale, ambient, diff, spec);
 }

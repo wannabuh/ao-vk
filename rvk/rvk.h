@@ -127,6 +127,11 @@ public:
     // the camera instead of the (at most 8) the game enabled for it. Directional lights stay as the game set them.
     void SetLightOverride(bool enable) { if (m_lightOverride != enable) { m_lightOverride = enable; m_constantsDirty = true; } }
     bool LightOverride() const { return m_lightOverride; }
+    // Enhancement: sun shadows (shadow.cpp). strength = how much of the light a shadow takes away (0..1);
+    // range = half the width of the shadowed square around the camera, in world units.
+    void SetShadows(bool enable) { if (m_shadows != enable) { m_shadows = enable; m_constantsDirty = true; } }
+    bool Shadows() const { return m_shadows; }
+    void SetShadowParams(float strength, float range) { m_shadowStrength = strength; m_shadowRange = range; }
     void SetTexture(uint32_t stage, Texture* texture);
     // Null = the main target. Like D3D, resets the viewport to the whole target.
     void SetRenderTarget(Texture* target);
@@ -231,13 +236,50 @@ private:
     uint64_t m_frameNumber = 0;
     bool m_frameLightsDirty = true;
     bool m_frameEyeValid = false;                // the camera the frame's light list is chosen from
-    float m_frameEye[3] = {};
+    float m_frameEye[3] = {}, m_frameForward[3] = {};
+    void UpdateFrameEye();
     uint64_t m_frameLightsGeneration = ~0ull;
     VkDeviceSize m_frameLightsOffset = 0;
     VkDeviceSize WriteFrameLights();
     struct CapturedLight { d3d::Light light; float cosHalfTheta, cosHalfPhi; };
     std::vector<CapturedLight> m_lightsCur, m_lightsPrev;   // point / spot lights used this / last frame
     void CaptureLight(LightSlot& slot);
+
+    // Sun shadows (shadow.cpp)
+    static constexpr uint32_t kShadowSize = 4096;
+    struct ShadowCaster {
+        uint32_t primitive, stride, vertexCount, indexCount;
+        VkDeviceSize vbOffset, ibOffset;
+        d3d::Matrix world;
+        uint64_t generation;
+        Texture* texture;                        // alpha-tested casters: texture 0, its coordinates' offset, ref
+        int texOffset;
+        float alphaRef;
+    };
+    bool m_shadows = false;
+    float m_shadowStrength = 0.55f, m_shadowRange = 60.0f;
+    VkImage m_shadowImage = VK_NULL_HANDLE;
+    VmaAllocation_T* m_shadowAllocation = nullptr;
+    VkImageView m_shadowView = VK_NULL_HANDLE;
+    VkImageLayout m_shadowImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkSampler m_shadowSampler = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_shadowSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout m_shadowPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline m_shadowPipelines[2] = {};        // opaque, alpha-tested
+    std::vector<ShadowCaster> m_casters;
+    float m_sunDir[3] = {}, m_sunLuminance = 0.0f;   // this frame's brightest directional light
+    bool m_shadowValid = false;                  // the map holds last frame's shadows
+    d3d::Matrix m_shadowViewProj{};
+    float m_shadowSunDir[3] = {};
+    bool CreateShadowResources(std::string* error);
+    void DestroyShadowResources();
+    void PrepareShadowMap(VkCommandBuffer cmd);
+    void RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t stride, uint32_t vertexCount,
+                            VkDeviceSize vbOffset, uint32_t indexCount, VkDeviceSize ibOffset);
+    void CaptureSun(const d3d::Light& light);
+    bool ShadowReceiver(uint32_t fvf) const;
+    bool IsShadowCaster(uint32_t primitive, uint32_t fvf) const;
+    void RenderShadowMap(VkCommandBuffer cmd);
     uint64_t m_ringGeneration = 0, m_constantsGeneration = ~0ull;
     VkDeviceSize m_constantsOffset = 0;
     uint32_t m_constantsFvf = ~0u;

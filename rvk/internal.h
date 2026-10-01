@@ -41,11 +41,15 @@ struct DrawTransform {
 
 enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE = 8, F_FOG = 16, F_RANGEFOG = 32,
                   F_LOCALVIEWER = 64, F_TEX0 = 128, F_TEX1 = 256, F_ALPHATEST = 512,
-                  F_PERPIXEL = 1024, F_DEBUGLIGHT = 2048, F_LIGHTOVERRIDE = 4096 };
+                  F_PERPIXEL = 1024, F_DEBUGLIGHT = 2048, F_LIGHTOVERRIDE = 4096,
+                  F_SHADOW = 8192 };
 
 constexpr uint32_t kFrameLights = 64;
-struct FrameLights {               // binding 4
+struct FrameLights {               // binding 4: per-frame data (constants.glsl FrameLights)
     uint32_t info[4];
+    d3d::Matrix shadowViewProj;
+    float shadowParams[4];         // enabled, strength, texel size (world units), unused
+    float sunDir[4];
     GpuLight lights[kFrameLights];
 };
 
@@ -71,5 +75,7 @@ void ImageBarrier(VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect,
                   VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
                   VkAccessFlags2 dstAccess);
 d3d::Matrix Identity();
+VkPrimitiveTopology TopologyOf(uint32_t d3dPrimitive);
+uint32_t TopologyClassOf(uint32_t d3dPrimitive);   // 0 points, 1 lines, 2 triangles
 
 }  // namespace rvk::detail

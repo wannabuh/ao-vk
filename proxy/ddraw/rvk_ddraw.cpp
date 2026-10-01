@@ -3,6 +3,7 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <algorithm>
 #include <cstring>
 #include <vector>
@@ -82,10 +83,17 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     char lightOverride[8] = "1";
     GetEnvironmentVariableA("RANDYVK_LIGHT_OVERRIDE", lightOverride, sizeof(lightOverride));
     device->SetLightOverride(lightOverride[0] != '0');
+    char shadows[8] = "1", strength[16] = "0.55", range[16] = "60";
+    GetEnvironmentVariableA("RANDYVK_SHADOWS", shadows, sizeof(shadows));
+    GetEnvironmentVariableA("RANDYVK_SHADOW_STRENGTH", strength, sizeof(strength));
+    GetEnvironmentVariableA("RANDYVK_SHADOW_RANGE", range, sizeof(range));
+    device->SetShadows(shadows[0] != '0');
+    device->SetShadowParams(float(std::atof(strength)), float(std::atof(range)));
     gpuName = device->Info().gpu;
     RvkLog("rvk device %ux%u on %s (window %p, %s, %s lighting)", width, height, gpuName.c_str(), (void*)window,
            device->Threaded() ? "worker thread" : "calling thread", device->PixelLighting() ? "per-pixel" : "per-vertex");
     RvkLog("rvk light override (frame's nearest lights for every lit draw): %s", device->LightOverride() ? "on" : "off");
+    RvkLog("rvk sun shadows: %s (strength %s, range %s)", device->Shadows() ? "on" : "off", strength, range);
     return true;
 }
 
@@ -128,6 +136,14 @@ void RvkState::Present()
     }
     f10Down = f10;
     f11Down = f11;
+    // Ctrl+Shift+F7: sun shadows.
+    static bool f7Down;
+    bool f7 = chord && (GetAsyncKeyState(VK_F7) & 0x8000);
+    if (f7 && !f7Down) {
+        device->SetShadows(!device->Shadows());
+        RvkLog("sun shadows %s", device->Shadows() ? "on" : "off");
+    }
+    f7Down = f7;
     // Ctrl+Shift+F8: light override (frame's nearest lights vs. the game's per-object choice).
     static bool f8Down;
     bool f8 = chord && (GetAsyncKeyState(VK_F8) & 0x8000);

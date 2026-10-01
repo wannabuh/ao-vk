@@ -752,6 +752,98 @@ void RunDemo(D& dev, bool windowed, bool stress, int frames, const std::string& 
     dev.DestroyVertexBuffer(scene.vb);
 }
 
+// Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
+// (left) and unlit like Anarchy Online's ground base pass (right) - from a camera above and behind.
+void AddCube(std::vector<VtxMesh>& v, std::vector<uint16_t>& idx, float cx, float cy, float cz, float h)
+{
+    struct Face { Vector n, u, w; } faces[6] = {
+        {{0, 0, -1}, {1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {-1, 0, 0}, {0, 1, 0}}, {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+        {{-1, 0, 0}, {0, 0, -1}, {0, 1, 0}}, {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}}, {{0, -1, 0}, {1, 0, 0}, {0, 0, -1}}};
+    for (auto& f : faces) {
+        uint16_t base = uint16_t(v.size());
+        for (int k = 0; k < 4; ++k) {
+            float su = (k == 1 || k == 2) ? 1.f : -1.f, sw = k >= 2 ? -1.f : 1.f;
+            v.push_back({cx + h * (f.n.x + su * f.u.x + sw * f.w.x), cy + h * (f.n.y + su * f.u.y + sw * f.w.y),
+                         cz + h * (f.n.z + su * f.u.z + sw * f.w.z), f.n.x, f.n.y, f.n.z, 0xFFFFFFFF, (su + 1) / 2, (1 - sw) / 2});
+        }
+        uint16_t q[6] = {0, 1, 2, 0, 2, 3};
+        for (uint16_t i : q) idx.push_back(base + i);
+    }
+}
+
+template <typename D>
+void RunShadowTest(D& dev, int frames, const std::string& shot)
+{
+    auto groundPixels = Checker(64, 8, 0xFFC8C0B0, 0xFFA09888);
+    auto fencePixels = Checker(64, 8, 0xFF806040, 0x00000000);
+    Texture* ground = dev.CreateTexture(64, 64, groundPixels.data());
+    Texture* fence = dev.CreateTexture(64, 64, fencePixels.data());
+    for (int frame = 0; frame < frames; ++frame) {
+        if (frame == frames - 1)
+            dev.RequestScreenshot(shot);
+        dev.BeginFrame();
+        dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
+        dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF6080A0, 1.0f);
+        dev.SetTransform(View, LookAtLH({0, 9, -14}, {0, 0, 2}, {0, 1, 0}));
+        dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 200.0f));
+        dev.SetTransform(World, Identity());
+        dev.SetRenderState(RS_ZENABLE, 1);
+        dev.SetRenderState(RS_ZWRITEENABLE, 1);
+        dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+        dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        dev.SetRenderState(RS_ALPHATESTENABLE, 0);
+        dev.SetRenderState(RS_AMBIENT, 0xFF505050);
+        dev.SetRenderState(RS_DIFFUSEMATERIALSOURCE, MCS_MATERIAL);
+        Material mat{{1, 1, 1, 1}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}, 0.0f};
+        dev.SetMaterial(mat);
+        Light sun{};
+        sun.type = LIGHT_DIRECTIONAL;
+        sun.diffuse = {0.9f, 0.85f, 0.75f, 1};
+        sun.direction = {0.55f, -0.7f, 0.45f};
+        dev.SetLight(0, sun);
+        dev.LightEnable(0, true);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+        dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+        dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
+        dev.SetTexture(0, ground);
+        for (int half = 0; half < 2; ++half) {
+            float x0 = half ? 0.0f : -20.0f, x1 = half ? 20.0f : 0.0f;
+            VtxMesh q[4] = {{x0, 0, -10, 0, 1, 0, 0xFFFFFFFF, 0, 0}, {x1, 0, -10, 0, 1, 0, 0xFFFFFFFF, 5, 0},
+                            {x1, 0, 20, 0, 1, 0, 0xFFFFFFFF, 5, 7.5f}, {x0, 0, 20, 0, 1, 0, 0xFFFFFFFF, 0, 7.5f}};
+            dev.SetRenderState(RS_LIGHTING, half ? 0 : 1);
+            dev.DrawPrimitive(TriangleFan, kFvfMesh, q, 4);
+        }
+        dev.SetRenderState(RS_LIGHTING, 1);
+        std::vector<VtxMesh> v;
+        std::vector<uint16_t> idx;
+        AddCube(v, idx, -5, 1, 2, 1);
+        AddCube(v, idx, -2, 2, 6, 2);
+        AddCube(v, idx, 4, 1.5f, 3, 1.5f);
+        AddCube(v, idx, 7, 0.5f, -2, 0.5f);
+        dev.SetTexture(0, nullptr);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+        dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, v.data(), uint32_t(v.size()), idx.data(), uint32_t(idx.size()));
+        // Alpha-tested fence: its shadow must have holes.
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+        dev.SetTexture(0, fence);
+        dev.SetRenderState(RS_ALPHATESTENABLE, 1);
+        dev.SetRenderState(RS_ALPHAREF, 0x80);
+        dev.SetRenderState(RS_ALPHAFUNC, CMP_GREATEREQUAL);
+        VtxMesh f[4] = {{0, 0, 9, 0, 0, -1, 0xFFFFFFFF, 0, 1}, {0, 3, 9, 0, 0, -1, 0xFFFFFFFF, 0, 0},
+                        {4, 3, 9, 0, 0, -1, 0xFFFFFFFF, 1, 0}, {4, 0, 9, 0, 0, -1, 0xFFFFFFFF, 1, 1}};
+        dev.DrawPrimitive(TriangleFan, kFvfMesh, f, 4);
+        dev.SetRenderState(RS_ALPHATESTENABLE, 0);
+        dev.SetTexture(0, nullptr);
+        dev.LightEnable(0, false);
+        dev.EndFrame();
+    }
+    dev.DestroyTexture(ground);
+    dev.DestroyTexture(fence);
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 {
     if (msg == WM_DESTROY) { PostQuitMessage(0); return 0; }
@@ -762,7 +854,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 
 int main(int argc, char** argv)
 {
-    bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false;
+    bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false;
     int bench = 0;
     int frames = 3;
     std::string shot = "rvk_demo.bmp", dump;
@@ -774,6 +866,8 @@ int main(int argc, char** argv)
         else if (a == "--pixel-lighting") pixelLighting = true;
         else if (a == "--lighting-debug") lightingDebug = true;
         else if (a == "--light-override") lightOverride = true;
+        else if (a == "--shadows") shadows = true;
+        else if (a == "--shadow-test") shadowTest = shadows = true;
         else if (a == "--dump" && i + 1 < argc) dump = argv[++i];
         else if (a == "--bench" && i + 1 < argc) bench = std::atoi(argv[++i]);
         else if (a == "--game-ms" && i + 1 < argc) g_benchGameMs = std::atof(argv[++i]);
@@ -804,6 +898,7 @@ int main(int argc, char** argv)
     dev.SetPixelLighting(pixelLighting);
     dev.SetLightingDebug(lightingDebug);
     dev.SetLightOverride(lightOverride);
+    dev.SetShadows(shadows);
     if (!dump.empty()) dev.RequestFrameDump(dump);
     std::printf("GPU: %s (Vulkan %u.%u), driver %s\n", dev.Info().gpu.c_str(), VK_API_VERSION_MAJOR(dev.Info().apiVersion),
                 VK_API_VERSION_MINOR(dev.Info().apiVersion), dev.Info().driver.c_str());
@@ -830,8 +925,12 @@ int main(int argc, char** argv)
         tdev.SetPixelLighting(pixelLighting);
         tdev.SetLightingDebug(lightingDebug);
         tdev.SetLightOverride(lightOverride);
+        tdev.SetShadows(shadows);
         if (!dump.empty()) tdev.RequestFrameDump(dump);
-        RunDemo(tdev, windowed, stress, frames, shot);
+        if (shadowTest) RunShadowTest(tdev, frames, shot);
+        else RunDemo(tdev, windowed, stress, frames, shot);
+    } else if (shadowTest) {
+        RunShadowTest(dev, frames, shot);
     } else {
         RunDemo(dev, windowed, stress, frames, shot);
     }
