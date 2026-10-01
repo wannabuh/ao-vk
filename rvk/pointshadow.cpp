@@ -215,6 +215,9 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
 {
     PointShadowLight previous[kMaxPointShadows];   // the lights shadowed last frame: kept unless clearly beaten
     uint32_t previousCount = m_pointShadowCount;
+    double now = SwayClock();
+    float fadeStep = m_pointShadowFadeIn > 0.0 ? float(std::clamp((now - m_pointShadowClock) / m_pointShadowFadeIn, 0.0, 1.0)) : 1.0f;
+    m_pointShadowClock = now;
     std::copy(m_pointShadowLights, m_pointShadowLights + kMaxPointShadows, previous);
     m_pointShadowCount = 0;
     m_pointShadowDraws = 0;
@@ -226,7 +229,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
     // floodlights far away, whose shadows are coarse and faint here, took the slots of the lights around the
     // player depending on the camera angle.) A light shadowed last frame keeps its slot unless another is clearly
     // nearer, so lights at similar distances don't swap cubes back and forth.
-    struct Candidate { float key; uint32_t index; };
+    struct Candidate { float key; uint32_t index; float fade; };
     std::vector<Candidate> candidates;
     for (uint32_t i = 0; i < m_lightsCur.size(); ++i) {
         const d3d::Light& l = m_lightsCur[i].light;
@@ -238,16 +241,17 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
         if (BoxInClip(mn, mx, m_frameViewProj, true) == -1)
             continue;
         float dx = l.position.x - m_frameEye[0], dy = l.position.y - m_frameEye[1], dz = l.position.z - m_frameEye[2];
-        float key = std::sqrt(dx * dx + dy * dy + dz * dz);
+        float key = std::sqrt(dx * dx + dy * dy + dz * dz), fade = -1.0f;
         for (uint32_t p = 0; p < previousCount; ++p) {
             const PointShadowLight& q = previous[p];
             float px = q.position[0] - l.position.x, py = q.position[1] - l.position.y, pz = q.position[2] - l.position.z;
             if (q.range == l.range && px * px + py * py + pz * pz < 0.5f * 0.5f) {   // same light (may have moved)
                 key *= 0.85f;
+                fade = q.fade;
                 break;
             }
         }
-        candidates.push_back({key, i});
+        candidates.push_back({key, i, fade});
     }
     uint32_t count = std::min<uint32_t>(uint32_t(candidates.size()), m_pointShadows);
     if (count == 0)
@@ -324,6 +328,8 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
         PointShadowLight& s = m_pointShadowLights[k];
         std::memcpy(s.position, pos, sizeof(pos));
         s.range = l.range;
+        // Newly shadowed lights fade their shadow in instead of popping it in.
+        s.fade = m_pointShadowFadeIn <= 0.0 ? 1.0f : candidates[k].fade < 0.0f ? 0.0f : std::min(1.0f, candidates[k].fade + fadeStep);
     }
     m_pointShadowCount = count;
 

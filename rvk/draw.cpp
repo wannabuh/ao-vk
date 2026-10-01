@@ -267,7 +267,9 @@ VkDeviceSize Device::WriteFrameLights()
         const CapturedLight& c = m_lightsPrev[candidates[k].index];
         m_frameLightIndices.push_back(candidates[k].index);
         FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k]);
-        fl->lights[k].spot[2] = float(PointShadowLayer(c.light));   // its cube shadow map + 1, 0 = none
+        uint32_t cube = PointShadowLayer(c.light);
+        fl->lights[k].spot[2] = float(cube);                        // its cube shadow map + 1, 0 = none
+        fl->lights[k].spot[3] = cube ? m_pointShadowLights[cube - 1].fade : 0.0f;   // how far its shadow faded in
     }
     if (m_dumpFile) {
         std::fprintf(m_dumpFile, "FL at draw %u: %u of %u lights captured last frame, eye (%.1f %.1f %.1f):", m_dumpDraw,

@@ -36,7 +36,7 @@ float PointShadow(Light l, vec3 posW, vec3 n, float nl)
     s += texture(pointShadowMaps, vec4(d + (t1 - t2) * r, layer), ref);
     s += texture(pointShadowMaps, vec4(d - (t1 + t2) * r, layer), ref);
     s += texture(pointShadowMaps, vec4(d - (t1 - t2) * r, layer), ref);
-    return 1.0 - (1.0 - 0.25 * s) * FL.shadowParams.w;
+    return 1.0 - (1.0 - 0.25 * s) * FL.shadowParams.w * l.spot.w;
 }
 
 #include "lighting.glsl"

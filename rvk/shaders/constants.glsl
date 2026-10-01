@@ -4,7 +4,7 @@ struct Light {
     vec4 position;      // xyz world space, w = D3DLIGHTTYPE
     vec4 direction;     // xyz world space, w = range
     vec4 atten;         // attenuation0, attenuation1, attenuation2, falloff
-    vec4 spot;          // cos(theta/2), cos(phi/2), frame lights: point shadow cube + 1 (0 = none)
+    vec4 spot;          // cos(theta/2), cos(phi/2), frame lights: point shadow cube + 1 (0 = none), its fade-in (0..1)
 };
 
 // Changes on nearly every draw, so it has its own small block (binding 3); the big block below is only

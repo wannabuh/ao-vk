@@ -139,8 +139,9 @@ public:
     uint32_t PointShadows() const { return m_pointShadows; }
     // dayFactor: the strength left in full daylight. Under a bright sun the scene is already at full brightness
     // around a light, so its shadows only show where the sun's are (they'd look cut off there); they fade instead.
+    void SetPointShadowFadeIn(double seconds) { m_pointShadowFadeIn = seconds; }
     void SetPointShadowStrength(float strength, float dayFactor) { m_pointShadowStrength = strength; m_pointShadowDay = dayFactor; }
-    static constexpr uint32_t kMaxPointShadows = 4;
+    static constexpr uint32_t kMaxPointShadows = 8;
     // Enhancement, with the light override: how bright the frame's lights may make a surface (1 = D3D's clamp, up to
     // 2). The game's own lighting stays clamped at 1; local lights add on top of it, so they (and their shadows) show
     // on surfaces the sun already lights fully.
@@ -408,7 +409,12 @@ private:
     VkSampler m_cubeSampler = VK_NULL_HANDLE;
     VkImageView m_cubeFaceViews[kMaxPointShadows * 6] = {};
     VkImageLayout m_cubeLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    struct PointShadowLight { float position[3], range; };
+    struct PointShadowLight {
+        float position[3], range;
+        float fade;                              // 0..1: a newly shadowed light's shadow fades in (m_pointShadowFadeIn)
+    };
+    double m_pointShadowFadeIn = 0.3;            // seconds (0 = shadows appear at once)
+    double m_pointShadowClock = 0.0;
     PointShadowLight m_pointShadowLights[kMaxPointShadows] = {};   // the lights the cubes hold (for this frame)
     uint32_t m_pointShadowCount = 0;
     uint32_t m_pointShadowDraws = 0;             // last pass: caster draws into the cubes (frame dumps)

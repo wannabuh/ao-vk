@@ -89,7 +89,7 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     GetEnvironmentVariableA("RANDYVK_SHADOW_RANGE", range, sizeof(range));
     device->SetShadows(shadows[0] != '0');
     device->SetShadowParams(float(std::atof(strength)), float(std::atof(range)));
-    char pointShadows[8] = "4", pointStrength[16] = "0.9", pointDay[16] = "0.25";
+    char pointShadows[8] = "8", pointStrength[16] = "0.9", pointDay[16] = "0.25";
     GetEnvironmentVariableA("RANDYVK_POINT_SHADOWS", pointShadows, sizeof(pointShadows));
     GetEnvironmentVariableA("RANDYVK_POINT_SHADOW_STRENGTH", pointStrength, sizeof(pointStrength));
     GetEnvironmentVariableA("RANDYVK_POINT_SHADOW_DAY", pointDay, sizeof(pointDay));
