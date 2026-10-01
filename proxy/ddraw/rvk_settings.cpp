@@ -62,6 +62,17 @@ Setting g_settings[] = {
     {"RVK_DofRadius",  "Largest blur (pixels at 1440 lines)",                             "Depth of field", Int, 4, 48, 1, 16, nullptr, 0},
     {"RVK_DofFocus",   "Focus distance (0 = auto: your character)",                       "Depth of field", Float, 0, 200, 1, 0, nullptr, 0},
     {"RVK_DofRange",   "In-focus band around it",                                         "Depth of field", Float, 0, 0.9f, 0.05f, 0.2f, nullptr, 0},
+    {"RVK_Particles",  "GPU particles on sparkle effects (listed in randy-vk.ini [Particles])", "Particles", Bool, 0, 1, 1, 1, nullptr, 0},
+    {"RVK_PartCount",  "Particles per sprite",                                            "Particles",      Int,   1, 32, 1, 12, nullptr, 0},
+    {"RVK_PartSize",   "Particle size (fraction of its sprite)",                          "Particles",      Float, 0.03f, 0.6f, 0.01f, 0.15f, nullptr, 0},
+    {"RVK_PartLife",   "Particle life (seconds)",                                         "Particles",      Float, 0.25f, 5, 0.05f, 1.5f, nullptr, 0},
+    {"RVK_PartCurl",   "Flow (curl noise) speed",                                         "Particles",      Float, 0, 5, 0.1f, 1.5f, nullptr, 0},
+    {"RVK_PartScale",  "Flow feature size (world units)",                                 "Particles",      Float, 0.25f, 5, 0.05f, 1.5f, nullptr, 0},
+    {"RVK_PartSwirl",  "Swirl around the effect",                                         "Particles",      Float, 0, 5, 0.1f, 1, nullptr, 0},
+    {"RVK_PartPull",   "Pull back towards the effect",                                    "Particles",      Float, 0, 3, 0.05f, 0.6f, nullptr, 0},
+    {"RVK_PartDrag",   "How quickly particles follow the flow",                           "Particles",      Float, 0.25f, 10, 0.25f, 2.5f, nullptr, 0},
+    {"RVK_PartSpeed",  "Launch speed",                                                    "Particles",      Float, 0, 4, 0.1f, 0.6f, nullptr, 0},
+    {"RVK_PartCore",   "Brightness of the game's own sprites (1 = unchanged)",            "Particles",      Float, 0, 1, 0.05f, 0.35f, nullptr, 0},
 };
 constexpr uint32_t kCount = sizeof(g_settings) / sizeof(g_settings[0]);
 
@@ -127,6 +138,20 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_Ao") || is("RVK_AoRadius")) d->SetAo(V("RVK_Ao"), V("RVK_AoRadius"));
     else if (is("RVK_MBlur") || is("RVK_MBlurNear")) d->SetMotionBlur(V("RVK_MBlur"), V("RVK_MBlurNear"));
     else if (is("RVK_MBlurObj")) d->SetMotionBlurMode(s.value != 0.0f ? 1u : 0u);
+    else if (std::strncmp(n, "RVK_Part", 8) == 0 && !is("RVK_PartCore")) {
+        rvk::Device::ParticleParams p;
+        p.enable = V("RVK_Particles") != 0.0f;
+        p.perSprite = uint32_t(V("RVK_PartCount"));
+        p.size = V("RVK_PartSize");
+        p.life = V("RVK_PartLife");
+        p.curl = V("RVK_PartCurl");
+        p.scale = V("RVK_PartScale");
+        p.swirl = V("RVK_PartSwirl");
+        p.pull = V("RVK_PartPull");
+        p.drag = V("RVK_PartDrag");
+        p.speed = V("RVK_PartSpeed");
+        d->SetParticleParams(p);
+    }
     else if (std::strncmp(n, "RVK_Dof", 7) == 0)
         d->SetDof(V("RVK_Dof") != 0.0f, V("RVK_DofBokeh") != 0.0f, V("RVK_DofNear") != 0.0f, V("RVK_DofAmount"),
                   V("RVK_DofRadius"), V("RVK_DofFocus"), V("RVK_DofRange"), V("RVK_DofFar") != 0.0f, V("RVK_DofMacro"));
@@ -182,6 +207,12 @@ void ApplyAll(rvk::ThreadedDevice* device)
     Load();
     for (const Setting& s : g_settings)
         Apply(s, device);
+}
+
+const char* IniPath()
+{
+    Load();
+    return g_iniPath;
 }
 
 void LogAll()

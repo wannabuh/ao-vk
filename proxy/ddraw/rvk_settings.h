@@ -35,5 +35,6 @@ float Get(const char* name);
 void Set(const char* name, float value);            // clamped, applied to the device if there is one, saved
 void ApplyAll(rvk::ThreadedDevice* device);         // a new device gets every setting
 void LogAll();
+const char* IniPath();                              // randy-vk.ini (other sections: [Particles])
 
 }  // namespace rvk_settings

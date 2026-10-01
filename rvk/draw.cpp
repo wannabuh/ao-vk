@@ -673,10 +673,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             EndScene();
         }
     }
-    m_drawIsLabel = IsLabel(primitive, fvf, vertexCount);
-    if (m_dumpFile)
+    m_drawIsLabel = !m_external && IsLabel(primitive, fvf, vertexCount);
+    if (m_dumpFile && !m_external)
         DumpDraw(primitive, fvf, vertices, vertexCount, indices, indexCount);
-    if (IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount))
+    if (!m_external && IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount))
         return;                                  // replaced by sun shadows
     if (IsTerrain(fvf) && IsMultiplyPass())
         m_terrainLitPassCur = true;
@@ -697,15 +697,16 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         BeginRenderingOn(m_target);
     }
 
-    // Everything this draw puts in the ring buffer, reserved together so a flush can't split it.
+    // Everything this draw puts in the ring buffer, reserved together so a flush can't split it. (External geometry -
+    // the particles - is already in a GPU buffer.)
     const VkDeviceSize uboAlign = m_props.limits.minUniformBufferOffsetAlignment;
-    EnsureRingSpace(sizeof(DrawConstants) + sizeof(DrawTransform) + sizeof(FrameLights) +
-                    VkDeviceSize(layout.stride) * vertexCount + VkDeviceSize(indexCount) * 2 + 3 * uboAlign +
-                    layout.stride + 32 + (MotionVectorDraw(fvf) ? 12ull * vertexCount + 256 : 0));
+    bool motion = !m_external && MotionVectorDraw(fvf);   // reads the last frame's camera from the frame block
+    VkDeviceSize geometryBytes = m_external ? 0 : VkDeviceSize(layout.stride) * vertexCount + VkDeviceSize(indexCount) * 2;
+    EnsureRingSpace(sizeof(DrawConstants) + sizeof(DrawTransform) + sizeof(FrameLights) + geometryBytes + 3 * uboAlign +
+                    layout.stride + 32 + (motion ? 12ull * vertexCount + 256 : 0));
 
     // The frame's light list (binding 4): rebuilt when lights changed; always bound, as layouts require.
     // Only lit draws read it; the others bind any in-range part of the ring.
-    bool motion = MotionVectorDraw(fvf);       // reads the last frame's camera from the frame block
     bool needLights = (m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
                        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) || ShadowReceiver(fvf) ||
                       ShadowCompensated(fvf) || motion;
@@ -775,7 +776,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             if (it != m_terrainBases.end()) m_drawBumpBase = it->second;
         }
     }
-    uint32_t carrier = CarriedLight(fvf, vertices, vertexCount, layout.stride);
+    uint32_t carrier = m_external ? 0 : CarriedLight(fvf, vertices, vertexCount, layout.stride);
     bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
                    m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
                    m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase;
@@ -898,18 +899,19 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 
     // Geometry: vertices aligned to their stride and indices to 2 bytes, so the draw can address them inside
     // the ring buffer bound once (vertexOffset / firstIndex) instead of rebinding buffers per draw.
-    VkDeviceSize vbBytes = VkDeviceSize(layout.stride) * vertexCount;
-    VkDeviceSize vbOffset = Allocate(vbBytes, layout.stride, &cpu);
-    std::memcpy(cpu, vertices, vbBytes);
-    drawTransform->motion[2] = float(vbOffset / layout.stride);   // the base vertex: gl_VertexIndex - it = vertex
-    VkDeviceSize ibOffset = 0;
-    if (indices) {
-        ibOffset = Allocate(VkDeviceSize(indexCount) * 2, 2, &cpu);
-        std::memcpy(cpu, indices, size_t(indexCount) * 2);
+    VkDeviceSize vbOffset = 0, ibOffset = 0;
+    if (!m_external) {
+        VkDeviceSize vbBytes = VkDeviceSize(layout.stride) * vertexCount;
+        vbOffset = Allocate(vbBytes, layout.stride, &cpu);
+        std::memcpy(cpu, vertices, vbBytes);
+        drawTransform->motion[2] = float(vbOffset / layout.stride);   // the base vertex: gl_VertexIndex - it = vertex
+        if (indices) {
+            ibOffset = Allocate(VkDeviceSize(indexCount) * 2, 2, &cpu);
+            std::memcpy(cpu, indices, size_t(indexCount) * 2);
+        }
+        RecordShadowCaster(primitive, fvf, layout.stride, vertices, vertexCount, vbOffset, indices,
+                           indices ? indexCount : 0, ibOffset);
     }
-
-    RecordShadowCaster(primitive, fvf, layout.stride, vertices, vertexCount, vbOffset, indices, indices ? indexCount : 0,
-                       ibOffset);
     m_drawOverbright2x = Overbright2x(fvf);
     if (GlowDraw(fvf)) ++m_glowDraws;
     ApplyDynamicState(primitive, fvf, layout.stride);
@@ -953,10 +955,26 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[8].pBufferInfo = &prevPositions;
     vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 9, writes);
 
+    if (m_external) {
+        VkBuffer buffers[2] = {m_external->vertices, m_nullBuffer};
+        VkDeviceSize offsets[2] = {0, 0};
+        vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
+        vkCmdBindIndexBuffer(cmd, m_external->indices, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdDrawIndexed(cmd, indexCount, 1, 0, m_external->baseVertex, 0);
+        m_cache.buffersBound = false;            // the next draw binds the ring again
+        return;
+    }
     if (indices)
         vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);
     else
         vkCmdDraw(cmd, vertexCount, 1, uint32_t(vbOffset / layout.stride), 0);
+
+    // A particle effect's sprites (ParticleEmitter): its particles follow, with the same state.
+    if (m_particlePending && fvf == kParticleFvf) {
+        ParticleBlock* block = m_particlePending;
+        m_particlePending = nullptr;
+        DrawParticles(*block);
+    }
 }
 
 }  // namespace rvk

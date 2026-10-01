@@ -430,6 +430,26 @@ void ThreadedDevice::SetRenderTarget(Texture* target)
     Enqueue([this, target](const uint8_t*) { m_device.SetRenderTarget(target); });
 }
 
+void ThreadedDevice::SetParticleParams(const Device::ParticleParams& params)
+{
+    m_particleParams = params;
+    Enqueue([this, params](const uint8_t*) { m_device.SetParticleParams(params); });
+}
+
+void ThreadedDevice::ParticleEmitter(uint64_t key, const float center[3], const Device::ParticleSprite* sprites,
+                                     uint32_t count)
+{
+    float c[3] = {center[0], center[1], center[2]};
+    Enqueue([this, key, c, count](const uint8_t* data) {
+        m_device.ParticleEmitter(key, c, reinterpret_cast<const Device::ParticleSprite*>(data), count);
+    }, sprites, uint32_t(count * sizeof(Device::ParticleSprite)));
+}
+
+void ThreadedDevice::EndParticleEmitter()
+{
+    Enqueue([this](const uint8_t*) { m_device.EndParticleEmitter(); });
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Drawing
 

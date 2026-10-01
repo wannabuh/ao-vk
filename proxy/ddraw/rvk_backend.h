@@ -17,6 +17,7 @@ HRESULT StubCall(unsigned index);                 // logs an unimplemented metho
 void CountBackendDraw();                          // heartbeat statistics
 unsigned ComIndex(const char* name);              // counter index of "Interface::Method"
 void RvkLog(const char* fmt, ...);
+void ParticleFrame();                             // each presented frame (rvk_particles.cpp)
 
 // One lock around every call into the rvk backend: the game may use DirectDraw from more than one thread
 // (D3D serialises internally too). Recursive, since methods call each other. Logs each new thread once.

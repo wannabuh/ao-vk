@@ -1197,10 +1197,111 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 
 }  // namespace
 
+// Particle test (--particle-test): an effect like the game's sparkle auras - a ring of soft additive sprites (FVF 0x142,
+// drawn the way GfxVisualDiaBill draws them) that twinkle on and off - announced with ParticleEmitter, so each live
+// sprite sheds GPU particles. --particles-off draws the sprites alone for comparison.
+template <typename D>
+void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, const std::string& dump, bool particles)
+{
+    std::vector<uint32_t> soft(32 * 32);
+    for (int y = 0; y < 32; ++y)
+        for (int x = 0; x < 32; ++x) {
+            float dx = (x - 15.5f) / 16.0f, dy = (y - 15.5f) / 16.0f;
+            float a = std::exp(-6.0f * (dx * dx + dy * dy));
+            soft[y * 32 + x] = (uint32_t(a * 255.0f + 0.5f) << 24) | 0xFFFFFF;
+        }
+    Texture* tex = dev.CreateTexture(32, 32, soft.data());
+    Device::ParticleParams params;
+    params.enable = particles;
+    dev.SetParticleParams(params);
+    struct VtxSprite { float x, y, z; uint32_t color; float u, v; };
+    struct VtxGround { float x, y, z; uint32_t color; };
+    const uint32_t kN = 24;
+    for (int frame = 0; frame < frames; ++frame) {
+        if (frame == frames - 1) {
+            dev.RequestScreenshot(shot);
+            if (!dump.empty()) dev.RequestFrameDump(dump);
+        }
+        dev.BeginFrame();
+        dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
+        dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF0C1018, 1.0f);
+        Matrix view = LookAtLH({0, 2.2f, -4.5f}, {0, 0.9f, 0}, {0, 1, 0});
+        dev.SetTransform(View, view);
+        dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.1f, 100.0f));
+        dev.SetTransform(World, Identity());
+        dev.SetRenderState(RS_LIGHTING, 0);
+        dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+        dev.SetRenderState(RS_ZENABLE, 1);
+        dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+        // Ground (depth writing: the world camera the particles face).
+        dev.SetRenderState(RS_ZWRITEENABLE, 1);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        dev.SetTexture(0, nullptr);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_COLORARG1, TA_DIFFUSE);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_DIFFUSE);
+        VtxGround ground[4] = {{-4, 0, -3, 0xFF303440}, {4, 0, -3, 0xFF303440}, {-4, 0, 5, 0xFF202430}, {4, 0, 5, 0xFF202430}};
+        uint16_t gi[6] = {0, 1, 2, 1, 2, 3};
+        dev.DrawIndexedPrimitive(TriangleList, FVF_XYZ | FVF_DIFFUSE, ground, 4, gi, 6);
+
+        // The effect: its frame of reference moves (a walking character), sprites twinkle in its ring.
+        float t = frame * 0.016f;
+        float cx = std::sin(t * 0.7f) * 0.8f, cz = 0.0f;
+        Device::ParticleSprite sprites[kN] = {};
+        std::vector<VtxSprite> verts;
+        std::vector<uint16_t> idx;
+        float right[3] = {view.m[0][0], view.m[1][0], view.m[2][0]}, up[3] = {view.m[0][1], view.m[1][1], view.m[2][1]};
+        for (uint32_t i = 0; i < kN; ++i) {
+            float a = 2 * kPi * i / kN + t * 0.5f;
+            Device::ParticleSprite& sp = sprites[i];
+            sp.pos[0] = cx + std::cos(a) * 1.0f;
+            sp.pos[1] = 1.0f + 0.3f * std::sin(a * 3.0f);
+            sp.pos[2] = cz + std::sin(a) * 1.0f;
+            sp.size = 0.6f;
+            sp.uv[0] = 0; sp.uv[1] = 0; sp.uv[2] = 1; sp.uv[3] = 1;
+            sp.color = 0xC0B080FF;
+            sp.alive = ((frame / 12 + i) % 3) != 0;
+            if (!sp.alive) continue;
+            uint16_t base = uint16_t(verts.size());
+            float h = sp.size * 0.5f;
+            for (int k = 0; k < 4; ++k) {
+                float sx = (k & 1) ? h : -h, sy = (k & 2) ? h : -h;
+                verts.push_back({sp.pos[0] + right[0] * sx + up[0] * sy, sp.pos[1] + right[1] * sx + up[1] * sy,
+                                 sp.pos[2] + right[2] * sx + up[2] * sy, sp.color, (k & 1) ? 1.0f : 0.0f, (k & 2) ? 0.0f : 1.0f});
+            }
+            uint16_t q[6] = {base, uint16_t(base + 1), uint16_t(base + 2), uint16_t(base + 1), uint16_t(base + 2), uint16_t(base + 3)};
+            idx.insert(idx.end(), q, q + 6);
+        }
+        float center[3] = {cx, 0.0f, cz};
+        dev.ParticleEmitter(0x5EED, center, sprites, kN);
+        dev.SetRenderState(RS_ZWRITEENABLE, 0);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+        dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+        dev.SetRenderState(RS_DESTBLEND, BLEND_ONE);
+        dev.SetTexture(0, tex);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+        dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+        dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_MODULATE);
+        dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
+        dev.SetTextureStageState(0, TSS_ALPHAARG2, TA_DIFFUSE);
+        if (!verts.empty())
+            dev.DrawIndexedPrimitive(TriangleList, Device::kParticleFvf, verts.data(), uint32_t(verts.size()), idx.data(),
+                                     uint32_t(idx.size()));
+        dev.EndParticleEmitter();
+        dev.EndFrame();
+        if (frameMs > 0)
+            Sleep(DWORD(frameMs));
+    }
+    dev.DestroyTexture(tex);
+}
+
 int main(int argc, char** argv)
 {
     bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false, pointShadowTest = false, pointShadowSun = false;
     int cacheTest = 0, frameMs = 0;
+    bool particleTest = false, particlesOff = false;
     uint32_t pointShadows = 4;
     float headroom = 1.0f;
     double fadeIn = 0.0;
@@ -1255,6 +1356,8 @@ int main(int argc, char** argv)
         else if (a == "--light-headroom" && i + 1 < argc) headroom = float(std::atof(argv[++i]));
         else if (a == "--point-shadows" && i + 1 < argc) pointShadows = uint32_t(std::atoi(argv[++i]));
         else if (a == "--shot" && i + 1 < argc) shot = argv[++i];
+        else if (a == "--particle-test") particleTest = true;
+        else if (a == "--particles-off") particlesOff = true;
     }
 
     HWND hwnd = nullptr;
@@ -1298,6 +1401,20 @@ int main(int argc, char** argv)
         dev.SetLightOverride(true);
         dev.SetPointShadows(pointShadows);
         RunPointShadowTest(dev, frames, shot, dump, pointShadowSun);
+        std::printf("rendered; screenshot %s\n", shot.c_str());
+        return 0;
+    }
+    if (particleTest) {
+        if (threaded) {
+            ThreadedDevice tdev;
+            if (!tdev.Init(nullptr, kWidth, kHeight, &error)) { std::printf("init failed: %s\n", error.c_str()); return 1; }
+            tdev.SetHdr(hdr);
+            tdev.SetBloom(bloom, 1.0f);
+            RunParticleTest(tdev, frames, frameMs, shot, dump, !particlesOff);
+            tdev.Sync();
+        } else {
+            RunParticleTest(dev, frames, frameMs, shot, dump, !particlesOff);
+        }
         std::printf("rendered; screenshot %s\n", shot.c_str());
         return 0;
     }

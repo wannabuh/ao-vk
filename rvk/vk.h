@@ -68,6 +68,7 @@
     X(vkCreatePipelineLayout) \
     X(vkDestroyPipelineLayout) \
     X(vkCreateGraphicsPipelines) \
+    X(vkCreateComputePipelines) \
     X(vkDestroyPipeline) \
     X(vkCmdBeginRendering) \
     X(vkCmdEndRendering) \
@@ -94,6 +95,8 @@
     X(vkCmdClearAttachments) \
     X(vkCmdDraw) \
     X(vkCmdDrawIndexed) \
+    X(vkCmdDispatch) \
+    X(vkCmdFillBuffer) \
     X(vkCmdCopyBufferToImage) \
     X(vkCmdCopyImageToBuffer) \
     X(vkCmdBlitImage)

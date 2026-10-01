@@ -195,6 +195,38 @@ public:
     void SetLightHeadroom(float headroom) { headroom = headroom < 1.0f ? 1.0f : headroom > 2.0f ? 2.0f : headroom;
                                             if (m_lightHeadroom != headroom) { m_lightHeadroom = headroom; m_constantsDirty = true; m_frameLightsDirty = true; } }
     float LightHeadroom() const { return m_lightHeadroom; }
+    // Enhancement: GPU particles (particles.cpp). A game sprite effect announces itself with ParticleEmitter before it
+    // draws: its identity (stable while the effect exists) and its sprites in world space. Each live sprite sheds tiny
+    // particles that a compute pass moves through a flow field (curl noise, a swirl around the effect, a pull back to
+    // it) and that outlive it; they are drawn right after the effect's next sprite draw (FVF 0x142), with its texture
+    // and blending. The simulation runs at the start of each frame from the previous frame's sprites.
+    struct ParticleSprite {
+        float pos[3], size;                      // world space; size = the sprite's width
+        float uv[4];                             // texture rectangle: u, v, width, height
+        uint32_t color;                          // D3DCOLOR (ARGB)
+        uint32_t alive;
+    };
+    struct ParticleParams {
+        bool enable = true;
+        uint32_t perSprite = 12;                 // particles each sprite keeps alive (up to kParticleChildren)
+        float size = 0.15f;                      // a particle's size as a fraction of its sprite's
+        float life = 1.5f;                       // seconds (each particle 0.5x .. 1.5x)
+        float curl = 1.5f;                       // flow field speed (world units / s)
+        float swirl = 1.0f;                      // orbit speed around the effect's vertical axis
+        float pull = 0.6f;                       // pull back towards the effect (per second)
+        float drag = 2.5f;                       // how fast particles take on the flow's velocity (per second)
+        float inherit = 0.5f;                    // fraction of the sprite's own velocity a new particle starts with
+        float speed = 0.6f;                      // random launch speed
+        float scale = 1.5f;                      // flow field feature size (world units)
+    };
+    void SetParticleParams(const ParticleParams& params) { m_particleParams = params; }
+    const ParticleParams& GetParticleParams() const { return m_particleParams; }
+    void ParticleEmitter(uint64_t key, const float center[3], const ParticleSprite* sprites, uint32_t count);
+    void EndParticleEmitter() { m_particlePending = nullptr; }
+    static constexpr uint32_t kParticleSlots = 128, kParticleChildren = 32;
+    static constexpr uint32_t kParticlesPerBlock = kParticleSlots * kParticleChildren, kParticleBlocks = 64;
+    static constexpr uint32_t kParticleFvf = 0x142;           // XYZ | DIFFUSE | TEX1: the game's sprite vertices
+
     void SetTexture(uint32_t stage, Texture* texture);
     // Null = the main target. Like D3D, resets the viewport to the whole target.
     void SetRenderTarget(Texture* target);
@@ -538,6 +570,45 @@ private:
     void DestroyHdrResources();
     void BeginScene();
     void EndScene();
+
+    // Particles (particles.cpp): one block of kParticlesPerBlock particles per effect; particle p belongs to sprite slot
+    // p / kParticleChildren. State and the generated quads (FVF 0x142, 4 vertices a particle) live in GPU buffers; the
+    // quads are double buffered per frame slot.
+    ParticleParams m_particleParams;
+    struct ParticleBlock {
+        uint64_t key = 0;                        // 0 = free
+        uint64_t lastSeen = 0;                   // frame number of its last ParticleEmitter
+        bool reset = true;                       // newly assigned: its particles start dead
+        bool simulated = false;                  // quads were generated for it this frame
+        float center[3] = {};
+        std::vector<ParticleSprite> sprites, prevSprites;
+        bool havePrev = false;
+    };
+    std::vector<ParticleBlock> m_particleBlocks;
+    ParticleBlock* m_particlePending = nullptr;  // the effect whose sprite draw comes next
+    VkBuffer m_particleState = VK_NULL_HANDLE;
+    VmaAllocation_T* m_particleStateAllocation = nullptr;
+    VkBuffer m_particleQuads[kFramesInFlight] = {};
+    VmaAllocation_T* m_particleQuadsAllocation[kFramesInFlight] = {};
+    VkBuffer m_particleIndices = VK_NULL_HANDLE;
+    VmaAllocation_T* m_particleIndicesAllocation = nullptr;
+    VkDescriptorSetLayout m_particleSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout m_particleLayout = VK_NULL_HANDLE;
+    VkPipeline m_particlePipeline = VK_NULL_HANDLE;
+    bool m_particleStateCleared = false;
+    double m_particleTime = 0.0, m_particleLastClock = 0.0;
+    d3d::Matrix m_particleView{};                // the camera the quads face (last effect's, last frame)
+    uint32_t m_particleDraws = 0;                // this frame (frame dumps)
+    bool CreateParticleResources(std::string* error);
+    void DestroyParticleResources();
+    void SimulateParticles(VkCommandBuffer cmd); // BeginFrame, before rendering starts
+    void DrawParticles(ParticleBlock& block);    // right after the effect's own draw, with its state
+    // A draw whose geometry is already in a GPU buffer (the particle quads): Draw uses it instead of copying vertices.
+    struct ExternalGeometry {
+        VkBuffer vertices, indices;
+        int32_t baseVertex;
+    };
+    const ExternalGeometry* m_external = nullptr;
 
     // Point light shadows (pointshadow.cpp): a cube map per shadowed light, layers 6*i .. 6*i+5 of one cube array.
     static constexpr uint32_t kPointShadowSize = 1024;

@@ -1,0 +1,178 @@
+// GPU particles (particles.cpp): one invocation per particle of the active effects' blocks. Simulates, then writes the
+// particle's camera-facing quad in the game's sprite vertex format (FVF 0x142: position, D3DCOLOR, uv; 24 bytes).
+//
+// Particle p of a block belongs to sprite slot p / CHILDREN. A dead particle whose sprite is alive respawns at it (soon,
+// not all at once); a live one follows a flow field - curl noise (divergence free, so it swirls like a fluid without
+// bunching up), an orbit around the effect's vertical axis and a pull back towards it - taking on the flow's velocity
+// at the rate `drag`. Particles outlive their sprite.
+#version 450
+
+layout(local_size_x = 64) in;
+
+const uint SLOTS = 128u, CHILDREN = 32u, PER_BLOCK = SLOTS * CHILDREN;
+
+struct Block {
+    vec4 center;        // world space; w: 1 = newly assigned (its particles start dead)
+    uvec4 info;         // x: block index (state and quad region)
+};
+struct Sprite {
+    vec4 posSize;       // world position, width
+    vec4 prevPos;       // last frame's position; w: bits, 1 = alive, 2 = alive last frame
+    vec4 uv;            // u, v, width, height
+    uvec4 color;        // x: D3DCOLOR
+};
+struct Particle {
+    vec4 posAge;        // world position, age (s)
+    vec4 velLife;       // velocity, life (s; 0 = dead)
+    vec4 uv;
+    uvec4 meta;         // x: colour, y: size (float bits), z: random bits
+};
+
+layout(std430, binding = 0) readonly buffer Blocks { Block blocks[]; };
+layout(std430, binding = 1) readonly buffer Sprites { Sprite sprites[]; };
+layout(std430, binding = 2) buffer State { Particle particles[]; };
+layout(std430, binding = 3) writeonly buffer Quads { uint quads[]; };
+
+layout(push_constant) uniform Params {
+    vec4 a;             // dt, time, particles per sprite, frame number
+    vec4 b;             // size factor, life, curl speed, swirl speed
+    vec4 c;             // pull, drag, inherit, launch speed
+    vec4 right;         // camera right (world); w: flow feature size
+    vec4 up;            // camera up (world)
+} pc;
+
+uint Hash(uint x)
+{
+    x ^= x >> 16; x *= 0x7feb352du;
+    x ^= x >> 15; x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+float Rand(inout uint s)
+{
+    s = Hash(s);
+    return float(s >> 8) * (1.0 / 16777216.0);
+}
+
+vec3 RandDir(inout uint s)
+{
+    float z = Rand(s) * 2.0 - 1.0, a = Rand(s) * 6.2831853, r = sqrt(max(0.0, 1.0 - z * z));
+    return vec3(r * cos(a), z, r * sin(a));
+}
+
+vec3 Gradient(ivec3 i)
+{
+    uvec3 q = uvec3(i);
+    uint h = Hash(q.x + Hash(q.y + Hash(q.z)));
+    return vec3(float(h & 1023u), float((h >> 10) & 1023u), float((h >> 20) & 1023u)) * (1.0 / 511.5) - 1.0;
+}
+
+// Gradient noise and its derivatives (value, d/dx, d/dy, d/dz), quintic interpolation.
+vec4 Noise(vec3 x)
+{
+    ivec3 i = ivec3(floor(x));
+    vec3 f = fract(x);
+    vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    vec3 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+    vec3 ga = Gradient(i + ivec3(0, 0, 0)), gb = Gradient(i + ivec3(1, 0, 0));
+    vec3 gc = Gradient(i + ivec3(0, 1, 0)), gd = Gradient(i + ivec3(1, 1, 0));
+    vec3 ge = Gradient(i + ivec3(0, 0, 1)), gf = Gradient(i + ivec3(1, 0, 1));
+    vec3 gg = Gradient(i + ivec3(0, 1, 1)), gh = Gradient(i + ivec3(1, 1, 1));
+    float va = dot(ga, f - vec3(0, 0, 0)), vb = dot(gb, f - vec3(1, 0, 0));
+    float vc = dot(gc, f - vec3(0, 1, 0)), vd = dot(gd, f - vec3(1, 1, 0));
+    float ve = dot(ge, f - vec3(0, 0, 1)), vf = dot(gf, f - vec3(1, 0, 1));
+    float vg = dot(gg, f - vec3(0, 1, 1)), vh = dot(gh, f - vec3(1, 1, 1));
+    float value = va + u.x * (vb - va) + u.y * (vc - va) + u.z * (ve - va) + u.x * u.y * (va - vb - vc + vd) +
+                  u.y * u.z * (va - vc - ve + vg) + u.z * u.x * (va - vb - ve + vf) +
+                  (-va + vb + vc - vd + ve - vf - vg + vh) * u.x * u.y * u.z;
+    vec3 grad = ga + u.x * (gb - ga) + u.y * (gc - ga) + u.z * (ge - ga) + u.x * u.y * (ga - gb - gc + gd) +
+                u.y * u.z * (ga - gc - ge + gg) + u.z * u.x * (ga - gb - ge + gf) +
+                (-ga + gb + gc - gd + ge - gf - gg + gh) * u.x * u.y * u.z +
+                du * (vec3(vb, vc, ve) - va + u.yzx * vec3(va - vb - vc + vd, va - vc - ve + vg, va - vb - ve + vf) +
+                      u.zxy * vec3(va - vb - ve + vf, va - vb - vc + vd, va - vc - ve + vg) +
+                      u.yzx * u.zxy * (-va + vb + vc - vd + ve - vf - vg + vh));
+    return vec4(value, grad);
+}
+
+// Curl of a vector potential made of three decorrelated noise fields: a divergence-free flow.
+vec3 Curl(vec3 p)
+{
+    vec4 nx = Noise(p), ny = Noise(p + vec3(31.416, -47.853, 12.793)), nz = Noise(p + vec3(-233.145, -113.408, -185.31));
+    return vec3(nz.z - ny.w, nx.w - nz.y, ny.y - nx.z);
+}
+
+void WriteVertex(uint v, vec3 pos, uint color, vec2 uv)
+{
+    uint o = v * 6u;
+    quads[o + 0u] = floatBitsToUint(pos.x);
+    quads[o + 1u] = floatBitsToUint(pos.y);
+    quads[o + 2u] = floatBitsToUint(pos.z);
+    quads[o + 3u] = color;
+    quads[o + 4u] = floatBitsToUint(uv.x);
+    quads[o + 5u] = floatBitsToUint(uv.y);
+}
+
+void main()
+{
+    uint p = gl_GlobalInvocationID.x;
+    if (p >= PER_BLOCK)
+        return;
+    uint list = gl_WorkGroupID.y;
+    Block blk = blocks[list];
+    uint index = blk.info.x * PER_BLOCK + p;
+    uint slot = p / CHILDREN, child = p % CHILDREN;
+    Particle P = particles[index];
+    if (blk.center.w > 0.5)
+        P.velLife.w = 0.0;
+    Sprite S = sprites[list * SLOTS + slot];
+    uint flags = floatBitsToUint(S.prevPos.w);
+    bool alive = (flags & 1u) != 0u, prevAlive = (flags & 2u) != 0u;
+    float dt = pc.a.x;
+    uint seed = Hash(index * 747796405u + uint(pc.a.w) * 2891336453u);
+
+    if (P.velLife.w <= 0.0 || P.posAge.w >= P.velLife.w) {
+        P.velLife.w = 0.0;
+        // Respawn at the sprite - after a random delay (~1/8 s), so a new sprite's particles don't all start together.
+        if (alive && float(child) < pc.a.z && Rand(seed) < clamp(dt * 8.0, 0.0, 1.0)) {
+            vec3 spriteVel = prevAlive ? (S.posSize.xyz - S.prevPos.xyz) / max(dt, 1e-3) : vec3(0.0);
+            float sv = length(spriteVel);
+            if (sv > 20.0) spriteVel *= 20.0 / sv;   // teleports, respawned sprites
+            float r = pow(Rand(seed), 1.0 / 3.0) * S.posSize.w * 0.5;
+            P.posAge = vec4(S.posSize.xyz + RandDir(seed) * r, 0.0);
+            P.velLife = vec4(spriteVel * pc.c.z + RandDir(seed) * pc.c.w * (0.3 + 0.7 * Rand(seed)),
+                             pc.b.y * (0.5 + Rand(seed)));
+            P.uv = S.uv;
+            P.meta = uvec4(S.color.x, floatBitsToUint(S.posSize.w * pc.b.x * (0.6 + 0.8 * Rand(seed))), Hash(seed), 0u);
+        }
+    } else {
+        vec3 pos = P.posAge.xyz, vel = P.velLife.xyz;
+        vec3 flow = Curl(pos / max(pc.right.w, 0.05) + vec3(0.0, pc.a.y * 0.15, 0.0)) * pc.b.z;
+        vec3 r = pos - blk.center.xyz;
+        vec3 rh = vec3(r.x, 0.0, r.z);
+        float d = length(rh);
+        if (d > 1e-4)
+            flow += cross(vec3(0.0, 1.0, 0.0), rh / d) * pc.b.w / (1.0 + d * 0.5);
+        flow -= r * pc.c.x;
+        vel += (flow - vel) * (1.0 - exp(-pc.c.y * dt));
+        P.posAge.xyz = pos + vel * dt;
+        P.velLife.xyz = vel;
+        P.posAge.w += dt;
+    }
+    particles[index] = P;
+
+    // The quad: fades in quickly, out over the second half of its life, and shrinks a little as it ages.
+    bool live = P.velLife.w > 0.0 && P.posAge.w < P.velLife.w;
+    float t = live ? P.posAge.w / P.velLife.w : 1.0;
+    float fade = live ? smoothstep(0.0, 0.1, t) * (1.0 - smoothstep(0.55, 1.0, t)) : 0.0;
+    float extent = live ? uintBitsToFloat(P.meta.y) * 0.5 * (1.0 - 0.4 * t) : 0.0;
+    uint color = (P.meta.x & 0x00FFFFFFu) | (uint(float(P.meta.x >> 24) * fade + 0.5) << 24);
+    vec3 right = pc.right.xyz * extent, up = pc.up.xyz * extent;
+    uint v = index * 4u;
+    vec3 c = P.posAge.xyz;
+    vec4 uv = P.uv;
+    WriteVertex(v + 0u, c - right - up, color, vec2(uv.x, uv.y + uv.w));
+    WriteVertex(v + 1u, c + right - up, color, vec2(uv.x + uv.z, uv.y + uv.w));
+    WriteVertex(v + 2u, c - right + up, color, vec2(uv.x, uv.y));
+    WriteVertex(v + 3u, c + right + up, color, vec2(uv.x + uv.z, uv.y));
+}

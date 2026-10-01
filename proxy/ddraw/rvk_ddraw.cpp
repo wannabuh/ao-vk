@@ -114,6 +114,7 @@ void RvkState::Present()
         return;
     Frame();                  // a present without any rendering still shows a frame
     device->EndFrame();
+    ParticleFrame();
     // Hotkeys (Ctrl+Shift+...). Those for options change the setting (saved, shown in the settings window).
     bool chord = (GetAsyncKeyState(VK_CONTROL) & 0x8000) && (GetAsyncKeyState(VK_SHIFT) & 0x8000);
     static bool down[256];
@@ -127,7 +128,7 @@ void RvkState::Present()
     struct Toggle { int key; const char* setting; };
     static const Toggle kToggles[] = {
         {VK_F10, "RVK_PixelLight"}, {VK_F7, "RVK_SunShadow"}, {VK_F5, "RVK_Hdr"}, {VK_F8, "RVK_LightOver"},
-        {'N', "RVK_MBlurObj"}, {'D', "RVK_Dof"},
+        {'N', "RVK_MBlurObj"}, {'D', "RVK_Dof"}, {'P', "RVK_Particles"},
     };
     for (const Toggle& t : kToggles)
         if (pressed(t.key))

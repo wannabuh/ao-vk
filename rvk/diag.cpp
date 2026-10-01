@@ -52,6 +52,10 @@ void Device::EndFrameDump()
         std::fprintf(m_dumpFile, " cube %u at (%.1f %.1f %.1f) r%.1f;", i + 1, l.position[0], l.position[1], l.position[2], l.range);
     }
     std::fprintf(m_dumpFile, "\n");
+    uint32_t effects = 0;
+    for (const ParticleBlock& b : m_particleBlocks)
+        if (b.key && b.lastSeen == m_frameNumber) ++effects;
+    std::fprintf(m_dumpFile, "# particles: %u effects announced, %u particle draws\n", effects, m_particleDraws);
     std::fclose(m_dumpFile);
     m_dumpFile = nullptr;
 }

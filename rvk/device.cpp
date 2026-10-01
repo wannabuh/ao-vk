@@ -173,6 +173,7 @@ Device::~Device()
     DestroyShadowResources();
     DestroyPointShadowResources();
     DestroyHdrResources();
+    DestroyParticleResources();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_setLayout) vkDestroyDescriptorSetLayout(m_device, m_setLayout, nullptr);
     if (m_nullBuffer) vmaDestroyBuffer(m_allocator, m_nullBuffer, m_nullAllocation);
@@ -669,7 +670,8 @@ bool Device::CreatePipelines(std::string* error)
     vkDestroyShaderModule(m_device, vert, nullptr);
     vkDestroyShaderModule(m_device, fragGlow, nullptr);
     vkDestroyShaderModule(m_device, frag, nullptr);
-    if (!ok || !CreateShadowResources(error) || !CreatePointShadowResources(error) || !CreateHdrResources(error))
+    if (!ok || !CreateShadowResources(error) || !CreatePointShadowResources(error) || !CreateHdrResources(error) ||
+        !CreateParticleResources(error))
         return false;
 
     // Zero vertex data for attributes a format doesn't have (bound with stride 0).
@@ -980,6 +982,9 @@ void Device::BeginFrame()
     m_terrainLitPassPrev = m_terrainLitPassCur;
     m_terrainLitPassCur = false;
     m_terrainBases.clear();
+    m_particlePending = nullptr;
+    m_particleDraws = 0;
+    SimulateParticles(f.main);                   // last frame's effects; reads last frame's world camera
     m_inFrame = true;
     BeginScene();
     PrepareShadowMap(f.main);

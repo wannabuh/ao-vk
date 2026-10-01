@@ -89,6 +89,10 @@ public:
     float BloomStrength() const { return m_bloomStrength; }
     float HdrHeadroom() const { return m_hdrHeadroom; }
     void SetDumpVertexCount(uint32_t count);
+    void SetParticleParams(const Device::ParticleParams& params);
+    const Device::ParticleParams& GetParticleParams() const { return m_particleParams; }
+    void ParticleEmitter(uint64_t key, const float center[3], const Device::ParticleSprite* sprites, uint32_t count);
+    void EndParticleEmitter();
     void SetTexture(uint32_t stage, Texture* texture);
     void SetRenderTarget(Texture* target);
     Texture* GetRenderTarget() const { return m_target; }
@@ -165,6 +169,7 @@ private:
     uint32_t m_anisotropy = 1;
     float m_motionBlur = 0.0f;
     uint32_t m_motionMode = 0;
+    Device::ParticleParams m_particleParams;
 };
 
 }  // namespace rvk
