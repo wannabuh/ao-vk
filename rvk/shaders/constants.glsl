@@ -57,4 +57,5 @@ const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8
            F_HDR = 262144u,          // drawn into the HDR scene (float): colours above 1 are kept
            F_GLOW = 524288u,         // an additive effect: also adds itself (x misc.z) to the glow attachment
            F_GLOWALPHA = 1048576u,   // ... blended SRCALPHA: its contribution is colour x alpha
-           F_BUMP = 2097152u;        // per-pixel lighting with a normal generated from texture 0 (C.misc.w = strength)
+           F_BUMP = 2097152u,        // per-pixel lighting with a normal generated from texture 0 (C.misc.w = strength)
+           F_BUMPBASE = 4194304u;    // ... from the ground's base texture (binding 7, coordinate set 0) instead

@@ -283,6 +283,19 @@ VkDeviceSize Device::WriteFrameLights()
     return offset;
 }
 
+// Identity of a ground chunk within a frame: its sizes and a sample of its vertices (base and lighting passes draw
+// the same vertices).
+uint64_t Device::TerrainChunkKey(const void* vertices, uint32_t vertexCount, uint32_t stride, uint32_t indexCount)
+{
+    uint64_t h = 1469598103934665603ull ^ (uint64_t(vertexCount) << 32) ^ indexCount;
+    const uint8_t* v = static_cast<const uint8_t*>(vertices);
+    uint32_t step = vertexCount > 32 ? vertexCount / 32 : 1;
+    for (uint32_t i = 0; i < vertexCount; i += step)
+        for (uint32_t b = 0; b < 12; ++b)
+            h = (h ^ v[size_t(i) * stride + b]) * 1099511628211ull;
+    return h;
+}
+
 // An additive effect drawn into the HDR scene (light halos, spells, fire: blend ONE or SRCALPHA onto ONE) feeds the
 // glow, and so the bloom. Not the sky's additive layers (clouds, stars), drawn at infinity with depth test ALWAYS.
 bool Device::GlowDraw(uint32_t fvf) const
@@ -670,10 +683,21 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // The big constant block: reused unless something feeding it changed since it was written.
     uint32_t texMask = (m_textures[0] ? 1u : 0u) | (m_textures[1] ? 2u : 0u);
     bool terrain = IsTerrain(fvf);
+    // The ground: base pass textures remembered by chunk; the lighting pass (lightmap + lights, multiplying the base,
+    // drawn after all base passes) takes its relief from its chunk's.
+    m_drawBumpBase = nullptr;
+    if (terrain && m_textures[0]) {
+        if (!m_rs[d3d::RS_LIGHTING] && !m_rs[d3d::RS_ALPHABLENDENABLE]) {
+            m_terrainBases[TerrainChunkKey(vertices, vertexCount, layout.stride, indexCount)] = m_textures[0];
+        } else if (m_rs[d3d::RS_LIGHTING] && m_bump > 0.0f && IsMultiplyPass()) {
+            auto it = m_terrainBases.find(TerrainChunkKey(vertices, vertexCount, layout.stride, indexCount));
+            if (it != m_terrainBases.end()) m_drawBumpBase = it->second;
+        }
+    }
     uint32_t carrier = CarriedLight(fvf, vertices, vertexCount, layout.stride);
     bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
                    m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
-                   m_constantsCarrier != carrier;
+                   m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase;
     VkDeviceSize uboOffset = m_constantsOffset;
     if (rewrite) {
     uboOffset = Allocate(sizeof(DrawConstants), uboAlign, &cpu);
@@ -685,6 +709,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsTerrain = terrain;
     m_constantsLabel = m_drawIsLabel;
     m_constantsCarrier = carrier;
+    m_constantsBumpBase = m_drawBumpBase;
     auto* c = static_cast<DrawConstants*>(cpu);
     c->view = m_view;
     c->proj = m_proj;
@@ -733,6 +758,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if ((flags & F_PERPIXEL) && m_bump > 0.0f && m_textures[0] && !terrain && m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
         !(m_tss[0][d3d::TSS_TEXTURETRANSFORMFLAGS] & 256u) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
         flags |= F_BUMP;
+    else if ((flags & F_PERPIXEL) && m_drawBumpBase)
+        flags |= F_BUMP | F_BUMPBASE;
     if (GlowDraw(fvf)) flags |= F_GLOW | (m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA ? F_GLOWALPHA : 0u);
     if (override && (m_lightHeadroom > 1.0f || hdrTarget)) flags |= F_OVERBRIGHT;
     if (Overbright2x(fvf)) flags |= F_OVERBRIGHT2X;
@@ -815,8 +842,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     VkDescriptorBufferInfo frameLights{f.ring, frameLightsOffset, sizeof(FrameLights)};
     VkDescriptorImageInfo shadow{m_shadowSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     VkDescriptorImageInfo cubes{m_cubeSampler, m_cubeArrayView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet writes[7] = {};
-    for (int i = 0; i < 7; ++i) {
+    Texture* bumpBase = m_drawBumpBase ? m_drawBumpBase : m_blackTexture;
+    VkDescriptorImageInfo bump{m_bumpSampler, bumpBase->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet writes[8] = {};
+    for (int i = 0; i < 8; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstBinding = uint32_t(i);
         writes[i].descriptorCount = 1;
@@ -834,7 +863,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[5].pImageInfo = &shadow;
     writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[6].pImageInfo = &cubes;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 7, writes);
+    writes[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[7].pImageInfo = &bump;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 8, writes);
 
     if (indices)
         vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);

@@ -281,6 +281,13 @@ private:
     bool m_pixelLighting = false, m_lightingDebug = false, m_lightOverride = false;
     float m_lightHeadroom = 1.0f;
     float m_bump = 0.0f;
+    // The ground's base pass textures this frame, by chunk (TerrainChunkKey): its lighting pass, drawn later with the
+    // lightmap, takes its relief from them. And the sampler they're read with (repeat, mipmapped).
+    std::unordered_map<uint64_t, Texture*> m_terrainBases;
+    Texture* m_drawBumpBase = nullptr;           // the current draw's (Draw)
+    Texture* m_constantsBumpBase = nullptr;
+    VkSampler m_bumpSampler = VK_NULL_HANDLE;
+    static uint64_t TerrainChunkKey(const void* vertices, uint32_t vertexCount, uint32_t stride, uint32_t indexCount);
     uint32_t m_dumpVertexCount = 0;
     bool m_drawOverbright2x = false;              // the current draw is blended at 2x (F_OVERBRIGHT2X)
     bool Overbright2x(uint32_t fvf) const;

@@ -5,6 +5,7 @@ layout(set = 0, binding = 1) uniform sampler2D tex0;
 layout(set = 0, binding = 2) uniform sampler2D tex1;
 layout(set = 0, binding = 5) uniform sampler2DShadow shadowMap;
 layout(set = 0, binding = 6) uniform samplerCubeArrayShadow pointShadowMaps;
+layout(set = 0, binding = 7) uniform sampler2D bumpBase;   // F_BUMPBASE: the ground's base texture, for its relief
 
 // Visibility of a frame light with a cube shadow map (l.spot.z = cube + 1): 1 = lit. Must match
 // Device::RenderPointShadowMaps (pointshadow.cpp): depth along the face's axis, near kPointShadowNear, far = range.
@@ -50,12 +51,14 @@ layout(location = 6) in vec3 vMatAmbient;
 layout(location = 7) in vec3 vMatEmissive;
 layout(location = 8) in vec3 vPosW;
 layout(location = 9) in vec4 vNormalW;
+layout(location = 10) in vec2 vSet0;
 
 // Lit vertex colours: the interpolated ones, or computed here for per-pixel lighting.
 vec4 gDiffuse, gSpecular;
 // F_OVERBRIGHT: the frame lights' part, kept out of gDiffuse / gSpecular (and the game's clamp).
 vec3 gLocalDiffuse = vec3(0.0), gLocalSpecular = vec3(0.0);
 float gLocalFraction = 0.0;                     // how much of the final colour the local lights gave (outLocal)
+float gLightmapRelief = 1.0;                    // F_BUMPBASE: the ground's relief in its baked sunlight (stage 0)
 
 layout(location = 0) out vec4 outColor;
 #ifdef RVK_GLOW
@@ -167,13 +170,13 @@ vec4 Cascade(vec4 t0, vec4 t1, float maxColor)
 // height (Mikkelsen, "Bump Mapping Unparametrized Surfaces on the GPU"): no tangents needed.
 float Luma(vec3 c) { return dot(c, vec3(0.3, 0.59, 0.11)); }
 
-vec3 BumpNormal(vec3 n, vec3 posW, vec2 uv)
+vec3 BumpNormal(sampler2D tex, vec3 n, vec3 posW, vec2 uv)
 {
-    vec2 size = vec2(textureSize(tex0, 0));
-    float lod = max(textureQueryLod(tex0, uv).y, 0.0);
+    vec2 size = vec2(textureSize(tex, 0));
+    float lod = max(textureQueryLod(tex, uv).y, 0.0);
     vec2 step = exp2(lod) / size;                          // one texel at the sampled mip level, in uv
-    float hl = Luma(textureLod(tex0, uv - vec2(step.x, 0.0), lod).rgb), hr = Luma(textureLod(tex0, uv + vec2(step.x, 0.0), lod).rgb);
-    float hd = Luma(textureLod(tex0, uv - vec2(0.0, step.y), lod).rgb), hu = Luma(textureLod(tex0, uv + vec2(0.0, step.y), lod).rgb);
+    float hl = Luma(textureLod(tex, uv - vec2(step.x, 0.0), lod).rgb), hr = Luma(textureLod(tex, uv + vec2(step.x, 0.0), lod).rgb);
+    float hd = Luma(textureLod(tex, uv - vec2(0.0, step.y), lod).rgb), hu = Luma(textureLod(tex, uv + vec2(0.0, step.y), lod).rgb);
     vec2 slope = vec2(hr - hl, hu - hd) * 0.5;             // height per texel of this level, along u and v
     vec2 uvx = dFdx(uv) / step, uvy = dFdy(uv) / step;     // screen pixel -> texels of this level
     vec3 px = dFdx(posW), py = dFdy(posW);
@@ -226,8 +229,18 @@ void main()
         vec3 n = vNormalW.xyz;
         float len2 = dot(n, n);
         n = len2 > 0.0 ? n * (vNormalW.w * inversesqrt(len2)) : vec3(0.0);
-        if ((C.flags.x & F_BUMP) != 0u && len2 > 0.0)
-            n = BumpNormal(n, vPosW, vTex0.xy);
+        // The ground's lighting pass draws the lightmap; its relief comes from the base pass's texture (F_BUMPBASE).
+        if ((C.flags.x & F_BUMP) != 0u && len2 > 0.0) {
+            vec3 unbumped = n;
+            n = (C.flags.x & F_BUMPBASE) != 0u ? BumpNormal(bumpBase, n, vPosW, vSet0) : BumpNormal(tex0, n, vPosW, vTex0.xy);
+            // The ground's sunlight is baked into its lightmap (the live sun is kept off it): the relief scales the
+            // lightmap by how much more or less the bumped surface faces the sun than the flat one.
+            if ((C.flags.x & F_BUMPBASE) != 0u && dot(FL.sunDir.xyz, FL.sunDir.xyz) > 0.0) {
+                vec3 L = -normalize(FL.sunDir.xyz);
+                float before = max(dot(normalize(unbumped), L), 0.0), after = max(dot(normalize(n), L), 0.0);
+                gLightmapRelief = clamp((after + 0.25) / (before + 0.25), 0.6, 1.4);
+            }
+        }
         vec3 ambient = vec3(0.0), diff = vec3(0.0), spec = vec3(0.0), diffL = vec3(0.0), specL = vec3(0.0);
         // Sunlight is shadowed: by the receiver's shade, or in the ground's lighting pass by the lightmap's.
         float sunScale = (C.flags.x & F_SHADOWTEX) != 0u ? texShade : shadeSun ? shade : 1.0;
@@ -251,7 +264,7 @@ void main()
         }
     }
     vec4 t0 = Sample(0u), t1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
-    t0.rgb *= texShade;
+    t0.rgb *= texShade * gLightmapRelief;
     vec4 current = Cascade(t0, t1, 1.0);
     if (any(greaterThan(gLocalDiffuse + gLocalSpecular, vec3(0.0)))) {
         // What the frame lights add through the stages (with and without them, unclamped), on top of the

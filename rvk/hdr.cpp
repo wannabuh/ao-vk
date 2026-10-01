@@ -47,6 +47,12 @@ bool Device::CreateHdrResources(std::string* error)
     si.magFilter = si.minFilter = VK_FILTER_LINEAR;
     if (!Check(vkCreateSampler(m_device, &si, nullptr, &m_linearSampler), "linear sampler", error))
         return false;
+    // The ground's base texture read for its relief (F_BUMPBASE): tiled, mipmapped.
+    si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    si.maxLod = VK_LOD_CLAMP_NONE;
+    if (!Check(vkCreateSampler(m_device, &si, nullptr, &m_bumpSampler), "bump sampler", error))
+        return false;
 
     // Layouts: tone mapping reads the scene and the bloom; bloom passes read one image. Both push 16 bytes.
     auto setLayout = [&](uint32_t count, VkDescriptorSetLayout* out) {
@@ -163,6 +169,8 @@ void Device::DestroyHdrResources()
     if (m_bloomLayout) vkDestroyPipelineLayout(m_device, m_bloomLayout, nullptr);
     if (m_bloomSetLayout) vkDestroyDescriptorSetLayout(m_device, m_bloomSetLayout, nullptr);
     if (m_linearSampler) vkDestroySampler(m_device, m_linearSampler, nullptr);
+    if (m_bumpSampler) vkDestroySampler(m_device, m_bumpSampler, nullptr);
+    m_bumpSampler = VK_NULL_HANDLE;
     m_bloomLayout = VK_NULL_HANDLE;
     m_bloomSetLayout = VK_NULL_HANDLE;
     m_linearSampler = VK_NULL_HANDLE;

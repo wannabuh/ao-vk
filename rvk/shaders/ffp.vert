@@ -23,6 +23,7 @@ layout(location = 6) out vec3 vMatAmbient;
 layout(location = 7) out vec3 vMatEmissive;
 layout(location = 8) out vec3 vPosW;
 layout(location = 9) out vec4 vNormalW;      // xyz direction, w = length the vertex path would light with
+layout(location = 10) out vec2 vSet0;        // texture coordinate set 0 as is (the ground's base texture, F_BUMPBASE)
 
 float FogFactor(uint mode, float d)
 {
@@ -133,5 +134,6 @@ void main()
         vFogFactor = FogFactor(C.flags.y, dist);
     }
     vTex0 = TexCoord(0u, fvf, posV, normalV);
+    vSet0 = inTex0.xy;
     vTex1 = TexCoord(1u, fvf, posV, normalV);
 }
