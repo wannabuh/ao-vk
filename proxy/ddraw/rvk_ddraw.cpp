@@ -1,5 +1,6 @@
 // rvk backend: shared state, pixel formats, caps, IDirectDraw7, IDirect3D7, clipper, palette, import hooks.
 #include "rvk_backend.h"
+#include "rvk_settings.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -77,78 +78,14 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
         device = nullptr;
         return false;
     }
-    char pixelLighting[8] = "1";
-    GetEnvironmentVariableA("RANDYVK_PIXEL_LIGHTING", pixelLighting, sizeof(pixelLighting));
-    device->SetPixelLighting(pixelLighting[0] != '0');
-    char lightOverride[8] = "1";
-    GetEnvironmentVariableA("RANDYVK_LIGHT_OVERRIDE", lightOverride, sizeof(lightOverride));
-    device->SetLightOverride(lightOverride[0] != '0');
-    char shadows[8] = "1", strength[16] = "0.65", range[16] = "60";
-    GetEnvironmentVariableA("RANDYVK_SHADOWS", shadows, sizeof(shadows));
-    GetEnvironmentVariableA("RANDYVK_SHADOW_STRENGTH", strength, sizeof(strength));
-    GetEnvironmentVariableA("RANDYVK_SHADOW_RANGE", range, sizeof(range));
-    device->SetShadows(shadows[0] != '0');
-    device->SetShadowParams(float(std::atof(strength)), float(std::atof(range)));
-    char pointShadows[8] = "8", pointStrength[16] = "0.9", pointDay[16] = "0.25";
-    GetEnvironmentVariableA("RANDYVK_POINT_SHADOWS", pointShadows, sizeof(pointShadows));
-    GetEnvironmentVariableA("RANDYVK_POINT_SHADOW_STRENGTH", pointStrength, sizeof(pointStrength));
-    GetEnvironmentVariableA("RANDYVK_POINT_SHADOW_DAY", pointDay, sizeof(pointDay));
-    device->SetPointShadows(uint32_t(std::max(0, std::atoi(pointShadows))));
-    device->SetPointShadowStrength(float(std::atof(pointStrength)), float(std::atof(pointDay)));
     char dumpVerts[16] = "0";         // frame dumps: vertices of draws with this many (RANDYVK_DUMP_VERTS)
     GetEnvironmentVariableA("RANDYVK_DUMP_VERTS", dumpVerts, sizeof(dumpVerts));
     device->SetDumpVertexCount(uint32_t(std::atoi(dumpVerts)));
-    char hdr[8] = "1", knee[16] = "0.85", exposure[16] = "1.0", hdrHeadroom[16] = "1.5";
-    GetEnvironmentVariableA("RANDYVK_HDR_HEADROOM", hdrHeadroom, sizeof(hdrHeadroom));
-    char bloom[16] = "1.5", bloomThreshold[16] = "1.0";
-    GetEnvironmentVariableA("RANDYVK_BLOOM", bloom, sizeof(bloom));
-    GetEnvironmentVariableA("RANDYVK_BLOOM_THRESHOLD", bloomThreshold, sizeof(bloomThreshold));
-    device->SetBloom(float(std::atof(bloom)), float(std::atof(bloomThreshold)));
-    char motionBlur[16] = "0.5", motionNear[16] = "8";
-    GetEnvironmentVariableA("RANDYVK_MOTION_BLUR", motionBlur, sizeof(motionBlur));
-    GetEnvironmentVariableA("RANDYVK_MOTION_BLUR_NEAR", motionNear, sizeof(motionNear));
-    device->SetMotionBlur(float(std::atof(motionBlur)), float(std::atof(motionNear)));
-    char motionMode[16] = "object";
-    GetEnvironmentVariableA("RANDYVK_MOTION_BLUR_MODE", motionMode, sizeof(motionMode));
-    device->SetMotionBlurMode(std::strcmp(motionMode, "camera") == 0 ? 0u : 1u);
-    char anisotropy[16] = "16";
-    GetEnvironmentVariableA("RANDYVK_ANISOTROPY", anisotropy, sizeof(anisotropy));
-    device->SetAnisotropy(uint32_t(std::max(1, std::atoi(anisotropy))));
-    char bump[16] = "1.5";
-    GetEnvironmentVariableA("RANDYVK_BUMP", bump, sizeof(bump));
-    device->SetBump(float(std::atof(bump)));
-    char aoStrength[16] = "1.0", aoRadius[16] = "1.5";
-    GetEnvironmentVariableA("RANDYVK_AO", aoStrength, sizeof(aoStrength));
-    GetEnvironmentVariableA("RANDYVK_AO_RADIUS", aoRadius, sizeof(aoRadius));
-    device->SetAo(float(std::atof(aoStrength)), float(std::atof(aoRadius)));
-    char effectGlow[16] = "1.0";
-    GetEnvironmentVariableA("RANDYVK_BLOOM_EFFECTS", effectGlow, sizeof(effectGlow));
-    device->SetEffectGlow(float(std::atof(effectGlow)));
-    device->SetHdrHeadroom(float(std::atof(hdrHeadroom)));
-    GetEnvironmentVariableA("RANDYVK_HDR", hdr, sizeof(hdr));
-    GetEnvironmentVariableA("RANDYVK_TONEMAP_KNEE", knee, sizeof(knee));
-    GetEnvironmentVariableA("RANDYVK_EXPOSURE", exposure, sizeof(exposure));
-    device->SetHdr(hdr[0] != '0');
-    device->SetTonemap(float(std::atof(knee)), float(std::atof(exposure)));
-    char headroom[16] = "1.25";
-    GetEnvironmentVariableA("RANDYVK_LIGHT_HEADROOM", headroom, sizeof(headroom));
-    device->SetLightHeadroom(float(std::atof(headroom)));
+    rvk_settings::ApplyAll(device);             // randy-vk.ini
     gpuName = device->Info().gpu;
     RvkLog("rvk device %ux%u on %s (window %p, %s, %s lighting)", width, height, gpuName.c_str(), (void*)window,
            device->Threaded() ? "worker thread" : "calling thread", device->PixelLighting() ? "per-pixel" : "per-vertex");
-    RvkLog("rvk light override (frame's nearest lights for every lit draw): %s", device->LightOverride() ? "on" : "off");
-    RvkLog("rvk sun shadows: %s (strength %s, range %s)", device->Shadows() ? "on" : "off", strength, range);
-    RvkLog("rvk point light shadows: %u lights (strength %s, x%s in daylight; needs per-pixel lighting + light override)",
-           device->PointShadows(), pointStrength, pointDay);
-    RvkLog("rvk light headroom (local lights above the game's clamp): %s", headroom);
-    RvkLog("rvk HDR scene + tone mapping: %s (knee %s, exposure %s, light headroom %s)", device->Hdr() ? "on" : "off", knee,
-           exposure, hdrHeadroom);
-    RvkLog("rvk bloom: strength %s, threshold %s, effects %s", bloom, bloomThreshold, effectGlow);
-    RvkLog("rvk ambient occlusion: strength %s, radius %s", aoStrength, aoRadius);
-    RvkLog("rvk generated normals (bump): %s", bump);
-    RvkLog("rvk anisotropic filtering: %sx", anisotropy);
-    RvkLog("rvk motion blur: %s, %s mode (camera mode: sharp nearer than %s)", motionBlur,
-           device->MotionBlurMode() ? "object" : "camera", motionNear);
+    rvk_settings::LogAll();
     return true;
 }
 
@@ -177,173 +114,58 @@ void RvkState::Present()
         return;
     Frame();                  // a present without any rendering still shows a frame
     device->EndFrame();
-    // Ctrl+Shift+F10: per-pixel / per-vertex lighting. Ctrl+Shift+F11: lighting debug view.
-    static bool f10Down, f11Down;
+    // Hotkeys (Ctrl+Shift+...). Those for options change the setting (saved, shown in the settings window).
     bool chord = (GetAsyncKeyState(VK_CONTROL) & 0x8000) && (GetAsyncKeyState(VK_SHIFT) & 0x8000);
-    bool f10 = chord && (GetAsyncKeyState(VK_F10) & 0x8000), f11 = chord && (GetAsyncKeyState(VK_F11) & 0x8000);
-    if (f10 && !f10Down) {
-        device->SetPixelLighting(!device->PixelLighting());
-        RvkLog("lighting: %s", device->PixelLighting() ? "per-pixel" : "per-vertex");
+    static bool down[256];
+    auto pressed = [&](int key) {                  // edge: pressed this frame, with the chord
+        bool now = chord && (GetAsyncKeyState(key) & 0x8000);
+        bool edge = now && !down[key];
+        down[key] = now;
+        return edge;
+    };
+    // On / off settings.
+    struct Toggle { int key; const char* setting; };
+    static const Toggle kToggles[] = {
+        {VK_F10, "RVK_PixelLight"}, {VK_F7, "RVK_SunShadow"}, {VK_F5, "RVK_Hdr"}, {VK_F8, "RVK_LightOver"},
+        {'N', "RVK_MBlurObj"},
+    };
+    for (const Toggle& t : kToggles)
+        if (pressed(t.key))
+            rvk_settings::Set(t.setting, rvk_settings::Get(t.setting) != 0.0f ? 0.0f : 1.0f);
+    // Strengths switched off and back on (to the value they had).
+    struct OnOff { int key; const char* setting; float off, fallback; };
+    static const OnOff kOnOff[] = {
+        {'M', "RVK_MBlur", 0, 0.5f}, {VK_F1, "RVK_Aniso", 1, 16}, {VK_F2, "RVK_Bump", 0, 1.5f},
+        {VK_F3, "RVK_Ao", 0, 1}, {VK_F4, "RVK_Bloom", 0, 1.5f}, {VK_F6, "RVK_PtShadows", 0, 8},
+    };
+    static float remembered[sizeof(kOnOff) / sizeof(kOnOff[0])];
+    for (size_t i = 0; i < sizeof(kOnOff) / sizeof(kOnOff[0]); ++i) {
+        const OnOff& o = kOnOff[i];
+        if (!pressed(o.key)) continue;
+        float v = rvk_settings::Get(o.setting);
+        if (v != o.off) {
+            remembered[i] = v;
+            rvk_settings::Set(o.setting, o.off);
+        } else {
+            rvk_settings::Set(o.setting, remembered[i] != 0.0f ? remembered[i] : o.fallback);
+        }
     }
-    if (f11 && !f11Down) {
+    // Strengths stepped down / up.
+    struct Step { int down, up; const char* setting; float step; };
+    static const Step kSteps[] = {
+        {VK_OEM_4, VK_OEM_6, "RVK_Bump", 0.25f}, {VK_END, VK_HOME, "RVK_Bloom", 0.25f},
+        {VK_DELETE, VK_INSERT, "RVK_BloomFx", 0.25f}, {VK_NEXT, VK_PRIOR, "RVK_HdrRoom", 0.25f},
+    };
+    for (const Step& s : kSteps) {
+        bool dn = pressed(s.down), upKey = pressed(s.up);
+        if (dn || upKey)
+            rvk_settings::Set(s.setting, rvk_settings::Get(s.setting) + (upKey ? s.step : -s.step));
+    }
+    // Ctrl+Shift+F11: lighting debug view (not a setting).
+    if (pressed(VK_F11)) {
         device->SetLightingDebug(!device->LightingDebug());
         RvkLog("lighting debug view %s", device->LightingDebug() ? "on" : "off");
     }
-    f10Down = f10;
-    f11Down = f11;
-    // Ctrl+Shift+F7: sun shadows.
-    static bool f7Down;
-    bool f7 = chord && (GetAsyncKeyState(VK_F7) & 0x8000);
-    if (f7 && !f7Down) {
-        device->SetShadows(!device->Shadows());
-        RvkLog("sun shadows %s", device->Shadows() ? "on" : "off");
-    }
-    f7Down = f7;
-    // Ctrl+Shift+M: motion blur on (configured strength) / off.
-    static bool mDown;
-    bool m = chord && (GetAsyncKeyState('M') & 0x8000);
-    if (m && !mDown) {
-        char s[16] = "0.5", nr[16] = "8";
-        GetEnvironmentVariableA("RANDYVK_MOTION_BLUR", s, sizeof(s));
-        GetEnvironmentVariableA("RANDYVK_MOTION_BLUR_NEAR", nr, sizeof(nr));
-        float on = float(std::atof(s));
-        device->SetMotionBlur(device->MotionBlur() > 0.0f ? 0.0f : (on > 0.0f ? on : 0.5f), float(std::atof(nr)));
-        RvkLog("motion blur %s", device->MotionBlur() > 0.0f ? "on" : "off");
-    }
-    mDown = m;
-    // Ctrl+Shift+N: motion blur mode, camera / per object.
-    static bool nDown;
-    bool nKey = chord && (GetAsyncKeyState('N') & 0x8000);
-    if (nKey && !nDown) {
-        device->SetMotionBlurMode(device->MotionBlurMode() ? 0u : 1u);
-        RvkLog("motion blur mode: %s", device->MotionBlurMode() ? "per object" : "camera");
-    }
-    nDown = nKey;
-    // Ctrl+Shift+F1: anisotropic filtering on (configured level, at least 2) / off.
-    static bool f1Down;
-    static uint32_t anisotropyOn = 0;
-    bool f1 = chord && (GetAsyncKeyState(VK_F1) & 0x8000);
-    if (f1 && !f1Down) {
-        if (device->Anisotropy() > 1) {
-            anisotropyOn = device->Anisotropy();
-            device->SetAnisotropy(1);
-        } else {
-            device->SetAnisotropy(anisotropyOn > 1 ? anisotropyOn : 16);
-        }
-        RvkLog("anisotropic filtering %s", device->Anisotropy() > 1 ? "on" : "off");
-    }
-    f1Down = f1;
-    // Ctrl+Shift+F2: generated normals on / off; Ctrl+Shift+[ / ]: their strength down / up by 0.25.
-    static bool f2Down, lbDown, rbDown;
-    static float bumpOn = 0.0f;
-    bool f2 = chord && (GetAsyncKeyState(VK_F2) & 0x8000);
-    if (f2 && !f2Down) {
-        if (device->Bump() > 0.0f) {
-            bumpOn = device->Bump();
-            device->SetBump(0.0f);
-        } else {
-            device->SetBump(bumpOn > 0.0f ? bumpOn : 1.5f);
-        }
-        RvkLog("generated normals %s (%.2f)", device->Bump() > 0.0f ? "on" : "off", device->Bump());
-    }
-    f2Down = f2;
-    bool lb = chord && (GetAsyncKeyState(VK_OEM_4) & 0x8000), rb = chord && (GetAsyncKeyState(VK_OEM_6) & 0x8000);
-    if ((lb && !lbDown) || (rb && !rbDown)) {
-        device->SetBump(device->Bump() + (rb ? 0.25f : -0.25f));
-        RvkLog("generated normals strength %.2f", device->Bump());
-    }
-    lbDown = lb;
-    rbDown = rb;
-    // Ctrl+Shift+F3: ambient occlusion on / off (at the configured strength).
-    static bool f3Down;
-    bool f3 = chord && (GetAsyncKeyState(VK_F3) & 0x8000);
-    if (f3 && !f3Down) {
-        char a[16] = "1.0", r[16] = "1.5";
-        GetEnvironmentVariableA("RANDYVK_AO", a, sizeof(a));
-        GetEnvironmentVariableA("RANDYVK_AO_RADIUS", r, sizeof(r));
-        float on = float(std::atof(a));
-        device->SetAo(device->AoStrength() > 0.0f ? 0.0f : (on > 0.0f ? on : 1.0f), float(std::atof(r)));
-        RvkLog("ambient occlusion %s", device->AoStrength() > 0.0f ? "on" : "off");
-    }
-    f3Down = f3;
-    // Ctrl+Shift+F4: bloom on / off (at the configured strength).
-    static bool f4Down;
-    static float bloomOn = 0.0f;
-    static const float bloomThresholdOn = [] {
-        char t[16] = "1.0";
-        GetEnvironmentVariableA("RANDYVK_BLOOM_THRESHOLD", t, sizeof(t));
-        return float(std::atof(t));
-    }();
-    bool f4 = chord && (GetAsyncKeyState(VK_F4) & 0x8000);
-    if (f4 && !f4Down) {
-        if (!bloomOn) {
-            char b[16] = "1.5";
-            GetEnvironmentVariableA("RANDYVK_BLOOM", b, sizeof(b));
-            bloomOn = float(std::atof(b));
-            if (bloomOn <= 0.0f) bloomOn = 1.5f;
-        }
-        device->SetBloom(device->BloomStrength() > 0.0f ? 0.0f : bloomOn, bloomThresholdOn);
-        RvkLog("bloom %s", device->BloomStrength() > 0.0f ? "on" : "off");
-    }
-    f4Down = f4;
-    // Ctrl+Shift+Home / End: bloom strength up / down by 0.25.
-    static bool homeDown, endDown;
-    bool home = chord && (GetAsyncKeyState(VK_HOME) & 0x8000), end = chord && (GetAsyncKeyState(VK_END) & 0x8000);
-    if ((home && !homeDown) || (end && !endDown)) {
-        float s = device->BloomStrength() + (home ? 0.25f : -0.25f);
-        device->SetBloom(s < 0.0f ? 0.0f : s, bloomThresholdOn);
-        RvkLog("bloom strength %.2f", device->BloomStrength());
-    }
-    homeDown = home;
-    endDown = end;
-    // Ctrl+Shift+Insert / Delete: how much additive effects glow, up / down by 0.25.
-    static bool insDown, delDown;
-    bool ins = chord && (GetAsyncKeyState(VK_INSERT) & 0x8000), del = chord && (GetAsyncKeyState(VK_DELETE) & 0x8000);
-    if ((ins && !insDown) || (del && !delDown)) {
-        device->SetEffectGlow(device->EffectGlow() + (ins ? 0.25f : -0.25f));
-        RvkLog("effect glow %.2f", device->EffectGlow());
-    }
-    insDown = ins;
-    delDown = del;
-    // Ctrl+Shift+F5: HDR scene + tone mapping.
-    static bool f5Down;
-    bool f5 = chord && (GetAsyncKeyState(VK_F5) & 0x8000);
-    if (f5 && !f5Down) {
-        device->SetHdr(!device->Hdr());
-        RvkLog("HDR %s", device->Hdr() ? "on" : "off");
-    }
-    f5Down = f5;
-    // Ctrl+Shift+PageUp / PageDown: HDR light headroom up / down by 0.25 (how bright local lights get).
-    static bool pgUpDown, pgDnDown;
-    bool pgUp = chord && (GetAsyncKeyState(VK_PRIOR) & 0x8000), pgDn = chord && (GetAsyncKeyState(VK_NEXT) & 0x8000);
-    if ((pgUp && !pgUpDown) || (pgDn && !pgDnDown)) {
-        device->SetHdrHeadroom(device->HdrHeadroom() + (pgUp ? 0.25f : -0.25f));
-        RvkLog("HDR light headroom %.2f", device->HdrHeadroom());
-    }
-    pgUpDown = pgUp;
-    pgDnDown = pgDn;
-    // Ctrl+Shift+F6: point light shadows (off / the configured number of lights, at least 1).
-    static bool f6Down;
-    static uint32_t pointShadowsOn = 0;
-    bool f6 = chord && (GetAsyncKeyState(VK_F6) & 0x8000);
-    if (f6 && !f6Down) {
-        if (device->PointShadows()) {
-            pointShadowsOn = device->PointShadows();
-            device->SetPointShadows(0);
-        } else {
-            device->SetPointShadows(pointShadowsOn ? pointShadowsOn : rvk::Device::kMaxPointShadows);
-        }
-        RvkLog("point light shadows: %u lights", device->PointShadows());
-    }
-    f6Down = f6;
-    // Ctrl+Shift+F8: light override (frame's nearest lights vs. the game's per-object choice).
-    static bool f8Down;
-    bool f8 = chord && (GetAsyncKeyState(VK_F8) & 0x8000);
-    if (f8 && !f8Down) {
-        device->SetLightOverride(!device->LightOverride());
-        RvkLog("light override %s", device->LightOverride() ? "on" : "off");
-    }
-    f8Down = f8;
     // Ctrl+Shift+F9: dump the next frame's 3D draws + a screenshot next to the log (logs\rvk-frame-HHMMSS.*).
     static bool f9Down;
     bool f9 = chord && (GetAsyncKeyState(VK_F9) & 0x8000);

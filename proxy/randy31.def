@@ -773,3 +773,7 @@ EXPORTS
     png_sig_cmp=randy31_orig.png_sig_cmp @769
     png_start_read_image=randy31_orig.png_start_read_image @770
     png_warning=randy31_orig.png_warning @771
+    RvkSettings_Version
+    RvkSettings_Count
+    RvkSettings_Get
+    RvkSettings_Set
