@@ -102,6 +102,7 @@ public:
     // recorded so far and waits for it (rendering then continues in the same frame).
     bool ReadPixels(Texture* target, void* out);
     void RequestScreenshot(const std::string& bmpPath);   // saved during the next EndFrame()
+    void RequestFrameDump(const std::string& path);       // the next frame's 3D draws, written as text (diag.cpp)
 
     // ---- D3D7-style interface (IDirect3DDevice7 semantics and enum values) ----
     void Clear(uint32_t flags, uint32_t argb, float z);
@@ -292,6 +293,14 @@ private:
     std::unordered_map<uint64_t, VkSampler> m_samplers;
 
     std::string m_screenshotPath;
+    std::string m_dumpPath;
+    FILE* m_dumpFile = nullptr;
+    uint32_t m_dumpDraw = 0;
+    std::vector<d3d::Light> m_dumpedLights;
+    std::vector<bool> m_dumpedLightValid;
+    void BeginFrameDump();
+    void EndFrameDump();
+    void DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t indexCount);
     VkBuffer m_readback = VK_NULL_HANDLE;
     VmaAllocation_T* m_readbackAllocation = nullptr;
     void* m_readbackData = nullptr;

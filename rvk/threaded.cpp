@@ -241,6 +241,12 @@ bool ThreadedDevice::SetWindow(HWND window)
     return ok;
 }
 
+void ThreadedDevice::RequestFrameDump(const std::string& path)
+{
+    std::string p = path;
+    Enqueue([this, p](const uint8_t*) { m_device.RequestFrameDump(p); });
+}
+
 void ThreadedDevice::RequestScreenshot(const std::string& bmpPath)
 {
     std::string path = bmpPath;

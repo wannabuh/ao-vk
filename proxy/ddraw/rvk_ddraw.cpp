@@ -124,6 +124,22 @@ void RvkState::Present()
     }
     f10Down = f10;
     f11Down = f11;
+    // Ctrl+Shift+F9: dump the next frame's 3D draws + a screenshot next to the log (logs\rvk-frame-HHMMSS.*).
+    static bool f9Down;
+    bool f9 = chord && (GetAsyncKeyState(VK_F9) & 0x8000);
+    if (f9 && !f9Down) {
+        char dir[MAX_PATH] = "";
+        GetEnvironmentVariableA("RANDYVK_LOG", dir, sizeof(dir));
+        if (char* slash = std::strrchr(dir, '\\')) slash[1] = 0; else dir[0] = 0;
+        SYSTEMTIME t;
+        GetLocalTime(&t);
+        char base[MAX_PATH];
+        std::snprintf(base, sizeof(base), "%srvk-frame-%02d%02d%02d", dir, t.wHour, t.wMinute, t.wSecond);
+        device->RequestFrameDump(std::string(base) + ".txt");
+        device->RequestScreenshot(std::string(base) + ".bmp");
+        RvkLog("frame dump: %s.txt / .bmp", base);
+    }
+    f9Down = f9;
     // Heartbeat: shows whether frames keep coming (a frozen picture vs. a hung game).
     static unsigned frames;
     static DWORD lastTick = GetTickCount();

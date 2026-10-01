@@ -42,6 +42,7 @@ public:
     bool InFrame() const { return m_inFrame; }
     bool ReadPixels(Texture* target, void* out);
     void RequestScreenshot(const std::string& bmpPath);
+    void RequestFrameDump(const std::string& path);
 
     void Clear(uint32_t flags, uint32_t argb, float z) { Clear(0, nullptr, flags, argb, z); }
     void Clear(uint32_t count, const Device::Rect* rects, uint32_t flags, uint32_t argb, float z);

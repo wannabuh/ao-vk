@@ -387,6 +387,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 {
     if (!m_inFrame || !vertexCount)
         return;
+    if (m_dumpFile)
+        DumpDraw(primitive, fvf, vertices, vertexCount, indexCount);
     Frame& f = m_frames[m_frameIndex];
     VkCommandBuffer cmd = f.main;
     FvfLayout layout = DecodeFvf(fvf);

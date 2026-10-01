@@ -765,7 +765,7 @@ int main(int argc, char** argv)
     bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false;
     int bench = 0;
     int frames = 3;
-    std::string shot = "rvk_demo.bmp";
+    std::string shot = "rvk_demo.bmp", dump;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--window") windowed = true;
@@ -773,6 +773,7 @@ int main(int argc, char** argv)
         else if (a == "--threaded") threaded = true;
         else if (a == "--pixel-lighting") pixelLighting = true;
         else if (a == "--lighting-debug") lightingDebug = true;
+        else if (a == "--dump" && i + 1 < argc) dump = argv[++i];
         else if (a == "--bench" && i + 1 < argc) bench = std::atoi(argv[++i]);
         else if (a == "--game-ms" && i + 1 < argc) g_benchGameMs = std::atof(argv[++i]);
         else if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
@@ -801,6 +802,7 @@ int main(int argc, char** argv)
     }
     dev.SetPixelLighting(pixelLighting);
     dev.SetLightingDebug(lightingDebug);
+    if (!dump.empty()) dev.RequestFrameDump(dump);
     std::printf("GPU: %s (Vulkan %u.%u), driver %s\n", dev.Info().gpu.c_str(), VK_API_VERSION_MAJOR(dev.Info().apiVersion),
                 VK_API_VERSION_MINOR(dev.Info().apiVersion), dev.Info().driver.c_str());
 
@@ -825,6 +827,7 @@ int main(int argc, char** argv)
         if (!tdev.Init(hwnd, kWidth, kHeight, &error)) { std::printf("init failed: %s\n", error.c_str()); return 1; }
         tdev.SetPixelLighting(pixelLighting);
         tdev.SetLightingDebug(lightingDebug);
+        if (!dump.empty()) tdev.RequestFrameDump(dump);
         RunDemo(tdev, windowed, stress, frames, shot);
     } else {
         RunDemo(dev, windowed, stress, frames, shot);

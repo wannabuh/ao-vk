@@ -904,10 +904,13 @@ void Device::BeginFrame()
     m_cache = StateCache{};
     m_inFrame = true;
     BeginRenderingOn(m_target);
+    if (!m_dumpPath.empty())
+        BeginFrameDump();
 }
 
 void Device::EndFrame()
 {
+    EndFrameDump();
     Frame& f = m_frames[m_frameIndex];
     EndRendering();
     Transition(f.main, m_main, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
