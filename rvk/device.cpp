@@ -340,6 +340,7 @@ bool Device::CreateLogicalDevice(std::string* error)
     VkPhysicalDeviceFeatures2 enabled{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     enabled.pNext = &enV13;
     enabled.features.samplerAnisotropy = features.features.samplerAnisotropy;
+    m_maxAnisotropy = features.features.samplerAnisotropy ? m_props.limits.maxSamplerAnisotropy : 0.0f;
     // Out-of-range vertex indices in game data read zeros instead of faulting the GPU.
     enabled.features.robustBufferAccess = features.features.robustBufferAccess;
     enabled.features.textureCompressionBC = features.features.textureCompressionBC;
@@ -909,6 +910,13 @@ void Device::BeginRenderingOn(Texture* target)
     ri.pDepthAttachment = &depth;
     vkCmdBeginRendering(cmd, &ri);
     m_rendering = true;
+}
+
+void Device::SetAnisotropy(uint32_t level)
+{
+    if (level < 1) level = 1;
+    if (float(level) > m_maxAnisotropy) level = m_maxAnisotropy >= 1.0f ? uint32_t(m_maxAnisotropy) : 1u;
+    m_anisotropy = level;                        // new samplers pick it up (SamplerFor keys on it)
 }
 
 void Device::SetRenderTarget(Texture* target)

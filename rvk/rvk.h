@@ -161,6 +161,9 @@ public:
     // strength = height change per texel for a full brightness step, in texels (0 = off).
     void SetBump(float strength) { strength = strength < 0.0f ? 0.0f : strength; if (m_bump != strength) { m_bump = strength; m_constantsDirty = true; } }
     float Bump() const { return m_bump; }
+    // Enhancement: anisotropic filtering level for linearly filtered textures (1 = off, up to the GPU's limit, 16).
+    void SetAnisotropy(uint32_t level);
+    uint32_t Anisotropy() const { return m_anisotropy; }
     // With HDR: ambient occlusion from the depth buffer (hdr.cpp). strength 0 = off; radius in world units.
     void SetAo(float strength, float radius) { m_aoStrength = strength; m_aoRadius = radius; }
     float AoStrength() const { return m_aoStrength; }
@@ -281,6 +284,8 @@ private:
     bool m_pixelLighting = false, m_lightingDebug = false, m_lightOverride = false;
     float m_lightHeadroom = 1.0f;
     float m_bump = 0.0f;
+    uint32_t m_anisotropy = 1;
+    float m_maxAnisotropy = 1.0f;               // GPU limit (0 without the feature)
     // The ground's base pass textures this frame, by chunk (TerrainChunkKey): its lighting pass, drawn later with the
     // lightmap, takes its relief from them. And the sampler they're read with (repeat, mipmapped).
     std::unordered_map<uint64_t, Texture*> m_terrainBases;

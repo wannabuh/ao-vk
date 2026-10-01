@@ -253,7 +253,8 @@ VkSampler Device::SamplerFor(uint32_t stage)
     uint32_t addrU = t[d3d::TSS_ADDRESSU], addrV = t[d3d::TSS_ADDRESSV];
     uint64_t key = uint64_t(t[d3d::TSS_MAGFILTER] & 7) | uint64_t(t[d3d::TSS_MINFILTER] & 7) << 3 |
                    uint64_t(t[d3d::TSS_MIPFILTER] & 7) << 6 | uint64_t(addrU & 7) << 9 | uint64_t(addrV & 7) << 12 |
-                   uint64_t(t[d3d::TSS_MAXMIPLEVEL] & 15) << 15 | uint64_t(t[d3d::TSS_BORDERCOLOR] >> 24 ? 1 : 0) << 19;
+                   uint64_t(t[d3d::TSS_MAXMIPLEVEL] & 15) << 15 | uint64_t(t[d3d::TSS_BORDERCOLOR] >> 24 ? 1 : 0) << 19 |
+                   uint64_t(m_anisotropy) << 20;        // samplers made at another level stay valid for work in flight
     auto it = m_samplers.find(key);
     if (it != m_samplers.end())
         return it->second;
@@ -268,6 +269,12 @@ VkSampler Device::SamplerFor(uint32_t stage)
     ci.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     ci.borderColor = (t[d3d::TSS_BORDERCOLOR] >> 24) ? VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK
                                                      : VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+    // Enhancement: anisotropic filtering for textures the game filters linearly (point-filtered ones stay crisp), as
+    // DXVK's forced anisotropy does.
+    if (m_anisotropy > 1 && ci.minFilter == VK_FILTER_LINEAR && ci.magFilter == VK_FILTER_LINEAR) {
+        ci.anisotropyEnable = VK_TRUE;
+        ci.maxAnisotropy = float(m_anisotropy);
+    }
     VkSampler sampler = VK_NULL_HANDLE;
     vkCreateSampler(m_device, &ci, nullptr, &sampler);
     m_samplers.emplace(key, sampler);

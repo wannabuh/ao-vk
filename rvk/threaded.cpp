@@ -356,6 +356,12 @@ void ThreadedDevice::SetBloom(float strength, float threshold)
     Enqueue([this, strength, threshold](const uint8_t*) { m_device.SetBloom(strength, threshold); });
 }
 
+void ThreadedDevice::SetAnisotropy(uint32_t level)
+{
+    m_anisotropy = level < 1 ? 1 : level;
+    Enqueue([this, level](const uint8_t*) { m_device.SetAnisotropy(level); });
+}
+
 void ThreadedDevice::SetBump(float strength)
 {
     m_bump = strength < 0.0f ? 0.0f : strength;

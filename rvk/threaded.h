@@ -75,6 +75,8 @@ public:
     void SetEffectGlow(float gain);
     void SetAo(float strength, float radius);
     void SetBump(float strength);
+    void SetAnisotropy(uint32_t level);
+    uint32_t Anisotropy() const { return m_anisotropy; }
     float Bump() const { return m_bump; }
     float AoStrength() const { return m_aoStrength; }
     float EffectGlow() const { return m_effectGlow; }
@@ -154,6 +156,7 @@ private:
     bool m_hdr = false;
     float m_hdrHeadroom = 1.5f;
     float m_bloomStrength = 1.5f, m_effectGlow = 1.0f, m_aoStrength = 1.0f, m_bump = 0.0f;
+    uint32_t m_anisotropy = 1;
 };
 
 }  // namespace rvk
