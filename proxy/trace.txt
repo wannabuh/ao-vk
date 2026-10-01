@@ -1,0 +1,14 @@
+# Exports routed through trace thunks (regex on the demangled name, one per line).
+# Every other export stays a plain forwarder to randy31_orig.dll.
+render_t::Render
+render_t::(SetTransformMatrix|SetLight|ProcessVertices|Blt|LockTexture|UnlockTexture|CreateSurface)\(
+Randy_t::(Flip|SetRenderTarget|PushRenderTarget|PopRenderTarget|SetRenderTargetAsTexture|Initialize)\(
+RViewPort_t::(Render|RenderRefraction|Open|Close|Clear|Process|RealizeRenderStates|SetMaterial)\(
+DeviceState::(SetRenderState|SetTexture|UpdateDevice)\(
+StateBlob_c::(Set|SetRenderState|SetTextureStageState|SetTexture)\(
+RDeltaState::Set
+DynamicVB_c::(GetVertices|GetVB|Reset)\(
+VertexBuffer_c::(Lock|Unlock)\(
+# Self-test targets for tests/forward_check.cpp (cdecl static + thiscall constructor; harmless)
+VertexBuffer_c::GetFormatSize\(
+BVolume_t::BVolume_t\(void\)
