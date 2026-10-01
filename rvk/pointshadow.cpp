@@ -226,14 +226,18 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             if (d2 > l.range * l.range)
                 continue;
             // Whatever carries the light would shadow everything around it: a lamp's housing (small, around the
-            // light), and a character with a light at head height - all its parts stand under the light. Big
-            // objects (buildings, platforms with their pillars) cast even when their box contains the light; the
-            // near plane clips geometry right at the light.
+            // light), and a character with a light at head height. A character's parts (body and attachments) have
+            // their origin right under its light - within 0.15 sideways, 0.5 to 2.2 below in the dumps - so only
+            // that close counts; NPCs standing next to the carrier must keep casting. Big objects (buildings,
+            // platforms with their pillars) cast even when their box contains the light; the near plane clips
+            // geometry right at the light.
             float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
                                      it.boundsMax[2] - it.boundsMin[2]});
             if (extent < 3.0f) {
                 float tx = it.world.m[3][0] - pos[0], ty = it.world.m[3][1] - pos[1], tz = it.world.m[3][2] - pos[2];
-                if (d2 == 0.0f || (tx * tx + tz * tz < 0.75f * 0.75f && ty > -3.0f && ty < 0.5f))
+                bool housing = d2 == 0.0f && extent < 1.5f;          // smaller than a character
+                bool carrier = tx * tx + tz * tz < 0.2f * 0.2f && ty > -2.6f && ty < 0.3f;
+                if (housing || carrier)
                     continue;
             }
             inRange.push_back(i);
