@@ -262,8 +262,10 @@ VkDeviceSize Device::WriteFrameLights()
     fl->shadowParams[3] = PointShadowStrength();
     fl->sunDir[0] = m_shadowSunDir[0]; fl->sunDir[1] = m_shadowSunDir[1]; fl->sunDir[2] = m_shadowSunDir[2];
     fl->sunDir[3] = m_lightHeadroom;
+    m_frameLightPositions.clear();
     for (uint32_t k = 0; k < used; ++k) {
         const CapturedLight& c = m_lightsPrev[candidates[k].index];
+        m_frameLightPositions.push_back(c.light.position);
         FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k]);
         fl->lights[k].spot[2] = float(PointShadowLayer(c.light));   // its cube shadow map + 1, 0 = none
     }
@@ -285,6 +287,39 @@ bool Device::Overbright2x(uint32_t fvf) const
 {
     return m_lightHeadroom > 1.0f && m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
            (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW && IsMultiplyPass();
+}
+
+// A character with its own light (at head height): the light stays off the character itself, which it would
+// otherwise light from the inside out. Same test as the point shadows' carrier (pointshadow.cpp): a part smaller
+// than 3 units whose origin is within 0.2 sideways and 0 to 2.6 below the light. Returns frame light index + 1.
+uint32_t Device::CarriedLight(uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t stride) const
+{
+    if (!m_lightOverride || !m_pixelLighting || !m_rs[d3d::RS_LIGHTING] || m_target != m_main ||
+        (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW || !WorldCamera())
+        return 0;
+    const auto& w = m_world.m;
+    for (uint32_t k = 0; k < m_frameLightPositions.size(); ++k) {
+        const d3d::Vector& p = m_frameLightPositions[k];
+        float dx = w[3][0] - p.x, dy = w[3][1] - p.y, dz = w[3][2] - p.z;
+        if (dx * dx + dz * dz >= 0.2f * 0.2f || dy <= -2.6f || dy >= 0.3f)
+            continue;
+        // Small: a character part, not a floor or building whose origin happens to lie under the light.
+        float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
+        const uint8_t* v = static_cast<const uint8_t*>(vertices);
+        for (uint32_t i = 0; i < vertexCount; ++i) {
+            float q[3];
+            std::memcpy(q, v + size_t(i) * stride, sizeof(q));
+            for (int j = 0; j < 3; ++j) {
+                float wq = q[0] * w[0][j] + q[1] * w[1][j] + q[2] * w[2][j] + w[3][j];
+                mn[j] = std::min(mn[j], wq);
+                mx[j] = std::max(mx[j], wq);
+            }
+        }
+        if (std::max({mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]}) < 3.0f)
+            return k + 1;
+        return 0;
+    }
+    return 0;
 }
 
 void Device::SetTexture(uint32_t stage, Texture* texture)
@@ -574,8 +609,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // The big constant block: reused unless something feeding it changed since it was written.
     uint32_t texMask = (m_textures[0] ? 1u : 0u) | (m_textures[1] ? 2u : 0u);
     bool terrain = IsTerrain(fvf);
+    uint32_t carrier = CarriedLight(fvf, vertices, vertexCount, layout.stride);
     bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
-                   m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel;
+                   m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
+                   m_constantsCarrier != carrier;
     VkDeviceSize uboOffset = m_constantsOffset;
     if (rewrite) {
     uboOffset = Allocate(sizeof(DrawConstants), uboAlign, &cpu);
@@ -586,6 +623,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsTexMask = texMask;
     m_constantsTerrain = terrain;
     m_constantsLabel = m_drawIsLabel;
+    m_constantsCarrier = carrier;
     auto* c = static_cast<DrawConstants*>(cpu);
     c->view = m_view;
     c->proj = m_proj;
@@ -676,7 +714,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         }
     c->lightInfo[0] = lightCount;
     c->lightInfo[1] = localLights;
-    c->lightInfo[2] = c->lightInfo[3] = 0;
+    c->lightInfo[2] = override ? carrier : 0;   // frame light (index + 1) this draw carries: it doesn't light it
+    c->lightInfo[3] = 0;
     }
 
     // Geometry: vertices aligned to their stride and indices to 2 bytes, so the draw can address them inside

@@ -1137,6 +1137,22 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
             dev.DrawIndexedPrimitive(TriangleList, kFvfSlab, sv.data(), uint32_t(sv.size()), si.data(), uint32_t(si.size()));
             dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
             dev.SetRenderState(RS_AMBIENT, 0xFF181818);
+            // A character carrying the lamp at head height: its origin 2 below the light. Its own light neither
+            // lights it nor makes it cast.
+            std::vector<VtxMesh> cv;
+            std::vector<uint16_t> ci;
+            AddCube(cv, ci, 0.0f, 0.9f, 0.0f, 0.4f);
+            Matrix carrier = Offset();
+            carrier.m[3][0] += lamp.position.x - g_off[0];
+            carrier.m[3][1] += lamp.position.y - g_off[1] - 2.0f;
+            carrier.m[3][2] += lamp.position.z - g_off[2];
+            dev.SetTexture(0, nullptr);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+            dev.SetTransform(World, carrier);
+            dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, cv.data(), uint32_t(cv.size()), ci.data(), uint32_t(ci.size()));
+            dev.SetTransform(World, Offset());
+            dev.SetTexture(0, ground);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
         }
         // Cubes all around the lamp, one draw each; the last is the lamp's housing (contains the light).
         dev.SetTexture(0, nullptr);

@@ -51,5 +51,6 @@ void AccumulateLights(vec3 posW, vec3 normalW, float sunScale, float localScale,
         AccumulateLight(C.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diff, spec);
     if ((C.flags.x & F_LIGHTOVERRIDE) != 0u)
         for (uint i = 0u; i < FL.info.x; ++i)
-            AccumulateLight(FL.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diffLocal, specLocal);
+            if (i + 1u != C.lightInfo.z)         // a character's own light doesn't light the character
+                AccumulateLight(FL.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diffLocal, specLocal);
 }

@@ -30,7 +30,7 @@ layout(set = 0, binding = 0, std140) uniform DrawConstants {
     uvec4 matSources;           // diffuse, ambient, specular, emissive material sources
     uvec4 stageA[2];            // colorop, colorarg1, colorarg2, alphaop
     uvec4 stageB[2];            // alphaarg1, alphaarg2, texcoordindex, texturetransformflags
-    uvec4 lightInfo;            // light count, point + spot light count
+    uvec4 lightInfo;            // light count, point + spot light count, frame light (index + 1) the draw carries
     Light lights[8];
 } C;
 

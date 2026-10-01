@@ -260,6 +260,9 @@ private:
     uint64_t m_frameLightsGeneration = ~0ull;
     VkDeviceSize m_frameLightsOffset = 0;
     VkDeviceSize WriteFrameLights();
+    // The frame lights' positions in binding-4 order (WriteFrameLights), and which of them the current draw carries.
+    std::vector<d3d::Vector> m_frameLightPositions;
+    uint32_t CarriedLight(uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t stride) const;
     struct CapturedLight { d3d::Light light; float cosHalfTheta, cosHalfPhi; };
     std::vector<CapturedLight> m_lightsCur, m_lightsPrev;   // point / spot lights used this / last frame
     void CaptureLight(LightSlot& slot);
@@ -408,6 +411,7 @@ private:
     uint32_t m_constantsFvf = ~0u;
     uint32_t m_constantsTexMask = ~0u;
     bool m_constantsTerrain = false, m_constantsLabel = false;
+    uint32_t m_constantsCarrier = 0;
     void BeginRenderingOn(Texture* target);
     void EndRendering();
     bool EnsureDepth(uint32_t width, uint32_t height);   // grows the shared depth buffer if needed
