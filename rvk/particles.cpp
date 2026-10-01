@@ -213,6 +213,8 @@ void Device::ParticleEmitter(uint64_t key, const float center[3], const float or
 
 void Device::SimulateParticles(VkCommandBuffer cmd)
 {
+    if (!m_particleHeldTextures.empty())
+        ReleaseParticleTextures(false);
     double now = Clock();
     float dt = m_particleLastClock > 0.0 ? float(std::clamp(now - m_particleLastClock, 0.0, 0.05)) : 0.0f;
     m_particleLastClock = now;
@@ -427,8 +429,9 @@ void Device::ParticleBlockParams(const ParticleBlock& b, float a[4], float bb[4]
 
 bool Device::ParticlesMayLive(const ParticleBlock& block, double now) const
 {
-    // The longest a particle lives: 1.5x the set life (particles.comp), plus the spawn delay.
-    return block.key && block.lastAliveTime > 0.0 && now - block.lastAliveTime < m_particleParams.life * 1.5 + 0.25;
+    // The longest a particle lives: 1.5x the set life (particles.comp) times the largest life factor an effect's motion
+    // gives (ParticleBlockParams: 1.8^0.5), plus the spawn delay.
+    return block.key && block.lastAliveTime > 0.0 && now - block.lastAliveTime < m_particleParams.life * 1.5 * 1.35 + 0.25;
 }
 
 void Device::DrawOrphanParticles()
@@ -462,11 +465,42 @@ void Device::DrawOrphanParticles()
     }
 }
 
-void Device::ForgetParticleTexture(Texture* texture)
+bool Device::HoldParticleTexture(Texture* texture)
 {
+    // A render target going away: its particles can't be drawn into it any more.
     for (ParticleBlock& b : m_particleBlocks)
-        if (b.haveState && (b.state.textures[0] == texture || b.state.textures[1] == texture || b.state.target == texture))
+        if (b.haveState && b.state.target == texture)
             b.haveState = false;
+    // An effect's texture is often released together with the effect - exactly when its particles start fading out.
+    // Kept until they have (ReleaseParticleTextures).
+    double now = Clock();
+    for (const ParticleBlock& b : m_particleBlocks)
+        if (b.haveState && (b.state.textures[0] == texture || b.state.textures[1] == texture) && ParticlesMayLive(b, now)) {
+            m_particleHeldTextures.push_back(texture);
+            return true;
+        }
+    return false;
+}
+
+void Device::ReleaseParticleTextures(bool all)
+{
+    double now = Clock();
+    auto used = [&](Texture* t) {
+        for (const ParticleBlock& b : m_particleBlocks)
+            if (b.haveState && (b.state.textures[0] == t || b.state.textures[1] == t) && ParticlesMayLive(b, now))
+                return true;
+        return false;
+    };
+    auto it = std::remove_if(m_particleHeldTextures.begin(), m_particleHeldTextures.end(), [&](Texture* t) {
+        if (!all && used(t))
+            return false;
+        for (ParticleBlock& b : m_particleBlocks)          // nothing may draw with it from now on
+            if (b.haveState && (b.state.textures[0] == t || b.state.textures[1] == t))
+                b.haveState = false;
+        m_deadTextures.push_back({DeathTag(), t});
+        return true;
+    });
+    m_particleHeldTextures.erase(it, m_particleHeldTextures.end());
 }
 
 void Device::DrawParticles(ParticleBlock& block, bool orphan)

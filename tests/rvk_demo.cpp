@@ -1198,6 +1198,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 }  // namespace
 
 std::string g_particleMotion = "ring";   // --particle-motion ring | orbit-cw | orbit-ccw | burst | rise
+bool g_particleEndFree = false;          // --particle-end-free: the effect's texture is destroyed when it ends
+bool g_particleOffscreen = false;        // --particle-offscreen: a render target pass (3D + pre-transformed) comes first
 
 // Particle test (--particle-test): an effect like the game's sparkle auras - a ring of soft additive sprites (FVF 0x142,
 // drawn the way GfxVisualDiaBill draws them) that twinkle on and off - announced with ParticleEmitter, so each live
@@ -1215,6 +1217,7 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
             soft[y * 32 + x] = (uint32_t(a * 255.0f + 0.5f) << 24) | 0xFFFFFF;
         }
     Texture* tex = dev.CreateTexture(32, 32, soft.data());
+    Texture* offscreen = g_particleOffscreen ? dev.CreateRenderTarget(256, 256) : nullptr;
     Device::ParticleParams params;
     params.enable = particles;
     dev.SetParticleParams(params);
@@ -1231,6 +1234,23 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
             if (!dump.empty()) dev.RequestFrameDump(dump);
         }
         dev.BeginFrame();
+        if (frame == endFrame && g_particleEndFree && tex) {   // the game releases the effect's material with it
+            dev.DestroyTexture(tex);
+            tex = nullptr;
+        }
+        if (offscreen) {                         // like a refraction pass: 3D, then a pre-transformed quad, elsewhere
+            dev.SetRenderTarget(offscreen);
+            dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF000000, 1.0f);
+            dev.SetTransform(View, LookAtLH({0, 2.2f, -4.5f}, {0, 0.9f, 0}, {0, 1, 0}));
+            dev.SetTransform(Projection, PerspectiveLH(kPi / 3, 1.0f, 0.1f, 100.0f));
+            dev.SetTransform(World, Identity());
+            dev.SetTexture(0, nullptr);
+            struct V3 { float x, y, z; uint32_t c; } tri[3] = {{-1, 0, 0, 0xFF808080}, {1, 0, 0, 0xFF808080}, {0, 1, 0, 0xFF808080}};
+            dev.DrawPrimitive(TriangleList, FVF_XYZ | FVF_DIFFUSE, tri, 3);
+            struct V2 { float x, y, z, rhw; uint32_t c; } q[3] = {{0, 0, 0, 1, 0xFF000000}, {10, 0, 0, 1, 0xFF000000}, {0, 10, 0, 1, 0xFF000000}};
+            dev.DrawPrimitive(TriangleList, FVF_XYZRHW | FVF_DIFFUSE, q, 3);
+            dev.SetRenderTarget(nullptr);
+        }
         dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
         dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF0C1018, 1.0f);
         Matrix view = LookAtLH({0, 2.2f, -4.5f}, {0, 0.9f, 0}, {0, 1, 0});
@@ -1350,7 +1370,8 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
     if (frames > 10)
         std::printf("particle test: %d effects, %.2f ms/frame over the last %d frames\n", effects,
                     1000.0 * double(stop.QuadPart - start.QuadPart) / double(freq.QuadPart) / (frames - 10), frames - 10);
-    dev.DestroyTexture(tex);
+    if (tex) dev.DestroyTexture(tex);
+    if (offscreen) dev.DestroyTexture(offscreen);
 }
 
 int main(int argc, char** argv)
@@ -1418,6 +1439,8 @@ int main(int argc, char** argv)
         else if (a == "--particle-end" && i + 1 < argc) particleEnd = std::atoi(argv[++i]);
         else if (a == "--particle-effects" && i + 1 < argc) particleEffects = std::atoi(argv[++i]);
         else if (a == "--particle-motion" && i + 1 < argc) g_particleMotion = argv[++i];
+        else if (a == "--particle-end-free") g_particleEndFree = true;
+        else if (a == "--particle-offscreen") g_particleOffscreen = true;
     }
 
     HWND hwnd = nullptr;

@@ -159,6 +159,7 @@ Device::~Device()
     if (!m_device)
         return;
     vkDeviceWaitIdle(m_device);
+    ReleaseParticleTextures(true);
     m_completed = UINT64_MAX;                   // the device is idle: everything deferred can go
     CollectGarbage();
     for (auto& f : m_frames) {

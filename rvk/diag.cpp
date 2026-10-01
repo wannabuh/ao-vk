@@ -55,7 +55,8 @@ void Device::EndFrameDump()
     uint32_t effects = 0;
     for (const ParticleBlock& b : m_particleBlocks)
         if (b.key && b.lastSeen == m_frameNumber) ++effects;
-    std::fprintf(m_dumpFile, "# particles: %u effects announced, %u particle draws\n", effects, m_particleDraws);
+    std::fprintf(m_dumpFile, "# particles: %u effects announced, %u particle draws, %zu textures kept for fading particles\n",
+                 effects, m_particleDraws, m_particleHeldTextures.size());
     std::fclose(m_dumpFile);
     m_dumpFile = nullptr;
 }

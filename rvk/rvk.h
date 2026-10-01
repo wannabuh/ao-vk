@@ -643,7 +643,10 @@ private:
     // size, curl speed, life factor.
     void ParticleBlockParams(const ParticleBlock& block, float a[4], float b[4]) const;
     bool m_particleOrphansDone = false, m_particleSaw3D = false;
-    void ForgetParticleTexture(Texture* texture);
+    // DestroyTexture: true = kept alive for particles still fading out with it (destroyed once they have).
+    bool HoldParticleTexture(Texture* texture);
+    void ReleaseParticleTextures(bool all);
+    std::vector<Texture*> m_particleHeldTextures;
     // A draw whose geometry is already in a GPU buffer (the particle quads): Draw uses it instead of copying vertices.
     struct ExternalGeometry {
         VkBuffer vertices, indices;
