@@ -1,0 +1,772 @@
+ordinal	rva	section	users	mangled	demangled
+1	0x0299E0	.text	DisplaySystem.dll	??0BVolume_t@@QAE@XZ	public: __thiscall BVolume_t::BVolume_t(void)
+2	0x0508D3	.text	DisplaySystem.dll	??0CATAnimBlend_t@@QAE@PAVCATAnim_t@@0M@Z	public: __thiscall CATAnimBlend_t::CATAnimBlend_t(class CATAnim_t *, class CATAnim_t *, float)
+3	0x053E97	.text		??0CATError_t@@QAE@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z	public: __thiscall CATError_t::CATError_t(class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const &)
+4	0x01228D	.text		??0CATGroup_t@@QAE@ABU0@@Z	public: __thiscall CATGroup_t::CATGroup_t(struct CATGroup_t const &)
+5	0x0121DB	.text		??0CATGroup_t@@QAE@XZ	public: __thiscall CATGroup_t::CATGroup_t(void)
+6	0x052068	.text	DisplaySystem.dll	??0CATKeyframeAnimData_t@@QAE@PAVDataIO_t@fun@@@Z	public: __thiscall CATKeyframeAnimData_t::CATKeyframeAnimData_t(class fun::DataIO_t *)
+7	0x051FB2	.text	DisplaySystem.dll	??0CATKeyframeAnim_t@@QAE@PBVCATKeyframeAnimData_t@@I@Z	public: __thiscall CATKeyframeAnim_t::CATKeyframeAnim_t(class CATKeyframeAnimData_t const *, unsigned int)
+8	0x052FF8	.text	DisplaySystem.dll	??0CATMesh_t@@QAE@PAVDataIO_t@fun@@ABV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z	public: __thiscall CATMesh_t::CATMesh_t(class fun::DataIO_t *, class std::vector<class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>>, class std::allocator<class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>>>> const &)
+9	0x0556E2	.text		??0CATStatus_t@@QAE@ABV0@@Z	public: __thiscall CATStatus_t::CATStatus_t(class CATStatus_t const &)
+10	0x0556D2	.text		??0CATStatus_t@@QAE@XZ	public: __thiscall CATStatus_t::CATStatus_t(void)
+11	0x05573D	.text		??0CATStdioStatus_t@@QAE@ABV0@@Z	public: __thiscall CATStdioStatus_t::CATStdioStatus_t(class CATStdioStatus_t const &)
+12	0x055868	.text		??0CATStdioStatus_t@@QAE@PAU_iobuf@@_N@Z	public: __thiscall CATStdioStatus_t::CATStdioStatus_t(struct _iobuf *, bool)
+13	0x052D75	.text		??0CATTriPolyList_t@@QAE@XZ	public: __thiscall CATTriPolyList_t::CATTriPolyList_t(void)
+14	0x019B80	.text	DisplaySystem.dll	??0Color_t@@QAE@ABVRGB_t@@@Z	public: __thiscall Color_t::Color_t(class RGB_t const &)
+15	0x01998F	.text	DisplaySystem.dll	??0Color_t@@QAE@I@Z	public: __thiscall Color_t::Color_t(unsigned int)
+16	0x01998C	.text	DisplaySystem.dll,Gamecode.dll	??0Color_t@@QAE@XZ	public: __thiscall Color_t::Color_t(void)
+17	0x01E4A3	.text		??0DXError@fun@@QAE@JABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0H@Z	public: __thiscall fun::DXError::DXError(long, class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const &, class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const &, int)
+18	0x02EE70	.text	DisplaySystem.dll	??0DefaultMaterial_t@@QAE@_N@Z	public: __thiscall DefaultMaterial_t::DefaultMaterial_t(bool)
+19	0x02BCF9	.text	Gamecode.dll	??0DummyConnector@@QAE@XZ	public: __thiscall DummyConnector::DummyConnector(void)
+20	0x017504	.text		??0FAFLoader_t@@QAE@XZ	public: __thiscall FAFLoader_t::FAFLoader_t(void)
+21	0x01FD01	.text	DisplaySystem.dll	??0PixelFormat_t@@QAE@PBU_DDPIXELFORMAT@@@Z	public: __thiscall PixelFormat_t::PixelFormat_t(struct _DDPIXELFORMAT const *)
+22	0x057FE0	.text	DisplaySystem.dll	??0RCATMesh_t@@QAE@PAVRRefFrame_t@@@Z	public: __thiscall RCATMesh_t::RCATMesh_t(class RRefFrame_t *)
+23	0x02A68A	.text	DisplaySystem.dll	??0RCamera_t@@QAE@MMMMPAVRRefFrame_t@@PAVRAnimation_t@@@Z	public: __thiscall RCamera_t::RCamera_t(float, float, float, float, class RRefFrame_t *, class RAnimation_t *)
+24	0x02D26F	.text		??0RDebugViewPort@@QAE@PAVRViewPort_t@@@Z	public: __thiscall RDebugViewPort::RDebugViewPort(class RViewPort_t *)
+25	0x02F44E	.text	DisplaySystem.dll,Gamecode.dll	??0RDeltaState@@QAE@PBD@Z	public: __thiscall RDeltaState::RDeltaState(char const *)
+26	0x0128A1	.text		??0RGrid@@QAE@IIMMPAVRRefFrame_t@@PAVRAnimation_t@@@Z	public: __thiscall RGrid::RGrid(unsigned int, unsigned int, float, float, class RRefFrame_t *, class RAnimation_t *)
+27	0x0295AB	.text		??0RKeyFrameAnimation_t@@QAE@PAVObjectArchive_c@fun@@@Z	public: __thiscall RKeyFrameAnimation_t::RKeyFrameAnimation_t(class fun::ObjectArchive_c *)
+28	0x03FE81	.text		??0RLight_t@@QAE@PAVObjectArchive_c@fun@@@Z	public: __thiscall RLight_t::RLight_t(class fun::ObjectArchive_c *)
+29	0x03FD4A	.text	DisplaySystem.dll	??0RLight_t@@QAE@PAVRRefFrame_t@@ABVRGB_t@@W4Type_e@0@PAVRAnimation_t@@@Z	public: __thiscall RLight_t::RLight_t(class RRefFrame_t *, class RGB_t const &, enum RLight_t::Type_e, class RAnimation_t *)
+30	0x041146	.text	DisplaySystem.dll	??0RMaterial_t@@QAE@ABV0@@Z	public: __thiscall RMaterial_t::RMaterial_t(class RMaterial_t const &)
+31	0x041043	.text	DisplaySystem.dll,GUI.dll,Gamecode.dll	??0RMaterial_t@@QAE@PBDPAVRTexture_t@@ABVRGB_t@@222MMM_N3@Z	public: __thiscall RMaterial_t::RMaterial_t(char const *, class RTexture_t *, class RGB_t const &, class RGB_t const &, class RGB_t const &, class RGB_t const &, float, float, float, bool, bool)
+32	0x02BD18	.text		??0RRefFrameConnector@@QAE@PAVObjectArchive_c@fun@@@Z	public: __thiscall RRefFrameConnector::RRefFrameConnector(class fun::ObjectArchive_c *)
+33	0x0166A5	.text		??0RRefFrameConnector@@QAE@PBDPAVRRefFrame_t@@@Z	public: __thiscall RRefFrameConnector::RRefFrameConnector(char const *, class RRefFrame_t *)
+34	0x0458D0	.text	DisplaySystem.dll,Gamecode.dll	??0RRefFrame_t@@QAE@ABV0@@Z	public: __thiscall RRefFrame_t::RRefFrame_t(class RRefFrame_t const &)
+35	0x044CC8	.text	DisplaySystem.dll	??0RRefFrame_t@@QAE@PAV0@PAVRAnimation_t@@@Z	public: __thiscall RRefFrame_t::RRefFrame_t(class RRefFrame_t *, class RAnimation_t *)
+36	0x045A2F	.text		??0RRefFrame_t@@QAE@PAVObjectArchive_c@fun@@@Z	public: __thiscall RRefFrame_t::RRefFrame_t(class fun::ObjectArchive_c *)
+37	0x046362	.text	DisplaySystem.dll	??0RResource_t@@IAE@PAVObjectArchive_c@fun@@@Z	protected: __thiscall RResource_t::RResource_t(class fun::ObjectArchive_c *)
+38	0x046311	.text	DisplaySystem.dll	??0RResource_t@@IAE@PBD@Z	protected: __thiscall RResource_t::RResource_t(char const *)
+39	0x0135F1	.text	DisplaySystem.dll	??0RSprite@@QAE@PBVRMaterial_t@@PBVRSpriteAnim@@MMPAVRRefFrame_t@@W4SpriteMode_e@0@@Z	public: __thiscall RSprite::RSprite(class RMaterial_t const *, class RSpriteAnim const *, float, float, class RRefFrame_t *, enum RSprite::SpriteMode_e)
+40	0x047BF2	.text		??0RTexture_t@@QAE@PAVObjectArchive_c@fun@@@Z	public: __thiscall RTexture_t::RTexture_t(class fun::ObjectArchive_c *)
+41	0x047A99	.text	DisplaySystem.dll	??0RTexture_t@@QAE@PBD@Z	public: __thiscall RTexture_t::RTexture_t(char const *)
+42	0x047900	.text	DisplaySystem.dll,GUI.dll	??0RTexture_t@@QAE@PBDGGW4TextureFormat_e@0@_NPAX@Z	public: __thiscall RTexture_t::RTexture_t(char const *, unsigned short, unsigned short, enum RTexture_t::TextureFormat_e, bool, void *)
+43	0x047B2E	.text	DisplaySystem.dll	??0RTexture_t@@QAE@PBDPAVTextureCreator@@@Z	public: __thiscall RTexture_t::RTexture_t(char const *, class TextureCreator *)
+44	0x04AB7A	.text		??0RTriMeshData_t@@IAE@ABV0@@Z	protected: __thiscall RTriMeshData_t::RTriMeshData_t(class RTriMeshData_t const &)
+45	0x04AB57	.text		??0RTriMeshData_t@@IAE@PBD@Z	protected: __thiscall RTriMeshData_t::RTriMeshData_t(char const *)
+46	0x0490E3	.text	DisplaySystem.dll	??0RTriMesh_t@@QAE@PBVRTriMeshData_t@@PAVRRefFrame_t@@PAVRAnimation_t@@@Z	public: __thiscall RTriMesh_t::RTriMesh_t(class RTriMeshData_t const *, class RRefFrame_t *, class RAnimation_t *)
+47	0x04B9A4	.text	DisplaySystem.dll	??0RViewPort_t@@QAE@IIIIABVRGB_t@@@Z	public: __thiscall RViewPort_t::RViewPort_t(unsigned int, unsigned int, unsigned int, unsigned int, class RGB_t const &)
+48	0x04D5E5	.text		??0RVisual_t@@IAE@ABV0@@Z	protected: __thiscall RVisual_t::RVisual_t(class RVisual_t const &)
+49	0x04D544	.text	DisplaySystem.dll,Gamecode.dll	??0RVisual_t@@IAE@PAVRRefFrame_t@@PAVRAnimation_t@@@Z	protected: __thiscall RVisual_t::RVisual_t(class RRefFrame_t *, class RAnimation_t *)
+50	0x04E4B7	.text		??0SimpleMesh@@QAE@PBVRMaterial_t@@PAVTriList@@KPBXII@Z	public: __thiscall SimpleMesh::SimpleMesh(class RMaterial_t const *, class TriList *, unsigned long, void const *, unsigned int, unsigned int)
+51	0x025254	.text	DisplaySystem.dll,FXS.dll,GUI.dll,Gamecode.dll	??0StateBlob_c@@QAE@XZ	public: __thiscall StateBlob_c::StateBlob_c(void)
+52	0x04763C	.text	DisplaySystem.dll	??0TextureCreator@@QAE@PAVObjectArchive_c@fun@@@Z	public: __thiscall TextureCreator::TextureCreator(class fun::ObjectArchive_c *)
+53	0x019351	.text	DisplaySystem.dll	??0TextureStreamCreator@@QAE@PAVLBitmap_t@@PBDH@Z	public: __thiscall TextureStreamCreator::TextureStreamCreator(class LBitmap_t *, char const *, int)
+54	0x01920F	.text	DisplaySystem.dll	??0TextureStreamCreator@@QAE@PAVObjectArchive_c@fun@@@Z	public: __thiscall TextureStreamCreator::TextureStreamCreator(class fun::ObjectArchive_c *)
+55	0x0192BE	.text	DisplaySystem.dll	??0TextureStreamCreator@@QAE@PAVPositionIO_t@fun@@PBDH@Z	public: __thiscall TextureStreamCreator::TextureStreamCreator(class fun::PositionIO_t *, char const *, int)
+56	0x028A98	.text		??0Timer@@QAE@ABV0@@Z	public: __thiscall Timer::Timer(class Timer const &)
+57	0x028A62	.text	DisplaySystem.dll	??0Timer@@QAE@XZ	public: __thiscall Timer::Timer(void)
+58	0x0114F9	.text		??0VertexBuffer_c@@QAE@ABV0@@Z	public: __thiscall VertexBuffer_c::VertexBuffer_c(class VertexBuffer_c const &)
+59	0x01153A	.text	DisplaySystem.dll	??0VertexBuffer_c@@QAE@ABV0@II@Z	public: __thiscall VertexBuffer_c::VertexBuffer_c(class VertexBuffer_c const &, unsigned int, unsigned int)
+60	0x011581	.text		??0VertexBuffer_c@@QAE@ABV0@III@Z	public: __thiscall VertexBuffer_c::VertexBuffer_c(class VertexBuffer_c const &, unsigned int, unsigned int, unsigned int)
+61	0x0114B1	.text	DisplaySystem.dll,FXS.dll	??0VertexBuffer_c@@QAE@IIII@Z	public: __thiscall VertexBuffer_c::VertexBuffer_c(unsigned int, unsigned int, unsigned int, unsigned int)
+62	0x0261B9	.text	DisplaySystem.dll	??0surface_t@@QAE@PAV0@PAD@Z	public: __thiscall surface_t::surface_t(class surface_t *, char *)
+63	0x029E76	.text	DisplaySystem.dll	??1BVolume_t@@UAE@XZ	public: virtual __thiscall BVolume_t::~BVolume_t(void)
+64	0x012234	.text		??1CATGroup_t@@QAE@XZ	public: __thiscall CATGroup_t::~CATGroup_t(void)
+65	0x0556DB	.text		??1CATStatus_t@@UAE@XZ	public: virtual __thiscall CATStatus_t::~CATStatus_t(void)
+66	0x055883	.text		??1CATStdioStatus_t@@UAE@XZ	public: virtual __thiscall CATStdioStatus_t::~CATStdioStatus_t(void)
+67	0x052B91	.text		??1CATTriPolyList_t@@QAE@XZ	public: __thiscall CATTriPolyList_t::~CATTriPolyList_t(void)
+68	0x01E479	.text	DisplaySystem.dll	??1DXError@fun@@UAE@XZ	public: virtual __thiscall fun::DXError::~DXError(void)
+69	0x017529	.text		??1FAFLoader_t@@UAE@XZ	public: virtual __thiscall FAFLoader_t::~FAFLoader_t(void)
+70	0x02D2BC	.text		??1RDebugViewPort@@UAE@XZ	public: virtual __thiscall RDebugViewPort::~RDebugViewPort(void)
+71	0x045471	.text		??1RRefFrame_t@@UAE@XZ	public: virtual __thiscall RRefFrame_t::~RRefFrame_t(void)
+72	0x046283	.text	DisplaySystem.dll	??1RResource_t@@MAE@XZ	protected: virtual __thiscall RResource_t::~RResource_t(void)
+73	0x04ABE3	.text		??1RTriMeshData_t@@MAE@XZ	protected: virtual __thiscall RTriMeshData_t::~RTriMeshData_t(void)
+74	0x048F39	.text	DisplaySystem.dll	??1RTriMesh_t@@UAE@XZ	public: virtual __thiscall RTriMesh_t::~RTriMesh_t(void)
+75	0x04D7D3	.text	DisplaySystem.dll,Gamecode.dll	??1RVisual_t@@MAE@XZ	protected: virtual __thiscall RVisual_t::~RVisual_t(void)
+76	0x0255B5	.text	DisplaySystem.dll,FXS.dll,GUI.dll,Gamecode.dll	??1StateBlob_c@@QAE@XZ	public: __thiscall StateBlob_c::~StateBlob_c(void)
+77	0x011614	.text		??1VertexBuffer_c@@QAE@XZ	public: __thiscall VertexBuffer_c::~VertexBuffer_c(void)
+78	0x0122C9	.text		??4CATGroup_t@@QAEAAU0@ABU0@@Z	public: struct CATGroup_t & __thiscall CATGroup_t::operator=(struct CATGroup_t const &)
+79	0x0556ED	.text		??4CATStatus_t@@QAEAAV0@ABV0@@Z	public: class CATStatus_t & __thiscall CATStatus_t::operator=(class CATStatus_t const &)
+80	0x05575B	.text		??4CATStdioStatus_t@@QAEAAV0@ABV0@@Z	public: class CATStdioStatus_t & __thiscall CATStdioStatus_t::operator=(class CATStdioStatus_t const &)
+81	0x011B40	.text		??4CATTriPolyList_t@@QAEAAU0@ABU0@@Z	public: struct CATTriPolyList_t & __thiscall CATTriPolyList_t::operator=(struct CATTriPolyList_t const &)
+82	0x019A47	.text	DisplaySystem.dll,FXS.dll,Gamecode.dll	??4Color_t@@QAEABV0@I@Z	public: class Color_t const & __thiscall Color_t::operator=(unsigned int)
+83	0x0556ED	.text		??4RandyShadowlandsData_s@@QAEAAU0@ABU0@@Z	public: struct RandyShadowlandsData_s & __thiscall RandyShadowlandsData_s::operator=(struct RandyShadowlandsData_s const &)
+84	0x011B18	.text		??4Triangle@@QAEAAV0@ABV0@@Z	public: class Triangle & __thiscall Triangle::operator=(class Triangle const &)
+85	0x0114A1	.text		??4VertexBuffer_c@@QAEAAV0@ABV0@@Z	public: class VertexBuffer_c & __thiscall VertexBuffer_c::operator=(class VertexBuffer_c const &)
+86	0x019C93	.text	Gamecode.dll	??DColor_t@@QBE?AV0@M@Z	public: class Color_t __thiscall Color_t::operator*(float) const
+87	0x019BB1	.text	Gamecode.dll	??HColor_t@@QBE?AV0@ABV0@@Z	public: class Color_t __thiscall Color_t::operator+(class Color_t const &) const
+88	0x095DD8	.rdata		??_7CATStatus_t@@6B@	const CATStatus_t::`vftable'
+89	0x095DF4	.rdata		??_7CATStdioStatus_t@@6B@	const CATStdioStatus_t::`vftable'
+90	0x017FE6	.text		??_FDefaultMaterial_t@@QAEXXZ	public: void __thiscall DefaultMaterial_t::`default ctor closure'(void)
+91	0x011B8C	.text		??_FRCATMesh_t@@QAEXXZ	public: void __thiscall RCATMesh_t::`default ctor closure'(void)
+92	0x011A9B	.text		??_FRRefFrame_t@@QAEXXZ	public: void __thiscall RRefFrame_t::`default ctor closure'(void)
+93	0x011AA5	.text		??_FRVisual_t@@QAEXXZ	public: void __thiscall RVisual_t::`default ctor closure'(void)
+94	0x017EA4	.text		??_FTextureStreamCreator@@QAEXXZ	public: void __thiscall TextureStreamCreator::`default ctor closure'(void)
+95	0x02BF51	.text	DisplaySystem.dll	?Add2DLine@Debugger_t@@QAEXVVector3_t@@0MMM_N@Z	public: void __thiscall Debugger_t::Add2DLine(class Vector3_t, class Vector3_t, float, float, float, bool)
+96	0x057DE0	.text	DisplaySystem.dll	?AddAttractorChild@RCATMesh_t@@QAEXPBDPAVRRefFrame_t@@@Z	public: void __thiscall RCATMesh_t::AddAttractorChild(char const *, class RRefFrame_t *)
+97	0x044ED1	.text	DisplaySystem.dll,Gamecode.dll	?AddChild@RRefFrame_t@@UAEXPAV1@@Z	public: virtual void __thiscall RRefFrame_t::AddChild(class RRefFrame_t *)
+98	0x02CAE5	.text	DisplaySystem.dll	?AddLine@Debugger_t@@QAEXVVector3_t@@0MMM@Z	public: void __thiscall Debugger_t::AddLine(class Vector3_t, class Vector3_t, float, float, float)
+99	0x02620A	.text	DisplaySystem.dll	?AddRefDXSurface@surface_t@@QAEIXZ	public: unsigned int __thiscall surface_t::AddRefDXSurface(void)
+100	0x04621A	.text	DisplaySystem.dll,Gamecode.dll	?AddRefRResource@RResource_t@@QBEXXZ	public: void __thiscall RResource_t::AddRefRResource(void) const
+101	0x0474C1	.text	DisplaySystem.dll	?AddRefRTexture@RTexture_t@@QBEXXZ	public: void __thiscall RTexture_t::AddRefRTexture(void) const
+102	0x02CCAB	.text	DisplaySystem.dll	?AddSphere@Debugger_t@@QAEXVVector3_t@@MMMM@Z	public: void __thiscall Debugger_t::AddSphere(class Vector3_t, float, float, float, float)
+103	0x04C9C2	.text	DisplaySystem.dll	?AddToRenderList@RVisual_t@@IAEXW4RenderList_e@@H@Z	protected: void __thiscall RVisual_t::AddToRenderList(enum RenderList_e, int)
+104	0x01FE9D	.text		?AddTriangle@TriList@@QAEXHHH@Z	public: void __thiscall TriList::AddTriangle(int, int, int)
+105	0x04CBE1	.text	DisplaySystem.dll,Gamecode.dll	?ApplyStateChanges@RVisual_t@@UBEXAAVRViewPort_t@@@Z	public: virtual void __thiscall RVisual_t::ApplyStateChanges(class RViewPort_t &) const
+106	0x029F2D	.text	DisplaySystem.dll	?Archive@BVolume_t@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall BVolume_t::Archive(class fun::ObjectArchive_c *) const
+107	0x016688	.text		?Archive@DummyConnector@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall DummyConnector::Archive(class fun::ObjectArchive_c *) const
+108	0x02F145	.text		?Archive@RDeltaState@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall RDeltaState::Archive(class fun::ObjectArchive_c *) const
+109	0x028C87	.text		?Archive@RKeyFrameAnimation_t@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall RKeyFrameAnimation_t::Archive(class fun::ObjectArchive_c *) const
+110	0x03FBD8	.text		?Archive@RLight_t@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall RLight_t::Archive(class fun::ObjectArchive_c *) const
+111	0x040916	.text		?Archive@RMaterial_t@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall RMaterial_t::Archive(class fun::ObjectArchive_c *) const
+112	0x02BCCD	.text		?Archive@RRefFrameConnector@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall RRefFrameConnector::Archive(class fun::ObjectArchive_c *) const
+113	0x044DA8	.text		?Archive@RRefFrame_t@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall RRefFrame_t::Archive(class fun::ObjectArchive_c *) const
+114	0x04641A	.text	DisplaySystem.dll	?Archive@RResource_t@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall RResource_t::Archive(class fun::ObjectArchive_c *) const
+115	0x047321	.text		?Archive@RTexture_t@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall RTexture_t::Archive(class fun::ObjectArchive_c *) const
+116	0x04AC33	.text		?Archive@RTriMeshData_t@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall RTriMeshData_t::Archive(class fun::ObjectArchive_c *) const
+117	0x048F85	.text	DisplaySystem.dll	?Archive@RTriMesh_t@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall RTriMesh_t::Archive(class fun::ObjectArchive_c *) const
+118	0x04EA04	.text		?Archive@RVisualData_t@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall RVisualData_t::Archive(class fun::ObjectArchive_c *) const
+119	0x04C947	.text	DisplaySystem.dll,Gamecode.dll	?Archive@RVisual_t@@MBEXPAVObjectArchive_c@fun@@@Z	protected: virtual void __thiscall RVisual_t::Archive(class fun::ObjectArchive_c *) const
+120	0x04767A	.text	DisplaySystem.dll	?Archive@TextureCreator@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall TextureCreator::Archive(class fun::ObjectArchive_c *) const
+121	0x0191A0	.text	DisplaySystem.dll	?Archive@TextureStreamCreator@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall TextureStreamCreator::Archive(class fun::ObjectArchive_c *) const
+122	0x01FD2A	.text		?Archive@TriList@@UBEXPAVObjectArchive_c@fun@@@Z	public: virtual void __thiscall TriList::Archive(class fun::ObjectArchive_c *) const
+123	0x02434E	.text	DisplaySystem.dll	?Blt@render_t@@QAEXPAUIDirectDrawSurface7@@PAUtagRECT@@01KPAU_DDBLTFX@@@Z	public: void __thiscall render_t::Blt(struct IDirectDrawSurface7 *, struct tagRECT *, struct IDirectDrawSurface7 *, struct tagRECT *, unsigned long, struct _DDBLTFX *)
+124	0x052F16	.text		?CalcBoundingVolume@CATMesh_t@@QAEXXZ	public: void __thiscall CATMesh_t::CalcBoundingVolume(void)
+125	0x04B7D9	.text		?CalcPickLine@RViewPort_t@@QBE?AVVector3_t@@II@Z	public: class Vector3_t __thiscall RViewPort_t::CalcPickLine(unsigned int, unsigned int) const
+126	0x04B75A	.text	DisplaySystem.dll	?Clear@RViewPort_t@@QAEXQBI_N1I@Z	public: void __thiscall RViewPort_t::Clear(unsigned int const *const, bool, bool, unsigned int)
+127	0x025456	.text	DisplaySystem.dll,GUI.dll	?Clear@StateBlob_c@@QAEXXZ	public: void __thiscall StateBlob_c::Clear(void)
+128	0x049240	.text	DisplaySystem.dll	?Clone@RTriMesh_t@@UBEPAVRRefFrame_t@@XZ	public: virtual class RRefFrame_t * __thiscall RTriMesh_t::Clone(void) const
+129	0x048FEF	.text	DisplaySystem.dll	?CloneMeshData@RTriMesh_t@@QAEXXZ	public: void __thiscall RTriMesh_t::CloneMeshData(void)
+130	0x04B744	.text	DisplaySystem.dll	?Close@RViewPort_t@@QAEXXZ	public: void __thiscall RViewPort_t::Close(void)
+131	0x0141AE	.text	DisplaySystem.dll	?CloseBuffer@DynamicVB_c@@QAEXI@Z	public: void __thiscall DynamicVB_c::CloseBuffer(unsigned int)
+132	0x02A28E	.text		?ComposeBoundingSphere@@YAXABV?$vector@U?$pair@VVector3_t@@M@std@@V?$allocator@U?$pair@VVector3_t@@M@std@@@2@@std@@AAVVector3_t@@AAM@Z	void __cdecl ComposeBoundingSphere(class std::vector<struct std::pair<class Vector3_t, float>, class std::allocator<struct std::pair<class Vector3_t, float>>> const &, class Vector3_t &, float &)
+133	0x01F90D	.text	DisplaySystem.dll	?ConvertColor@PixelFormat_t@@QBE?AVRGBI_t@@PBXPBV2@@Z	public: class RGBI_t __thiscall PixelFormat_t::ConvertColor(void const *, class RGBI_t const *) const
+134	0x01FA9D	.text	DisplaySystem.dll	?ConvertColor@PixelFormat_t@@QBEIPBE@Z	public: unsigned int __thiscall PixelFormat_t::ConvertColor(unsigned char const *) const
+135	0x01FA50	.text	DisplaySystem.dll	?ConvertColor@PixelFormat_t@@QBEXPAXABVRGBI_t@@@Z	public: void __thiscall PixelFormat_t::ConvertColor(void *, class RGBI_t const &) const
+136	0x01FAE3	.text	DisplaySystem.dll	?ConvertColorPacked@PixelFormat_t@@QBEII@Z	public: unsigned int __thiscall PixelFormat_t::ConvertColorPacked(unsigned int) const
+137	0x04980F	.text	DisplaySystem.dll	?ConvertToLightmap@RTriMesh_t@@QAEXPBG@Z	public: void __thiscall RTriMesh_t::ConvertToLightmap(unsigned short const *)
+138	0x023617	.text		?CreateClipper@render_t@@QAEXKPAPAUIDirectDrawClipper@@PAUIUnknown@@@Z	public: void __thiscall render_t::CreateClipper(unsigned long, struct IDirectDrawClipper **, struct IUnknown *)
+139	0x0213E1	.text	DisplaySystem.dll	?CreatePalette@render_t@@QAEXKPAUtagPALETTEENTRY@@PAPAUIDirectDrawPalette@@PAUIUnknown@@@Z	public: void __thiscall render_t::CreatePalette(unsigned long, struct tagPALETTEENTRY *, struct IDirectDrawPalette **, struct IUnknown *)
+140	0x057A70	.text	DisplaySystem.dll	?CreateSubstMaterial@RCATMesh_t@@QAEPAVRMaterial_t@@H@Z	public: class RMaterial_t * __thiscall RCATMesh_t::CreateSubstMaterial(int)
+141	0x023DCC	.text	DisplaySystem.dll	?CreateSurface@render_t@@QAEJPAU_DDSURFACEDESC2@@PAPAUIDirectDrawSurface7@@PAUIUnknown@@@Z	public: long __thiscall render_t::CreateSurface(struct _DDSURFACEDESC2 *, struct IDirectDrawSurface7 **, struct IUnknown *)
+142	0x0193E4	.text	DisplaySystem.dll	?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVLBitmap_t@@PBD@Z	public: class surface_t * __thiscall TextureStreamCreator::CreateTexture(class LBitmap_t *, char const *)
+143	0x01973A	.text	DisplaySystem.dll	?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVPositionIO_t@fun@@PBD@Z	public: class surface_t * __thiscall TextureStreamCreator::CreateTexture(class fun::PositionIO_t *, char const *)
+144	0x024A77	.text		?CreateVertexBuffer@render_t@@QAEXPAU_D3DVERTEXBUFFERDESC@@PAPAUIDirect3DVertexBuffer7@@K@Z	public: void __thiscall render_t::CreateVertexBuffer(struct _D3DVERTEXBUFFERDESC *, struct IDirect3DVertexBuffer7 **, unsigned long)
+145	0x0452CE	.text	DisplaySystem.dll	?CullBySphere@RRefFrame_t@@QAE_NABVVector3_t@@M@Z	public: bool __thiscall RRefFrame_t::CullBySphere(class Vector3_t const &, float)
+146	0x045769	.text	DisplaySystem.dll	?CullBySphere@RRefFrame_t@@QAE_NABVVector3_t@@MAAV2@@Z	public: bool __thiscall RRefFrame_t::CullBySphere(class Vector3_t const &, float, class Vector3_t &)
+147	0x04CE96	.text	DisplaySystem.dll	?CullLights@RVisual_t@@IAEIAAVRViewPort_t@@MI@Z	protected: unsigned int __thiscall RVisual_t::CullLights(class RViewPort_t &, float, unsigned int)
+148	0x024844	.text	DisplaySystem.dll	?D3DXCreateTexture@render_t@@QAEXPAK00PAW4_D3DX_SURFACEFORMAT@@PAUIDirectDrawPalette@@PAVsurface_t@@0@Z	public: void __thiscall render_t::D3DXCreateTexture(unsigned long *, unsigned long *, unsigned long *, enum _D3DX_SURFACEFORMAT *, struct IDirectDrawPalette *, class surface_t *, unsigned long *)
+149	0x020BED	.text	DisplaySystem.dll	?D3DXGetErrorString@render_t@@QAEXJKPAD@Z	public: void __thiscall render_t::D3DXGetErrorString(long, unsigned long, char *)
+150	0x024908	.text	DisplaySystem.dll	?D3DXLoadTextureFromMemory@render_t@@QAEXPAVsurface_t@@KPAXPAUIDirectDrawPalette@@W4_D3DX_SURFACEFORMAT@@KPAUtagRECT@@W4_D3DX_FILTERTYPE@@@Z	public: void __thiscall render_t::D3DXLoadTextureFromMemory(class surface_t *, unsigned long, void *, struct IDirectDrawPalette *, enum _D3DX_SURFACEFORMAT, unsigned long, struct tagRECT *, enum _D3DX_FILTERTYPE)
+151	0x021541	.text	DisplaySystem.dll	?D3DXMakeDDPixelFormat@render_t@@QAEXW4_D3DX_SURFACEFORMAT@@PAU_DDPIXELFORMAT@@@Z	public: void __thiscall render_t::D3DXMakeDDPixelFormat(enum _D3DX_SURFACEFORMAT, struct _DDPIXELFORMAT *)
+152	0x023DB3	.text	DisplaySystem.dll	?D3DXMakeSurfaceFormat@render_t@@QAE?AW4_D3DX_SURFACEFORMAT@@PAU_DDPIXELFORMAT@@@Z	public: enum _D3DX_SURFACEFORMAT __thiscall render_t::D3DXMakeSurfaceFormat(struct _DDPIXELFORMAT *)
+153	0x02D6FC	.text	DisplaySystem.dll	?DrawArrow@RDebugViewPort@@QAEXABVVector3_t@@0_N@Z	public: void __thiscall RDebugViewPort::DrawArrow(class Vector3_t const &, class Vector3_t const &, bool)
+154	0x02CF6E	.text		?DrawLine@RDebugViewPort@@QAEXABVVector3_t@@0_N@Z	public: void __thiscall RDebugViewPort::DrawLine(class Vector3_t const &, class Vector3_t const &, bool)
+155	0x02E267	.text		?DrawSector@RDebugViewPort@@QAEXABVVector3_t@@0MM@Z	public: void __thiscall RDebugViewPort::DrawSector(class Vector3_t const &, class Vector3_t const &, float, float)
+156	0x02DFC0	.text		?DrawSphere@RDebugViewPort@@QAEXABVVector3_t@@M@Z	public: void __thiscall RDebugViewPort::DrawSphere(class Vector3_t const &, float)
+157	0x03FC74	.text	DisplaySystem.dll	?Enable@RLight_t@@QAEX_N@Z	public: void __thiscall RLight_t::Enable(bool)
+158	0x013128	.text	DisplaySystem.dll	?EnableAdditiveRendering@RSprite@@QAEX_NW4SpriteRenderMode_e@1@@Z	public: void __thiscall RSprite::EnableAdditiveRendering(bool, enum RSprite::SpriteRenderMode_e)
+159	0x047060	.text	DisplaySystem.dll	?EnableCATLight@RandyShadowlandsData_s@@SAX_N@Z	public: static void __cdecl RandyShadowlandsData_s::EnableCATLight(bool)
+160	0x0191B8	.text	DisplaySystem.dll	?EnableCompression@TextureStreamCreator@@SAX_N@Z	public: static void __cdecl TextureStreamCreator::EnableCompression(bool)
+161	0x04177F	.text	DisplaySystem.dll	?EnableFog@Randy_t@@QAEX_N@Z	public: void __thiscall Randy_t::EnableFog(bool)
+162	0x046F06	.text	DisplaySystem.dll	?EnableGroundLight@RandyShadowlandsData_s@@SAX_N@Z	public: static void __cdecl RandyShadowlandsData_s::EnableGroundLight(bool)
+163	0x046F95	.text	DisplaySystem.dll	?EnableStatelLight@RandyShadowlandsData_s@@SAX_N@Z	public: static void __cdecl RandyShadowlandsData_s::EnableStatelLight(bool)
+164	0x04170C	.text	DisplaySystem.dll	?EnableWBuffer@Randy_t@@QAEX_N@Z	public: void __thiscall Randy_t::EnableWBuffer(bool)
+165	0x04517B	.text	DisplaySystem.dll,GUI.dll	?FindConnectors@RRefFrame_t@@QBEXPAV?$vector@PAVRConnector@@V?$allocator@PAVRConnector@@@std@@@std@@PBD@Z	public: void __thiscall RRefFrame_t::FindConnectors(class std::vector<class RConnector *, class std::allocator<class RConnector *>> *, char const *) const
+166	0x0451C4	.text	DisplaySystem.dll,Gamecode.dll	?FindConnectors@RRefFrame_t@@UBEXPAV?$vector@PAVRConnector@@V?$allocator@PAVRConnector@@@std@@@std@@ABVRegExp@@@Z	public: virtual void __thiscall RRefFrame_t::FindConnectors(class std::vector<class RConnector *, class std::allocator<class RConnector *>> *, class RegExp const &) const
+167	0x045F49	.text	DisplaySystem.dll,Gamecode.dll	?FindConnectorsNoChild@RRefFrame_t@@UBEXPAV?$vector@PAVRConnector@@V?$allocator@PAVRConnector@@@std@@@std@@ABVRegExp@@@Z	public: virtual void __thiscall RRefFrame_t::FindConnectorsNoChild(class std::vector<class RConnector *, class std::allocator<class RConnector *>> *, class RegExp const &) const
+168	0x0477D6	.text		?FindTexture@RTexture_t@@SAPAV1@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z	public: static class RTexture_t * __cdecl RTexture_t::FindTexture(class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const &)
+169	0x052B0F	.text		?FindTriangleIndex@CATTriPolyList_t@@ABEEHH@Z	private: unsigned char __thiscall CATTriPolyList_t::FindTriangleIndex(int, int) const
+170	0x052B42	.text		?FindVertexIndex@CATTriPolyList_t@@ABEEHH@Z	private: unsigned char __thiscall CATTriPolyList_t::FindVertexIndex(int, int) const
+171	0x042F76	.text	DisplaySystem.dll	?Flip@Randy_t@@QAEX_N@Z	public: void __thiscall Randy_t::Flip(bool)
+172	0x041CA7	.text	DisplaySystem.dll	?FlushTextures@Randy_t@@QBE_NXZ	public: bool __thiscall Randy_t::FlushTextures(void) const
+173	0x047205	.text	DisplaySystem.dll	?FreeAllTextures@RandyShadowlandsData_s@@SAXXZ	public: static void __cdecl RandyShadowlandsData_s::FreeAllTextures(void)
+174	0x02CABF	.text	DisplaySystem.dll	?Get@Debugger_t@@SAPAV1@XZ	public: static class Debugger_t * __cdecl Debugger_t::Get(void)
+175	0x014275	.text	DisplaySystem.dll,GUI.dll	?Get@DynamicVB_c@@SAAAV1@XZ	public: static class DynamicVB_c & __cdecl DynamicVB_c::Get(void)
+176	0x03FB03	.text	DisplaySystem.dll	?Get@HMOccluder_t@@SAAAV1@XZ	public: static class HMOccluder_t & __cdecl HMOccluder_t::Get(void)
+177	0x052C48	.text		?GetActiveTriangleCount@CATGroup_t@@QBEIXZ	public: unsigned int __thiscall CATGroup_t::GetActiveTriangleCount(void) const
+178	0x052C30	.text		?GetActiveVertexCount@CATGroup_t@@QBEIXZ	public: unsigned int __thiscall CATGroup_t::GetActiveVertexCount(void) const
+179	0x0504EE	.text		?GetAnim1@CATAnimBlend_t@@QBEPAVCATAnim_t@@XZ	public: class CATAnim_t * __thiscall CATAnimBlend_t::GetAnim1(void) const
+180	0x0504F2	.text	DisplaySystem.dll	?GetAnim2@CATAnimBlend_t@@QBEPAVCATAnim_t@@XZ	public: class CATAnim_t * __thiscall CATAnimBlend_t::GetAnim2(void) const
+181	0x045894	.text	DisplaySystem.dll	?GetAnimMatrix@RRefFrame_t@@QBEABVTMatrix4_t@@XZ	public: class TMatrix4_t const & __thiscall RRefFrame_t::GetAnimMatrix(void) const
+182	0x045430	.text	DisplaySystem.dll	?GetAnimation@RRefFrame_t@@QBEPBVRAnimation_t@@XZ	public: class RAnimation_t const * __thiscall RRefFrame_t::GetAnimation(void) const
+183	0x04541A	.text		?GetAnimationTotalTime@RRefFrame_t@@QBEMXZ	public: float __thiscall RRefFrame_t::GetAnimationTotalTime(void) const
+184	0x045728	.text	DisplaySystem.dll	?GetAnimationTreeTotalTime@RRefFrame_t@@QBEMXZ	public: float __thiscall RRefFrame_t::GetAnimationTreeTotalTime(void) const
+185	0x011D4F	.text		?GetAttractor@CATGroup_t@@QBEABUCATAttractor_t@@H@Z	public: struct CATAttractor_t const & __thiscall CATGroup_t::GetAttractor(int) const
+186	0x0562B5	.text	DisplaySystem.dll,Gamecode.dll	?GetAttractor@RCATMesh_t@@QAE_NPBDAAVTMatrix4_t@@@Z	public: bool __thiscall RCATMesh_t::GetAttractor(char const *, class TMatrix4_t &)
+187	0x01667E	.text		?GetAttractorCnt@CATGroup_t@@QBEHXZ	public: int __thiscall CATGroup_t::GetAttractorCnt(void) const
+188	0x041951	.text	DisplaySystem.dll	?GetBackBuffer@Randy_t@@QBEPAVsurface_t@@XZ	public: class surface_t * __thiscall Randy_t::GetBackBuffer(void) const
+189	0x024CF8	.text	DisplaySystem.dll	?GetBlueprint@StateBlob_c@@QAEPAXXZ	public: void * __thiscall StateBlob_c::GetBlueprint(void)
+190	0x0562E1	.text	DisplaySystem.dll,Gamecode.dll	?GetBoneMatrix@RCATMesh_t@@QAE_NPBDAAVTMatrix4_t@@@Z	public: bool __thiscall RCATMesh_t::GetBoneMatrix(char const *, class TMatrix4_t &)
+191	0x056741	.text	DisplaySystem.dll	?GetBoundingSpherePos@RCATMesh_t@@QBE?AVVector3_t@@XZ	public: class Vector3_t __thiscall RCATMesh_t::GetBoundingSpherePos(void) const
+192	0x055C96	.text	DisplaySystem.dll	?GetBoundingSphereRadius@RCATMesh_t@@QBEMXZ	public: float __thiscall RCATMesh_t::GetBoundingSphereRadius(void) const
+193	0x048FB4	.text		?GetBoundingVolume@RTriMesh_t@@QBEABVBVolume_t@@XZ	public: class BVolume_t const & __thiscall RTriMesh_t::GetBoundingVolume(void) const
+194	0x04F898	.text	DisplaySystem.dll	?GetBoundingVolume@SimpleMesh@@QAEPBVBVolume_t@@XZ	public: class BVolume_t const * __thiscall SimpleMesh::GetBoundingVolume(void)
+195	0x0419BD	.text	DisplaySystem.dll	?GetBufferSize@Randy_t@@QAEXAAI0@Z	public: void __thiscall Randy_t::GetBufferSize(unsigned int &, unsigned int &)
+196	0x04726B	.text		?GetCATLightDirection@RandyShadowlandsData_s@@SAABVVector3_t@@XZ	public: static class Vector3_t const & __cdecl RandyShadowlandsData_s::GetCATLightDirection(void)
+197	0x04725E	.text		?GetCATLightIntensity@RandyShadowlandsData_s@@SAMXZ	public: static float __cdecl RandyShadowlandsData_s::GetCATLightIntensity(void)
+198	0x04717D	.text		?GetCATLightMatrix@RandyShadowlandsData_s@@SAABVTMatrix4_t@@XZ	public: static class TMatrix4_t const & __cdecl RandyShadowlandsData_s::GetCATLightMatrix(void)
+199	0x047265	.text		?GetCATLightTexture@RandyShadowlandsData_s@@SAPAVRTexture_t@@XZ	public: static class RTexture_t * __cdecl RandyShadowlandsData_s::GetCATLightTexture(void)
+200	0x011D3F	.text		?GetColSphere@CATGroup_t@@QBEABUCATColSphere_t@@H@Z	public: struct CATColSphere_t const & __thiscall CATGroup_t::GetColSphere(int) const
+201	0x011D3B	.text		?GetColSphereCnt@CATGroup_t@@QBEHXZ	public: int __thiscall CATGroup_t::GetColSphereCnt(void) const
+202	0x0418EE	.text		?GetDDSurface@Randy_t@@QBEPAVsurface_t@@XZ	public: class surface_t * __thiscall Randy_t::GetDDSurface(void) const
+203	0x047693	.text	DisplaySystem.dll	?GetDefault@RTexture_t@@SAPAV1@XZ	public: static class RTexture_t * __cdecl RTexture_t::GetDefault(void)
+204	0x043F0C	.text	DisplaySystem.dll	?GetDevices@Randy_t@@SAXAAV?$vector@UDeviceDesc_t@Randy_t@@V?$allocator@UDeviceDesc_t@Randy_t@@@std@@@std@@@Z	public: static void __cdecl Randy_t::GetDevices(class std::vector<struct Randy_t::DeviceDesc_t, class std::allocator<struct Randy_t::DeviceDesc_t>> &)
+205	0x0115F4	.text	DisplaySystem.dll,FXS.dll	?GetElementOffset@VertexBuffer_c@@QBEII@Z	public: unsigned int __thiscall VertexBuffer_c::GetElementOffset(unsigned int) const
+206	0x040AFB	.text	DisplaySystem.dll	?GetEnvTexture@RMaterial_t@@QBEPAVRTexture_t@@XZ	public: class RTexture_t * __thiscall RMaterial_t::GetEnvTexture(void) const
+207	0x01D615	.text	DisplaySystem.dll	?GetErrorNo@DXError@fun@@UBEJXZ	public: virtual long __thiscall fun::DXError::GetErrorNo(void) const
+208	0x01E51A	.text	DisplaySystem.dll	?GetErrorString@DXError@fun@@UBE?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ	public: virtual class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> __thiscall fun::DXError::GetErrorString(void) const
+209	0x01D60D	.text	DisplaySystem.dll	?GetFilename@DXError@fun@@UBEABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ	public: virtual class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const & __thiscall fun::DXError::GetFilename(void) const
+210	0x0115FF	.text		?GetFormat@VertexBuffer_c@@QBEIXZ	public: unsigned int __thiscall VertexBuffer_c::GetFormat(void) const
+211	0x01160B	.text	DisplaySystem.dll,FXS.dll	?GetFormatSize@VertexBuffer_c@@SAII@Z	public: static unsigned int __cdecl VertexBuffer_c::GetFormatSize(unsigned int)
+212	0x047245	.text		?GetGroundLightDirection@RandyShadowlandsData_s@@SAABVVector3_t@@XZ	public: static class Vector3_t const & __cdecl RandyShadowlandsData_s::GetGroundLightDirection(void)
+213	0x047238	.text	DisplaySystem.dll	?GetGroundLightIntensity@RandyShadowlandsData_s@@SAMXZ	public: static float __cdecl RandyShadowlandsData_s::GetGroundLightIntensity(void)
+214	0x04706D	.text	DisplaySystem.dll	?GetGroundLightMatrix@RandyShadowlandsData_s@@SAABVTMatrix4_t@@XZ	public: static class TMatrix4_t const & __cdecl RandyShadowlandsData_s::GetGroundLightMatrix(void)
+215	0x04723F	.text	DisplaySystem.dll	?GetGroundLightTexture@RandyShadowlandsData_s@@SAPAVRTexture_t@@XZ	public: static class RTexture_t * __cdecl RandyShadowlandsData_s::GetGroundLightTexture(void)
+216	0x025E22	.text	DisplaySystem.dll	?GetGroupName@RenderStats_t@@QBEPBDE@Z	public: char const * __thiscall RenderStats_t::GetGroupName(unsigned char) const
+217	0x03EC30	.text	DisplaySystem.dll	?GetHeight@HMOccluder_t@@QBEMABVVector3_t@@@Z	public: float __thiscall HMOccluder_t::GetHeight(class Vector3_t const &) const
+218	0x047633	.text	DisplaySystem.dll,GUI.dll	?GetHeight@RTexture_t@@QBEGXZ	public: unsigned short __thiscall RTexture_t::GetHeight(void) const
+219	0x01149E	.text		?GetImpl@VertexBuffer_c@@QBEPAVVertexBufferImpl_c@@XZ	public: class VertexBufferImpl_c * __thiscall VertexBuffer_c::GetImpl(void) const
+220	0x01B69D	.text		?GetIndexCount@Triangle@@SAIXZ	public: static unsigned int __cdecl Triangle::GetIndexCount(void)
+221	0x07388C	.text		?GetIndices@Triangle@@QBEPBGXZ	public: unsigned short const * __thiscall Triangle::GetIndices(void) const
+222	0x020CF7	.text	DisplaySystem.dll	?GetInfo@render_t@@QAEXKPAXK@Z	public: void __thiscall render_t::GetInfo(unsigned long, void *, unsigned long)
+223	0x01D611	.text	DisplaySystem.dll	?GetLineNo@DXError@fun@@UBEHXZ	public: virtual int __thiscall fun::DXError::GetLineNo(void) const
+224	0x024D09	.text	DisplaySystem.dll	?GetMaterial@StateBlob_c@@QAEPAXXZ	public: void * __thiscall StateBlob_c::GetMaterial(void)
+225	0x05622A	.text	DisplaySystem.dll	?GetMaterialIndex@RCATMesh_t@@QBEHPBD@Z	public: int __thiscall RCATMesh_t::GetMaterialIndex(char const *) const
+226	0x041CB5	.text	DisplaySystem.dll	?GetMemory@Randy_t@@QBE_NAAI0@Z	public: bool __thiscall Randy_t::GetMemory(unsigned int &, unsigned int &) const
+227	0x028B1C	.text		?GetMilliSec@Timer@@QBEMXZ	public: float __thiscall Timer::GetMilliSec(void) const
+228	0x046277	.text	DisplaySystem.dll	?GetName@RResource_t@@QBEPBDXZ	public: char const * __thiscall RResource_t::GetName(void) const
+229	0x04900C	.text	DisplaySystem.dll	?GetName@RTriMesh_t@@UBEPBDXZ	public: virtual char const * __thiscall RTriMesh_t::GetName(void) const
+230	0x025E2A	.text	DisplaySystem.dll	?GetNameName@RenderStats_t@@QBEPBDE@Z	public: char const * __thiscall RenderStats_t::GetNameName(unsigned char) const
+231	0x011B57	.text		?GetNeighbour@CATTriPolyList_t@@ABEHHE@Z	private: int __thiscall CATTriPolyList_t::GetNeighbour(int, unsigned char) const
+232	0x04198A	.text	DisplaySystem.dll	?GetNumAlphaBits@Randy_t@@QBEIXZ	public: unsigned int __thiscall Randy_t::GetNumAlphaBits(void) const
+233	0x041984	.text	DisplaySystem.dll	?GetNumColorBits@Randy_t@@QBEIXZ	public: unsigned int __thiscall Randy_t::GetNumColorBits(void) const
+234	0x041993	.text	DisplaySystem.dll	?GetNumStencilBits@Randy_t@@QBEIXZ	public: unsigned int __thiscall Randy_t::GetNumStencilBits(void) const
+235	0x024FF1	.text	DisplaySystem.dll	?GetNumTransformStates@StateBlob_c@@QAEIXZ	public: unsigned int __thiscall StateBlob_c::GetNumTransformStates(void)
+236	0x0115E8	.text		?GetNumVertices@VertexBuffer_c@@QBEIXZ	public: unsigned int __thiscall VertexBuffer_c::GetNumVertices(void) const
+237	0x04198D	.text	DisplaySystem.dll	?GetNumZBufferBits@Randy_t@@QBEIXZ	public: unsigned int __thiscall Randy_t::GetNumZBufferBits(void) const
+238	0x016682	.text		?GetOriginator@DummyConnector@@UBEPAVRRefFrame_t@@XZ	public: virtual class RRefFrame_t * __thiscall DummyConnector::GetOriginator(void) const
+239	0x01667E	.text		?GetOriginator@RRefFrameConnector@@UBEPAVRRefFrame_t@@XZ	public: virtual class RRefFrame_t * __thiscall RRefFrameConnector::GetOriginator(void) const
+240	0x047638	.text	DisplaySystem.dll	?GetPitch@RTexture_t@@QBEIXZ	public: unsigned int __thiscall RTexture_t::GetPitch(void) const
+241	0x02414A	.text	DisplaySystem.dll	?GetPixelFormat@render_t@@QAEXPAUIDirectDrawSurface7@@PAU_DDPIXELFORMAT@@@Z	public: void __thiscall render_t::GetPixelFormat(struct IDirectDrawSurface7 *, struct _DDPIXELFORMAT *)
+242	0x011A8C	.text		?GetRenderTarget@Randy_t@@SAPAVRenderTarget_t@@H@Z	public: static class RenderTarget_t * __cdecl Randy_t::GetRenderTarget(int)
+243	0x024D1A	.text	DisplaySystem.dll	?GetRenderTarget@StateBlob_c@@QAEIXZ	public: unsigned int __thiscall StateBlob_c::GetRenderTarget(void)
+244	0x028AE1	.text	DisplaySystem.dll	?GetSec@Timer@@QBEMXZ	public: float __thiscall Timer::GetSec(void) const
+245	0x04E7EF	.text	DisplaySystem.dll	?GetSimpleMeshArray@RVisualData_t@@QAEAAV?$vector@PAVSimpleMesh@@V?$allocator@PAVSimpleMesh@@@std@@@std@@XZ	public: class std::vector<class SimpleMesh *, class std::allocator<class SimpleMesh *>> & __thiscall RVisualData_t::GetSimpleMeshArray(void)
+246	0x04E7EB	.text	DisplaySystem.dll	?GetSimpleMeshArray@RVisualData_t@@QBEABV?$vector@PAVSimpleMesh@@V?$allocator@PAVSimpleMesh@@@std@@@std@@XZ	public: class std::vector<class SimpleMesh *, class std::allocator<class SimpleMesh *>> const & __thiscall RVisualData_t::GetSimpleMeshArray(void) const
+247	0x011605	.text		?GetSize@VertexBuffer_c@@QBEIXZ	public: unsigned int __thiscall VertexBuffer_c::GetSize(void) const
+248	0x047258	.text		?GetStatelLightDirection@RandyShadowlandsData_s@@SAABVVector3_t@@XZ	public: static class Vector3_t const & __cdecl RandyShadowlandsData_s::GetStatelLightDirection(void)
+249	0x04724B	.text		?GetStatelLightIntensity@RandyShadowlandsData_s@@SAMXZ	public: static float __cdecl RandyShadowlandsData_s::GetStatelLightIntensity(void)
+250	0x0470F5	.text		?GetStatelLightMatrix@RandyShadowlandsData_s@@SAABVTMatrix4_t@@XZ	public: static class TMatrix4_t const & __cdecl RandyShadowlandsData_s::GetStatelLightMatrix(void)
+251	0x047252	.text		?GetStatelLightTexture@RandyShadowlandsData_s@@SAPAVRTexture_t@@XZ	public: static class RTexture_t * __cdecl RandyShadowlandsData_s::GetStatelLightTexture(void)
+252	0x0115EE	.text	FXS.dll	?GetStride@VertexBuffer_c@@QBEIXZ	public: unsigned int __thiscall VertexBuffer_c::GetStride(void) const
+253	0x05628C	.text	DisplaySystem.dll	?GetSubstMaterial@RCATMesh_t@@QBEPAVRMaterial_t@@H@Z	public: class RMaterial_t * __thiscall RCATMesh_t::GetSubstMaterial(int) const
+254	0x0261CD	.text		?GetSurfaceDesc@surface_t@@QAEPAU_DDSURFACEDESC2@@XZ	public: struct _DDSURFACEDESC2 * __thiscall surface_t::GetSurfaceDesc(void)
+255	0x026227	.text	DisplaySystem.dll	?GetSurfacePointer@surface_t@@QAEPAPAUIDirectDrawSurface7@@XZ	public: struct IDirectDrawSurface7 ** __thiscall surface_t::GetSurfacePointer(void)
+256	0x040ADF	.text	DisplaySystem.dll	?GetTexture@RMaterial_t@@QBEPAVRTexture_t@@E@Z	public: class RTexture_t * __thiscall RMaterial_t::GetTexture(unsigned char) const
+257	0x024EEB	.text	DisplaySystem.dll	?GetTexture@StateBlob_c@@QAEPAVsurface_t@@I@Z	public: class surface_t * __thiscall StateBlob_c::GetTexture(unsigned int)
+258	0x0474D7	.text	DisplaySystem.dll	?GetTextureFormat@RTexture_t@@QBE?AW4TextureFormat_e@1@XZ	public: enum RTexture_t::TextureFormat_e __thiscall RTexture_t::GetTextureFormat(void) const
+259	0x024EAF	.text	DisplaySystem.dll	?GetTextureName@StateBlob_c@@QAEPBDI@Z	public: char const * __thiscall StateBlob_c::GetTextureName(unsigned int)
+260	0x047730	.text	DisplaySystem.dll	?GetTextureSize@RTexture_t@@QBEIXZ	public: unsigned int __thiscall RTexture_t::GetTextureSize(void) const
+261	0x04199D	.text	DisplaySystem.dll	?GetTextureStageCount@Randy_t@@QBEGXZ	public: unsigned short __thiscall Randy_t::GetTextureStageCount(void) const
+262	0x047304	.text	DisplaySystem.dll	?GetTotalPinkTextureCount@RTexture_t@@SAIXZ	public: static unsigned int __cdecl RTexture_t::GetTotalPinkTextureCount(void)
+263	0x052C06	.text		?GetTotalTriangleCount@CATGroup_t@@QBEIXZ	public: unsigned int __thiscall CATGroup_t::GetTotalTriangleCount(void) const
+264	0x052BEE	.text		?GetTotalVertexCount@CATGroup_t@@QBEIXZ	public: unsigned int __thiscall CATGroup_t::GetTotalVertexCount(void) const
+265	0x052CDD	.text	Gamecode.dll	?GetTotalVertexCount@CATMesh_t@@QBEIXZ	public: unsigned int __thiscall CATMesh_t::GetTotalVertexCount(void) const
+266	0x024FFE	.text	DisplaySystem.dll	?GetTransformState@StateBlob_c@@QAEPAXI@Z	public: void * __thiscall StateBlob_c::GetTransformState(unsigned int)
+267	0x02AB22	.text		?GetTransformationMatrix@RCamera_t@@QBEXPAVTMatrix4_t@@@Z	public: void __thiscall RCamera_t::GetTransformationMatrix(class TMatrix4_t *) const
+268	0x011D63	.text		?GetTriPolyList@CATGroup_t@@QBEABUCATTriPolyList_t@@H@Z	public: struct CATTriPolyList_t const & __thiscall CATGroup_t::GetTriPolyList(int) const
+269	0x011D5F	.text		?GetTriPolyListCnt@CATGroup_t@@QBEHXZ	public: int __thiscall CATGroup_t::GetTriPolyListCnt(void) const
+270	0x011D2B	.text		?GetTriVertex@CATTriPolyList_t@@QBEABUCATTriVertex_t@@H@Z	public: struct CATTriVertex_t const & __thiscall CATTriPolyList_t::GetTriVertex(int) const
+271	0x011D27	.text		?GetTriVertexCnt@CATTriPolyList_t@@QBEHXZ	public: int __thiscall CATTriPolyList_t::GetTriVertexCnt(void) const
+272	0x04E7FA	.text	DisplaySystem.dll	?GetTriangleCount@SimpleMesh@@QBEIXZ	public: unsigned int __thiscall SimpleMesh::GetTriangleCount(void) const
+273	0x04ED88	.text	DisplaySystem.dll	?GetTriangleIndices@SimpleMesh@@QBEXPAV?$vector@GV?$allocator@G@std@@@std@@@Z	public: void __thiscall SimpleMesh::GetTriangleIndices(class std::vector<unsigned short, class std::allocator<unsigned short>> *) const
+274	0x04ED3E	.text		?GetTriangleIndices@SimpleMesh@@QBEXPAV?$vector@IV?$allocator@I@std@@@std@@@Z	public: void __thiscall SimpleMesh::GetTriangleIndices(class std::vector<unsigned int, class std::allocator<unsigned int>> *) const
+275	0x01FD26	.text		?GetTriangleList@TriList@@QBEABV?$vector@GV?$allocator@G@std@@@std@@XZ	public: class std::vector<unsigned short, class std::allocator<unsigned short>> const & __thiscall TriList::GetTriangleList(void) const
+276	0x04F369	.text		?GetTriangles@SimpleMesh@@QBEXAAV?$vector@VVector3_t@@V?$allocator@VVector3_t@@@std@@@std@@@Z	public: void __thiscall SimpleMesh::GetTriangles(class std::vector<class Vector3_t, class std::allocator<class Vector3_t>> &) const
+277	0x0141C5	.text	DisplaySystem.dll,GUI.dll	?GetVB@DynamicVB_c@@QAEPAVVertexBuffer_c@@I@Z	public: class VertexBuffer_c * __thiscall DynamicVB_c::GetVB(unsigned int)
+278	0x04E792	.text		?GetVertexBuffer@SimpleMesh@@QBEPAVVertexBuffer_c@@XZ	public: class VertexBuffer_c * __thiscall SimpleMesh::GetVertexBuffer(void) const
+279	0x04E7AB	.text		?GetVertexBufferFormat@SimpleMesh@@QBEIXZ	public: unsigned int __thiscall SimpleMesh::GetVertexBufferFormat(void) const
+280	0x04E7F3	.text	DisplaySystem.dll	?GetVertexCount@SimpleMesh@@QBEIXZ	public: unsigned int __thiscall SimpleMesh::GetVertexCount(void) const
+281	0x052B77	.text		?GetVertexIndex@CATTriPolyList_t@@AAEHHE@Z	private: int __thiscall CATTriPolyList_t::GetVertexIndex(int, unsigned char)
+282	0x04F779	.text	DisplaySystem.dll	?GetVertexNormals@SimpleMesh@@QBEXAAV?$vector@VVector3_t@@V?$allocator@VVector3_t@@@std@@@std@@@Z	public: void __thiscall SimpleMesh::GetVertexNormals(class std::vector<class Vector3_t, class std::allocator<class Vector3_t>> &) const
+283	0x04F7FC	.text		?GetVertexPositions@RVisualData_t@@QBEXAAV?$vector@VVector3_t@@V?$allocator@VVector3_t@@@std@@@std@@@Z	public: void __thiscall RVisualData_t::GetVertexPositions(class std::vector<class Vector3_t, class std::allocator<class Vector3_t>> &) const
+284	0x04F723	.text	DisplaySystem.dll	?GetVertexPositions@SimpleMesh@@QBEXAAV?$vector@VVector3_t@@V?$allocator@VVector3_t@@@std@@@std@@@Z	public: void __thiscall SimpleMesh::GetVertexPositions(class std::vector<class Vector3_t, class std::allocator<class Vector3_t>> &) const
+285	0x04F0EB	.text	DisplaySystem.dll	?GetVertexUVCoords@SimpleMesh@@QBEXAAV?$vector@MV?$allocator@M@std@@@std@@@Z	public: void __thiscall SimpleMesh::GetVertexUVCoords(class std::vector<float, class std::allocator<float>> &) const
+286	0x014177	.text	DisplaySystem.dll,GUI.dll	?GetVertices@DynamicVB_c@@QAEIIIIPAPAX@Z	public: unsigned int __thiscall DynamicVB_c::GetVertices(unsigned int, unsigned int, unsigned int, void **)
+287	0x02AB00	.text	DisplaySystem.dll	?GetViewMatrix@RCamera_t@@QBEXPAVTMatrix4_t@@@Z	public: void __thiscall RCamera_t::GetViewMatrix(class TMatrix4_t *) const
+288	0x02A883	.text	DisplaySystem.dll	?GetViewPlaneWindow@RCamera_t@@QBEXAAM000@Z	public: void __thiscall RCamera_t::GetViewPlaneWindow(float &, float &, float &, float &) const
+289	0x0234D8	.text	DisplaySystem.dll	?GetViewport@render_t@@QAEXPAU_D3DVIEWPORT7@@@Z	public: void __thiscall render_t::GetViewport(struct _D3DVIEWPORT7 *)
+290	0x04762E	.text	DisplaySystem.dll,GUI.dll	?GetWidth@RTexture_t@@QBEGXZ	public: unsigned short __thiscall RTexture_t::GetWidth(void) const
+291	0x045712	.text	DisplaySystem.dll,Gamecode.dll	?GetWorldMatrix@RRefFrame_t@@QBEABVTMatrix4_t@@XZ	public: class TMatrix4_t const & __thiscall RRefFrame_t::GetWorldMatrix(void) const
+292	0x054D4F	.text	DisplaySystem.dll	?HasAttractor@CATRender_t@@QBE_NPBD@Z	public: bool __thiscall CATRender_t::HasAttractor(char const *) const
+293	0x029E51	.text	DisplaySystem.dll	?Init@BVolume_t@@IAEXPBVVector3_t@@II@Z	protected: void __thiscall BVolume_t::Init(class Vector3_t const *, unsigned int, unsigned int)
+294	0x0199FF	.text	DisplaySystem.dll	?Init@Color_t@@QAEXABVRGB_t@@M@Z	public: void __thiscall Color_t::Init(class RGB_t const &, float)
+295	0x01999D	.text		?Init@Color_t@@QAEXEEEE@Z	public: void __thiscall Color_t::Init(unsigned char, unsigned char, unsigned char, unsigned char)
+296	0x0199BB	.text	DisplaySystem.dll,FXS.dll	?Init@Color_t@@QAEXMMMM@Z	public: void __thiscall Color_t::Init(float, float, float, float)
+297	0x014D45	.text		?Init@LBitmap_t@@QAEXPBEII@Z	public: void __thiscall LBitmap_t::Init(unsigned char const *, unsigned int, unsigned int)
+298	0x04905C	.text	DisplaySystem.dll	?Init@RTriMesh_t@@QAEXPBVRTriMeshData_t@@@Z	public: void __thiscall RTriMesh_t::Init(class RTriMeshData_t const *)
+299	0x0409C6	.text	DisplaySystem.dll	?InitD3DMaterial@RMaterial_t@@QBEXAAU_D3DMATERIAL7@@@Z	public: void __thiscall RMaterial_t::InitD3DMaterial(struct _D3DMATERIAL7 &) const
+300	0x013482	.text	DisplaySystem.dll	?InitVertexColor@RSprite@@IAEXXZ	protected: void __thiscall RSprite::InitVertexColor(void)
+301	0x0141FE	.text	DisplaySystem.dll	?Initialize@DynamicVB_c@@SAXXZ	public: static void __cdecl DynamicVB_c::Initialize(void)
+302	0x043F20	.text	DisplaySystem.dll	?Initialize@Randy_t@@SAPAV1@GGAAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PAU_GUID@@1_NPAUHWND__@@W4BufferFormat_e@1@@Z	public: static class Randy_t * __cdecl Randy_t::Initialize(unsigned short, unsigned short, class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> &, struct _GUID *, struct _GUID *, bool, struct HWND__*, enum Randy_t::BufferFormat_e)
+303	0x04379F	.text		?Initialize@Randy_t@@SAPAV1@KKPAUHWND__@@0KKKKKKKKAAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z	public: static class Randy_t * __cdecl Randy_t::Initialize(unsigned long, unsigned long, struct HWND__*, struct HWND__*, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> &)
+304	0x029F97	.text		?Instantiate@BVolume_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class BVolume_t * __cdecl BVolume_t::Instantiate(class fun::ObjectArchive_c *)
+305	0x02EF5F	.text		?Instantiate@DefaultMaterial_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class DefaultMaterial_t * __cdecl DefaultMaterial_t::Instantiate(class fun::ObjectArchive_c *)
+306	0x0156C3	.text		?Instantiate@FAFAnim_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class FAFAnim_t * __cdecl FAFAnim_t::Instantiate(class fun::ObjectArchive_c *)
+307	0x016743	.text		?Instantiate@FAFAttractor_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class FAFAttractor_t * __cdecl FAFAttractor_t::Instantiate(class fun::ObjectArchive_c *)
+308	0x016946	.text		?Instantiate@FAFCollisionBox_c@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class FAFCollisionBox_c * __cdecl FAFCollisionBox_c::Instantiate(class fun::ObjectArchive_c *)
+309	0x016B30	.text		?Instantiate@FAFCollisionSphere_c@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class FAFCollisionSphere_c * __cdecl FAFCollisionSphere_c::Instantiate(class fun::ObjectArchive_c *)
+310	0x016D07	.text		?Instantiate@FAFDirectionalLight_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class FAFDirectionalLight_t * __cdecl FAFDirectionalLight_t::Instantiate(class fun::ObjectArchive_c *)
+311	0x017D61	.text		?Instantiate@FAFMaterial_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class FAFMaterial_t * __cdecl FAFMaterial_t::Instantiate(class fun::ObjectArchive_c *)
+312	0x016D57	.text		?Instantiate@FAFPointLight_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class FAFPointLight_t * __cdecl FAFPointLight_t::Instantiate(class fun::ObjectArchive_c *)
+313	0x016DB3	.text		?Instantiate@FAFSpotLight_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class FAFSpotLight_t * __cdecl FAFSpotLight_t::Instantiate(class fun::ObjectArchive_c *)
+314	0x017EC8	.text		?Instantiate@FAFTexture_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class FAFTexture_t * __cdecl FAFTexture_t::Instantiate(class fun::ObjectArchive_c *)
+315	0x01716A	.text		?Instantiate@FAFTriMeshData_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class FAFTriMeshData_t * __cdecl FAFTriMeshData_t::Instantiate(class fun::ObjectArchive_c *)
+316	0x02ADBF	.text		?Instantiate@RCamera_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RCamera_t * __cdecl RCamera_t::Instantiate(class fun::ObjectArchive_c *)
+317	0x02F870	.text		?Instantiate@RDeltaState@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RDeltaState * __cdecl RDeltaState::Instantiate(class fun::ObjectArchive_c *)
+318	0x012A4A	.text		?Instantiate@RGrid@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RGrid * __cdecl RGrid::Instantiate(class fun::ObjectArchive_c *)
+319	0x03FF26	.text		?Instantiate@RLight_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RLight_t * __cdecl RLight_t::Instantiate(class fun::ObjectArchive_c *)
+320	0x0414A7	.text		?Instantiate@RMaterial_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RMaterial_t * __cdecl RMaterial_t::Instantiate(class fun::ObjectArchive_c *)
+321	0x02BDA7	.text		?Instantiate@RRefFrameConnector@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RRefFrameConnector * __cdecl RRefFrameConnector::Instantiate(class fun::ObjectArchive_c *)
+322	0x045C4D	.text		?Instantiate@RRefFrame_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RRefFrame_t * __cdecl RRefFrame_t::Instantiate(class fun::ObjectArchive_c *)
+323	0x046499	.text		?Instantiate@RResource_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RResource_t * __cdecl RResource_t::Instantiate(class fun::ObjectArchive_c *)
+324	0x046D78	.text		?Instantiate@RShadow@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RShadow * __cdecl RShadow::Instantiate(class fun::ObjectArchive_c *)
+325	0x013A7A	.text		?Instantiate@RSprite@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RSprite * __cdecl RSprite::Instantiate(class fun::ObjectArchive_c *)
+326	0x013540	.text		?Instantiate@RSpriteAnim@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RSpriteAnim * __cdecl RSpriteAnim::Instantiate(class fun::ObjectArchive_c *)
+327	0x047E59	.text		?Instantiate@RTexture_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RTexture_t * __cdecl RTexture_t::Instantiate(class fun::ObjectArchive_c *)
+328	0x04AF1A	.text		?Instantiate@RTriMeshData_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RTriMeshData_t * __cdecl RTriMeshData_t::Instantiate(class fun::ObjectArchive_c *)
+329	0x049502	.text		?Instantiate@RTriMesh_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RTriMesh_t * __cdecl RTriMesh_t::Instantiate(class fun::ObjectArchive_c *)
+330	0x04F334	.text		?Instantiate@RVisualData_t@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class RVisualData_t * __cdecl RVisualData_t::Instantiate(class fun::ObjectArchive_c *)
+331	0x04EB53	.text		?Instantiate@SimpleMesh@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class SimpleMesh * __cdecl SimpleMesh::Instantiate(class fun::ObjectArchive_c *)
+332	0x019289	.text		?Instantiate@TextureStreamCreator@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class TextureStreamCreator * __cdecl TextureStreamCreator::Instantiate(class fun::ObjectArchive_c *)
+333	0x01FF60	.text		?Instantiate@TriList@@SAPAV1@PAVObjectArchive_c@fun@@@Z	public: static class TriList * __cdecl TriList::Instantiate(class fun::ObjectArchive_c *)
+334	0x019A7A	.text	DisplaySystem.dll,Gamecode.dll	?Interpolate@Color_t@@QAEXABV1@0M@Z	public: void __thiscall Color_t::Interpolate(class Color_t const &, class Color_t const &, float)
+335	0x040A9C	.text		?IsAlphaUsedAsTransparency@RMaterial_t@@QBE_NXZ	public: bool __thiscall RMaterial_t::IsAlphaUsedAsTransparency(void) const
+336	0x0472D3	.text		?IsCATLightUsed@RandyShadowlandsData_s@@SA_NXZ	public: static bool __cdecl RandyShadowlandsData_s::IsCATLightUsed(void)
+337	0x0475BB	.text		?IsCompressed@RTexture_t@@QBE_NXZ	public: bool __thiscall RTexture_t::IsCompressed(void) const
+338	0x041DC0	.text	DisplaySystem.dll,FXS.dll	?IsDeviceLost@Randy_t@@QBE_NXZ	public: bool __thiscall Randy_t::IsDeviceLost(void) const
+339	0x02F13A	.text		?IsEmpty@RDeltaState@@QBE_NXZ	public: bool __thiscall RDeltaState::IsEmpty(void) const
+340	0x047271	.text	DisplaySystem.dll	?IsGroundLightUsed@RandyShadowlandsData_s@@SA_NXZ	public: static bool __cdecl RandyShadowlandsData_s::IsGroundLightUsed(void)
+341	0x056786	.text	DisplaySystem.dll	?IsLineIntersecting@RCATMesh_t@@QBE_NABVVector3_t@@0PAM_N@Z	public: bool __thiscall RCATMesh_t::IsLineIntersecting(class Vector3_t const &, class Vector3_t const &, float *, bool) const
+342	0x049867	.text	DisplaySystem.dll	?IsRayIntersecting@RTriMesh_t@@UBE_NABVVector3_t@@0PAM_N@Z	public: virtual bool __thiscall RTriMesh_t::IsRayIntersecting(class Vector3_t const &, class Vector3_t const &, float *, bool) const
+343	0x04F407	.text		?IsRayIntersecting@SimpleMesh@@QBE_NABVVector3_t@@0PAM_N@Z	public: bool __thiscall SimpleMesh::IsRayIntersecting(class Vector3_t const &, class Vector3_t const &, float *, bool) const
+344	0x0472A2	.text		?IsStatelLightUsed@RandyShadowlandsData_s@@SA_NXZ	public: static bool __cdecl RandyShadowlandsData_s::IsStatelLightUsed(void)
+345	0x011AAF	.text		?IsTransparent@RMaterial_t@@QBE_NXZ	public: bool __thiscall RMaterial_t::IsTransparent(void) const
+346	0x04EBC4	.text	DisplaySystem.dll	?IsTransparent@RVisualData_t@@QBE_NXZ	public: bool __thiscall RVisualData_t::IsTransparent(void) const
+347	0x040AFF	.text		?IsTwoSided@RMaterial_t@@QBE_NXZ	public: bool __thiscall RMaterial_t::IsTwoSided(void) const
+348	0x0151E5	.text	DisplaySystem.dll	?Load@LBitmap_t@@SAPAV1@PAVPositionIO_t@fun@@PBDW4CreationFlags_e@1@@Z	public: static class LBitmap_t * __cdecl LBitmap_t::Load(class fun::PositionIO_t *, char const *, enum LBitmap_t::CreationFlags_e)
+349	0x0473A2	.text	DisplaySystem.dll	?Load@RTexture_t@@QAE_NABV1@@Z	public: bool __thiscall RTexture_t::Load(class RTexture_t const &)
+350	0x04734D	.text	DisplaySystem.dll,GUI.dll	?Load@RTexture_t@@QAE_NPBXW4TextureFormat_e@1@IPAUtagRECT@@PAX_N@Z	public: bool __thiscall RTexture_t::Load(void const *, enum RTexture_t::TextureFormat_e, unsigned int, struct tagRECT *, void *, bool)
+351	0x0115CB	.text	DisplaySystem.dll,FXS.dll	?Lock@VertexBuffer_c@@QAEPAXII@Z	public: void * __thiscall VertexBuffer_c::Lock(unsigned int, unsigned int)
+352	0x0476C8	.text	DisplaySystem.dll	?LockRTexture@RTexture_t@@QAE_NAAPAXW4TextureLockType_e@1@E@Z	public: bool __thiscall RTexture_t::LockRTexture(void *&, enum RTexture_t::TextureLockType_e, unsigned char)
+353	0x023F58	.text	DisplaySystem.dll	?LockTexture@render_t@@QAEXPAUIDirectDrawSurface7@@PAUtagRECT@@PAU_DDSURFACEDESC2@@KPAX@Z	public: void __thiscall render_t::LockTexture(struct IDirectDrawSurface7 *, struct tagRECT *, struct _DDSURFACEDESC2 *, unsigned long, void *)
+354	0x014E35	.text		?Make32Bit@LBitmap_t@@QAEXXZ	public: void __thiscall LBitmap_t::Make32Bit(void)
+355	0x04E8C2	.text	DisplaySystem.dll	?Mirror@SimpleMesh@@QAEXI@Z	public: void __thiscall SimpleMesh::Mirror(unsigned int)
+356	0x03E85B	.text	DisplaySystem.dll	?ModifyOcclusion@HMOccluder_t@@QAEXHMH@Z	public: void __thiscall HMOccluder_t::ModifyOcclusion(int, float, int)
+357	0x024CE2	.text	DisplaySystem.dll	?NeedTextures@StateBlob_c@@QAE_NXZ	public: bool __thiscall StateBlob_c::NeedTextures(void)
+358	0x041E99	.text	DisplaySystem.dll	?NeedsClearFix@Randy_t@@QBE_NXZ	public: bool __thiscall Randy_t::NeedsClearFix(void) const
+359	0x045289	.text	DisplaySystem.dll,GUI.dll,Gamecode.dll	?NextNode@@YAXAAPAVRRefFrame_t@@QBX@Z	void __cdecl NextNode(class RRefFrame_t *&, void const *const)
+360	0x0115DD	.text	DisplaySystem.dll,FXS.dll	?NextVertex@VertexBuffer_c@@QAEPAXPAX@Z	public: void * __thiscall VertexBuffer_c::NextVertex(void *)
+361	0x04BBCA	.text	DisplaySystem.dll	?Open@RViewPort_t@@QAE_NPA_N@Z	public: bool __thiscall RViewPort_t::Open(bool *)
+362	0x01FD25	.text		?Optimize@TriList@@QAEXXZ	public: void __thiscall TriList::Optimize(void)
+363	0x043319	.text	DisplaySystem.dll	?PopRenderTarget@Randy_t@@QAEXPAVRViewPort_t@@@Z	public: void __thiscall Randy_t::PopRenderTarget(class RViewPort_t *)
+364	0x03012C	.text	DisplaySystem.dll	?PreProcessPlayfield@HMOccluder_t@@QAEXH@Z	public: void __thiscall HMOccluder_t::PreProcessPlayfield(int)
+365	0x04721E	.text		?PriCheck@RandyShadowlandsData_s@@SA_NXZ	public: static bool __cdecl RandyShadowlandsData_s::PriCheck(void)
+366	0x055837	.text		?PrintDebug@CATStatus_t@@QAAXPBDZZ	public: void __cdecl CATStatus_t::PrintDebug(char const *, ...)
+367	0x055806	.text		?PrintError@CATStatus_t@@QAAXPBDZZ	public: void __cdecl CATStatus_t::PrintError(char const *, ...)
+368	0x055773	.text		?PrintStatus@CATStatus_t@@QAAXPBDZZ	public: void __cdecl CATStatus_t::PrintStatus(char const *, ...)
+369	0x0557A4	.text		?PrintWarningLevel1@CATStatus_t@@QAAXPBDZZ	public: void __cdecl CATStatus_t::PrintWarningLevel1(char const *, ...)
+370	0x0557D5	.text		?PrintWarningLevel2@CATStatus_t@@QAAXPBDZZ	public: void __cdecl CATStatus_t::PrintWarningLevel2(char const *, ...)
+371	0x044F79	.text	DisplaySystem.dll	?Process@RRefFrame_t@@UAEXXZ	public: virtual void __thiscall RRefFrame_t::Process(void)
+372	0x049554	.text	DisplaySystem.dll	?Process@RTriMesh_t@@UAEXXZ	public: virtual void __thiscall RTriMesh_t::Process(void)
+373	0x04BF39	.text	DisplaySystem.dll	?Process@RViewPort_t@@QAEXPAVRRefFrame_t@@@Z	public: void __thiscall RViewPort_t::Process(class RRefFrame_t *)
+374	0x04CC35	.text	DisplaySystem.dll,Gamecode.dll	?Process@RVisual_t@@UAEXXZ	public: virtual void __thiscall RVisual_t::Process(void)
+375	0x0577D3	.text	DisplaySystem.dll	?ProcessAttractorChilds@RCATMesh_t@@QAEXW4AttrUpdateMode_e@1@M@Z	public: void __thiscall RCATMesh_t::ProcessAttractorChilds(enum RCATMesh_t::AttrUpdateMode_e, float)
+376	0x024B25	.text	DisplaySystem.dll	?ProcessVertices@render_t@@QAEXPAVVertexBuffer_c@@KKK0KK@Z	public: void __thiscall render_t::ProcessVertices(class VertexBuffer_c *, unsigned long, unsigned long, unsigned long, class VertexBuffer_c *, unsigned long, unsigned long)
+377	0x043504	.text	DisplaySystem.dll	?PushRenderTarget@Randy_t@@QAE_NPAVRViewPort_t@@H@Z	public: bool __thiscall Randy_t::PushRenderTarget(class RViewPort_t *, int)
+378	0x04D84A	.text	DisplaySystem.dll	?Rasterize@RVisual_t@@IAEXAAVRViewPort_t@@QBVRVisualData_t@@_N_N@Z	protected: void __thiscall RVisual_t::Rasterize(class RViewPort_t &, class RVisualData_t const *const, bool, bool)
+379	0x04AA1C	.text		?ReadBMPFile24@@YAPAEPBDAAI1@Z	unsigned char * __cdecl ReadBMPFile24(char const *, unsigned int &, unsigned int &)
+380	0x04A925	.text		?ReadBMPFile@@YAPAEPBDAAI1@Z	unsigned char * __cdecl ReadBMPFile(char const *, unsigned int &, unsigned int &)
+381	0x04B95D	.text	DisplaySystem.dll,GUI.dll	?RealizeRenderStates@RViewPort_t@@QAEXXZ	public: void __thiscall RViewPort_t::RealizeRenderStates(void)
+382	0x05536C	.text	DisplaySystem.dll,Gamecode.dll	?RegisterVertexProcessCallback@CATRender_t@@QAE_NP6AXPBV1@IPBUCATTriVertex_t@@PAUCATVertex_t@@IPBGIIPAX@Z4@Z	public: bool __thiscall CATRender_t::RegisterVertexProcessCallback(void (__cdecl *)(class CATRender_t const *, unsigned int, struct CATTriVertex_t const *, struct CATVertex_t *, unsigned int, unsigned short const *, unsigned int, unsigned int, void *), void *)
+383	0x011632	.text	DisplaySystem.dll,FXS.dll	?Release@VertexBuffer_c@@QAEXXZ	public: void __thiscall VertexBuffer_c::Release(void)
+384	0x02622D	.text	DisplaySystem.dll	?ReleaseDXSurface@surface_t@@QAEIXZ	public: unsigned int __thiscall surface_t::ReleaseDXSurface(void)
+385	0x046224	.text	DisplaySystem.dll,GUI.dll,Gamecode.dll	?ReleaseRResource@RResource_t@@QBEXXZ	public: void __thiscall RResource_t::ReleaseRResource(void) const
+386	0x0474CC	.text	DisplaySystem.dll,GUI.dll,Gamecode.dll	?ReleaseRTexture@RTexture_t@@QBEXXZ	public: void __thiscall RTexture_t::ReleaseRTexture(void) const
+387	0x057E96	.text	DisplaySystem.dll	?RemoveAttractorChild@RCATMesh_t@@QAEXPBDPBVRRefFrame_t@@@Z	public: void __thiscall RCATMesh_t::RemoveAttractorChild(char const *, class RRefFrame_t const *)
+388	0x044F10	.text	DisplaySystem.dll,Gamecode.dll	?RemoveChild@RRefFrame_t@@UAEXPBV1@@Z	public: virtual void __thiscall RRefFrame_t::RemoveChild(class RRefFrame_t const *)
+389	0x049761	.text	DisplaySystem.dll	?Render@RTriMesh_t@@UAEXAAVRViewPort_t@@@Z	public: virtual void __thiscall RTriMesh_t::Render(class RViewPort_t &)
+390	0x04BFFF	.text	DisplaySystem.dll	?Render@RViewPort_t@@QAEXW4RenderList_e@@0W4RenderType_e@1@II@Z	public: void __thiscall RViewPort_t::Render(enum RenderList_e, enum RenderList_e, enum RViewPort_t::RenderType_e, unsigned int, unsigned int)
+391	0x04F154	.text	DisplaySystem.dll	?Render@SimpleMesh@@QBEXAAVRViewPort_t@@@Z	public: void __thiscall SimpleMesh::Render(class RViewPort_t &) const
+392	0x045F7A	.text	DisplaySystem.dll,Gamecode.dll	?RenderDebug@RRefFrame_t@@UAEXAAVRDebugViewPort@@_N@Z	public: virtual void __thiscall RRefFrame_t::RenderDebug(class RDebugViewPort &, bool)
+393	0x049A60	.text	DisplaySystem.dll	?RenderDebug@RTriMesh_t@@UAEXAAVRDebugViewPort@@_N@Z	public: virtual void __thiscall RTriMesh_t::RenderDebug(class RDebugViewPort &, bool)
+394	0x04934C	.text	DisplaySystem.dll	?RenderDepth@RTriMesh_t@@UAEXAAVRViewPort_t@@M@Z	public: virtual void __thiscall RTriMesh_t::RenderDepth(class RViewPort_t &, float)
+395	0x022C6E	.text	GUI.dll	?RenderLineList@render_t@@QAEXKPAXKK@Z	public: void __thiscall render_t::RenderLineList(unsigned long, void *, unsigned long, unsigned long)
+396	0x021FC8	.text		?RenderLineList@render_t@@QAEXKPAXKPAGKK@Z	public: void __thiscall render_t::RenderLineList(unsigned long, void *, unsigned long, unsigned short *, unsigned long, unsigned long)
+397	0x021AAA	.text	DisplaySystem.dll	?RenderLineList@render_t@@QAEXPAVVertexBuffer_c@@KKPAGKK@Z	public: void __thiscall render_t::RenderLineList(class VertexBuffer_c *, unsigned long, unsigned long, unsigned short *, unsigned long, unsigned long)
+398	0x0227B6	.text	FXS.dll	?RenderPointList@render_t@@QAEXPAVVertexBuffer_c@@KKK@Z	public: void __thiscall render_t::RenderPointList(class VertexBuffer_c *, unsigned long, unsigned long, unsigned long)
+399	0x04C4EA	.text	DisplaySystem.dll	?RenderRefraction@RViewPort_t@@QAEXW4RenderList_e@@0W4RenderType_e@1@II@Z	public: void __thiscall RViewPort_t::RenderRefraction(enum RenderList_e, enum RenderList_e, enum RViewPort_t::RenderType_e, unsigned int, unsigned int)
+400	0x048FBE	.text	DisplaySystem.dll	?RenderShadow@RTriMesh_t@@MAEXAAVRViewPort_t@@ABVRShadow@@@Z	protected: virtual void __thiscall RTriMesh_t::RenderShadow(class RViewPort_t &, class RShadow const &)
+401	0x04CABA	.text	DisplaySystem.dll,Gamecode.dll	?RenderShadow@RVisual_t@@MAEXAAVRViewPort_t@@ABVRShadow@@@Z	protected: virtual void __thiscall RVisual_t::RenderShadow(class RViewPort_t &, class RShadow const &)
+402	0x0230DF	.text	DisplaySystem.dll,GUI.dll	?RenderTriangleFan@render_t@@QAEXKPAXKK@Z	public: void __thiscall render_t::RenderTriangleFan(unsigned long, void *, unsigned long, unsigned long)
+403	0x02214F	.text	DisplaySystem.dll	?RenderTriangleFan@render_t@@QAEXKPAXKPAGKK@Z	public: void __thiscall render_t::RenderTriangleFan(unsigned long, void *, unsigned long, unsigned short *, unsigned long, unsigned long)
+404	0x021CE3	.text	DisplaySystem.dll	?RenderTriangleFan@render_t@@QAEXPAVVertexBuffer_c@@KKPAGKK@Z	public: void __thiscall render_t::RenderTriangleFan(class VertexBuffer_c *, unsigned long, unsigned long, unsigned short *, unsigned long, unsigned long)
+405	0x022AF3	.text	DisplaySystem.dll	?RenderTriangleList@render_t@@QAEXKPAXKK@Z	public: void __thiscall render_t::RenderTriangleList(unsigned long, void *, unsigned long, unsigned long)
+406	0x021E41	.text	DisplaySystem.dll	?RenderTriangleList@render_t@@QAEXKPAXKPAGKK@Z	public: void __thiscall render_t::RenderTriangleList(unsigned long, void *, unsigned long, unsigned short *, unsigned long, unsigned long)
+407	0x02256E	.text	DisplaySystem.dll	?RenderTriangleList@render_t@@QAEXPAVVertexBuffer_c@@KKK@Z	public: void __thiscall render_t::RenderTriangleList(class VertexBuffer_c *, unsigned long, unsigned long, unsigned long)
+408	0x021A88	.text	DisplaySystem.dll,GUI.dll	?RenderTriangleList@render_t@@QAEXPAVVertexBuffer_c@@KKPAGKK@Z	public: void __thiscall render_t::RenderTriangleList(class VertexBuffer_c *, unsigned long, unsigned long, unsigned short *, unsigned long, unsigned long)
+409	0x023276	.text	DisplaySystem.dll,GUI.dll	?RenderTriangleStrip@render_t@@QAEXKPAXKK@Z	public: void __thiscall render_t::RenderTriangleStrip(unsigned long, void *, unsigned long, unsigned long)
+410	0x02325A	.text	DisplaySystem.dll,FXS.dll	?RenderTriangleStrip@render_t@@QAEXPAVVertexBuffer_c@@KKK@Z	public: void __thiscall render_t::RenderTriangleStrip(class VertexBuffer_c *, unsigned long, unsigned long, unsigned long)
+411	0x021E1F	.text	DisplaySystem.dll	?RenderTriangleStrip@render_t@@QAEXPAVVertexBuffer_c@@KKPAGKK@Z	public: void __thiscall render_t::RenderTriangleStrip(class VertexBuffer_c *, unsigned long, unsigned long, unsigned short *, unsigned long, unsigned long)
+412	0x04D2D8	.text	DisplaySystem.dll	?RenderWithTransparency@RVisual_t@@QAEXAAVRViewPort_t@@PAVSimpleMesh@@@Z	public: void __thiscall RVisual_t::RenderWithTransparency(class RViewPort_t &, class SimpleMesh *)
+413	0x04BAAD	.text	DisplaySystem.dll	?Reposition@RViewPort_t@@QAEXII@Z	public: void __thiscall RViewPort_t::Reposition(unsigned int, unsigned int)
+414	0x01668B	.text		?RequestMatrix@DummyConnector@@UBEABVTMatrix4_t@@XZ	public: virtual class TMatrix4_t const & __thiscall DummyConnector::RequestMatrix(void) const
+415	0x02BD6A	.text		?RequestMatrix@RRefFrameConnector@@UBEABVTMatrix4_t@@XZ	public: virtual class TMatrix4_t const & __thiscall RRefFrameConnector::RequestMatrix(void) const
+416	0x014033	.text	DisplaySystem.dll	?Reset@DynamicVB_c@@QAEXXZ	public: void __thiscall DynamicVB_c::Reset(void)
+417	0x025E1B	.text	DisplaySystem.dll	?Reset@RenderStats_t@@QAEXXZ	public: void __thiscall RenderStats_t::Reset(void)
+418	0x024D1E	.text	DisplaySystem.dll,GUI.dll	?Reset@StateBlob_c@@QAEXXZ	public: void __thiscall StateBlob_c::Reset(void)
+419	0x04B724	.text	DisplaySystem.dll,GUI.dll	?ResetMaterial@RViewPort_t@@QAEXXZ	public: void __thiscall RViewPort_t::ResetMaterial(void)
+420	0x04BB4D	.text	DisplaySystem.dll	?Resize@RViewPort_t@@QAEXII_N@Z	public: void __thiscall RViewPort_t::Resize(unsigned int, unsigned int, bool)
+421	0x023DBC	.text	DisplaySystem.dll	?RestoreAllSurfaces@render_t@@QAEXXZ	public: void __thiscall render_t::RestoreAllSurfaces(void)
+422	0x0490CA	.text	DisplaySystem.dll	?RestoreData@RTriMesh_t@@UAEXXZ	public: virtual void __thiscall RTriMesh_t::RestoreData(void)
+423	0x04CC29	.text	DisplaySystem.dll,Gamecode.dll	?RestoreData@RVisual_t@@UAEXXZ	public: virtual void __thiscall RVisual_t::RestoreData(void)
+424	0x041E9F	.text	DisplaySystem.dll	?RestoreData@Randy_t@@QAEXXZ	public: void __thiscall Randy_t::RestoreData(void)
+425	0x02133F	.text	DisplaySystem.dll	?RestoreDisplayMode@render_t@@QAEXXZ	public: void __thiscall render_t::RestoreDisplayMode(void)
+426	0x04E7A3	.text		?RestoreHWBuffer@SimpleMesh@@QBEPAVVertexBuffer_c@@XZ	public: class VertexBuffer_c * __thiscall SimpleMesh::RestoreHWBuffer(void) const
+427	0x04CC06	.text	DisplaySystem.dll,Gamecode.dll	?RestoreStateChanges@RVisual_t@@UBEXAAVRViewPort_t@@@Z	public: virtual void __thiscall RVisual_t::RestoreStateChanges(class RViewPort_t &) const
+428	0x011B07	.text		?Reverse@Triangle@@QAEXXZ	public: void __thiscall Triangle::Reverse(void)
+429	0x014F53	.text		?Scale@LBitmap_t@@QAEXII@Z	public: void __thiscall LBitmap_t::Scale(unsigned int, unsigned int)
+430	0x025032	.text	DisplaySystem.dll,GUI.dll	?Set@StateBlob_c@@QAEXXZ	public: void __thiscall StateBlob_c::Set(void)
+431	0x041755	.text	DisplaySystem.dll	?SetAmbientLight@Randy_t@@QAEXABVRGB_t@@@Z	public: void __thiscall Randy_t::SetAmbientLight(class RGB_t const &)
+432	0x0507E5	.text	DisplaySystem.dll	?SetAnim1@CATAnimBlend_t@@QAE_NPAVCATAnim_t@@@Z	public: bool __thiscall CATAnimBlend_t::SetAnim1(class CATAnim_t *)
+433	0x05085C	.text	DisplaySystem.dll	?SetAnim2@CATAnimBlend_t@@QAE_NPAVCATAnim_t@@@Z	public: bool __thiscall CATAnimBlend_t::SetAnim2(class CATAnim_t *)
+434	0x053FE2	.text	DisplaySystem.dll	?SetAnim@CATRender_t@@QAEXPAVCATAnim_t@@@Z	public: void __thiscall CATRender_t::SetAnim(class CATAnim_t *)
+435	0x0457E7	.text	DisplaySystem.dll	?SetAnimMatrix@RRefFrame_t@@QAEXABVTMatrix4_t@@@Z	public: void __thiscall RRefFrame_t::SetAnimMatrix(class TMatrix4_t const &)
+436	0x04506B	.text	DisplaySystem.dll	?SetAnimationTime@RRefFrame_t@@QAEXM_N@Z	public: void __thiscall RRefFrame_t::SetAnimationTime(float, bool)
+437	0x0504F6	.text	DisplaySystem.dll	?SetBlend@CATAnimBlend_t@@QAEXM@Z	public: void __thiscall CATAnimBlend_t::SetBlend(float)
+438	0x024CEB	.text	FXS.dll	?SetBlueprint@StateBlob_c@@QAEXPAX@Z	public: void __thiscall StateBlob_c::SetBlueprint(void *)
+439	0x047024	.text	DisplaySystem.dll	?SetCATLightDirection@RandyShadowlandsData_s@@SAXABVVector3_t@@@Z	public: static void __cdecl RandyShadowlandsData_s::SetCATLightDirection(class Vector3_t const &)
+440	0x046FF2	.text	DisplaySystem.dll	?SetCATLightIntensity@RandyShadowlandsData_s@@SAXM@Z	public: static void __cdecl RandyShadowlandsData_s::SetCATLightIntensity(float)
+441	0x046FCC	.text	DisplaySystem.dll	?SetCATLightParameters@RandyShadowlandsData_s@@SAXABVVector3_t@@0@Z	public: static void __cdecl RandyShadowlandsData_s::SetCATLightParameters(class Vector3_t const &, class Vector3_t const &)
+442	0x046FA2	.text	DisplaySystem.dll	?SetCATLightTexture@RandyShadowlandsData_s@@SAXPAVRTexture_t@@@Z	public: static void __cdecl RandyShadowlandsData_s::SetCATLightTexture(class RTexture_t *)
+443	0x04B997	.text	DisplaySystem.dll	?SetCamera@RViewPort_t@@QAEXPAVRCamera_t@@@Z	public: void __thiscall RViewPort_t::SetCamera(class RCamera_t *)
+444	0x046E5D	.text		?SetCameraMatrix@RandyShadowlandsData_s@@SAXABVTMatrix4_t@@@Z	public: static void __cdecl RandyShadowlandsData_s::SetCameraMatrix(class TMatrix4_t const &)
+445	0x045253	.text	DisplaySystem.dll,Gamecode.dll	?SetChangeFlags@RRefFrame_t@@UAEXI_N@Z	public: virtual void __thiscall RRefFrame_t::SetChangeFlags(unsigned int, bool)
+446	0x0125D7	.text		?SetColor@RGrid@@QAEXABVRGB_t@@@Z	public: void __thiscall RGrid::SetColor(class RGB_t const &)
+447	0x04B3F6	.text	DisplaySystem.dll	?SetD3DMaterial@RViewPort_t@@QAEXPBU_D3DMATERIAL7@@@Z	public: void __thiscall RViewPort_t::SetD3DMaterial(struct _D3DMATERIAL7 const *)
+448	0x03011C	.text	DisplaySystem.dll	?SetDataPath@HMOccluder_t@@QAEXPBD@Z	public: void __thiscall HMOccluder_t::SetDataPath(char const *)
+449	0x04B61E	.text	DisplaySystem.dll,GUI.dll	?SetDefaultMaterial@RViewPort_t@@QAEXXZ	public: void __thiscall RViewPort_t::SetDefaultMaterial(void)
+450	0x040A65	.text	DisplaySystem.dll	?SetDeltaState@RMaterial_t@@QAEXPAVRDeltaState@@@Z	public: void __thiscall RMaterial_t::SetDeltaState(class RDeltaState *)
+451	0x04CB8E	.text	DisplaySystem.dll	?SetDeltaState@RVisual_t@@QAEXPAVRDeltaState@@@Z	public: void __thiscall RVisual_t::SetDeltaState(class RDeltaState *)
+452	0x045329	.text	DisplaySystem.dll,Gamecode.dll	?SetEmissive@RRefFrame_t@@QAEXPBVRGB_t@@@Z	public: void __thiscall RRefFrame_t::SetEmissive(class RGB_t const *)
+453	0x040E5F	.text	DisplaySystem.dll	?SetEnvTexture@RMaterial_t@@QAEXPAVRTexture_t@@@Z	public: void __thiscall RMaterial_t::SetEnvTexture(class RTexture_t *)
+454	0x0431C7	.text	DisplaySystem.dll	?SetFeatureUsage@Randy_t@@QAEXI@Z	public: void __thiscall Randy_t::SetFeatureUsage(unsigned int)
+455	0x041876	.text	DisplaySystem.dll	?SetFogParameters@Randy_t@@QAEXMMMMABVRGB_t@@_N1@Z	public: void __thiscall Randy_t::SetFogParameters(float, float, float, float, class RGB_t const &, bool, bool)
+456	0x04704C	.text	DisplaySystem.dll	?SetGroundLightDirection@RandyShadowlandsData_s@@SAXABVVector3_t@@@Z	public: static void __cdecl RandyShadowlandsData_s::SetGroundLightDirection(class Vector3_t const &)
+457	0x046ED4	.text	DisplaySystem.dll	?SetGroundLightIntensity@RandyShadowlandsData_s@@SAXM@Z	public: static void __cdecl RandyShadowlandsData_s::SetGroundLightIntensity(float)
+458	0x046EAE	.text	DisplaySystem.dll	?SetGroundLightParameters@RandyShadowlandsData_s@@SAXABVVector3_t@@0@Z	public: static void __cdecl RandyShadowlandsData_s::SetGroundLightParameters(class Vector3_t const &, class Vector3_t const &)
+459	0x046E84	.text	DisplaySystem.dll	?SetGroundLightTexture@RandyShadowlandsData_s@@SAXPAVRTexture_t@@@Z	public: static void __cdecl RandyShadowlandsData_s::SetGroundLightTexture(class RTexture_t *)
+460	0x0452F8	.text	DisplaySystem.dll,GUI.dll	?SetGroupMask@RRefFrame_t@@QAEXI_N@Z	public: void __thiscall RRefFrame_t::SetGroupMask(unsigned int, bool)
+461	0x0300C7	.text	DisplaySystem.dll	?SetHeightmapPatch@HMOccluder_t@@QAEXPBGHHH@Z	public: void __thiscall HMOccluder_t::SetHeightmapPatch(unsigned short const *, int, int, int)
+462	0x0300B4	.text	DisplaySystem.dll	?SetHeightmapScale@HMOccluder_t@@QAEXMMM@Z	public: void __thiscall HMOccluder_t::SetHeightmapScale(float, float, float)
+463	0x030043	.text	DisplaySystem.dll	?SetHeightmapSize@HMOccluder_t@@QAEXHH@Z	public: void __thiscall HMOccluder_t::SetHeightmapSize(int, int)
+464	0x011B2D	.text		?SetIndex@Triangle@@QAEXEG@Z	public: void __thiscall Triangle::SetIndex(unsigned char, unsigned short)
+465	0x011AB6	.text		?SetIndices@Triangle@@QAEXGGG@Z	public: void __thiscall Triangle::SetIndices(unsigned short, unsigned short, unsigned short)
+466	0x011AD4	.text		?SetIndices@Triangle@@QAEXPAG@Z	public: void __thiscall Triangle::SetIndices(unsigned short *)
+467	0x011AE7	.text		?SetIndices@Triangle@@QAEXPAH@Z	public: void __thiscall Triangle::SetIndices(int *)
+468	0x051F51	.text	DisplaySystem.dll	?SetLayers@CATKeyframeAnim_t@@QAEXI@Z	public: void __thiscall CATKeyframeAnim_t::SetLayers(unsigned int)
+469	0x021815	.text	DisplaySystem.dll	?SetLight@render_t@@QAEXKPAU_D3DLIGHT7@@@Z	public: void __thiscall render_t::SetLight(unsigned long, struct _D3DLIGHT7 *)
+470	0x0455A8	.text		?SetLocalDirection@RRefFrame_t@@QAEXABVVector3_t@@0@Z	public: void __thiscall RRefFrame_t::SetLocalDirection(class Vector3_t const &, class Vector3_t const &)
+471	0x045516	.text	DisplaySystem.dll	?SetLocalDirection@RRefFrame_t@@QAEXABVVector3_t@@@Z	public: void __thiscall RRefFrame_t::SetLocalDirection(class Vector3_t const &)
+472	0x045113	.text	DisplaySystem.dll	?SetLoop@RRefFrame_t@@QAEX_N@Z	public: void __thiscall RRefFrame_t::SetLoop(bool)
+473	0x052C99	.text		?SetMaterial@CATMesh_t@@QAEXHPAVRMaterial_t@@@Z	public: void __thiscall CATMesh_t::SetMaterial(int, class RMaterial_t *)
+474	0x04B199	.text	DisplaySystem.dll,GUI.dll	?SetMaterial@RViewPort_t@@QAEXPBVRMaterial_t@@@Z	public: void __thiscall RViewPort_t::SetMaterial(class RMaterial_t const *)
+475	0x04E743	.text	DisplaySystem.dll	?SetMaterial@SimpleMesh@@QAEXPAVRMaterial_t@@@Z	public: void __thiscall SimpleMesh::SetMaterial(class RMaterial_t *)
+476	0x024CFC	.text	FXS.dll	?SetMaterial@StateBlob_c@@QAEXPAX@Z	public: void __thiscall StateBlob_c::SetMaterial(void *)
+477	0x01668F	.text		?SetMatrix@DummyConnector@@QAEXAAVTMatrix4_t@@@Z	public: void __thiscall DummyConnector::SetMatrix(class TMatrix4_t &)
+478	0x04C9A8	.text	DisplaySystem.dll	?SetMaxActiveLightCount@RVisual_t@@SAXI@Z	public: static void __cdecl RVisual_t::SetMaxActiveLightCount(unsigned int)
+479	0x055108	.text	DisplaySystem.dll	?SetMesh@CATRender_t@@QAEXPBVCATMesh_t@@@Z	public: void __thiscall CATRender_t::SetMesh(class CATMesh_t const *)
+480	0x020BF6	.text	DisplaySystem.dll	?SetMonitorRect@render_t@@QAEXABUtagRECT@@@Z	public: void __thiscall render_t::SetMonitorRect(struct tagRECT const &)
+481	0x011B70	.text		?SetNeighbour@CATTriPolyList_t@@AAEXHEH@Z	private: void __thiscall CATTriPolyList_t::SetNeighbour(int, unsigned char, int)
+482	0x040F61	.text		?SetOpacity@RMaterial_t@@QAEXM@Z	public: void __thiscall RMaterial_t::SetOpacity(float)
+483	0x016688	.text		?SetOriginator@DummyConnector@@UAEXPAVRRefFrame_t@@@Z	public: virtual void __thiscall DummyConnector::SetOriginator(class RRefFrame_t *)
+484	0x02BCB4	.text		?SetOriginator@RRefFrameConnector@@UAEXPAVRRefFrame_t@@@Z	public: virtual void __thiscall RRefFrameConnector::SetOriginator(class RRefFrame_t *)
+485	0x045C85	.text	DisplaySystem.dll,Gamecode.dll	?SetRelativePosition@RRefFrame_t@@QAEXABVVector3_t@@PBV1@@Z	public: void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &, class RRefFrame_t const *)
+486	0x045CD9	.text	Gamecode.dll	?SetRelativeRotation@RRefFrame_t@@QAEXABVQuaternion_t@@PBV1@@Z	public: void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &, class RRefFrame_t const *)
+487	0x04CB7E	.text	DisplaySystem.dll,GUI.dll,Gamecode.dll	?SetRenderPriority@RVisual_t@@QAEXW4RenderList_e@@@Z	public: void __thiscall RVisual_t::SetRenderPriority(enum RenderList_e)
+488	0x01BBC1	.text	DisplaySystem.dll	?SetRenderState@DeviceState@@QAE_NW4_D3DRENDERSTATETYPE@@KW4Priority_e@1@@Z	public: bool __thiscall DeviceState::SetRenderState(enum _D3DRENDERSTATETYPE, unsigned long, enum DeviceState::Priority_e)
+489	0x02F7B0	.text	DisplaySystem.dll,Gamecode.dll	?SetRenderState@RDeltaState@@QAEXW4_D3DRENDERSTATETYPE@@K@Z	public: void __thiscall RDeltaState::SetRenderState(enum _D3DRENDERSTATETYPE, unsigned long)
+490	0x0252C4	.text	DisplaySystem.dll,FXS.dll,GUI.dll	?SetRenderState@StateBlob_c@@QAEXW4_D3DRENDERSTATETYPE@@K@Z	public: void __thiscall StateBlob_c::SetRenderState(enum _D3DRENDERSTATETYPE, unsigned long)
+491	0x042F1C	.text	DisplaySystem.dll	?SetRenderTarget@Randy_t@@QAE_NPAVRViewPort_t@@H@Z	public: bool __thiscall Randy_t::SetRenderTarget(class RViewPort_t *, int)
+492	0x024D0D	.text	FXS.dll	?SetRenderTarget@StateBlob_c@@QAEXI@Z	public: void __thiscall StateBlob_c::SetRenderTarget(unsigned int)
+493	0x041931	.text	DisplaySystem.dll	?SetRenderTargetAsTexture@Randy_t@@QAEXHI@Z	public: void __thiscall Randy_t::SetRenderTargetAsTexture(int, unsigned int)
+494	0x055C86	.text	DisplaySystem.dll	?SetSfxType@RCATMesh_t@@QAEXW4SfxType_e@1@@Z	public: void __thiscall RCATMesh_t::SetSfxType(enum RCATMesh_t::SfxType_e)
+495	0x04538B	.text	DisplaySystem.dll,Gamecode.dll	?SetSpecular@RRefFrame_t@@QAEXPBVRGB_t@@@Z	public: void __thiscall RRefFrame_t::SetSpecular(class RGB_t const *)
+496	0x03FCDE	.text	DisplaySystem.dll	?SetSpotAngles@RLight_t@@QAEXMM@Z	public: void __thiscall RLight_t::SetSpotAngles(float, float)
+497	0x047038	.text	DisplaySystem.dll	?SetStatelLightDirection@RandyShadowlandsData_s@@SAXABVVector3_t@@@Z	public: static void __cdecl RandyShadowlandsData_s::SetStatelLightDirection(class Vector3_t const &)
+498	0x046F63	.text	DisplaySystem.dll	?SetStatelLightIntensity@RandyShadowlandsData_s@@SAXM@Z	public: static void __cdecl RandyShadowlandsData_s::SetStatelLightIntensity(float)
+499	0x046F3D	.text	DisplaySystem.dll	?SetStatelLightParameters@RandyShadowlandsData_s@@SAXABVVector3_t@@0@Z	public: static void __cdecl RandyShadowlandsData_s::SetStatelLightParameters(class Vector3_t const &, class Vector3_t const &)
+500	0x046F13	.text	DisplaySystem.dll	?SetStatelLightTexture@RandyShadowlandsData_s@@SAXPAVRTexture_t@@@Z	public: static void __cdecl RandyShadowlandsData_s::SetStatelLightTexture(class RTexture_t *)
+501	0x057A30	.text		?SetSubstMaterial@RCATMesh_t@@QAEXHPAVRMaterial_t@@@Z	public: void __thiscall RCATMesh_t::SetSubstMaterial(int, class RMaterial_t *)
+502	0x01BC8E	.text	DisplaySystem.dll,GUI.dll	?SetTexture@DeviceState@@QAE_NPAVsurface_t@@IW4Priority_e@1@@Z	public: bool __thiscall DeviceState::SetTexture(class surface_t *, unsigned int, enum DeviceState::Priority_e)
+503	0x02F0AE	.text	DisplaySystem.dll	?SetTexture@RDeltaState@@QAEXIPAVRTexture_t@@@Z	public: void __thiscall RDeltaState::SetTexture(unsigned int, class RTexture_t *)
+504	0x040BEC	.text	DisplaySystem.dll	?SetTexture@RMaterial_t@@QAEXPAVRTexture_t@@EH@Z	public: void __thiscall RMaterial_t::SetTexture(class RTexture_t *, unsigned char, int)
+505	0x024F27	.text	DisplaySystem.dll	?SetTexture@StateBlob_c@@QAEXIPAVsurface_t@@@Z	public: void __thiscall StateBlob_c::SetTexture(unsigned int, class surface_t *)
+506	0x0253A2	.text	FXS.dll	?SetTextureName@StateBlob_c@@QAEXIPAD@Z	public: void __thiscall StateBlob_c::SetTextureName(unsigned int, char *)
+507	0x01BC15	.text		?SetTextureStageState@DeviceState@@QAE_NIW4_D3DTEXTURESTAGESTATETYPE@@KW4Priority_e@1@@Z	public: bool __thiscall DeviceState::SetTextureStageState(unsigned int, enum _D3DTEXTURESTAGESTATETYPE, unsigned long, enum DeviceState::Priority_e)
+508	0x02F7FB	.text	DisplaySystem.dll,Gamecode.dll	?SetTextureStageState@RDeltaState@@QAEXIW4_D3DTEXTURESTAGESTATETYPE@@K@Z	public: void __thiscall RDeltaState::SetTextureStageState(unsigned int, enum _D3DTEXTURESTAGESTATETYPE, unsigned long)
+509	0x025315	.text	DisplaySystem.dll,FXS.dll,GUI.dll	?SetTextureStageState@StateBlob_c@@QAEXIW4_D3DTEXTURESTAGESTATETYPE@@K@Z	public: void __thiscall StateBlob_c::SetTextureStageState(unsigned int, enum _D3DTEXTURESTAGESTATETYPE, unsigned long)
+510	0x051CFC	.text	DisplaySystem.dll	?SetTime@CATKeyframeAnim_t@@QAEXM@Z	public: void __thiscall CATKeyframeAnim_t::SetTime(float)
+511	0x025012	.text	DisplaySystem.dll	?SetTransformMatrix@StateBlob_c@@QAEXAAVTMatrix4_t@@I@Z	public: void __thiscall StateBlob_c::SetTransformMatrix(class TMatrix4_t &, unsigned int)
+512	0x02382A	.text	DisplaySystem.dll	?SetTransformMatrix@render_t@@QAEXW4_D3DTRANSFORMSTATETYPE@@PAU_D3DMATRIX@@@Z	public: void __thiscall render_t::SetTransformMatrix(enum _D3DTRANSFORMSTATETYPE, struct _D3DMATRIX *)
+513	0x0254EA	.text	FXS.dll	?SetTransformState@StateBlob_c@@QAEXIPAX@Z	public: void __thiscall StateBlob_c::SetTransformState(unsigned int, void *)
+514	0x0453ED	.text	DisplaySystem.dll,Gamecode.dll	?SetTransparency@RRefFrame_t@@QAEXM@Z	public: void __thiscall RRefFrame_t::SetTransparency(float)
+515	0x049017	.text	DisplaySystem.dll	?SetTriMeshData@RTriMesh_t@@QAEXPBVRTriMeshData_t@@@Z	public: void __thiscall RTriMesh_t::SetTriMeshData(class RTriMeshData_t const *)
+516	0x040FE5	.text		?SetTwoSided@RMaterial_t@@QAEX_N@Z	public: void __thiscall RMaterial_t::SetTwoSided(bool)
+517	0x041ED1	.text	DisplaySystem.dll	?SetUseOffscreenTech@Randy_t@@SAX_N@Z	public: static void __cdecl Randy_t::SetUseOffscreenTech(bool)
+518	0x02A8E1	.text	DisplaySystem.dll	?SetViewPlaneWindow@RCamera_t@@QAEXMM@Z	public: void __thiscall RCamera_t::SetViewPlaneWindow(float, float)
+519	0x04BAD6	.text	GUI.dll	?SetViewRect@RViewPort_t@@QAEXMMMM@Z	public: void __thiscall RViewPort_t::SetViewRect(float, float, float, float)
+520	0x04543D	.text	DisplaySystem.dll	?SetVisible@RRefFrame_t@@QAEX_N0@Z	public: void __thiscall RRefFrame_t::SetVisible(bool, bool)
+521	0x041EC4	.text	DisplaySystem.dll	?SetWaitForVSync@Randy_t@@SAX_N@Z	public: static void __cdecl Randy_t::SetWaitForVSync(bool)
+522	0x045DEB	.text	Gamecode.dll	?SetWorldTarget@RRefFrame_t@@QAEXABVVector3_t@@0@Z	public: void __thiscall RRefFrame_t::SetWorldTarget(class Vector3_t const &, class Vector3_t const &)
+523	0x045D41	.text	DisplaySystem.dll,Gamecode.dll	?SetWorldTarget@RRefFrame_t@@QAEXABVVector3_t@@@Z	public: void __thiscall RRefFrame_t::SetWorldTarget(class Vector3_t const &)
+524	0x014253	.text	DisplaySystem.dll	?Shutdown@DynamicVB_c@@SAXXZ	public: static void __cdecl DynamicVB_c::Shutdown(void)
+525	0x03FB49	.text	DisplaySystem.dll	?ShutdownHMOccluder@HMOccluder_t@@SAXXZ	public: static void __cdecl HMOccluder_t::ShutdownHMOccluder(void)
+526	0x028C05	.text	DisplaySystem.dll	?Start@Timer@@QAEXXZ	public: void __thiscall Timer::Start(void)
+527	0x028C1E	.text	DisplaySystem.dll	?Stop@Timer@@QAEXXZ	public: void __thiscall Timer::Stop(void)
+528	0x04CBBE	.text	DisplaySystem.dll,Gamecode.dll	?StoreStateChanges@RVisual_t@@UBEXAAVRViewPort_t@@@Z	public: virtual void __thiscall RVisual_t::StoreStateChanges(class RViewPort_t &) const
+529	0x03ED78	.text	DisplaySystem.dll	?ToggleOcclusionCulling@HMOccluder_t@@QAE_NXZ	public: bool __thiscall HMOccluder_t::ToggleOcclusionCulling(void)
+530	0x04BD1B	.text	DisplaySystem.dll	?TransformPointToScreenSpace@RViewPort_t@@QBE_NABVVector3_t@@PAV2@@Z	public: bool __thiscall RViewPort_t::TransformPointToScreenSpace(class Vector3_t const &, class Vector3_t *) const
+531	0x0115D6	.text	DisplaySystem.dll,FXS.dll	?Unlock@VertexBuffer_c@@QAEXXZ	public: void __thiscall VertexBuffer_c::Unlock(void)
+532	0x04749D	.text	DisplaySystem.dll	?UnlockRTexture@RTexture_t@@QAE_NXZ	public: bool __thiscall RTexture_t::UnlockRTexture(void)
+533	0x024003	.text	DisplaySystem.dll	?UnlockTexture@render_t@@QAEXPAUIDirectDrawSurface7@@PAUtagRECT@@@Z	public: void __thiscall render_t::UnlockTexture(struct IDirectDrawSurface7 *, struct tagRECT *)
+534	0x055331	.text	DisplaySystem.dll,Gamecode.dll	?UnregisterVertexProcessCallback@CATRender_t@@QAE_NP6AXPBV1@IPBUCATTriVertex_t@@PAUCATVertex_t@@IPBGIIPAX@Z4@Z	public: bool __thiscall CATRender_t::UnregisterVertexProcessCallback(void (__cdecl *)(class CATRender_t const *, unsigned int, struct CATTriVertex_t const *, struct CATVertex_t *, unsigned int, unsigned short const *, unsigned int, unsigned int, void *), void *)
+535	0x01BBAA	.text	DisplaySystem.dll	?UpdateDevice@DeviceState@@QAEXXZ	public: void __thiscall DeviceState::UpdateDevice(void)
+536	0x040FF8	.text	DisplaySystem.dll	?UpdateSpecular@RMaterial_t@@IAEXXZ	protected: void __thiscall RMaterial_t::UpdateSpecular(void)
+537	0x044FA2	.text	DisplaySystem.dll	?UpdateWorldMatrix@RRefFrame_t@@ABEXXZ	private: void __thiscall RRefFrame_t::UpdateWorldMatrix(void) const
+538	0x040A8F	.text	DisplaySystem.dll	?UseAlphaAsTransparency@RMaterial_t@@QAEX_N@Z	public: void __thiscall RMaterial_t::UseAlphaAsTransparency(bool)
+539	0x055910	.text		?VPrintDebug@CATStdioStatus_t@@MAEXPBD@Z	protected: virtual void __thiscall CATStdioStatus_t::VPrintDebug(char const *)
+540	0x0558F5	.text		?VPrintError@CATStdioStatus_t@@MAEXPBD@Z	protected: virtual void __thiscall CATStdioStatus_t::VPrintError(char const *)
+541	0x0558A4	.text		?VPrintStatus@CATStdioStatus_t@@MAEXPBD@Z	protected: virtual void __thiscall CATStdioStatus_t::VPrintStatus(char const *)
+542	0x0558BF	.text		?VPrintWarningLevel1@CATStdioStatus_t@@MAEXPBD@Z	protected: virtual void __thiscall CATStdioStatus_t::VPrintWarningLevel1(char const *)
+543	0x0558DA	.text		?VPrintWarningLevel2@CATStdioStatus_t@@MAEXPBD@Z	protected: virtual void __thiscall CATStdioStatus_t::VPrintWarningLevel2(char const *)
+544	0x0251AC	.text	DisplaySystem.dll,GUI.dll	?Validate@StateBlob_c@@QAE_NXZ	public: bool __thiscall StateBlob_c::Validate(void)
+545	0x17BED8	.data	DisplaySystem.dll,GUI.dll,Gamecode.dll	?black@RGB_t@@2V1@A	public: static class RGB_t RGB_t::black
+546	0x01AA09	.text		?dd_GetErrorString@@YAPBDI@Z	char const * __cdecl dd_GetErrorString(unsigned int)
+547	0x0B7A08	.data	DisplaySystem.dll	?m_CurrentProjectionMatrix@RViewPort_t@@0VTMatrix4_t@@A	private: static class TMatrix4_t RViewPort_t::m_CurrentProjectionMatrix
+548	0x0B79C8	.data	DisplaySystem.dll	?m_CurrentViewMatrix@RViewPort_t@@0VTMatrix4_t@@A	private: static class TMatrix4_t RViewPort_t::m_CurrentViewMatrix
+549	0x17D2B4	.data	DisplaySystem.dll	?m_avRenderTargetHeight@Randy_t@@0PAMA	private: static float *Randy_t::m_avRenderTargetHeight
+550	0x17D2D0	.data	DisplaySystem.dll	?m_avRenderTargetWidth@Randy_t@@0PAMA	private: static float *Randy_t::m_avRenderTargetWidth
+551	0x17D44E	.data		?m_bCATLightEnabled@RandyShadowlandsData_s@@1_NA	protected: static bool RandyShadowlandsData_s::m_bCATLightEnabled
+552	0x17D469	.data		?m_bCATLightTextureMatrixValid@RandyShadowlandsData_s@@1_NA	protected: static bool RandyShadowlandsData_s::m_bCATLightTextureMatrixValid
+553	0x17D44C	.data		?m_bGroundLightEnabled@RandyShadowlandsData_s@@1_NA	protected: static bool RandyShadowlandsData_s::m_bGroundLightEnabled
+554	0x17D44F	.data		?m_bGroundLightTextureMatrixValid@RandyShadowlandsData_s@@1_NA	protected: static bool RandyShadowlandsData_s::m_bGroundLightTextureMatrixValid
+555	0x17D44D	.data		?m_bStatelLightEnabled@RandyShadowlandsData_s@@1_NA	protected: static bool RandyShadowlandsData_s::m_bStatelLightEnabled
+556	0x17D468	.data		?m_bStatelLightTextureMatrixValid@RandyShadowlandsData_s@@1_NA	protected: static bool RandyShadowlandsData_s::m_bStatelLightTextureMatrixValid
+557	0x17D333	.data		?m_bUseOffscreenTechnology@Randy_t@@0_NA	private: static bool Randy_t::m_bUseOffscreenTechnology
+558	0x0B77C4	.data		?m_cCATLightDirection@RandyShadowlandsData_s@@1VVector3_t@@A	protected: static class Vector3_t RandyShadowlandsData_s::m_cCATLightDirection
+559	0x0B7890	.data		?m_cCATLightTextureMatrix@RandyShadowlandsData_s@@1VTMatrix4_t@@A	protected: static class TMatrix4_t RandyShadowlandsData_s::m_cCATLightTextureMatrix
+560	0x17D484	.data		?m_cCATLightTextureOffset@RandyShadowlandsData_s@@1VVector3_t@@A	protected: static class Vector3_t RandyShadowlandsData_s::m_cCATLightTextureOffset
+561	0x0B77B8	.data		?m_cCATLightTextureScale@RandyShadowlandsData_s@@1VVector3_t@@A	protected: static class Vector3_t RandyShadowlandsData_s::m_cCATLightTextureScale
+562	0x0B77D0	.data		?m_cCameraMatrix@RandyShadowlandsData_s@@1VTMatrix4_t@@A	protected: static class TMatrix4_t RandyShadowlandsData_s::m_cCameraMatrix
+563	0x0B7794	.data		?m_cGroundLightDirection@RandyShadowlandsData_s@@1VVector3_t@@A	protected: static class Vector3_t RandyShadowlandsData_s::m_cGroundLightDirection
+564	0x0B7810	.data		?m_cGroundLightTextureMatrix@RandyShadowlandsData_s@@1VTMatrix4_t@@A	protected: static class TMatrix4_t RandyShadowlandsData_s::m_cGroundLightTextureMatrix
+565	0x17D46C	.data		?m_cGroundLightTextureOffset@RandyShadowlandsData_s@@1VVector3_t@@A	protected: static class Vector3_t RandyShadowlandsData_s::m_cGroundLightTextureOffset
+566	0x0B7788	.data		?m_cGroundLightTextureScale@RandyShadowlandsData_s@@1VVector3_t@@A	protected: static class Vector3_t RandyShadowlandsData_s::m_cGroundLightTextureScale
+567	0x16BED8	.data	DisplaySystem.dll	?m_cRenderStats@@3VRenderStats_t@@A	class RenderStats_t m_cRenderStats
+568	0x0B77AC	.data		?m_cStatelLightDirection@RandyShadowlandsData_s@@1VVector3_t@@A	protected: static class Vector3_t RandyShadowlandsData_s::m_cStatelLightDirection
+569	0x0B7850	.data		?m_cStatelLightTextureMatrix@RandyShadowlandsData_s@@1VTMatrix4_t@@A	protected: static class TMatrix4_t RandyShadowlandsData_s::m_cStatelLightTextureMatrix
+570	0x17D478	.data		?m_cStatelLightTextureOffset@RandyShadowlandsData_s@@1VVector3_t@@A	protected: static class Vector3_t RandyShadowlandsData_s::m_cStatelLightTextureOffset
+571	0x0B77A0	.data		?m_cStatelLightTextureScale@RandyShadowlandsData_s@@1VVector3_t@@A	protected: static class Vector3_t RandyShadowlandsData_s::m_cStatelLightTextureScale
+572	0x0B7500	.data	DisplaySystem.dll	?m_nDebuggerMode@Debugger_t@@2IA	public: static unsigned int Debugger_t::m_nDebuggerMode
+573	0x0B7730	.data	DisplaySystem.dll	?m_nRandyEmulationCap@Randy_t@@0IA	private: static unsigned int Randy_t::m_nRandyEmulationCap
+574	0x0B7734	.data	DisplaySystem.dll	?m_nRandyEmulationCapUserDefined@Randy_t@@0IA	private: static unsigned int Randy_t::m_nRandyEmulationCapUserDefined
+575	0x17D460	.data		?m_pcCATLightTexture@RandyShadowlandsData_s@@1PAVRTexture_t@@A	protected: static class RTexture_t *RandyShadowlandsData_s::m_pcCATLightTexture
+576	0x17D450	.data		?m_pcGroundLightTexture@RandyShadowlandsData_s@@1PAVRTexture_t@@A	protected: static class RTexture_t *RandyShadowlandsData_s::m_pcGroundLightTexture
+577	0x16BED0	.data	DisplaySystem.dll,FXS.dll,GUI.dll	?m_pcInstance@render_t@@0PAV1@A	private: static class render_t *render_t::m_pcInstance
+578	0x17D458	.data		?m_pcStatelLightTexture@RandyShadowlandsData_s@@1PAVRTexture_t@@A	protected: static class RTexture_t *RandyShadowlandsData_s::m_pcStatelLightTexture
+579	0x17D338	.data	DisplaySystem.dll	?m_spcCurrentCamera@RRefFrame_t@@2PAVRCamera_t@@A	public: static class RCamera_t *RRefFrame_t::m_spcCurrentCamera
+580	0x17D464	.data		?m_vCATLightIntensity@RandyShadowlandsData_s@@1MA	protected: static float RandyShadowlandsData_s::m_vCATLightIntensity
+581	0x17D454	.data		?m_vGroundLightIntensity@RandyShadowlandsData_s@@1MA	protected: static float RandyShadowlandsData_s::m_vGroundLightIntensity
+582	0x17D45C	.data		?m_vStatelLightIntensity@RandyShadowlandsData_s@@1MA	protected: static float RandyShadowlandsData_s::m_vStatelLightIntensity
+583	0x0B660C	.data	DisplaySystem.dll	?s_bCompression@TextureStreamCreator@@0_NA	private: static bool TextureStreamCreator::s_bCompression
+584	0x0B772C	.data	DisplaySystem.dll,FXS.dll	?s_eHardwareLevel@Randy_t@@0W4HardwareLevel_e@1@A	private: static enum Randy_t::HardwareLevel_e Randy_t::s_eHardwareLevel
+585	0x17D334	.data	DisplaySystem.dll,FXS.dll	?s_nRestoreCount@Randy_t@@0IA	private: static unsigned int Randy_t::s_nRestoreCount
+586	0x0B6608	.data	DisplaySystem.dll	?s_nTextureQuality@TextureStreamCreator@@0HA	private: static int TextureStreamCreator::s_nTextureQuality
+587	0x17D490	.data	DisplaySystem.dll	?s_nTotalTexCount@RTexture_t@@0IA	private: static unsigned int RTexture_t::s_nTotalTexCount
+588	0x17D494	.data	DisplaySystem.dll	?s_nTotalTexRefCount@RTexture_t@@0IA	private: static unsigned int RTexture_t::s_nTotalTexRefCount
+589	0x17D498	.data	DisplaySystem.dll	?s_pcDDDefaultSurface@RTexture_t@@0PAVsurface_t@@A	private: static class surface_t *RTexture_t::s_pcDDDefaultSurface
+590	0x17D2EC	.data	DisplaySystem.dll,FXS.dll,GUI.dll	?s_pcRandy@Randy_t@@1PAV1@A	protected: static class Randy_t *Randy_t::s_pcRandy
+591	0x0B72F8	.data	DisplaySystem.dll,GUI.dll,Gamecode.dll	?white@RGB_t@@2V1@A	public: static class RGB_t RGB_t::white
+592	0x001B80	.text		png_access_version_number	
+593	0x00B2E0	.text		png_benign_error	
+594	0x009530	.text		png_build_grayscale_palette	
+595	0x00B5B0	.text		png_calloc	
+596	0x00B430	.text		png_chunk_benign_error	
+597	0x00B3A0	.text		png_chunk_error	
+598	0x00B3D0	.text		png_chunk_warning	
+599	0x001A10	.text		png_convert_to_rfc1123	
+600	0x0011C0	.text		png_create_info_struct	
+601	0x003100	.text		png_create_read_struct	
+602	0x003130	.text		png_create_read_struct_2	
+603	0x001350	.text		png_data_freer	
+604	0x001250	.text		png_destroy_info_struct	
+605	0x004510	.text		png_destroy_read_struct	
+606	0x00B230	.text		png_error	
+607	0x001190	.text		png_free	
+608	0x0013A0	.text		png_free_data	
+609	0x00B690	.text		png_free_default	
+610	0x005740	.text		png_get_IHDR	
+611	0x005A90	.text		png_get_PLTE	
+612	0x005410	.text		png_get_bKGD	
+613	0x004D80	.text		png_get_bit_depth	
+614	0x005440	.text		png_get_cHRM	
+615	0x005510	.text		png_get_cHRM_fixed	
+616	0x0053D0	.text		png_get_channels	
+617	0x005CC0	.text		png_get_chunk_cache_max	
+618	0x005CE0	.text		png_get_chunk_malloc_max	
+619	0x004DA0	.text		png_get_color_type	
+620	0x005C60	.text		png_get_compression_buffer_size	
+621	0x004E00	.text		png_get_compression_type	
+622	0x001AE0	.text		png_get_copyright	
+623	0x006210	.text		png_get_current_pass_number	
+624	0x0061F0	.text		png_get_current_row_number	
+625	0x00B530	.text		png_get_error_ptr	
+626	0x004DC0	.text		png_get_filter_type	
+627	0x0055F0	.text		png_get_gAMA	
+628	0x0055C0	.text		png_get_gAMA_fixed	
+629	0x005710	.text		png_get_hIST	
+630	0x001AF0	.text		png_get_header_ver	
+631	0x001B00	.text		png_get_header_version	
+632	0x005670	.text		png_get_iCCP	
+633	0x004D60	.text		png_get_image_height	
+634	0x004D40	.text		png_get_image_width	
+635	0x00B7E0	.text		png_get_int_32	
+636	0x004DE0	.text		png_get_interlace_type	
+637	0x005D50	.text		png_get_io_chunk_name	
+638	0x005D10	.text		png_get_io_chunk_type	
+639	0x0019D0	.text		png_get_io_ptr	
+640	0x005D00	.text		png_get_io_state	
+641	0x001AF0	.text		png_get_libpng_ver	
+642	0x00B750	.text		png_get_mem_ptr	
+643	0x005800	.text		png_get_oFFs	
+644	0x005850	.text		png_get_pCAL	
+645	0x005A40	.text		png_get_pHYs	
+646	0x0052E0	.text		png_get_pHYs_dpi	
+647	0x004EB0	.text		png_get_pixel_aspect_ratio	
+648	0x004F00	.text		png_get_pixel_aspect_ratio_fixed	
+649	0x005090	.text		png_get_pixels_per_inch	
+650	0x004E80	.text		png_get_pixels_per_meter	
+651	0x005C20	.text		png_get_rgb_to_gray_status	
+652	0x004D00	.text		png_get_rowbytes	
+653	0x004D20	.text		png_get_rows	
+654	0x005AD0	.text		png_get_sBIT	
+655	0x005990	.text		png_get_sCAL	
+656	0x005900	.text		png_get_sCAL_fixed	
+657	0x0059F0	.text		png_get_sCAL_s	
+658	0x0056E0	.text		png_get_sPLT	
+659	0x005630	.text		png_get_sRGB	
+660	0x0053F0	.text		png_get_signature	
+661	0x005B50	.text		png_get_tIME	
+662	0x005B80	.text		png_get_tRNS	
+663	0x005B00	.text		png_get_text	
+664	0x00B810	.text		png_get_uint_16	
+665	0x00B770	.text		png_get_uint_31	
+666	0x00B7E0	.text		png_get_uint_32	
+667	0x005BF0	.text		png_get_unknown_chunks	
+668	0x005C40	.text		png_get_user_chunk_ptr	
+669	0x005CA0	.text		png_get_user_height_max	
+670	0x0061D0	.text		png_get_user_transform_ptr	
+671	0x005C80	.text		png_get_user_width_max	
+672	0x004CE0	.text		png_get_valid	
+673	0x005240	.text		png_get_x_offset_inches	
+674	0x0051C0	.text		png_get_x_offset_inches_fixed	
+675	0x004F60	.text		png_get_x_offset_microns	
+676	0x004FC0	.text		png_get_x_offset_pixels	
+677	0x0050D0	.text		png_get_x_pixels_per_inch	
+678	0x004E20	.text		png_get_x_pixels_per_meter	
+679	0x005290	.text		png_get_y_offset_inches	
+680	0x005200	.text		png_get_y_offset_inches_fixed	
+681	0x004F90	.text		png_get_y_offset_microns	
+682	0x004FF0	.text		png_get_y_offset_pixels	
+683	0x005110	.text		png_get_y_pixels_per_inch	
+684	0x004E50	.text		png_get_y_pixels_per_meter	
+685	0x001B10	.text		png_handle_as_unknown	
+686	0x0012D0	.text		png_info_init_3	
+687	0x0019F0	.text		png_init_io	
+688	0x00B4E0	.text		png_longjmp	
+689	0x00B620	.text		png_malloc	
+690	0x00B670	.text		png_malloc_default	
+691	0x00B6B0	.text		png_malloc_warn	
+692	0x0111B0	.text		png_permit_mng_features	
+693	0x004090	.text		png_read_end	
+694	0x003FC0	.text		png_read_image	
+695	0x003530	.text		png_read_info	
+696	0x004AD0	.text		png_read_png	
+697	0x003A60	.text		png_read_row	
+698	0x003F30	.text		png_read_rows	
+699	0x0039F0	.text		png_read_update_info	
+700	0x001B60	.text		png_reset_zstream	
+701	0x0101C0	.text		png_set_IHDR	
+702	0x0107E0	.text		png_set_PLTE	
+703	0x005E90	.text		png_set_add_alpha	
+704	0x00F840	.text		png_set_bKGD	
+705	0x006370	.text		png_set_background	
+706	0x006300	.text		png_set_background_fixed	
+707	0x011480	.text		png_set_benign_errors	
+708	0x005D60	.text		png_set_bgr	
+709	0x00F900	.text		png_set_cHRM	
+710	0x00F870	.text		png_set_cHRM_fixed	
+711	0x011440	.text		png_set_chunk_cache_max	
+712	0x011460	.text		png_set_chunk_malloc_max	
+713	0x011340	.text		png_set_compression_buffer_size	
+714	0x006230	.text		png_set_crc_action	
+715	0x00B510	.text		png_set_error_fn	
+716	0x007090	.text		png_set_expand	
+717	0x0070F0	.text		png_set_expand_16	
+718	0x0070B0	.text		png_set_expand_gray_1_2_4_to_8	
+719	0x005E30	.text		png_set_filler	
+720	0x00FFE0	.text		png_set_gAMA	
+721	0x00FF70	.text		png_set_gAMA_fixed	
+722	0x006F10	.text		png_set_gamma	
+723	0x006E70	.text		png_set_gamma_fixed	
+724	0x007120	.text		png_set_gray_to_rgb	
+725	0x0100F0	.text		png_set_hIST	
+726	0x010930	.text		png_set_iCCP	
+727	0x005E00	.text		png_set_interlace_handling	
+728	0x011400	.text		png_set_invalid	
+729	0x005EE0	.text		png_set_invert_alpha	
+730	0x005F00	.text		png_set_invert_mono	
+731	0x0111D0	.text		png_set_keep_unknown_chunks	
+732	0x00B480	.text		png_set_longjmp_fn	
+733	0x00B720	.text		png_set_mem_fn	
+734	0x010290	.text		png_set_oFFs	
+735	0x0102C0	.text		png_set_pCAL	
+736	0x0107B0	.text		png_set_pHYs	
+737	0x005D90	.text		png_set_packing	
+738	0x005DB0	.text		png_set_packswap	
+739	0x007090	.text		png_set_palette_to_rgb	
+740	0x006480	.text		png_set_quantize	
+741	0x00B1E0	.text		png_set_read_fn	
+742	0x004AB0	.text		png_set_read_status_fn	
+743	0x0112D0	.text		png_set_read_user_chunk_fn	
+744	0x0073A0	.text		png_set_read_user_transform_fn	
+745	0x007210	.text		png_set_rgb_to_gray	
+746	0x007140	.text		png_set_rgb_to_gray_fixed	
+747	0x0112F0	.text		png_set_rows	
+748	0x010880	.text		png_set_sBIT	
+749	0x010640	.text		png_set_sCAL	
+750	0x010710	.text		png_set_sCAL_fixed	
+751	0x0104D0	.text		png_set_sCAL_s	
+752	0x010E50	.text		png_set_sPLT	
+753	0x0108B0	.text		png_set_sRGB	
+754	0x0108D0	.text		png_set_sRGB_gAMA_and_cHRM	
+755	0x005DD0	.text		png_set_shift	
+756	0x001000	.text		png_set_sig_bytes	
+757	0x006440	.text		png_set_strip_16	
+758	0x006460	.text		png_set_strip_alpha	
+759	0x005D70	.text		png_set_swap	
+760	0x005EC0	.text		png_set_swap_alpha	
+761	0x010D00	.text		png_set_tIME	
+762	0x010D30	.text		png_set_tRNS	
+763	0x0070D0	.text		png_set_tRNS_to_alpha	
+764	0x010A20	.text		png_set_text	
+765	0x011170	.text		png_set_unknown_chunk_location	
+766	0x011010	.text		png_set_unknown_chunks	
+767	0x011420	.text		png_set_user_limits	
+768	0x0061B0	.text		png_set_user_transform_info	
+769	0x001030	.text		png_sig_cmp	
+770	0x003A30	.text		png_start_read_image	
+771	0x00B260	.text		png_warning	png_warning
