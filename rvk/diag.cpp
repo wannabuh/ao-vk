@@ -55,8 +55,27 @@ void Device::EndFrameDump()
     uint32_t effects = 0;
     for (const ParticleBlock& b : m_particleBlocks)
         if (b.key && b.lastSeen == m_frameNumber) ++effects;
-    std::fprintf(m_dumpFile, "# particles: %u effects announced, %u particle draws, %zu textures kept for fading particles\n",
-                 effects, m_particleDraws, m_particleHeldTextures.size());
+    std::fprintf(m_dumpFile, "# particles: %u effects announced, %u particle draws, %zu textures kept for fading particles;"
+                             " fading particles drawn at: %s\n", effects, m_particleDraws, m_particleHeldTextures.size(),
+                 m_particleOrphanTrigger);
+    double now = 0.0;
+    {
+        LARGE_INTEGER f, t;
+        QueryPerformanceFrequency(&f);
+        QueryPerformanceCounter(&t);
+        now = double(t.QuadPart) / double(f.QuadPart);
+    }
+    for (uint32_t i = 0; i < m_particleBlocks.size(); ++i) {
+        const ParticleBlock& b = m_particleBlocks[i];
+        if (!b.key) continue;
+        std::fprintf(m_dumpFile, "#   effect %llx block %u: announced %llu frames ago, sprite alive %.2f s ago, simulated %d,"
+                                 " drawn this frame %d, draw state %d (target %s), may live %d, fading %d (%u draws)\n",
+                     (unsigned long long)b.key, i, (unsigned long long)(m_frameNumber - b.lastSeen),
+                     b.lastAliveTime > 0.0 ? now - b.lastAliveTime : -1.0, b.simulated ? 1 : 0,
+                     b.drawnFrame == m_frameNumber ? 1 : 0, b.haveState ? 1 : 0,
+                     !b.haveState ? "-" : b.state.target == m_scene ? "scene" : b.state.target == m_ldrMain ? "main" : "other",
+                     ParticlesMayLive(b, now) ? 1 : 0, b.fading ? 1 : 0, b.fadingDraws);
+    }
     std::fclose(m_dumpFile);
     m_dumpFile = nullptr;
 }

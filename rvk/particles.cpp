@@ -8,6 +8,7 @@
 #include "internal.h"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -227,8 +228,30 @@ void Device::SimulateParticles(VkCommandBuffer cmd)
         ParticleBlock& b = m_particleBlocks[i];
         b.simulated = false;
         bool live = ParticlesMayLive(b, now);
-        if (b.key && b.lastSeen + kForgetFrames < m_frameNumber && !live)
+        bool announced = b.key && b.lastSeen + 1 == m_frameNumber;
+        if (b.wasAnnounced && !announced) {
+            ParticleLog("effect %llx (block %u) ended: last announced frame %llu, a sprite alive %.2f s ago, draw state %s, "
+                        "particles may live %s", (unsigned long long)b.key, i, (unsigned long long)b.lastSeen,
+                        b.lastAliveTime > 0.0 ? now - b.lastAliveTime : -1.0, b.haveState ? "kept" : "MISSING",
+                        live ? "yes" : "NO");
+            b.fading = true;
+            b.skipLogged = false;
+            b.fadingDraws = 0;
+            b.endTime = now;
+        } else if (b.fading && announced) {
+            ParticleLog("effect %llx (block %u) announced again after %.2f s", (unsigned long long)b.key, i, now - b.endTime);
+            b.fading = false;
+        }
+        if (b.fading && !live) {
+            ParticleLog("effect %llx (block %u) faded out: %.2f s after its end, %u fading draws", (unsigned long long)b.key,
+                        i, now - b.endTime, b.fadingDraws);
+            b.fading = false;
+        }
+        b.wasAnnounced = announced;
+        if (b.key && b.lastSeen + kForgetFrames < m_frameNumber && !live) {
             b.key = 0;
+            b.wasAnnounced = b.fading = false;
+        }
         if (b.key && (b.lastSeen + 1 == m_frameNumber || live))
             active.push_back(i);
     }
@@ -427,6 +450,18 @@ void Device::ParticleBlockParams(const ParticleBlock& b, float a[4], float bb[4]
     bb[3] = 0.0f;
 }
 
+void Device::ParticleLog(const char* fmt, ...)
+{
+    if (!m_particleLogBudget)
+        return;
+    char line[512];
+    va_list args;
+    va_start(args, fmt);
+    std::vsnprintf(line, sizeof(line), fmt, args);
+    va_end(args);
+    Log("particles: %s%s", line, --m_particleLogBudget ? "" : " (no more particle diagnostics this session)");
+}
+
 bool Device::ParticlesMayLive(const ParticleBlock& block, double now) const
 {
     // The longest a particle lives: 1.5x the set life (particles.comp) times the largest life factor an effect's motion
@@ -443,9 +478,17 @@ void Device::DrawOrphanParticles()
         return;
     double now = Clock();
     for (ParticleBlock& b : m_particleBlocks) {
-        if (!b.simulated || b.drawnFrame == m_frameNumber || !b.haveState || b.state.target != m_target ||
-            !ParticlesMayLive(b, now))
+        if (!b.simulated || b.drawnFrame == m_frameNumber || !ParticlesMayLive(b, now))
             continue;
+        if (!b.haveState || b.state.target != m_target) {
+            if (!b.skipLogged)
+                ParticleLog("effect %llx not drawn while fading: %s", (unsigned long long)b.key,
+                            !b.haveState ? "no draw state (never drawn, or its texture/target went away)"
+                                         : "drawn into another target than this frame's scene");
+            b.skipLogged = true;
+            continue;
+        }
+        ++b.fadingDraws;
         ParticleBlock::DrawState current{m_rs, m_tss, m_textures, m_view, m_proj, {m_texMatrix[0], m_texMatrix[1]},
                                          m_viewport, m_target};
         auto apply = [&](const ParticleBlock::DrawState& st) {

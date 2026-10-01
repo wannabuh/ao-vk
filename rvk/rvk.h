@@ -612,6 +612,10 @@ private:
             Texture* target;
         } state{};
         bool haveState = false;
+        // Diagnostics (randy-vk.log, frame dumps): the effect's end and its particles fading out.
+        bool wasAnnounced = false, fading = false, skipLogged = false;
+        double endTime = 0.0;
+        uint32_t fadingDraws = 0;
     };
     std::vector<ParticleBlock> m_particleBlocks;
     ParticleBlock* m_particlePending = nullptr;  // the effect whose sprite draw comes next
@@ -643,6 +647,9 @@ private:
     // size, curl speed, life factor.
     void ParticleBlockParams(const ParticleBlock& block, float a[4], float b[4]) const;
     bool m_particleOrphansDone = false, m_particleSaw3D = false;
+    const char* m_particleOrphanTrigger = "none";   // frame dumps: what drew this frame's fading particles
+    uint32_t m_particleLogBudget = 400;          // diagnostic lines left for randy-vk.log
+    void ParticleLog(const char* fmt, ...);
     // DestroyTexture: true = kept alive for particles still fading out with it (destroyed once they have).
     bool HoldParticleTexture(Texture* texture);
     void ReleaseParticleTextures(bool all);
