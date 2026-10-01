@@ -15,20 +15,4 @@ VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation \
     grep -v -iE 'pci id|EGL' |
     # winevulkan itself enables VK_EXT_external_memory_dma_buf without its dependency; not ours.
     awk 'BEGIN {RS = ""; ORS = "\n\n"} !/external_memory_dma_buf/' | tee validation.log
-python3 - <<'PY'
-import struct, zlib
-d = open("rvk_demo.bmp", "rb").read()
-w, h = struct.unpack_from("<ii", d, 18)
-off = struct.unpack_from("<I", d, 10)[0]
-row = (w * 3 + 3) & ~3
-raw = bytearray()
-for y in range(h):
-    raw.append(0)
-    line = d[off + (h - 1 - y) * row: off + (h - 1 - y) * row + w * 3]
-    for x in range(w):
-        raw += bytes((line[x * 3 + 2], line[x * 3 + 1], line[x * 3]))
-chunk = lambda t, b: struct.pack(">I", len(b)) + t + b + struct.pack(">I", zlib.crc32(t + b) & 0xFFFFFFFF)
-open("rvk_demo.png", "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
-                                 + chunk(b"IDAT", zlib.compress(bytes(raw), 6)) + chunk(b"IEND", b""))
-print("wrote rvk_demo.png")
-PY
+python3 "$OLDPWD/tools/bmp2png.py" rvk_demo.bmp rvk_demo.png && echo "wrote rvk_demo.png"

@@ -6,7 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")   # static CRT: no extra runtime DLL next to the game
 
 # Drop-in randy31.dll. Exports not implemented here forward to the original, renamed randy31_orig.dll.
-add_library(randy31 SHARED proxy/dllmain.cpp proxy/trace.cpp proxy/randy31.def)
+add_library(randy31 SHARED proxy/dllmain.cpp proxy/trace.cpp proxy/ddraw/com_trace.cpp proxy/randy31.def)
+target_include_directories(randy31 PRIVATE proxy)
+target_compile_definitions(randy31 PRIVATE _CRT_SECURE_NO_WARNINGS)
+target_link_libraries(randy31 PRIVATE user32)
 set_target_properties(randy31 PROPERTIES OUTPUT_NAME randy31 PREFIX "")
 
 # Wine-run check that every proxy export resolves to the original's address.
@@ -39,3 +42,8 @@ target_link_libraries(rvk PUBLIC user32)
 
 add_executable(rvk_demo tests/rvk_demo.cpp)
 target_link_libraries(rvk_demo PRIVATE rvk)
+
+# Boots the real randy31 renderer outside the game (run with tools/randy-harness.sh).
+add_executable(randy_harness tests/randy_harness.cpp)
+target_compile_definitions(randy_harness PRIVATE _CRT_SECURE_NO_WARNINGS)
+target_link_libraries(randy_harness PRIVATE user32)

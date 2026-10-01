@@ -5,13 +5,17 @@
 // arguments, then restores everything and jumps to the original export with the stack exactly as the
 // caller left it. No signatures are needed, so any export can be traced.
 //
-// Normally OnCall() only watches for frame boundaries (Randy_t::Flip). Ctrl+Shift+F12, or every 60 s,
-// arms a capture of the next whole frame: the sequence of passes, render targets and draw calls
-// (grouped by calling module), per-export call counts, and the contents of the render lists.
+// Normally OnCall() only watches for frame boundaries (Randy_t::Flip). Ctrl+Shift+F12, every 60 s, or
+// frame number RANDYVK_CAPTURE_FRAME arms a capture of the next whole frame: the sequence of passes, render targets and draw calls
+// (grouped by calling module), per-export call counts, the contents of the render lists, and (with
+// RANDYVK_DDRAW=trace) the Direct3D 7 COM calls Randy made during the frame.
 // Output: %RANDYVK_LOG%, else randy-vk.log in the current directory (the client folder).
+
+#include "ddraw/com_trace.h"
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -60,6 +64,8 @@ std::map<std::string, unsigned> g_counts;   // "export <- module" -> calls
 std::string g_runModule;                     // current run of consecutive draw calls
 std::string g_runDraw;
 unsigned g_runCount;
+unsigned g_captureFrame;                     // RANDYVK_CAPTURE_FRAME: capture this frame number (1-based)
+std::vector<uint32_t> g_comStart;            // COM call counters when the capture started
 
 FILE* Log()
 {
@@ -198,6 +204,20 @@ void EndCapture()
     std::fprintf(f, "calls (export <- caller module):\n");
     for (auto& [k, n] : g_counts)
         std::fprintf(f, "  %6u  %s\n", n, k.c_str());
+    if (rvkproxy::ComTraceActive() && g_comStart.size() == rvkproxy::ComMethodCount()) {
+        std::vector<std::pair<uint32_t, unsigned>> com;
+        for (unsigned i = 0; i < g_comStart.size(); ++i)
+            if (uint32_t d = rvkproxy::ComCallCount(i) - g_comStart[i])
+                com.push_back({d, i});
+        std::sort(com.rbegin(), com.rend());
+        std::fprintf(f, "Direct3D 7 COM calls by Randy:\n");
+        for (auto& [n, i] : com)
+            std::fprintf(f, "  %6u  %s\n", n, rvkproxy::ComMethodName(i));
+        std::fprintf(f, "Direct3D 7 COM calls since start (incl. initialisation):\n");
+        for (unsigned i = 0; i < rvkproxy::ComMethodCount(); ++i)
+            if (uint32_t n = rvkproxy::ComCallCount(i))
+                std::fprintf(f, "  %6u  %s\n", n, rvkproxy::ComMethodName(i));
+    }
     std::fflush(f);
     g_events.clear();
     g_counts.clear();
@@ -238,6 +258,11 @@ void Init()
         if (!std::strcmp(kExports[i].name, "RViewPort_t::RenderRefraction")) g_viewportRefraction = i;
     }
     g_lastAuto = GetTickCount();
+    char frame[16] = "";
+    if (GetEnvironmentVariableA("RANDYVK_CAPTURE_FRAME", frame, sizeof(frame)))
+        g_captureFrame = unsigned(std::atoi(frame));
+    if (g_orig)
+        rvkproxy::InstallDDrawHooks(g_orig);
 }
 
 }  // namespace
@@ -269,10 +294,14 @@ void __cdecl trace_on_call(CallFrame* f)
     bool hotkey = (GetAsyncKeyState(VK_CONTROL) & 0x8000) && (GetAsyncKeyState(VK_SHIFT) & 0x8000) &&
                   (GetAsyncKeyState(VK_F12) & 1);
     DWORD now = GetTickCount();
-    if (g_capture == Capture::Idle && (hotkey || now - g_lastAuto > 60000)) {
+    bool requested = g_captureFrame >= 2 && g_frame == g_captureFrame - 1;
+    if (g_capture == Capture::Idle && (hotkey || requested || now - g_lastAuto > 60000)) {
         g_lastAuto = now;
         g_capture = Capture::Recording;
         g_captureThread = GetCurrentThreadId();
+        g_comStart.assign(rvkproxy::ComMethodCount(), 0);
+        for (unsigned i = 0; i < g_comStart.size(); ++i)
+            g_comStart[i] = rvkproxy::ComCallCount(i);
     }
 }
 

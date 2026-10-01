@@ -2,7 +2,7 @@
 # Every other export stays a plain forwarder to randy31_orig.dll.
 render_t::Render
 render_t::(SetTransformMatrix|SetLight|ProcessVertices|Blt|LockTexture|UnlockTexture|CreateSurface)\(
-Randy_t::(Flip|SetRenderTarget|PushRenderTarget|PopRenderTarget|SetRenderTargetAsTexture|Initialize)\(
+Randy_t::(Flip|SetRenderTarget|PushRenderTarget|PopRenderTarget|SetRenderTargetAsTexture|Initialize|GetDevices)\(
 RViewPort_t::(Render|RenderRefraction|Open|Close|Clear|Process|RealizeRenderStates|SetMaterial)\(
 DeviceState::(SetRenderState|SetTexture|UpdateDevice)\(
 StateBlob_c::(Set|SetRenderState|SetTextureStageState|SetTexture)\(
