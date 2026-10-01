@@ -1,0 +1,2 @@
+module	class	kind	offset	size	source	func_addr	func
+FXS.dll	StateBlob_c	new_size	0x84	0	ctor:public __thiscall StateBlob_c::StateBlob_c(void) 	1000ef00	UpdateStateBlobVisual

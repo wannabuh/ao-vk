@@ -1,0 +1,143 @@
+module	class	kind	offset	size	source	func_addr	func
+Gamecode.dll	DummyConnector	new_size	0x6C	0	ctor:public __thiscall DummyConnector::DummyConnector(void) 	100d1ecf	_EffectHandler_t::RunFunction
+Gamecode.dll	RDeltaState	new_size	0x16C	0	ctor:public __thiscall RDeltaState::RDeltaState(char const *) 	100d367e	FUN_100d367e
+Gamecode.dll	Color_t	store_vptr?	0x0	1	this:public __thiscall Color_t::Color_t(void) 	100d64e5	FUN_100d64e5
+Gamecode.dll	Color_t	store	0x1	2	this:public __thiscall Color_t::Color_t(void) 	100d64e5	FUN_100d64e5
+Gamecode.dll	Color_t	store	0x3	1	this:public __thiscall Color_t::Color_t(void) 	100d64e5	FUN_100d64e5
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1D0	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1D4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1C4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1C8	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1CC	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1B0	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1B4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1B8	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	RRefFrame_t	store	0x1BC	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100d6874	FUN_100d6874
+Gamecode.dll	CATRender_t	load_vptr?	0x0	4	this:public bool __thiscall CATRender_t::RegisterVertexProcessCallback(void (__cdecl *)(class CATRender_t const *,unsigned int,struct CATTriVertex_t const *,struct CATVertex_t *,unsigned int,unsigned short const *,unsigned int,unsigned int,void *),void *) 	100d7752	FUN_100d7752
+Gamecode.dll	RVisual_t	store	0x178	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x180	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x184	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x188	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x18C	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x190	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x194	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x198	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x19C	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x1A0	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x1A4	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x1A8	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store_vptr?	0x0	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0xA4	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x17C	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x1AC	1	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x1B4	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x1B8	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x1BC	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x1C0	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	addr_passed	0x1CC	0	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x1C4	1	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	addr_passed	0x250	0	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x2E0	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	addr_passed	0x1B4	0	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RVisual_t	store	0x1C8	4	this:protected __thiscall RVisual_t::RVisual_t(class RRefFrame_t *,class RAnimation_t *) 	100e0be6	FUN_100e0be6
+Gamecode.dll	RRefFrame_t	new_size	0xA4	0	ctor:public __thiscall RRefFrame_t::RRefFrame_t(class RRefFrame_t const &) 	100e0cfb	FUN_100e0cfb
+Gamecode.dll	RVisual_t	store_vptr?	0x0	4	this:protected virtual __thiscall RVisual_t::~RVisual_t(void) 	100e110e	FUN_100e110e
+Gamecode.dll	RVisual_t	store	0xA4	4	this:protected virtual __thiscall RVisual_t::~RVisual_t(void) 	100e110e	FUN_100e110e
+Gamecode.dll	RVisual_t	load	0x2E0	4	this:protected virtual __thiscall RVisual_t::~RVisual_t(void) 	100e110e	FUN_100e110e
+Gamecode.dll	RVisual_t	load	0x2E0	4	this:protected virtual __thiscall RVisual_t::~RVisual_t(void) 	100e110e	FUN_100e110e
+Gamecode.dll	RVisual_t	load	0x2E0	4	this:protected virtual __thiscall RVisual_t::~RVisual_t(void) 	100e110e	FUN_100e110e
+Gamecode.dll	RVisual_t	store	0x2E0	4	this:protected virtual __thiscall RVisual_t::~RVisual_t(void) 	100e110e	FUN_100e110e
+Gamecode.dll	RVisual_t	addr_passed	0x250	0	this:protected virtual __thiscall RVisual_t::~RVisual_t(void) 	100e110e	FUN_100e110e
+Gamecode.dll	RVisual_t	addr_passed	0x1CC	0	this:protected virtual __thiscall RVisual_t::~RVisual_t(void) 	100e110e	FUN_100e110e
+Gamecode.dll	RVisual_t	store_vptr?	0x0	4	this:public void __thiscall RVisual_t::SetRenderPriority(enum RenderList_e) 	100e11e0	FUN_100e11e0
+Gamecode.dll	RVisual_t	store	0xA4	4	this:public void __thiscall RVisual_t::SetRenderPriority(enum RenderList_e) 	100e11e0	FUN_100e11e0
+Gamecode.dll	RVisual_t	store	0x2DC	4	this:public void __thiscall RVisual_t::SetRenderPriority(enum RenderList_e) 	100e11e0	FUN_100e11e0
+Gamecode.dll	RVisual_t	store	0x2D4	4	this:public void __thiscall RVisual_t::SetRenderPriority(enum RenderList_e) 	100e11e0	FUN_100e11e0
+Gamecode.dll	RRefFrame_t	store	0x1D0	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100e2069	FUN_100e2069
+Gamecode.dll	RRefFrame_t	store	0x1C4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100e2069	FUN_100e2069
+Gamecode.dll	RRefFrame_t	store	0x1D4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100e2069	FUN_100e2069
+Gamecode.dll	RRefFrame_t	store	0x1C8	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100e2069	FUN_100e2069
+Gamecode.dll	RRefFrame_t	store	0x1CC	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100e2069	FUN_100e2069
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100e2069	FUN_100e2069
+Gamecode.dll	RDeltaState	new_size	0x16C	0	ctor:public __thiscall RDeltaState::RDeltaState(char const *) 	100ea37a	FUN_100ea37a
+Gamecode.dll	RDeltaState	new_size	0x16C	0	ctor:public __thiscall RDeltaState::RDeltaState(char const *) 	100ea813	FUN_100ea813
+Gamecode.dll	RDeltaState	new_size	0x16C	0	ctor:public __thiscall RDeltaState::RDeltaState(char const *) 	100ea813	FUN_100ea813
+Gamecode.dll	RDeltaState	new_size	0x16C	0	ctor:public __thiscall RDeltaState::RDeltaState(char const *) 	100ea813	FUN_100ea813
+Gamecode.dll	Color_t	store	0x4	4	arg:public class Color_t __thiscall Color_t::operator+(class Color_t const &) const 	100edfd0	FUN_100edfd0
+Gamecode.dll	Color_t	store_vptr?	0x0	4	arg:public class Color_t __thiscall Color_t::operator+(class Color_t const &) const 	100edfd0	FUN_100edfd0
+Gamecode.dll	Color_t	store	0x8	4	arg:public class Color_t __thiscall Color_t::operator+(class Color_t const &) const 	100edfd0	FUN_100edfd0
+Gamecode.dll	RRefFrame_t	store	0x1C4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1C8	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1CC	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1D0	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1D4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1C4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1C8	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1CC	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1D0	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1D4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1C4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1C8	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1CC	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1D0	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1D4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100ee576	FUN_100ee576
+Gamecode.dll	RRefFrame_t	store	0x1C4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100eebec	FUN_100eebec
+Gamecode.dll	RRefFrame_t	store	0x1D0	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100eebec	FUN_100eebec
+Gamecode.dll	RRefFrame_t	store	0x1C8	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100eebec	FUN_100eebec
+Gamecode.dll	RRefFrame_t	store	0x1D4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100eebec	FUN_100eebec
+Gamecode.dll	RRefFrame_t	store	0x1CC	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100eebec	FUN_100eebec
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100eebec	FUN_100eebec
+Gamecode.dll	RRefFrame_t	store	0x1C8	4	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f4760	FUN_100f4760
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100f522e	FUN_100f522e
+Gamecode.dll	RRefFrame_t	store	0x1C4	4	this:public void __thiscall RRefFrame_t::SetRelativePosition(class Vector3_t const &,class RRefFrame_t const *) 	100f522e	FUN_100f522e
+Gamecode.dll	RRefFrame_t	store	0x1C4	4	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1C8	4	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1CC	4	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1C4	4	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1C8	4	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1CC	4	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1C4	4	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1C8	4	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1CC	4	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	RRefFrame_t	store	0x1E8	1	this:public void __thiscall RRefFrame_t::SetRelativeRotation(class Quaternion_t const &,class RRefFrame_t const *) 	100f5522	FUN_100f5522
+Gamecode.dll	CATRender_t	load	0x78	4	this:public bool __thiscall CATRender_t::RegisterVertexProcessCallback(void (__cdecl *)(class CATRender_t const *,unsigned int,struct CATTriVertex_t const *,struct CATVertex_t *,unsigned int,unsigned short const *,unsigned int,unsigned int,void *),void *) 	100f7a63	FUN_100f7a63
+Gamecode.dll	RDeltaState	new_size	0x16C	0	ctor:public __thiscall RDeltaState::RDeltaState(char const *) 	10104907	FUN_10104907
+Gamecode.dll	RDeltaState	new_size	0x16C	0	ctor:public __thiscall RDeltaState::RDeltaState(char const *) 	10104c30	FUN_10104c30
+Gamecode.dll	RResource_t	load_vptr?	0x0	4	this:public void __thiscall RResource_t::ReleaseRResource(void) const 	1010603b	FUN_1010603b
+Gamecode.dll	RResource_t	vcall	0xC	4	this:public void __thiscall RResource_t::ReleaseRResource(void) const 	1010603b	FUN_1010603b
+Gamecode.dll	RMaterial_t	new_size	0xC0	0	ctor:public __thiscall RMaterial_t::RMaterial_t(char const *,class RTexture_t *,class RGB_t const &,class RGB_t const &,class RGB_t const &,class RGB_t const &,float,float,float,bool,bool) 	10106e2e	_MaterialManager_t::CreateMaterial
+Gamecode.dll	RVisual_t	store	0x1BC	1	this:public void __thiscall RVisual_t::SetRenderPriority(enum RenderList_e) 	1010cf05	FUN_1010cf05
+Gamecode.dll	RDeltaState	new_size	0x16C	0	ctor:public __thiscall RDeltaState::RDeltaState(char const *) 	1011544e	FUN_1011544e
+Gamecode.dll	Color_t	store_vptr?	0x0	4	this:public __thiscall Color_t::Color_t(void) 	1011623a	FUN_1011623a
+Gamecode.dll	Color_t	store_vptr?	0x0	4	this:public __thiscall Color_t::Color_t(void) 	1011623a	FUN_1011623a
+Gamecode.dll	Color_t	store_vptr?	0x0	4	this:public __thiscall Color_t::Color_t(void) 	1011623a	FUN_1011623a

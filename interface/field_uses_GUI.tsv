@@ -1,0 +1,16 @@
+module	class	kind	offset	size	source	func_addr	func
+GUI.dll	RViewPort_t	load	0x8	4	this:public void __thiscall RViewPort_t::RealizeRenderStates(void) 	10046871	FUN_10046871
+GUI.dll	RViewPort_t	load	0x8	4	this:public void __thiscall RViewPort_t::RealizeRenderStates(void) 	10046871	FUN_10046871
+GUI.dll	RMaterial_t	new_size	0xC0	0	ctor:public __thiscall RMaterial_t::RMaterial_t(char const *,class RTexture_t *,class RGB_t const &,class RGB_t const &,class RGB_t const &,class RGB_t const &,float,float,float,bool,bool) 	10046b79	FUN_10046b79
+GUI.dll	RViewPort_t	load	0x8	4	this:public void __thiscall RViewPort_t::RealizeRenderStates(void) 	100e9f73	FUN_100e9f73
+GUI.dll	RViewPort_t	load	0x8	4	this:public void __thiscall RViewPort_t::RealizeRenderStates(void) 	100e9f73	FUN_100e9f73
+GUI.dll	RViewPort_t	load	0x8	4	this:public void __thiscall RViewPort_t::RealizeRenderStates(void) 	100e9f73	FUN_100e9f73
+GUI.dll	RViewPort_t	load	0x8	4	this:public void __thiscall RViewPort_t::RealizeRenderStates(void) 	100ea626	FUN_100ea626
+GUI.dll	RViewPort_t	load	0x8	4	this:public void __thiscall RViewPort_t::RealizeRenderStates(void) 	100eb216	FUN_100eb216
+GUI.dll	RTexture_t	new_size	0xBC	0	ctor:public __thiscall RTexture_t::RTexture_t(char const *,unsigned short,unsigned short,enum RTexture_t::TextureFormat_e,bool,void *) 	1010cb30	BrowserView_c::PreRender
+GUI.dll	RViewPort_t	load	0x8	4	this:public void __thiscall RViewPort_t::SetMaterial(class RMaterial_t const *) 	1010ce18	BrowserView_c::Render
+GUI.dll	RMaterial_t	new_size	0xC0	0	ctor:public __thiscall RMaterial_t::RMaterial_t(char const *,class RTexture_t *,class RGB_t const &,class RGB_t const &,class RGB_t const &,class RGB_t const &,float,float,float,bool,bool) 	1010de39	BrowserView_c::BrowserView_c
+GUI.dll	RRefFrame_t	load	0xE4	4	this:public void __thiscall RRefFrame_t::SetGroupMask(unsigned int,bool) 	1011b4b7	CharCreateModule_t::SlotMeshReady
+GUI.dll	RRefFrame_t	store	0xBC	1	this:public void __thiscall RRefFrame_t::SetGroupMask(unsigned int,bool) 	1011b4b7	CharCreateModule_t::SlotMeshReady
+GUI.dll	RRefFrame_t	store	0xBC	1	this:public void __thiscall RRefFrame_t::SetGroupMask(unsigned int,bool) 	1011b4b7	CharCreateModule_t::SlotMeshReady
+GUI.dll	RViewPort_t	load	0x8	4	this:public void __thiscall RViewPort_t::SetMaterial(class RMaterial_t const *) 	10150be6	FUN_10150be6
