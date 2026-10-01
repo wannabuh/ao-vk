@@ -213,13 +213,19 @@ uint32_t Device::PointShadowLayer(const d3d::Light& l) const
 // End of frame, after the sun's pass: cube maps for the point / spot lights of this frame nearest the camera.
 void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
 {
+    PointShadowLight previous[kMaxPointShadows];   // the lights shadowed last frame: kept unless clearly beaten
+    uint32_t previousCount = m_pointShadowCount;
+    std::copy(m_pointShadowLights, m_pointShadowLights + kMaxPointShadows, previous);
     m_pointShadowCount = 0;
     m_pointShadowDraws = 0;
     if (!m_pointShadows || !m_lightOverride || !m_pixelLighting || !m_frameViewProjValid || m_shadowItems.empty())
         return;
 
-    // Candidates: lights whose sphere of influence reaches into the view, nearest the camera first (by the distance
-    // to that sphere, as the frame light list orders them).
+    // Candidates: lights whose sphere of influence reaches into the view, nearest the camera first - by the distance
+    // to the light itself. (Not to its sphere: every light whose range covers the camera would tie at 0, and big
+    // floodlights far away, whose shadows are coarse and faint here, took the slots of the lights around the
+    // player depending on the camera angle.) A light shadowed last frame keeps its slot unless another is clearly
+    // nearer, so lights at similar distances don't swap cubes back and forth.
     struct Candidate { float key; uint32_t index; };
     std::vector<Candidate> candidates;
     for (uint32_t i = 0; i < m_lightsCur.size(); ++i) {
@@ -232,7 +238,16 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
         if (BoxInClip(mn, mx, m_frameViewProj, true) == -1)
             continue;
         float dx = l.position.x - m_frameEye[0], dy = l.position.y - m_frameEye[1], dz = l.position.z - m_frameEye[2];
-        candidates.push_back({std::max(0.0f, std::sqrt(dx * dx + dy * dy + dz * dz) - l.range), i});
+        float key = std::sqrt(dx * dx + dy * dy + dz * dz);
+        for (uint32_t p = 0; p < previousCount; ++p) {
+            const PointShadowLight& q = previous[p];
+            float px = q.position[0] - l.position.x, py = q.position[1] - l.position.y, pz = q.position[2] - l.position.z;
+            if (q.range == l.range && px * px + py * py + pz * pz < 0.5f * 0.5f) {   // same light (may have moved)
+                key *= 0.85f;
+                break;
+            }
+        }
+        candidates.push_back({key, i});
     }
     uint32_t count = std::min<uint32_t>(uint32_t(candidates.size()), m_pointShadows);
     if (count == 0)
