@@ -156,7 +156,7 @@ Device::~Device()
     if (!m_device)
         return;
     vkDeviceWaitIdle(m_device);
-    m_completed = m_submitted;
+    m_completed = UINT64_MAX;                   // the device is idle: everything deferred can go
     CollectGarbage();
     for (auto& f : m_frames) {
         if (f.ring) vmaDestroyBuffer(m_allocator, f.ring, f.ringAllocation);
@@ -764,6 +764,9 @@ void Device::EnsureRingSpace(VkDeviceSize bytes)
         si.commandBufferCount = 1;
         si.pCommandBuffers = &f.upload;
         f.serial = ++m_submitted;
+        // Between frames the slot's fence is signalled (UploadCommands waited on it); a fence must be
+        // unsignalled to be submitted, or waits return early while the GPU still runs the commands.
+        vkResetFences(m_device, 1, &f.fence);
         vkQueueSubmit(m_queue, 1, &si, f.fence);
         WaitFrame(f, "GPU frame work");
         // Leave the fence signalled: BeginFrame waits on it before using this slot.

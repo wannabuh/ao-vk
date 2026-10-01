@@ -234,7 +234,8 @@ private:
     std::vector<std::pair<uint64_t, Texture*>> m_deadTextures;
     std::vector<std::pair<uint64_t, DeadImage>> m_deadImages;
     bool m_deviceLost = false;
-    uint64_t DeathTag() const { return m_inFrame ? m_submitted + 1 : m_submitted; }
+    // The next submission carries everything recorded so far (frame commands or pending uploads).
+    uint64_t DeathTag() const { return m_submitted + 1; }
     void WaitFrame(Frame& f, const char* what);          // waits for f's fence, updates m_completed
     void CollectGarbage();
     static constexpr VkFormat kColorFormat = VK_FORMAT_B8G8R8A8_UNORM;

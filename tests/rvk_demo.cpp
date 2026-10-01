@@ -700,6 +700,16 @@ int main(int argc, char** argv)
         dev.EndFrame();
         if (shortLived)
             dev.DestroyTexture(shortLived);
+        if (stress && frame == 1) {
+            // ~100 MB of uploads *between* frames (texture streaming while the game isn't inside a frame).
+            std::vector<uint32_t> pixels(256 * 256, 0xFF0000FF);
+            std::vector<Texture*> many;
+            for (int i = 0; i < 400; ++i)
+                many.push_back(dev.CreateTexture(256, 256, pixels.data()));
+            for (Texture* t : many)
+                dev.DestroyTexture(t);
+            std::printf("stress: uploaded %zu textures between frames\n", many.size());
+        }
     }
     for (Texture* t : {scene.checker, scene.dot, scene.stripes, scene.gray, scene.target, scene.mips})
         dev.DestroyTexture(t);
