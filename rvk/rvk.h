@@ -257,7 +257,7 @@ private:
         float alphaRef;
     };
     bool m_shadows = false;
-    float m_shadowStrength = 0.55f, m_shadowRange = 60.0f;
+    float m_shadowStrength = 0.65f, m_shadowRange = 60.0f;
     VkImage m_shadowImage = VK_NULL_HANDLE;
     VmaAllocation_T* m_shadowAllocation = nullptr;
     VkImageView m_shadowView = VK_NULL_HANDLE;

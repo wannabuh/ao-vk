@@ -129,9 +129,12 @@ void main()
         vec3 n = vNormalW.xyz;
         float len2 = dot(n, n);
         n = len2 > 0.0 ? n * (vNormalW.w * inversesqrt(len2)) : vec3(0.0);
-        vec3 ambient = C.ambient.rgb, diff = vec3(0.0), spec = vec3(0.0);
+        vec3 ambient = vec3(0.0), diff = vec3(0.0), spec = vec3(0.0);
         AccumulateLights(vPosW, n, shadeSun ? shade : 1.0, localScale, ambient, diff, spec);
-        gDiffuse = clamp(vec4(vMatEmissive + vMatAmbient * ambient + vDiffuse.rgb * diff, vDiffuse.a), 0.0, 1.0);
+        // The ground's lighting pass (F_SHADOWTEX): the shadow takes the global ambient and emissive part along
+        // with the lightmap, leaving only the lights' own contribution: (lightmap + ambient) * shadow + lights.
+        vec3 base = (vMatEmissive + vMatAmbient * C.ambient.rgb) * texShade;
+        gDiffuse = clamp(vec4(base + vMatAmbient * ambient + vDiffuse.rgb * diff, vDiffuse.a), 0.0, 1.0);
         gSpecular = clamp(vec4(vSpecular.rgb * spec, vSpecular.a), 0.0, 1.0);
     }
     vec4 current = gDiffuse;

@@ -83,7 +83,7 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     char lightOverride[8] = "1";
     GetEnvironmentVariableA("RANDYVK_LIGHT_OVERRIDE", lightOverride, sizeof(lightOverride));
     device->SetLightOverride(lightOverride[0] != '0');
-    char shadows[8] = "1", strength[16] = "0.55", range[16] = "60";
+    char shadows[8] = "1", strength[16] = "0.65", range[16] = "60";
     GetEnvironmentVariableA("RANDYVK_SHADOWS", shadows, sizeof(shadows));
     GetEnvironmentVariableA("RANDYVK_SHADOW_STRENGTH", strength, sizeof(strength));
     GetEnvironmentVariableA("RANDYVK_SHADOW_RANGE", range, sizeof(range));
