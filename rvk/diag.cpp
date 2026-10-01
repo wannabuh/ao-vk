@@ -53,6 +53,10 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
 {
     uint32_t n = m_dumpDraw++;
     if ((fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW) return;     // 2D
+    if (IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount)) {
+        std::fprintf(m_dumpFile, "D %u: blob shadow (hidden), prim %u v %u i %u\n", n, primitive, vertexCount, indexCount);
+        return;
+    }
     FILE* f = m_dumpFile;
     FvfLayout layout = DecodeFvf(fvf);
     bool lit = m_rs[d3d::RS_LIGHTING] != 0;

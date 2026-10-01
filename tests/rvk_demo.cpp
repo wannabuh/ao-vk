@@ -778,6 +778,8 @@ void RunShadowTest(D& dev, int frames, const std::string& shot)
     auto fencePixels = Checker(64, 8, 0xFF806040, 0x00000000);
     Texture* ground = dev.CreateTexture(64, 64, groundPixels.data());
     Texture* fence = dev.CreateTexture(64, 64, fencePixels.data());
+    std::vector<uint32_t> blobPixels(64, 0xFFFFFFFF);
+    Texture* blobTex = dev.CreateTexture(8, 8, blobPixels.data());
     for (int frame = 0; frame < frames; ++frame) {
         if (frame == frames - 1)
             dev.RequestScreenshot(shot);
@@ -836,12 +838,42 @@ void RunShadowTest(D& dev, int frames, const std::string& shot)
                         {4, 3, 9, 0, 0, -1, 0xFFFFFFFF, 1, 0}, {4, 0, 9, 0, 0, -1, 0xFFFFFFFF, 1, 1}};
         dev.DrawPrimitive(TriangleFan, kFvfMesh, f, 4);
         dev.SetRenderState(RS_ALPHATESTENABLE, 0);
+        // Anarchy Online's blob shadow (GfxVisualSimpleShadow_c, 8 segments) under the small cube: rvk hides it
+        // once sun shadows are available (from the second frame).
+        dev.SetRenderState(RS_LIGHTING, 0);
+        dev.SetRenderState(RS_ZWRITEENABLE, 0);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+        dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+        dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
+        dev.SetTexture(0, blobTex);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG2);
+        dev.SetTextureStageState(0, TSS_ALPHAARG2, TA_DIFFUSE);
+        {
+            const int n = 8;
+            VtxDiffuseTex blob[2 * n + 1];
+            blob[0] = {7, 0.02f, -2, 0x5F000000, 0.5f, 0.5f};
+            for (int i = 0; i < n; ++i) {
+                float a = 2 * kPi * i / n;
+                blob[1 + i] = {7 + 0.9f * std::cos(a), 0.02f, -2 + 0.9f * std::sin(a), 0x5F000000, 0.5f, 0.5f};
+                blob[1 + n + i] = {7 + 1.6f * std::cos(a), 0.02f, -2 + 1.6f * std::sin(a), 0x00000000, 0.5f, 0.5f};
+            }
+            uint16_t fan[n + 2], strip[2 * n + 2];
+            fan[0] = 0;
+            for (int i = 0; i <= n; ++i) fan[1 + i] = uint16_t(1 + i % n);
+            for (int i = 0; i <= n; ++i) { strip[2 * i] = uint16_t(1 + i % n); strip[2 * i + 1] = uint16_t(1 + n + i % n); }
+            dev.DrawIndexedPrimitive(TriangleFan, kFvfDiffuseTex, blob, 2 * n + 1, fan, n + 2);
+            dev.DrawIndexedPrimitive(TriangleStrip, kFvfDiffuseTex, blob, 2 * n + 1, strip, 2 * n + 2);
+        }
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        dev.SetRenderState(RS_ZWRITEENABLE, 1);
         dev.SetTexture(0, nullptr);
         dev.LightEnable(0, false);
         dev.EndFrame();
     }
     dev.DestroyTexture(ground);
     dev.DestroyTexture(fence);
+    dev.DestroyTexture(blobTex);
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)

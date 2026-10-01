@@ -250,6 +250,34 @@ bool Device::ShadowReceiver(uint32_t fvf) const
     return (src == d3d::BLEND_SRCALPHA && dst == d3d::BLEND_INVSRCALPHA) || (src == d3d::BLEND_ONE && dst == d3d::BLEND_ZERO);
 }
 
+// Anarchy Online's round blob shadow under characters (GfxVisualSimpleShadow_c): a black, alpha-blended disc of
+// numSegs segments drawn as an indexed fan (2n+1 vertices, n+2 indices) and strip (2n+2 indices) with an 8x8
+// texture and no depth writes. Redundant while real shadows are drawn.
+bool Device::IsBlobShadow(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
+                          uint32_t indexCount) const
+{
+    if (!m_shadows || !m_shadowValid || fvf != (d3d::FVF_XYZ | d3d::FVF_DIFFUSE | (1u << 8)) || vertexCount % 2 == 0 ||
+        vertexCount < 7 || vertexCount > 129)
+        return false;
+    uint32_t n = (vertexCount - 1) / 2;
+    if (!((primitive == d3d::TriangleFan && indexCount == n + 2) || (primitive == d3d::TriangleStrip && indexCount == 2 * n + 2)))
+        return false;
+    if (!m_rs[d3d::RS_ALPHABLENDENABLE] || m_rs[d3d::RS_SRCBLEND] != d3d::BLEND_SRCALPHA ||
+        m_rs[d3d::RS_DESTBLEND] != d3d::BLEND_INVSRCALPHA || m_rs[d3d::RS_ZWRITEENABLE])
+        return false;
+    const Texture* t = m_textures[0];
+    if (!t || t->Width() != 8 || t->Height() != 8)
+        return false;
+    const uint8_t* v = static_cast<const uint8_t*>(vertices);
+    for (uint32_t i = 0; i < vertexCount; ++i) {                // XYZ, diffuse, uv: 24 bytes
+        uint32_t diffuse;
+        std::memcpy(&diffuse, v + i * 24 + 12, 4);
+        if (diffuse & 0x00FFFFFF)
+            return false;
+    }
+    return true;
+}
+
 // The sun for the next frame's shadows: the brightest directional light used during this frame.
 void Device::CaptureSun(const d3d::Light& l)
 {

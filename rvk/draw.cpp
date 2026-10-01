@@ -510,6 +510,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         return;
     if (m_dumpFile)
         DumpDraw(primitive, fvf, vertices, vertexCount, indexCount);
+    if (IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount))
+        return;                                  // replaced by sun shadows
     Frame& f = m_frames[m_frameIndex];
     VkCommandBuffer cmd = f.main;
     FvfLayout layout = DecodeFvf(fvf);
