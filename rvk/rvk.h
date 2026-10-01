@@ -221,6 +221,7 @@ public:
         // How much each effect's own motion shapes its particles (0 = every effect alike; MeasureParticleMotion).
         float adapt = 1.0f;
         float follow = 0.7f;                     // how much young particles follow their sprite's motion (0..1)
+        float brightness = 2.0f;                 // colour multiplier (smaller particles cover less: they need more)
     };
     void SetParticleParams(const ParticleParams& params) { m_particleParams = params; }
     const ParticleParams& GetParticleParams() const { return m_particleParams; }
@@ -661,6 +662,7 @@ private:
         int32_t baseVertex;
     };
     const ExternalGeometry* m_external = nullptr;
+    float m_drawColorScale = 1.0f;               // the current draw's colour multiplier (particles)
 
     // Point light shadows (pointshadow.cpp): a cube map per shadowed light, layers 6*i .. 6*i+5 of one cube array.
     static constexpr uint32_t kPointShadowSize = 1024;

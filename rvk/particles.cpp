@@ -571,9 +571,13 @@ void Device::DrawParticles(ParticleBlock& block, bool orphan)
                      m.turnover, a[0], a[1], a[2], a[3], b[0], b[1], b[2]);
     }
     m_external = &geometry;
+    m_drawColorScale = std::max(m_particleParams.brightness, 0.0f);
+    m_constantsDirty = true;
     uint32_t quads = m_particleSimCount * kParticleSlots;   // only the particles in use
     Draw(d3d::TriangleList, kParticleFvf, nullptr, quads * 4, nullptr, quads * 6);
     m_external = nullptr;
+    m_drawColorScale = 1.0f;
+    m_constantsDirty = true;
     m_world = world;
     ++m_particleDraws;
 }

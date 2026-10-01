@@ -65,6 +65,7 @@ Setting g_settings[] = {
     {"RVK_Particles",  "GPU particles on sparkle effects (listed in randy-vk.ini [Particles])", "Particles", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_PartCount",  "Particles per sprite",                                            "Particles",      Int,   1, 32, 1, 12, nullptr, 0},
     {"RVK_PartSize",   "Particle size (fraction of its sprite)",                          "Particles",      Float, 0.03f, 0.6f, 0.01f, 0.15f, nullptr, 0},
+    {"RVK_PartBright", "Particle brightness (colour multiplier)",                         "Particles",      Float, 0.25f, 8, 0.25f, 2, nullptr, 0},
     {"RVK_PartLife",   "Particle life (seconds)",                                         "Particles",      Float, 0.25f, 5, 0.05f, 1.5f, nullptr, 0},
     {"RVK_PartCurl",   "Flow (curl noise) speed",                                         "Particles",      Float, 0, 5, 0.1f, 1.5f, nullptr, 0},
     {"RVK_PartScale",  "Flow feature size (world units)",                                 "Particles",      Float, 0.25f, 5, 0.05f, 1.5f, nullptr, 0},
@@ -145,6 +146,7 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
         p.enable = V("RVK_Particles") != 0.0f;
         p.perSprite = uint32_t(V("RVK_PartCount"));
         p.size = V("RVK_PartSize");
+        p.brightness = V("RVK_PartBright");
         p.life = V("RVK_PartLife");
         p.curl = V("RVK_PartCurl");
         p.scale = V("RVK_PartScale");

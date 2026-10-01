@@ -1200,6 +1200,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 std::string g_particleMotion = "ring";   // --particle-motion ring | orbit-cw | orbit-ccw | burst | rise
 bool g_particleEndFree = false;          // --particle-end-free: the effect's texture is destroyed when it ends
 bool g_particleOffscreen = false;        // --particle-offscreen: a render target pass (3D + pre-transformed) comes first
+float g_particleBright = 1.0f;           // --particle-bright X: the particles' colour multiplier
 bool g_particleWater = false;            // --particle-water: water the game's way (ProcessVertices output, FVF 0x1C4) mid-scene
 
 // Particle test (--particle-test): an effect like the game's sparkle auras - a ring of soft additive sprites (FVF 0x142,
@@ -1221,6 +1222,7 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
     Texture* offscreen = g_particleOffscreen ? dev.CreateRenderTarget(256, 256) : nullptr;
     Device::ParticleParams params;
     params.enable = particles;
+    params.brightness = g_particleBright;
     dev.SetParticleParams(params);
     struct VtxSprite { float x, y, z; uint32_t color; float u, v; };
     struct VtxGround { float x, y, z; uint32_t color; };
@@ -1451,6 +1453,7 @@ int main(int argc, char** argv)
         else if (a == "--particle-end-free") g_particleEndFree = true;
         else if (a == "--particle-offscreen") g_particleOffscreen = true;
         else if (a == "--particle-water") g_particleWater = true;
+        else if (a == "--particle-bright" && i + 1 < argc) g_particleBright = float(std::atof(argv[++i]));
     }
 
     HWND hwnd = nullptr;

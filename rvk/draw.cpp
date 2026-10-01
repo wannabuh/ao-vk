@@ -845,7 +845,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c->eyePos[3] = 1.0f;
     c->eyeDir[3] = 0.0f;
     c->vtx[0] = fvf;
-    c->vtx[1] = c->vtx[2] = c->vtx[3] = 0;
+    std::memcpy(&c->vtx[1], &m_drawColorScale, 4);
+    if (m_drawColorScale == 1.0f) c->vtx[1] = 0;
+    c->vtx[2] = c->vtx[3] = 0;
     uint32_t flags = 0;
     if (m_rs[d3d::RS_LIGHTING] && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) flags |= F_LIGHTING;
     if ((flags & F_LIGHTING) && m_pixelLighting) flags |= F_PERPIXEL;

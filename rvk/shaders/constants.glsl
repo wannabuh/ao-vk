@@ -28,7 +28,7 @@ layout(set = 0, binding = 0, std140) uniform DrawConstants {
     vec4 misc;                  // material power, alpha reference (0..255), effect glow gain, bump strength
     vec4 eyePos;                // camera position, world space
     vec4 eyeDir;                // camera forward, world space (non-local viewer)
-    uvec4 vtx;                  // FVF
+    uvec4 vtx;                  // FVF, colour scale (float bits; 0 = 1: the particles' brightness)
     uvec4 flags;                // F_* bits, fog vertex mode, fog table mode, alpha func
     uvec4 matSources;           // diffuse, ambient, specular, emissive material sources
     uvec4 stageA[2];            // colorop, colorarg1, colorarg2, alphaop

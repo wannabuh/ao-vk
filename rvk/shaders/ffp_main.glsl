@@ -287,6 +287,8 @@ void main()
     }
     if (!shadeSun)
         current.rgb *= shade;
+    if (C.vtx.y != 0u)                                   // GPU particles: brighter than their sprites, so small ones show
+        current.rgb *= uintBitsToFloat(C.vtx.y);
     if ((C.flags.x & F_FOG) != 0u) {
         float f = vFogFactor;
         uint table = C.flags.z;
