@@ -1,0 +1,9 @@
+module	callee	func_addr	call_addr	args
+GUI.dll	RANDY31.DLL::render_t::RenderTriangleFan	100e92ef	100e958c	?,0x104,?,0x4,0x0
+GUI.dll	RANDY31.DLL::render_t::RenderTriangleFan	10046159	100463cd	?,0x144,?,0x4,0x0
+GUI.dll	RANDY31.DLL::render_t::RenderTriangleStrip	1010ce18	1010d040	?,0x144,?,0x4,0x0
+GUI.dll	RANDY31.DLL::render_t::RenderLineList	100465b4	10046670	?,0x44,?,0x8,0x0
+GUI.dll	RANDY31.DLL::render_t::RenderTriangleFan	10046400	10046590	?,0x44,?,0x9,0x0
+GUI.dll	RANDY31.DLL::render_t::RenderTriangleFan	10046871	100469dd	?,0x144,?,0x4,0x0
+GUI.dll	RANDY31.DLL::DynamicVB_c::GetVertices	10150be6	10150c77	?,0x144,0x1c,?,?
+GUI.dll	RANDY31.DLL::render_t::RenderTriangleList	10150be6	10150d4e	?,?,?,?,?,?,?

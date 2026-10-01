@@ -1,0 +1,4 @@
+module	callee	func_addr	call_addr	args
+FXS.dll	RANDY31.DLL::StateBlob_c::SetTextureStageState	1000ef00	1000f01a	?,?,?,?
+FXS.dll	RANDY31.DLL::StateBlob_c::SetRenderState	1000ef00	1000f062	?,?,?
+FXS.dll	RANDY31.DLL::StateBlob_c::SetRenderState	1000ef00	1000f086	?,0x3c,?

@@ -1,0 +1,6 @@
+module	callee	func_addr	call_addr	args
+FXS.dll	RANDY31.DLL::VertexBuffer_c::VertexBuffer_c	1000e500	1000e5b9	?,?,?,?,?
+FXS.dll	RANDY31.DLL::render_t::RenderTriangleStrip	1000e500	1000e805	?,?,0x0,?,?
+FXS.dll	RANDY31.DLL::render_t::RenderPointList	1000e500	1000e824	?,?,0x0,?,?
+FXS.dll	RANDY31.DLL::VertexBuffer_c::VertexBuffer_c	1000e863	1000ea76	?,?,?,?,?
+FXS.dll	RANDY31.DLL::VertexBuffer_c::VertexBuffer_c	1000e863	1000eb2e	?,?,?,?,?

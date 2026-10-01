@@ -1,7 +1,7 @@
 // Decompiles selected functions (and optionally their callees inside the same module) to one text file.
 //
 // Args: <out.c> <depth> <target>...
-//   target = hex address (0x1000abcd), "calls:<regex>" (every caller of a matching function or import), "vtable:<hex addr>:<count>" (every slot of a vtable), or a
+//   target = hex address (0x1000abcd), "strings:<regex>" (functions referencing a matching string), "calls:<regex>" (every caller of a matching function or import), "vtable:<hex addr>:<count>" (every slot of a vtable), or a
 //            regex matched against the function's full name (namespace::name, as Ghidra shows it)
 //   depth  = how many levels of internal callees to include (0 = only the targets)
 //
@@ -51,6 +51,15 @@ public class DumpDecomp extends GhidraScript {
                         Function real = c.isThunk() && c.getThunkedFunction(true) != null ? c.getThunkedFunction(true) : c;
                         if (re.matcher(real.getName(true)).find()) { roots.add(f); notes.merge(f, "calls " + real.getName(true), (a, b) -> a.contains(b) ? a : a + "; " + b); break; }
                     }
+            } else if (t.startsWith("strings:")) {             // every function referencing a matching string
+                Pattern re = Pattern.compile(t.substring(8));
+                for (Data d : currentProgram.getListing().getDefinedData(true)) {
+                    if (!d.hasStringValue() || !re.matcher(String.valueOf(d.getValue())).find()) continue;
+                    for (Reference r : getReferencesTo(d.getAddress())) {
+                        Function f = fm.getFunctionContaining(r.getFromAddress());
+                        if (f != null && !roots.contains(f)) roots.add(f);
+                    }
+                }
             } else if (t.startsWith("0x")) {
                 Function f = fm.getFunctionContaining(toAddr(Long.parseLong(t.substring(2), 16)));
                 if (f != null) roots.add(f);

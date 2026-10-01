@@ -1,0 +1,312 @@
+module	callee	func_addr	call_addr	args
+randy31.dll	FUN_1001237d	10045f7a	10045fa9	?,0x7,0x0,0xa
+randy31.dll	FUN_1001237d	10045f7a	10045fb9	?,0xe,0x0,0xa
+randy31.dll	DeviceState::SetRenderState	1004177f	10041796	?,0x1c,?,0xa
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055a5a	?,0x0,0xb,0x10000
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055a68	?,0x0,0x18,0x2
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055a73	?,0x0,0x1,0x2
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055a7d	?,0x0,0x2,0x2
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055a88	?,0x0,0x3,0x0
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055a92	?,0x13,0x2
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055a9c	?,0x14,0x2
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055aa7	?,0x1b,0x1
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055abc	?,0x0,0xb,0x1
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055ac7	?,0x0,0x1,0x2
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055ad1	?,0x0,0x2,0x2
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055adc	?,0x0,0x3,0x0
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055ae6	?,0x13,0x2
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055af0	?,0x14,0x2
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055afb	?,0x1b,0x1
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055b10	?,0x0,0x1,0x4
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055b1a	?,0x0,0x2,0x0
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055b25	?,0x0,0x3,0x2
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055b34	?,0x0,0xb,0x20000
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055b40	?,0x0,0x18,0x3
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055b4c	?,0x0,0xc,0x1
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055b56	?,0xe,0x0
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055b61	?,0x17,0x3
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055b6f	?,0x89,0x1
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055b79	?,0x13,0x2
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055b83	?,0x14,0x2
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055b8e	?,0x1b,0x1
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055b98	?,0x22,0x0
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055ba5	?,0x8b,0x0
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055bba	?,0x0,0x1,0x4
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055bc5	?,0x0,0x2,0x3
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055bd0	?,0x0,0x3,0x2
+randy31.dll	StateBlob_c::SetTextureStageState	10055a3e	10055bdc	?,0x0,0xc,0x1
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055be9	?,0x89,0x0
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055bf3	?,0x13,0x2
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055bfd	?,0x14,0x2
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055c08	?,0x1b,0x1
+randy31.dll	StateBlob_c::SetRenderState	10055a3e	10055c12	?,0x22,0x0
+randy31.dll	DeviceState::SetRenderState	10041876	100418ac	?,0x1c,0x1,0xa
+randy31.dll	RDeltaState::SetRenderState	1004ac5f	1004ad15	?,0x91,0x0
+randy31.dll	RDeltaState::SetRenderState	1004ac5f	1004ad23	?,0x92,0x0
+randy31.dll	RDeltaState::SetRenderState	1004ac5f	1004ad31	?,0x93,0x0
+randy31.dll	RDeltaState::SetRenderState	1004ac5f	1004ad58	?,0x94,?
+randy31.dll	FUN_1001237d	1004bfff	1004c216	?,0x16,0x1,0xa
+randy31.dll	FUN_1001237d	1004bfff	1004c228	?,0x17,0x8,0xa
+randy31.dll	FUN_1001237d	1004bfff	1004c238	?,0xe,0x0,0xa
+randy31.dll	FUN_1001237d	1004bfff	1004c248	?,0x1b,0x0,0xa
+randy31.dll	FUN_1001237d	1004bfff	1004c258	?,0x1c,0x0,0xa
+randy31.dll	FUN_1001237d	1004bfff	1004c26b	?,0x89,0x0,0xa
+randy31.dll	FUN_1001237d	1004bfff	1004c3bf	?,0x16,0x1,0xa
+randy31.dll	FUN_1001237d	1004bfff	1004c3d3	?,0x17,0x8,0xa
+randy31.dll	FUN_1001237d	1004bfff	1004c3e5	?,0xe,0x0,0xa
+randy31.dll	FUN_1001237d	1004bfff	1004c3f5	?,0x1b,0x0,0xa
+randy31.dll	FUN_1001237d	1004bfff	1004c405	?,0x1c,0x0,0xa
+randy31.dll	FUN_1001237d	1004bfff	1004c417	?,0x89,0x0,0xa
+randy31.dll	FUN_1001237d	10040013	100400c0	?,0x94,0x1,0xa
+randy31.dll	StateBlob_c::SetRenderState	1004d076	1004d0ff	?,0x8b,?
+randy31.dll	DeviceState::SetRenderState	10041844	10041854	?,0x24,?,0xa
+randy31.dll	FUN_1001237d	1004d84a	1004d87a	?,0x8,?,0xa
+randy31.dll	DeviceState::SetTextureStageState	1004d84a	1004d974	?,0x0,0x18,0x2,0xa
+randy31.dll	DeviceState::SetTextureStageState	1004d84a	1004d9b2	?,0x1,0x18,0x2,0xa
+randy31.dll	FUN_1001237d	1004d84a	1004da25	?,0x88,?,0xa
+randy31.dll	DeviceState::SetTextureStageState	1004d84a	1004db84	?,0x0,0x18,?,0xa
+randy31.dll	DeviceState::SetTextureStageState	1004d84a	1004dba6	?,0x1,0x18,?,0xa
+randy31.dll	DeviceState::SetTextureStageState	1002be44	1002be87	?,?,?,?,?
+randy31.dll	DeviceState::SetRenderState	10041812	10041822	?,0x23,?,0xa
+randy31.dll	DeviceState::SetRenderState	100123c0	100123d8	?,?,?,0x2
+randy31.dll	FUN_1001237d	1002c082	1002c21a	?,0x17,0x8,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c229	?,0xe,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c239	?,0x1b,0x1,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c249	?,0x1c,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c25c	?,0x89,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c270	?,0x13,0x5,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c284	?,0x14,0x6,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c29b	?,0x3c,0x26ffffff,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c40f	?,0xe,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c422	?,0x1b,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c432	?,0x1c,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c445	?,0x89,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c6e2	?,0x17,0x8,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c6f3	?,0xe,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c703	?,0x1b,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c713	?,0x1c,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c726	?,0x89,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c93b	?,0x17,0x8,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c950	?,0xe,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c960	?,0x1b,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c970	?,0x1c,0x0,0xa
+randy31.dll	FUN_1001237d	1002c082	1002c983	?,0x89,0x0,0xa
+randy31.dll	FUN_1001237d	1002d2da	1002d325	?,0x1b,?,0xa
+randy31.dll	DeviceState::SetTextureStageState	1004d18a	1004d227	?,0x1,0xb,0x10000,0xa
+randy31.dll	DeviceState::SetTextureStageState	1004d18a	1004d234	?,0x1,0x18,0x2,0xa
+randy31.dll	DeviceState::SetTextureStageState	1004d18a	1004d240	?,0x1,0x1,0x7,0xa
+randy31.dll	DeviceState::SetTextureStageState	1004d18a	1004d2ab	?,0x1,0xb,?,0xa
+randy31.dll	DeviceState::SetTextureStageState	1004d18a	1004d2bc	?,0x1,0x18,?,0xa
+randy31.dll	DeviceState::SetTextureStageState	1004d18a	1004d2cc	?,0x1,0x1,?,0xa
+randy31.dll	DeviceState::SetRenderState	1004179f	100417ea	?,0x22,?,?
+randy31.dll	StateBlob_c::SetRenderState	10013575	1001359a	?,0x89,0x0
+randy31.dll	StateBlob_c::SetRenderState	10013575	100135a5	?,0xe,0x1
+randy31.dll	StateBlob_c::SetRenderState	10013575	100135b0	?,0xf,0x1
+randy31.dll	StateBlob_c::SetRenderState	10013575	100135bb	?,0x19,0x5
+randy31.dll	StateBlob_c::SetRenderState	10013575	100135c6	?,0x18,0x1e
+randy31.dll	StateBlob_c::SetTextureStageState	10013575	100135d2	?,0x0,0x1,0x4
+randy31.dll	StateBlob_c::SetTextureStageState	10013575	100135de	?,0x0,0x2,0x2
+randy31.dll	StateBlob_c::SetTextureStageState	10013575	100135e9	?,0x0,0x3,0x0
+randy31.dll	FUN_1001237d	10049a60	10049d53	?,0x8,?,0xa
+randy31.dll	FUN_1001237d	10056ed6	10056f41	?,0x8,?,0xa
+randy31.dll	FUN_1001237d	10056ed6	10056f59	?,0x88,?,0xa
+randy31.dll	FUN_1001237d	10056ed6	10056f70	?,0x8f,?,0xa
+randy31.dll	FUN_1001237d	10056ed6	100571b5	?,0x1b,0x1,0xa
+randy31.dll	FUN_1001237d	10056ed6	100571cd	?,0x92,0x1,0xa
+randy31.dll	FUN_1001237d	10056ed6	100571e5	?,0x94,0x1,0xa
+randy31.dll	StateBlob_c::SetRenderState	10056ed6	1005744c	?,0x8b,?
+randy31.dll	FUN_1001237d	10056ed6	100575ee	?,0x3c,?,0xa
+randy31.dll	FUN_10023adc	1001baaf	1001bb0d	
+randy31.dll	StateBlob_c::SetRenderState	1002f275	1002f2ae	?,?,?
+randy31.dll	StateBlob_c::SetTextureStageState	1002f275	1002f2e1	?,?,?,?
+randy31.dll	DeviceState::SetRenderState	1004170c	10041734	?,0x7,?,0xa
+randy31.dll	FUN_1002397c	1004170c	1004174b	
+randy31.dll	FUN_1001237d	1002cf6e	1002cff3	?,0x1b,?,0xa
+randy31.dll	RDeltaState::SetTextureStageState	10040f1c	10040f34	?,?,0x2,?
+randy31.dll	RDeltaState::SetTextureStageState	10040f1c	10040f46	?,?,0x3,?
+randy31.dll	RDeltaState::SetTextureStageState	10040f1c	10040f54	?,?,0x1,?
+randy31.dll	FUN_1001237d	1004cd31	1004cd59	?,0x8,?,0xa
+randy31.dll	FUN_1001237d	1004cd31	1004cd88	?,0x88,?,0xa
+randy31.dll	FUN_1002397c	1001ba52	1001ba91	
+randy31.dll	FUN_1001237d	10055ea2	10055f94	?,0x8,?,0xa
+randy31.dll	DeviceState::SetRenderState	10041755	10041775	?,0x8b,?,0xa
+randy31.dll	FUN_1001237d	10012501	1001253a	?,0xe,0x0,0xa
+randy31.dll	FUN_1001237d	10012501	1001254e	?,0x88,0x1,0xa
+randy31.dll	FUN_1001237d	10012501	10012562	?,0x89,0x0,0xa
+randy31.dll	RDeltaState::SetRenderState	10040645	1004075b	?,0x1b,0x0
+randy31.dll	RDeltaState::SetTextureStageState	10040645	1004077b	?,0x0,0x2,0x22
+randy31.dll	RDeltaState::SetTextureStageState	10040645	10040787	?,0x0,0x1,0x7
+randy31.dll	RDeltaState::SetTextureStageState	10040645	10040793	?,0x0,0x3,0x0
+randy31.dll	RDeltaState::SetTextureStageState	10040645	100407a0	?,0x1,0x2,0x2
+randy31.dll	RDeltaState::SetTextureStageState	10040645	100407ac	?,0x1,0x1,0x4
+randy31.dll	RDeltaState::SetTextureStageState	10040645	100407b8	?,0x1,0x3,0x1
+randy31.dll	RDeltaState::SetRenderState	10040645	100407cf	?,0x1b,0x1
+randy31.dll	RDeltaState::SetRenderState	10040645	100407da	?,0xe,0x0
+randy31.dll	RDeltaState::SetRenderState	10040645	100407e5	?,0x22,0x0
+randy31.dll	RDeltaState::SetRenderState	10040645	100407f0	?,0xe,0x0
+randy31.dll	RDeltaState::SetRenderState	10040645	100407fc	?,0x13,0x2
+randy31.dll	RDeltaState::SetRenderState	10040645	10040808	?,0x14,0x2
+randy31.dll	RDeltaState::SetTextureStageState	10040645	10040815	?,0x0,0x2,0x2
+randy31.dll	RDeltaState::SetTextureStageState	10040645	10040821	?,0x0,?,?
+randy31.dll	RDeltaState::SetRenderState	10040645	10040838	?,?,?
+randy31.dll	RDeltaState::SetRenderState	10040645	1004084f	?,0x1b,0x1
+randy31.dll	RDeltaState::SetRenderState	10040645	1004085a	?,0xf,0x1
+randy31.dll	RDeltaState::SetRenderState	10040645	10040866	?,0x19,0x5
+randy31.dll	RDeltaState::SetRenderState	10040645	1004087d	?,0x1b,0x0
+randy31.dll	RDeltaState::SetRenderState	10040645	10040888	?,0xf,0x1
+randy31.dll	RDeltaState::SetRenderState	10040645	10040894	?,0x19,0x5
+randy31.dll	RDeltaState::SetRenderState	10040645	100408bf	?,?,?
+randy31.dll	FUN_1001237d	1002b728	1002b779	?,0x7,0x0,0xa
+randy31.dll	FUN_1001237d	1002b728	1002b78c	?,0xe,0x0,0xa
+randy31.dll	DeviceState::SetRenderState	10024d1e	10024e1d	?,?,?,0x2
+randy31.dll	DeviceState::SetTextureStageState	10024d1e	10024e5f	?,?,?,?,0x2
+randy31.dll	DeviceState::SetRenderState	10024d1e	10024e9c	?,?,?,0x2
+randy31.dll	FUN_1001237d	1004cde6	1004ce23	?,0xe,0x0,0xa
+randy31.dll	FUN_1001237d	1004cde6	1004ce38	?,0x89,0x0,0xa
+randy31.dll	DeviceState::SetTextureStageState	1002be97	1002beb2	?,?,?,?,0x2
+randy31.dll	DeviceState::SetRenderState	10025032	1002512a	?,?,?,0xa
+randy31.dll	DeviceState::SetTextureStageState	10025032	10025184	?,?,?,?,0xa
+randy31.dll	RDeltaState::SetRenderState	10013128	100131d1	?,0x13,?
+randy31.dll	RDeltaState::SetRenderState	10013128	100131e0	?,0x14,0x2
+randy31.dll	RDeltaState::SetRenderState	10013128	100131ef	?,0x1b,0x1
+randy31.dll	RDeltaState::SetRenderState	10013128	100131fd	?,0xe,0x0
+randy31.dll	RDeltaState::SetRenderState	10013128	1001320b	?,0x22,0x0
+randy31.dll	DeviceState::SetRenderState	100417f6	10041809	?,0x8c,?,0xa
+randy31.dll	RDeltaState::SetRenderState	10040b4d	10040b9c	?,?,?
+randy31.dll	DeviceState::SetRenderState	1004d2d8	1004d3f0	?,0x1b,0x0,0x2
+randy31.dll	DeviceState::SetRenderState	1004d2d8	1004d404	?,0x94,0x0,0x2
+randy31.dll	DeviceState::SetRenderState	1004d2d8	1004d418	?,0x92,0x0,0x2
+randy31.dll	DeviceState::SetRenderState	1004d2d8	1004d47d	?,0x92,0x1,0xa
+randy31.dll	DeviceState::SetRenderState	1004d2d8	1004d4ba	?,0x94,0x1,0xa
+randy31.dll	DeviceState::SetRenderState	1004d2d8	1004d4e0	?,0x1b,0x1,0xa
+randy31.dll	FUN_1002397c	10041ede	10041efb	
+randy31.dll	FUN_1002397c	10041ede	10041f0c	
+randy31.dll	FUN_1002397c	10041ede	10041f1a	
+randy31.dll	FUN_1002397c	10041ede	10041f29	
+randy31.dll	FUN_1002397c	10041ede	10041f37	
+randy31.dll	FUN_1002397c	10041ede	10041f45	
+randy31.dll	FUN_1002397c	10041ede	10041f53	
+randy31.dll	FUN_1002397c	10041ede	10041f61	
+randy31.dll	FUN_1002397c	10041ede	10041f70	
+randy31.dll	FUN_1002397c	10041ede	10041f7f	
+randy31.dll	FUN_1002397c	10041ede	10041f8d	
+randy31.dll	FUN_1002397c	10041ede	10041f9c	
+randy31.dll	FUN_1002397c	10041ede	10041faa	
+randy31.dll	FUN_1002397c	10041ede	10041fb9	
+randy31.dll	FUN_1002397c	10041ede	10041fc7	
+randy31.dll	FUN_1002397c	10041ede	10041fd5	
+randy31.dll	FUN_1002397c	10041ede	10041fe3	
+randy31.dll	FUN_1002397c	10041ede	10041ff5	
+randy31.dll	FUN_1002397c	10041ede	10042003	
+randy31.dll	FUN_1002397c	10041ede	10042011	
+randy31.dll	FUN_1002397c	10041ede	10042020	
+randy31.dll	FUN_1002397c	10041ede	10042030	
+randy31.dll	FUN_1002397c	10041ede	1004203e	
+randy31.dll	FUN_1002397c	10041ede	1004204c	
+randy31.dll	FUN_1002397c	10041ede	1004205a	
+randy31.dll	FUN_1002397c	10041ede	10042068	
+randy31.dll	FUN_1002397c	10041ede	10042076	
+randy31.dll	FUN_1002397c	10041ede	10042085	
+randy31.dll	FUN_1002397c	10041ede	10042096	
+randy31.dll	FUN_1002397c	10041ede	100420a7	
+randy31.dll	FUN_1002397c	10041ede	100420b8	
+randy31.dll	FUN_1002397c	10041ede	100420c9	
+randy31.dll	FUN_1002397c	10041ede	100420da	
+randy31.dll	FUN_1002397c	10041ede	100420eb	
+randy31.dll	FUN_1002397c	10041ede	100420fc	
+randy31.dll	FUN_1002397c	10041ede	1004210d	
+randy31.dll	FUN_1002397c	10041ede	1004211e	
+randy31.dll	FUN_1002397c	10041ede	1004212f	
+randy31.dll	FUN_1002397c	10041ede	10042140	
+randy31.dll	FUN_1002397c	10041ede	10042151	
+randy31.dll	FUN_1002397c	10041ede	10042162	
+randy31.dll	FUN_10023adc	10041ede	10042171	
+randy31.dll	FUN_10023adc	10041ede	1004217f	
+randy31.dll	FUN_10023adc	10041ede	1004218e	
+randy31.dll	FUN_10023adc	10041ede	1004219e	
+randy31.dll	FUN_10023adc	10041ede	100421ad	
+randy31.dll	FUN_10023adc	10041ede	100421bc	
+randy31.dll	FUN_10023adc	10041ede	100421cd	
+randy31.dll	FUN_10023adc	10041ede	100421de	
+randy31.dll	FUN_10023adc	10041ede	100421ef	
+randy31.dll	FUN_10023adc	10041ede	10042200	
+randy31.dll	FUN_10023adc	10041ede	1004220f	
+randy31.dll	FUN_10023adc	10041ede	1004221e	
+randy31.dll	FUN_10023adc	10041ede	1004222d	
+randy31.dll	FUN_10023adc	10041ede	1004223c	
+randy31.dll	FUN_10023adc	10041ede	1004224b	
+randy31.dll	FUN_10023adc	10041ede	1004227c	
+randy31.dll	FUN_10023adc	10041ede	100422ad	
+randy31.dll	FUN_10023adc	10041ede	100422d9	
+randy31.dll	FUN_10023adc	10041ede	100422ea	
+randy31.dll	FUN_10023adc	10041ede	100422f9	
+randy31.dll	FUN_10023adc	10041ede	10042308	
+randy31.dll	FUN_10023adc	10041ede	10042319	
+randy31.dll	FUN_10023adc	10041ede	1004232a	
+randy31.dll	FUN_10023adc	10041ede	10042339	
+randy31.dll	FUN_10023adc	10041ede	1004235a	
+randy31.dll	FUN_10023adc	10041ede	1004236a	
+randy31.dll	FUN_10023adc	10041ede	10042379	
+randy31.dll	FUN_10023adc	10041ede	10042388	
+randy31.dll	FUN_10023adc	10041ede	10042398	
+randy31.dll	FUN_10023adc	10041ede	100423a7	
+randy31.dll	FUN_10023adc	10041ede	100423b8	
+randy31.dll	FUN_10023adc	10041ede	100423c9	
+randy31.dll	FUN_10023adc	10041ede	100423da	
+randy31.dll	FUN_10023adc	10041ede	100423eb	
+randy31.dll	FUN_10023adc	10041ede	100423fa	
+randy31.dll	FUN_10023adc	10041ede	10042409	
+randy31.dll	FUN_10023adc	10041ede	10042418	
+randy31.dll	FUN_10023adc	10041ede	10042427	
+randy31.dll	FUN_10023adc	10041ede	10042436	
+randy31.dll	FUN_10023adc	10041ede	10042468	
+randy31.dll	FUN_10023adc	10041ede	1004249a	
+randy31.dll	FUN_10023adc	10041ede	100424c8	
+randy31.dll	FUN_10023adc	10041ede	100424d9	
+randy31.dll	FUN_10023adc	10041ede	100424e8	
+randy31.dll	FUN_10023adc	10041ede	100424f7	
+randy31.dll	FUN_10023adc	10041ede	10042508	
+randy31.dll	FUN_10023adc	10041ede	10042519	
+randy31.dll	FUN_10023adc	10041ede	10042528	
+randy31.dll	FUN_1002397c	10041ede	1004254b	
+randy31.dll	FUN_1002397c	10041ede	10042565	
+randy31.dll	FUN_1002397c	10041ede	10042573	
+randy31.dll	FUN_1002397c	10041ede	10042582	
+randy31.dll	FUN_1002397c	10041ede	1004259b	
+randy31.dll	FUN_10023adc	10041ede	100425bd	
+randy31.dll	FUN_10023adc	10041ede	100425cd	
+randy31.dll	FUN_10023adc	10041ede	100425dd	
+randy31.dll	FUN_10023adc	10041ede	100425fd	
+randy31.dll	FUN_10023adc	10041ede	1004260d	
+randy31.dll	FUN_10023adc	10041ede	10042623	
+randy31.dll	FUN_10023adc	10041ede	10042633	
+randy31.dll	FUN_10023adc	10041ede	10042643	
+randy31.dll	FUN_10023adc	10041ede	1004265f	
+randy31.dll	FUN_10023adc	10041ede	1004266b	
+randy31.dll	FUN_10023adc	10041ede	1004267a	
+randy31.dll	FUN_10023adc	10041ede	1004268a	
+randy31.dll	FUN_10023adc	10041ede	100426a5	
+randy31.dll	FUN_10023adc	10041ede	100426b4	
+randy31.dll	FUN_10023adc	10041ede	100426c4	
+randy31.dll	FUN_1002397c	10041ede	100426d3	
+randy31.dll	FUN_1002397c	10041ede	100426e2	
+randy31.dll	FUN_10023adc	10041ede	100426f2	
+randy31.dll	FUN_10023adc	10041ede	10042701	
+randy31.dll	FUN_1002397c	10041ede	1004271b	
+randy31.dll	DeviceState::SetRenderState	1004182b	1004183b	?,0x26,?,0xa
+randy31.dll	DeviceState::SetRenderState	1001237d	100123b1	?,?,?,?
+randy31.dll	StateBlob_c::SetTextureStageState	1004c895	1004c8a6	?,0x0,0x1,0x4
+randy31.dll	StateBlob_c::SetTextureStageState	1004c895	1004c8b1	?,0x0,0x2,0x0
+randy31.dll	StateBlob_c::SetTextureStageState	1004c895	1004c8bd	?,0x0,0x3,0x2
+randy31.dll	StateBlob_c::SetTextureStageState	1004c895	1004c8cc	?,0x0,0xb,0x20000
+randy31.dll	StateBlob_c::SetTextureStageState	1004c895	1004c8d8	?,0x0,0x18,0x3
+randy31.dll	StateBlob_c::SetTextureStageState	1004c895	1004c8e4	?,0x0,0xc,0x1
+randy31.dll	StateBlob_c::SetRenderState	1004c895	1004c8ee	?,0xe,0x0
+randy31.dll	StateBlob_c::SetRenderState	1004c895	1004c8f9	?,0x17,0x3
+randy31.dll	StateBlob_c::SetRenderState	1004c895	1004c907	?,0x89,0x1
+randy31.dll	StateBlob_c::SetRenderState	1004c895	1004c912	?,0x13,0x2
+randy31.dll	StateBlob_c::SetRenderState	1004c895	1004c91d	?,0x14,0x2
+randy31.dll	StateBlob_c::SetRenderState	1004c895	1004c928	?,0x1b,0x1
+randy31.dll	StateBlob_c::SetRenderState	1004c895	1004c932	?,0x22,0x0
+randy31.dll	StateBlob_c::SetRenderState	1004c895	1004c93f	?,0x8b,0x0
+randy31.dll	DeviceState::SetRenderState	1004185d	1004186d	?,0x25,?,0xa
