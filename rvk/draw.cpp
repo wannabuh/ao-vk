@@ -272,6 +272,9 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->effects[2] = m_sunSoftness;
     fl->effects[3] = 0.0f;
     Wind(fl->wind);
+    fl->taa[0] = TaaActive() ? m_taaJitter[0] : 0.0f;
+    fl->taa[1] = TaaActive() ? m_taaJitter[1] : 0.0f;
+    fl->taa[2] = fl->taa[3] = 0.0f;
     fl->shadowParams[0] = m_shadowValid ? 1.0f : 0.0f;
     fl->shadowParams[1] = m_shadowStrength;
     fl->shadowParams[2] = float(m_cascadeCount);
@@ -320,7 +323,9 @@ uint64_t Device::TerrainChunkKey(const void* vertices, uint32_t vertexCount, uin
 // frame to compare with.
 bool Device::MotionVectorDraw(uint32_t fvf) const
 {
-    return m_motionMode == 1 && m_motionBlur > 0.0f && m_prevViewProjValid && m_target == m_scene && m_aoProjValid &&
+    // Object motion: for the per-object motion blur, and for the temporal anti-aliasing's history.
+    return ((m_motionMode == 1 && m_motionBlur > 0.0f) || TaaActive()) && m_prevViewProjValid && m_target == m_scene &&
+           m_aoProjValid &&
            (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW && m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE] &&
            std::memcmp(&m_proj, &m_aoProj, sizeof(m_proj)) == 0 && std::memcmp(&m_view, &m_aoView, sizeof(m_view)) == 0;
 }
@@ -836,7 +841,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // Only lit draws read it; the others bind any in-range part of the ring.
     bool needLights = (m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
                        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) || ShadowReceiver(fvf) ||
-                      ShadowCompensated(fvf) || motion;
+                      ShadowCompensated(fvf) || motion ||
+                      (TaaActive() && m_target == m_scene && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW);
     VkDeviceSize frameLightsOffset = m_frameLightsGeneration == m_ringGeneration ? m_frameLightsOffset : 0;
     if (needLights && (m_frameLightsDirty || m_frameLightsGeneration != m_ringGeneration))   // once per frame
         frameLightsOffset = WriteFrameLights();

@@ -1419,7 +1419,8 @@ int main(int argc, char** argv)
     bool hdr = false;
     float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, sway = 0.0f, bump = 0.0f;
     float saturation = 1.0f, contrast = 1.0f, warmth = 0.0f, nightTint = 0.0f, vignette = 0.0f;
-    bool lutSepia = false;
+    bool lutSepia = false, taa = false;
+    float sharpen = 0.4f;
     uint32_t anisotropy = 1;
     float motionBlur = 0.0f, dof = 0.0f, dofFocus = 0.0f;
     bool dofBokeh = true, dofFar = true;
@@ -1475,6 +1476,8 @@ int main(int argc, char** argv)
         else if (a == "--contact" && i + 1 < argc) contact = float(std::atof(argv[++i]));
         else if (a == "--sway" && i + 1 < argc) sway = float(std::atof(argv[++i]));
         else if (a == "--lut-sepia") lutSepia = true;
+        else if (a == "--taa") taa = true;
+        else if (a == "--sharpen" && i + 1 < argc) sharpen = float(std::atof(argv[++i]));
         else if (a == "--grade" && i + 5 < argc) {   // saturation contrast warmth night-tint vignette
             saturation = float(std::atof(argv[++i])); contrast = float(std::atof(argv[++i]));
             warmth = float(std::atof(argv[++i])); nightTint = float(std::atof(argv[++i])); vignette = float(std::atof(argv[++i]));
@@ -1536,6 +1539,7 @@ int main(int argc, char** argv)
     dev.SetNightGlow(nightGlow);
     dev.SetContactShadows(contact);
     dev.SetSway(sway);
+    dev.SetTaa(taa, sharpen);
     dev.SetGrading(saturation, contrast, warmth, 1.0f, nightTint, vignette);
     if (lutSepia) {                      // --lut-sepia: a 16^3 sepia lookup table in the day slot (the 3D LUT path)
         const uint32_t n = 16;

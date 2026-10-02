@@ -58,6 +58,7 @@ struct FrameLights {               // binding 4: per-frame data (constants.glsl 
     float cascadeDepth[4];         // world units per unit of each cascade's depth (soft shadows)
     float effects[4];              // light through leaves, night glow (x darkness), sun shadow softness, unused
     float wind[4];                 // plants' sway: direction x, z, time (s), strength
+    float taa[4];                  // temporal anti-aliasing: this frame's jitter (clip x, y per w), unused
     float shadowParams[4];         // enabled, strength, cascade count, point light shadow strength
     float sunDir[4];               // w: light headroom (F_OVERBRIGHT)
     float sunColor[4];             // the shadow-casting sun's colour (0 = none)

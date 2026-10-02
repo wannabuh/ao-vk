@@ -71,6 +71,8 @@ Setting g_settings[] = {
     {"RVK_MBlur",      "Motion blur (exposure, fraction of 1/60 s; 0 = off)",             "HDR and effects", Float, 0, 2, 0.05f, 0.5f, "RANDYVK_MOTION_BLUR", 0},
     {"RVK_MBlurObj",   "Per-object motion blur (off = camera only)",                      "HDR and effects", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_MBlurNear",  "Camera motion blur: sharp nearer than (world units)",             "HDR and effects", Float, 2, 20, 0.5f, 8, "RANDYVK_MOTION_BLUR_NEAR", 0},
+    {"RVK_Taa",        "Temporal anti-aliasing",                                          "Anti-aliasing",  Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Sharpen",    "Sharpening after it (0 = none)",                                  "Anti-aliasing",  Float, 0, 1, 0.05f, 0.4f, nullptr, 0},
     {"RVK_Saturation", "Saturation",                                                      "Colour grading", Float, 0, 2, 0.05f, 1, nullptr, 0},
     {"RVK_Contrast",   "Contrast",                                                        "Colour grading", Float, 0.5f, 1.5f, 0.05f, 1, nullptr, 0},
     {"RVK_Warmth",     "Warmth (- cooler, + warmer)",                                     "Colour grading", Float, -1, 1, 0.05f, 0, nullptr, 0},
@@ -170,6 +172,7 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_BloomFx")) d->SetEffectGlow(s.value);
     else if (is("RVK_BloomOcc")) d->SetBloomOverNearer(s.value);
     else if (is("RVK_Sway")) d->SetSway(s.value);
+    else if (is("RVK_Taa") || is("RVK_Sharpen")) d->SetTaa(V("RVK_Taa") != 0.0f, V("RVK_Sharpen"));
     else if (is("RVK_Saturation") || is("RVK_Contrast") || is("RVK_Warmth") || is("RVK_NightTint") ||
              is("RVK_Vignette") || is("RVK_LutAmount"))
         d->SetGrading(V("RVK_Saturation"), V("RVK_Contrast"), V("RVK_Warmth"), V("RVK_LutAmount"), V("RVK_NightTint"),

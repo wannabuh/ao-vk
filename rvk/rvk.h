@@ -205,6 +205,8 @@ public:
     void SetColorLut(uint32_t slot, uint32_t size, const uint8_t* rgba);
     // Wind for small plants (grass, bushes, flowers): 0 = still.
     void SetSway(float strength) { m_sway = strength; m_constantsDirty = true; m_frameLightsDirty = true; }
+    // With HDR: temporal anti-aliasing (jittered scene, resolved against the last frame) and sharpening after it.
+    void SetTaa(bool enable, float sharpen) { m_taa = enable; m_sharpen = sharpen; m_frameLightsDirty = true; }
     // Sun shadow penumbra growth with blocker distance (0 = hard), sunlight through leaves, night glow of bright
     // texels on unlit / self-lit surfaces, contact shadows (screen-space, against the sun).
     void SetSunSoftness(float s) { m_sunSoftness = s; m_frameLightsDirty = true; }
@@ -587,6 +589,16 @@ private:
     bool SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, float out[4]);
     float m_drawSway[4] = {};                    // the current draw's sway (for its shadow caster)
     void Wind(float out[4]) const;               // direction x, z, time, strength
+    bool m_taa = true;
+    float m_sharpen = 0.4f;
+    float m_taaJitter[2] = {};                   // this frame's jitter, clip units (FrameLights taa)
+    Texture* m_taaHistory[2] = {};               // resolved frames (RGBA16F): [m_taaIndex] is the last one
+    uint32_t m_taaIndex = 0;
+    uint64_t m_taaFrame = ~0ull;                 // frame of the last resolve (history valid if it was the previous)
+    VkPipeline m_taaPipeline = VK_NULL_HANDLE, m_sharpenPipeline = VK_NULL_HANDLE;
+    bool TaaActive() const { return m_taa && m_hdr; }
+    bool TaaParams(float out[24]);               // before MotionBlurParams (it moves on the last frame's camera)
+    void RenderTaa(VkCommandBuffer cmd, Texture* dst, const float params[24]);
     float m_bloomOverNearer = 0.15f;             // bloom left on objects in front of its light (1 = all)
     bool m_bloomDepth = false;                   // this frame's bloom carries its light's depth
     std::vector<Texture*> m_bloomLevels;         // half resolution and down, float

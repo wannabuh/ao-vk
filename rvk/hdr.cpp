@@ -52,6 +52,12 @@ const uint32_t kSsrSpirv[] = {
 const uint32_t kContactSpirv[] = {
 #include "contact.frag.inc"
 };
+const uint32_t kTaaSpirv[] = {
+#include "taa.frag.inc"
+};
+const uint32_t kSharpenSpirv[] = {
+#include "sharpen.frag.inc"
+};
 const uint32_t kMotionBlurSpirv[] = {
 #include "motion_blur.frag.inc"
 };
@@ -220,6 +226,8 @@ bool Device::CreateHdrResources(std::string* error)
               fullscreen(kSsrSpirv, sizeof(kSsrSpirv), hdrFormat, false, m_bloomLayout, &m_ssrPipeline) &&
               fullscreen(kContactSpirv, sizeof(kContactSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout,
                          &m_contactPipeline) &&
+              fullscreen(kTaaSpirv, sizeof(kTaaSpirv), hdrFormat, false, m_bloomLayout, &m_taaPipeline) &&
+              fullscreen(kSharpenSpirv, sizeof(kSharpenSpirv), kColorFormat, false, m_bloomLayout, &m_sharpenPipeline) &&
               fullscreen(kMotionBlurSpirv, sizeof(kMotionBlurSpirv), kColorFormat, false, m_bloomLayout, &m_motionPipeline) &&
               fullscreen(kTileMaxSpirv, sizeof(kTileMaxSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout,
                          &m_tileMaxPipeline) &&
@@ -254,6 +262,8 @@ void Device::DestroyHdrResources()
     if (m_ssrTex) { DestroyTextureNow(m_ssrTex); m_ssrTex = nullptr; }
     for (Texture*& t : m_lut)
         if (t) { DestroyTextureNow(t); t = nullptr; }
+    for (Texture*& t : m_taaHistory)
+        if (t) { DestroyTextureNow(t); t = nullptr; }
     for (Texture*& t : m_contactTex)
         if (t) { DestroyTextureNow(t); t = nullptr; }
     if (m_tonemapped) { DestroyTextureNow(m_tonemapped); m_tonemapped = nullptr; }
@@ -263,7 +273,8 @@ void Device::DestroyHdrResources()
         if (*t) { DestroyTextureNow(*t); *t = nullptr; }
     for (VkPipeline* p : {&m_bloomDown, &m_bloomUp, &m_aoPipeline, &m_aoBlurPipeline, &m_giPipeline, &m_giBlurPipeline,
                           &m_volumePipeline, &m_volumeBlurPipeline, &m_ssrPipeline,
-                          &m_contactPipeline, &m_motionPipeline,
+                          &m_contactPipeline, &m_taaPipeline, &m_sharpenPipeline,
+                          &m_motionPipeline,
                           &m_tileMaxPipeline, &m_neighbourMaxPipeline, &m_objectBlurPipeline, &m_dofCompositePipeline,
                           &m_dofFocusPipeline, &m_dofPrefilterPipeline, &m_dofTilesPipeline, &m_dofGatherPipeline,
                           &m_dofFinalPipeline})
@@ -293,6 +304,16 @@ void Device::DestroyHdrResources()
 // Frame start (before rendering begins): with HDR the main target is the float scene until EndScene.
 void Device::BeginScene()
 {
+    // Temporal anti-aliasing: the scene moves by a sub-pixel offset each frame (Halton 2, 3 over 8 frames).
+    auto halton = [](uint32_t i, uint32_t base) {
+        float f = 1.0f, r = 0.0f;
+        for (; i; i /= base) { f /= float(base); r += f * float(i % base); }
+        return r;
+    };
+    uint32_t k = uint32_t(m_frameNumber % 8) + 1;
+    float w = m_scene ? float(m_scene->m_width) : 1.0f, h = m_scene ? float(m_scene->m_height) : 1.0f;
+    m_taaJitter[0] = (halton(k, 2) - 0.5f) * 2.0f / w;
+    m_taaJitter[1] = (halton(k, 3) - 0.5f) * 2.0f / h;
     m_sceneSaw3D = false;
     m_aoProjValid = false;
     m_motionPrev.swap(m_motionCur);              // last frame's objects, for matching this frame's
@@ -344,16 +365,23 @@ void Device::EndScene()
     bool dof = RenderDof(cmd, bloom, ao, gi, volume, params);
     Texture* scene = dof ? m_dofOut : m_scene;
     if (dof) params[6] = params[7] = 0.0f;
-    // With motion blur the tone mapping goes to an intermediate image, which the blur reads into the main target.
+    // With motion blur or anti-aliasing the tone mapping goes to an intermediate image: the anti-aliasing resolves
+    // it (and sharpens it back into it, or into the main target), the blur reads it into the main target.
+    float taaParams[24];
+    bool taa = TaaParams(taaParams);
     float motion[24];
     bool blur = MotionBlurParams(motion);
-    if (blur && (!m_tonemapped || m_tonemapped->m_width != m_ldrMain->m_width || m_tonemapped->m_height != m_ldrMain->m_height)) {
+    if ((blur || taa) &&
+        (!m_tonemapped || m_tonemapped->m_width != m_ldrMain->m_width || m_tonemapped->m_height != m_ldrMain->m_height)) {
         if (m_tonemapped) DestroyTexture(m_tonemapped);
         m_tonemapped = CreateImage(m_ldrMain->m_width, m_ldrMain->m_height, Format::A8R8G8B8, 1, true);
-        blur = m_tonemapped != nullptr;
+        blur = blur && m_tonemapped;
+        taa = taa && m_tonemapped;
     }
-    Texture* toned = blur ? m_tonemapped : m_ldrMain;
+    Texture* toned = blur || taa ? m_tonemapped : m_ldrMain;
     TonemapInputsPass(cmd, toned, m_tonemapPipeline, scene, bloom, ao, gi, volume, params);
+    if (taa)
+        RenderTaa(cmd, blur ? m_tonemapped : m_ldrMain, taaParams);
     if (blur) {
         Transition(cmd, m_tonemapped, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         MakeDepthReadable(cmd);
@@ -770,6 +798,61 @@ bool Device::RenderContactShadows(VkCommandBuffer cmd)
     std::swap(m_contactTex[0], m_contactTex[1]);   // the second pass wrote [0]
     Transition(cmd, m_contactTex[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     return true;
+}
+
+// Temporal anti-aliasing: this frame's camera against the last one's (reprojection for pixels without object motion,
+// the sky) and whether the history can be used - the last frame resolved, same size, no teleport.
+bool Device::TaaParams(float out[24])
+{
+    bool perspective = m_aoProjValid && m_aoProj.m[2][3] == 1.0f && m_aoProj.m[3][3] == 0.0f;
+    if (!TaaActive() || !perspective || !m_depth)
+        return false;
+    d3d::Matrix viewProj = MulMatrix(m_aoView, m_aoProj), inverse, reproject{};
+    const auto& v = m_aoView.m;
+    float jump2 = 0.0f;
+    for (int i = 0; i < 3; ++i) {
+        float eye = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
+        jump2 += (eye - m_prevEye[i]) * (eye - m_prevEye[i]);
+    }
+    bool history = m_prevViewProjValid && m_taaFrame + 1 == m_frameNumber && jump2 < 25.0f && m_taaHistory[0] &&
+                   m_taaHistory[0]->m_width == m_scene->m_width && m_taaHistory[0]->m_height == m_scene->m_height &&
+                   InvertMatrix(viewProj, &inverse);
+    if (history)
+        reproject = MulMatrix(inverse, m_prevViewProj);
+    std::memcpy(out, &reproject, 64);
+    out[16] = float(m_scene->m_width);
+    out[17] = float(m_scene->m_height);
+    out[18] = history ? 1.0f : 0.0f;
+    out[19] = m_prevViewProjValid ? 1.0f : 0.0f;      // object motion written this frame (MotionVectorDraw)
+    out[20] = 0.1f;                                    // weight of the new frame
+    out[21] = m_sharpen;
+    out[22] = out[23] = 0.0f;
+    return true;
+}
+
+// Resolve m_tonemapped against the history into the next history image, then sharpen that into dst.
+void Device::RenderTaa(VkCommandBuffer cmd, Texture* dst, const float params[24])
+{
+    for (Texture*& t : m_taaHistory)
+        if (!t || t->m_width != m_scene->m_width || t->m_height != m_scene->m_height) {
+            if (t) DestroyTexture(t);
+            t = CreateImage(m_scene->m_width, m_scene->m_height, Format::RGBA16F, 1, true);
+        }
+    if (!m_taaHistory[0] || !m_taaHistory[1])
+        return;
+    Texture* prev = m_taaHistory[m_taaIndex];
+    Texture* next = m_taaHistory[m_taaIndex ^ 1];
+    Transition(cmd, m_tonemapped, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    Transition(cmd, prev, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    Transition(cmd, m_motionVectors, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    MakeDepthReadable(cmd);
+    FullscreenPass(cmd, next, m_taaPipeline, m_tonemapped->m_view, prev->m_view, m_linearSampler, params, 96, false,
+                   m_motionVectors->m_view, m_depthView);
+    Transition(cmd, next, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    float sharpen[4] = {params[21], 0.0f, 0.0f, 0.0f};
+    FullscreenPass(cmd, dst, m_sharpenPipeline, next->m_view, next->m_view, m_pointSampler, sharpen, sizeof(sharpen), false);
+    m_taaIndex ^= 1;
+    m_taaFrame = m_frameNumber;
 }
 
 // Bloom: the scene's light above the threshold, downsampled level by level from half resolution to ~16 pixels,

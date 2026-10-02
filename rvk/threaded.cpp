@@ -448,6 +448,11 @@ void ThreadedDevice::SetColorLut(uint32_t slot, uint32_t size, const uint8_t* rg
     });
 }
 
+void ThreadedDevice::SetTaa(bool enable, float sharpen)
+{
+    Enqueue([this, enable, sharpen](const uint8_t*) { m_device.SetTaa(enable, sharpen); });
+}
+
 void ThreadedDevice::SetSway(float strength)
 {
     Enqueue([this, strength](const uint8_t*) { m_device.SetSway(strength); });

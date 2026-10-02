@@ -107,7 +107,9 @@ void main()
         if (D.sway.w > 0.5) posW.xz += FL.wind.xy * SwayDistance(inPos.xyz, D.sway, D.world[3].xz, FL.wind.z);
         vec4 pv = C.view * posW;
         gl_Position = C.proj * pv;
-        vClip = gl_Position;
+        vClip = gl_Position;                     // motion vectors: without the jitter
+        if ((C.flags.x & F_HDR) != 0u)
+            gl_Position.xy += FL.taa.xy * gl_Position.w;   // temporal anti-aliasing: this frame's sub-pixel offset
         vec3 prevLocal = inPos.xyz;
         if (D.motion.y > 0.5) {
             int i = (gl_VertexIndex - int(D.motion.z)) * 3;
