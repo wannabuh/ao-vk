@@ -281,6 +281,7 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
         uint32_t cube = PointShadowLayer(c.light);
         fl->lights[k].spot[2] = float(cube);                        // its cube shadow map + 1, 0 = none
         fl->lights[k].spot[3] = cube ? m_pointShadowLights[cube - 1].fade : 0.0f;   // how far its shadow faded in
+        fl->lights[k].ambient[3] = c.hasCarrier ? 1.0f : 0.0f;    // a character's own light (FindCarriers)
     }
     if (dump) {
         std::fprintf(m_dumpFile, "FL at draw %u: %u of %u lights captured last frame, eye (%.1f %.1f %.1f):", m_dumpDraw,
