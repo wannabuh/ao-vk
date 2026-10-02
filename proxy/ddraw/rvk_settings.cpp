@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -17,7 +18,7 @@ using namespace rvkproxy;
 
 namespace {
 
-enum Type : uint32_t { Bool = 0, Int = 1, Float = 2 };
+enum Type : uint32_t { Bool = 0, Int = 1, Float = 2, Choice = 3 };   // Choice: an int from `choices`
 
 struct Setting {
     const char* name;           // also the ini key; at most 15 characters (game option variables)
@@ -27,92 +28,120 @@ struct Setting {
     float min, max, step, defaultValue;
     const char* legacyEnv;      // read once if the ini doesn't have the setting yet (the old ao-wine.sh variables)
     float value;
+    const char* parent;         // the feature's on / off setting: while it is off this one takes its game value
+                                // (kVanilla; settings not listed there only tune the feature)
+    const char* choices;        // Choice: the allowed values, separated by spaces
 };
 
 // Every renderer option. Order = display order within each section.
 Setting g_settings[] = {
-    // name               label                                                             section          type   min   max   step  default env
+    // name               label                                                     section             type    min    max    step   default env                        value parent           choices
     {"RVK_Enhance",    "All renderer enhancements (off = the game's own look; Ctrl+Shift+E)", "General", Bool, 0, 1, 1, 1, nullptr, 0},
-    {"RVK_PixelLight", "Per-pixel lighting",                                              "Lighting",       Bool,  0, 1, 1, 1, "RANDYVK_PIXEL_LIGHTING", 0},
-    {"RVK_LightOver",  "All nearby lights light every surface (light override)",          "Lighting",       Bool,  0, 1, 1, 1, "RANDYVK_LIGHT_OVERRIDE", 0},
-    {"RVK_OwnLight",   "A character's own light lights the character",                    "Lighting",       Bool,  0, 1, 1, 1, nullptr, 0},
-    {"RVK_Bump",       "Generated surface relief (normal maps from textures)",            "Lighting",       Float, 0, 4, 0.25f, 1.5f, "RANDYVK_BUMP", 0},
-    {"RVK_LeafLight",  "Sunlight through leaves",                                         "Lighting",       Float, 0, 2, 0.25f, 1, nullptr, 0},
-    {"RVK_Headroom",   "Light headroom without HDR",                                       "Lighting",       Float, 1, 2, 0.05f, 1.25f, "RANDYVK_LIGHT_HEADROOM", 0},
-    {"RVK_Sway",       "Plants sway in the wind (0 = still)",                             "Lighting",       Float, 0, 3, 0.25f, 1, nullptr, 0},
-    {"RVK_GrassPush",  "Grass and plants bend away from characters (0 = off)",            "Lighting",       Float, 0, 2, 0.25f, 1, nullptr, 0},
-    {"RVK_PlantDetail", "Split big plant quads so they bend smoothly (0 = off)",          "Lighting",       Float, 0, 2, 0.5f, 1, nullptr, 0},
-    {"RVK_FoliageLod", "Foliage further than this is shaded more cheaply (0 = off)",      "Lighting",       Float, 0, 150, 5, 35, nullptr, 0},
-    {"RVK_Aniso",      "Anisotropic filtering (1 = off)",                                 "Lighting",       Int,   1, 16, 1, 16, "RANDYVK_ANISOTROPY", 0},
-    {"RVK_SunShadow",  "Sun shadows",                                                     "Shadows",        Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
-    {"RVK_SunRes",     "Sun shadow resolution (pixels; 4096 = 256 MB, 8192 = 1 GB)",      "Shadows",        Int,   1024, 8192, 512, 4096, nullptr, 0},
-    {"RVK_SunStrength","Sun shadow strength",                                             "Shadows",        Float, 0, 1, 0.05f, 0.65f, "RANDYVK_SHADOW_STRENGTH", 0},
-    {"RVK_SunDist",    "Sun shadow distance (world units)",                               "Shadows",        Int,   40, 1000, 20, 400, nullptr, 0},
-    {"RVK_SunCascade", "Sun shadow cascades (more = sharper near, same reach)",           "Shadows",        Int,   1, 4, 1, 4, nullptr, 0},
-    {"RVK_SunSoft",    "Sun shadow softness (penumbra grows with distance; 0 = hard)",    "Shadows",        Float, 0, 4, 0.25f, 1, nullptr, 0},
-    {"RVK_Contact",    "Contact shadows (small sun shadows the map misses; 0 = off)",     "Shadows",        Float, 0, 1, 0.05f, 0.6f, nullptr, 0},
-    {"RVK_PtShadows",  "Point light shadows (lights, 0 = off)",                           "Shadows",        Int,   0, 8, 1, 8, "RANDYVK_POINT_SHADOWS", 0},
-    {"RVK_PtRes",      "Point light shadow resolution (pixels per cube face)",            "Shadows",        Int,   256, 2048, 256, 1024, nullptr, 0},
-    {"RVK_PtStrength", "Point light shadow strength",                                     "Shadows",        Float, 0, 1, 0.05f, 0.9f, "RANDYVK_POINT_SHADOW_STRENGTH", 0},
-    {"RVK_PtDay",      "Point light shadow strength in daylight (fraction)",              "Shadows",        Float, 0, 1, 0.05f, 0.25f, "RANDYVK_POINT_SHADOW_DAY", 0},
-    {"RVK_Hdr",        "HDR scene and tone mapping",                                      "HDR and effects", Bool, 0, 1, 1, 1, "RANDYVK_HDR", 0},
-    {"RVK_Exposure",   "Exposure",                                                        "HDR and effects", Float, 0.5f, 2, 0.05f, 1, "RANDYVK_EXPOSURE", 0},
-    {"RVK_Knee",       "Tone mapping knee (1 = only clip)",                               "HDR and effects", Float, 0.5f, 1, 0.05f, 0.85f, "RANDYVK_TONEMAP_KNEE", 0},
-    {"RVK_HdrRoom",    "Local light headroom",                                            "HDR and effects", Float, 1, 4, 0.25f, 1.5f, "RANDYVK_HDR_HEADROOM", 0},
-    {"RVK_Bloom",      "Bloom strength (0 = off)",                                        "HDR and effects", Float, 0, 5, 0.25f, 1.5f, "RANDYVK_BLOOM", 0},
-    {"RVK_BloomFx",    "Glow of effects (spells, fire, light halos)",                     "HDR and effects", Float, 0, 4, 0.25f, 1, "RANDYVK_BLOOM_EFFECTS", 0},
-    {"RVK_BloomThr",   "Bloom threshold (1 = above white)",                               "HDR and effects", Float, 0.5f, 2, 0.05f, 1, "RANDYVK_BLOOM_THRESHOLD", 0},
-    {"RVK_BloomOcc",   "Bloom over objects in front of its light (1 = unchanged)",        "HDR and effects", Float, 0, 1, 0.05f, 0.15f, nullptr, 0},
-    {"RVK_NightGlow",  "Night glow of windows, signs and screens (0 = off)",              "HDR and effects", Float, 0, 4, 0.25f, 1.5f, nullptr, 0},
-    {"RVK_Ao",         "Ambient occlusion strength (0 = off)",                            "HDR and effects", Float, 0, 3, 0.25f, 1, "RANDYVK_AO", 0},
-    {"RVK_AoRadius",   "Ambient occlusion radius (world units)",                          "HDR and effects", Float, 0.25f, 4, 0.25f, 1.5f, "RANDYVK_AO_RADIUS", 0},
-    {"RVK_Gi",         "Indirect light: bounce light from the lit scene (0 = off)",       "HDR and effects", Float, 0, 3, 0.25f, 1, nullptr, 0},
-    {"RVK_GiRadius",   "Indirect light reach (world units)",                              "HDR and effects", Float, 1, 12, 0.5f, 4, nullptr, 0},
-    {"RVK_Volume",     "Volumetric light: sun shafts (0 = off)",                          "HDR and effects", Float, 0, 4, 0.25f, 1, nullptr, 0},
-    {"RVK_VolHaze",    "Volumetric light: how hazy the air is",                           "HDR and effects", Float, 0.25f, 4, 0.25f, 1, nullptr, 0},
-    {"RVK_VolShafts",  "Volumetric light: shaft contrast (0 = physical)",                 "HDR and effects", Float, 0, 3, 0.25f, 1, nullptr, 0},
-    {"RVK_Ssr",        "Reflections (screen-space; 0 = off)",                            "HDR and effects", Float, 0, 2, 0.25f, 1, nullptr, 0},
-    {"RVK_SsrWater",   "Reflections: water",                                              "HDR and effects", Float, 0, 1, 0.05f, 1, nullptr, 0},
-    {"RVK_SsrGloss",   "Reflections: glossy surfaces",                                    "HDR and effects", Float, 0, 1, 0.05f, 0.3f, nullptr, 0},
-    {"RVK_SsrWet",     "Reflections: wet look of floors and ground (0 = dry)",            "HDR and effects", Float, 0, 1, 0.05f, 0, nullptr, 0},
-    {"RVK_MBlur",      "Motion blur (exposure, fraction of 1/60 s; 0 = off)",             "HDR and effects", Float, 0, 2, 0.05f, 0.5f, "RANDYVK_MOTION_BLUR", 0},
-    {"RVK_MBlurObj",   "Per-object motion blur (off = camera only)",                      "HDR and effects", Bool, 0, 1, 1, 1, nullptr, 0},
-    {"RVK_MBlurNear",  "Camera motion blur: sharp nearer than (world units)",             "HDR and effects", Float, 2, 20, 0.5f, 8, "RANDYVK_MOTION_BLUR_NEAR", 0},
-    {"RVK_Taa",        "Temporal anti-aliasing",                                          "Anti-aliasing",  Bool,  0, 1, 1, 1, nullptr, 0},
-    {"RVK_Sharpen",    "Sharpening after it (0 = none)",                                  "Anti-aliasing",  Float, 0, 1, 0.05f, 0.4f, nullptr, 0},
-    {"RVK_Saturation", "Saturation",                                                      "Colour grading", Float, 0, 2, 0.05f, 1, nullptr, 0},
-    {"RVK_Contrast",   "Contrast",                                                        "Colour grading", Float, 0.5f, 1.5f, 0.05f, 1, nullptr, 0},
-    {"RVK_Warmth",     "Warmth (- cooler, + warmer)",                                     "Colour grading", Float, -1, 1, 0.05f, 0, nullptr, 0},
-    {"RVK_NightTint",  "Night: cooler, paler colours",                                    "Colour grading", Float, 0, 1, 0.05f, 0.3f, nullptr, 0},
-    {"RVK_Vignette",   "Vignette (darker corners)",                                       "Colour grading", Float, 0, 1, 0.05f, 0, nullptr, 0},
-    {"RVK_LutAmount",  "Look-up tables randy-vk-day/night.cube (Ctrl+Shift+L reloads)",   "Colour grading", Float, 0, 1, 0.05f, 1, nullptr, 0},
-    {"RVK_Dof",        "Depth of field",                                                   "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
-    {"RVK_DofBokeh",   "Bokeh (hexagonal highlights; off = smooth blur)",                 "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
-    {"RVK_DofNear",    "Blur in front of the focus",                                      "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
-    {"RVK_DofFar",     "Blur behind the focus (always)",                                  "Depth of field", Bool, 0, 1, 1, 0, nullptr, 0},
-    {"RVK_DofMacro",   "Close focus: blur behind it when nearer than (world units)",      "Depth of field", Float, 0, 10, 0.5f, 3, nullptr, 0},
-    {"RVK_DofAmount",  "Blur strength",                                                   "Depth of field", Float, 0, 2, 0.05f, 0.5f, nullptr, 0},
-    {"RVK_DofRadius",  "Largest blur (pixels at 1440 lines)",                             "Depth of field", Int, 4, 48, 1, 16, nullptr, 0},
-    {"RVK_DofFocus",   "Focus distance (0 = auto: your character)",                       "Depth of field", Float, 0, 200, 1, 0, nullptr, 0},
-    {"RVK_DofRange",   "In-focus band around it",                                         "Depth of field", Float, 0, 0.9f, 0.05f, 0.2f, nullptr, 0},
+
+    {"RVK_PixelLight", "Per-pixel lighting",                                       "Lighting",         Bool,  0, 1, 1, 1, "RANDYVK_PIXEL_LIGHTING", 0},
+    {"RVK_LightOver",  "All nearby lights light every surface (light override)",   "Lighting",         Bool,  0, 1, 1, 1, "RANDYVK_LIGHT_OVERRIDE", 0},
+    {"RVK_Headroom",   "Light headroom without HDR",                               "Lighting",         Float, 1, 2, 0.05f, 1.25f, "RANDYVK_LIGHT_HEADROOM", 0, "RVK_LightOver"},
+    {"RVK_OwnLight",   "A character's own light lights the character",             "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LightOver"},
+    {"RVK_BumpOn",     "Generated surface relief (normal maps from textures)",     "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Bump",       "Relief strength",                                          "Lighting",         Float, 0.25f, 4, 0.25f, 1.5f, "RANDYVK_BUMP", 0, "RVK_BumpOn"},
+    {"RVK_LeafOn",     "Sunlight through leaves",                                  "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_LeafLight",  "Strength",                                                 "Lighting",         Float, 0.25f, 2, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_Aniso",      "Anisotropic filtering (1 = off)",                          "Lighting",         Choice, 1, 16, 1, 16, "RANDYVK_ANISOTROPY", 0, nullptr, "1 2 4 8 16"},
+
+    {"RVK_SwayOn",     "Plants sway in the wind",                                  "Plants",           Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Sway",       "Sway strength",                                            "Plants",           Float, 0.25f, 3, 0.25f, 1, nullptr, 0, "RVK_SwayOn"},
+    {"RVK_PushOn",     "Grass and plants bend away from characters",               "Plants",           Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_GrassPush",  "How far plants lean",                                      "Plants",           Float, 0.25f, 2, 0.25f, 1, nullptr, 0, "RVK_PushOn"},
+    {"RVK_PlantDetOn", "Split big plant quads so they bend smoothly",              "Plants",           Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_PlantDetail","Detail (pieces per 0.3 units)",                            "Plants",           Float, 0.5f, 2, 0.5f, 1, nullptr, 0, "RVK_PlantDetOn"},
+    {"RVK_FolLodOn",   "Cheaper shading of distant foliage",                       "Plants",           Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_FoliageLod", "From this distance (world units)",                         "Plants",           Int,   10, 150, 1, 35, nullptr, 0, "RVK_FolLodOn"},
+
+    {"RVK_SunShadow",  "Sun shadows",                                              "Shadows",          Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
+    {"RVK_SunRes",     "Resolution (4096 = 256 MB, 8192 = 1 GB of video memory)",  "Shadows",          Choice, 1024, 8192, 1, 4096, nullptr, 0, "RVK_SunShadow", "1024 2048 4096 8192"},
+    {"RVK_SunStrength","Strength",                                                 "Shadows",          Float, 0, 1, 0.05f, 0.65f, "RANDYVK_SHADOW_STRENGTH", 0, "RVK_SunShadow"},
+    {"RVK_SunDist",    "Distance (world units)",                                   "Shadows",          Int,   40, 1000, 1, 400, nullptr, 0, "RVK_SunShadow"},
+    {"RVK_SunCascade", "Cascades (more = sharper near, same reach)",               "Shadows",          Int,   1, 4, 1, 4, nullptr, 0, "RVK_SunShadow"},
+    {"RVK_SunSoft",    "Softness (penumbra grows with distance; 0 = hard)",        "Shadows",          Float, 0, 4, 0.25f, 1, nullptr, 0, "RVK_SunShadow"},
+    {"RVK_ContactOn",  "Contact shadows (small sun shadows the map misses)",       "Shadows",          Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Contact",    "Strength",                                                 "Shadows",          Float, 0.05f, 1, 0.05f, 0.6f, nullptr, 0, "RVK_ContactOn"},
+    {"RVK_PtOn",       "Point light shadows",                                      "Shadows",          Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_PtShadows",  "Lights with shadows",                                      "Shadows",          Int,   1, 8, 1, 8, "RANDYVK_POINT_SHADOWS", 0, "RVK_PtOn"},
+    {"RVK_PtRes",      "Resolution (pixels per cube face)",                        "Shadows",          Choice, 256, 2048, 1, 1024, nullptr, 0, "RVK_PtOn", "256 512 1024 2048"},
+    {"RVK_PtStrength", "Strength",                                                 "Shadows",          Float, 0, 1, 0.05f, 0.9f, "RANDYVK_POINT_SHADOW_STRENGTH", 0, "RVK_PtOn"},
+    {"RVK_PtDay",      "Strength in daylight (fraction)",                          "Shadows",          Float, 0, 1, 0.05f, 0.25f, "RANDYVK_POINT_SHADOW_DAY", 0, "RVK_PtOn"},
+
+    {"RVK_Hdr",        "HDR scene and tone mapping",                               "HDR and effects",  Bool,  0, 1, 1, 1, "RANDYVK_HDR", 0},
+    {"RVK_Exposure",   "Exposure",                                                 "HDR and effects",  Float, 0.5f, 2, 0.05f, 1, "RANDYVK_EXPOSURE", 0, "RVK_Hdr"},
+    {"RVK_Knee",       "Tone mapping knee (1 = only clip)",                        "HDR and effects",  Float, 0.5f, 1, 0.05f, 0.85f, "RANDYVK_TONEMAP_KNEE", 0, "RVK_Hdr"},
+    {"RVK_HdrRoom",    "Local light headroom",                                     "HDR and effects",  Float, 1, 4, 0.25f, 1.5f, "RANDYVK_HDR_HEADROOM", 0, "RVK_Hdr"},
+    {"RVK_BloomOn",    "Bloom",                                                    "HDR and effects",  Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Bloom",      "Strength",                                                 "HDR and effects",  Float, 0.25f, 5, 0.25f, 1.5f, "RANDYVK_BLOOM", 0, "RVK_BloomOn"},
+    {"RVK_BloomThr",   "Threshold (1 = above white)",                              "HDR and effects",  Float, 0.5f, 2, 0.05f, 1, "RANDYVK_BLOOM_THRESHOLD", 0, "RVK_BloomOn"},
+    {"RVK_BloomOcc",   "Over objects in front of its light (1 = unchanged)",       "HDR and effects",  Float, 0, 1, 0.05f, 0.15f, nullptr, 0, "RVK_BloomOn"},
+    {"RVK_FxGlowOn",   "Glow of effects (spells, fire, light halos)",              "HDR and effects",  Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_BloomFx",    "Strength",                                                 "HDR and effects",  Float, 0.25f, 4, 0.25f, 1, "RANDYVK_BLOOM_EFFECTS", 0, "RVK_FxGlowOn"},
+    {"RVK_NightOn",    "Night glow of windows, signs and screens",                 "HDR and effects",  Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_NightGlow",  "Strength",                                                 "HDR and effects",  Float, 0.25f, 4, 0.25f, 1.5f, nullptr, 0, "RVK_NightOn"},
+    {"RVK_AoOn",       "Ambient occlusion",                                        "HDR and effects",  Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Ao",         "Strength",                                                 "HDR and effects",  Float, 0.25f, 3, 0.25f, 1, "RANDYVK_AO", 0, "RVK_AoOn"},
+    {"RVK_AoRadius",   "Radius (world units)",                                     "HDR and effects",  Float, 0.25f, 4, 0.25f, 1.5f, "RANDYVK_AO_RADIUS", 0, "RVK_AoOn"},
+    {"RVK_GiOn",       "Indirect light (bounce light from the lit scene)",         "HDR and effects",  Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Gi",         "Strength",                                                 "HDR and effects",  Float, 0.25f, 3, 0.25f, 1, nullptr, 0, "RVK_GiOn"},
+    {"RVK_GiRadius",   "Reach (world units)",                                      "HDR and effects",  Float, 1, 12, 0.5f, 4, nullptr, 0, "RVK_GiOn"},
+    {"RVK_VolOn",      "Volumetric light (sun shafts)",                            "HDR and effects",  Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Volume",     "Strength",                                                 "HDR and effects",  Float, 0.25f, 4, 0.25f, 1, nullptr, 0, "RVK_VolOn"},
+    {"RVK_VolHaze",    "How hazy the air is",                                      "HDR and effects",  Float, 0.25f, 4, 0.25f, 1, nullptr, 0, "RVK_VolOn"},
+    {"RVK_VolShafts",  "Shaft contrast (0 = physical)",                            "HDR and effects",  Float, 0, 3, 0.25f, 1, nullptr, 0, "RVK_VolOn"},
+    {"RVK_SsrOn",      "Reflections (screen-space)",                               "HDR and effects",  Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Ssr",        "Strength",                                                 "HDR and effects",  Float, 0.25f, 2, 0.25f, 1, nullptr, 0, "RVK_SsrOn"},
+    {"RVK_SsrWater",   "Water",                                                    "HDR and effects",  Float, 0, 1, 0.05f, 1, nullptr, 0, "RVK_SsrOn"},
+    {"RVK_SsrGloss",   "Glossy surfaces",                                          "HDR and effects",  Float, 0, 1, 0.05f, 0.3f, nullptr, 0, "RVK_SsrOn"},
+    {"RVK_SsrWet",     "Wet look of floors and ground (0 = dry)",                  "HDR and effects",  Float, 0, 1, 0.05f, 0, nullptr, 0, "RVK_SsrOn"},
+    {"RVK_MBlurOn",    "Motion blur",                                              "HDR and effects",  Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_MBlurObj",   "Per-object (off = camera only)",                           "HDR and effects",  Bool,  0, 1, 1, 1, nullptr, 0, "RVK_MBlurOn"},
+    {"RVK_MBlur",      "Exposure (fraction of 1/60 s)",                            "HDR and effects",  Float, 0.05f, 2, 0.05f, 0.5f, "RANDYVK_MOTION_BLUR", 0, "RVK_MBlurOn"},
+    {"RVK_MBlurNear",  "Camera blur: sharp nearer than (world units)",             "HDR and effects",  Float, 2, 20, 0.5f, 8, "RANDYVK_MOTION_BLUR_NEAR", 0, "RVK_MBlurOn"},
+
+    {"RVK_Taa",        "Temporal anti-aliasing",                                   "Anti-aliasing",    Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Sharpen",    "Sharpening after it (0 = none)",                           "Anti-aliasing",    Float, 0, 1, 0.05f, 0.4f, nullptr, 0, "RVK_Taa"},
+
+    {"RVK_GradeOn",    "Colour grading",                                           "Colour grading",   Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Saturation", "Saturation",                                               "Colour grading",   Float, 0, 2, 0.05f, 1, nullptr, 0, "RVK_GradeOn"},
+    {"RVK_Contrast",   "Contrast",                                                 "Colour grading",   Float, 0.5f, 1.5f, 0.05f, 1, nullptr, 0, "RVK_GradeOn"},
+    {"RVK_Warmth",     "Warmth (- cooler, + warmer)",                              "Colour grading",   Float, -1, 1, 0.05f, 0, nullptr, 0, "RVK_GradeOn"},
+    {"RVK_NightTint",  "Night: cooler, paler colours",                             "Colour grading",   Float, 0, 1, 0.05f, 0.3f, nullptr, 0, "RVK_GradeOn"},
+    {"RVK_Vignette",   "Vignette (darker corners)",                                "Colour grading",   Float, 0, 1, 0.05f, 0, nullptr, 0, "RVK_GradeOn"},
+    {"RVK_LutAmount",  "Look-up tables randy-vk-day/night.cube (Ctrl+Shift+L reloads)", "Colour grading", Float, 0, 1, 0.05f, 1, nullptr, 0, "RVK_GradeOn"},
+
+    {"RVK_Dof",        "Depth of field",                                           "Depth of field",   Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_DofBokeh",   "Bokeh (hexagonal highlights; off = smooth blur)",          "Depth of field",   Bool,  0, 1, 1, 1, nullptr, 0, "RVK_Dof"},
+    {"RVK_DofNear",    "Blur in front of the focus",                               "Depth of field",   Bool,  0, 1, 1, 1, nullptr, 0, "RVK_Dof"},
+    {"RVK_DofFar",     "Blur behind the focus (always)",                           "Depth of field",   Bool,  0, 1, 1, 0, nullptr, 0, "RVK_Dof"},
+    {"RVK_DofMacro",   "Close focus: blur behind it when nearer than (world units)", "Depth of field", Float, 0, 10, 0.5f, 3, nullptr, 0, "RVK_Dof"},
+    {"RVK_DofAmount",  "Blur strength",                                            "Depth of field",   Float, 0, 2, 0.05f, 0.5f, nullptr, 0, "RVK_Dof"},
+    {"RVK_DofRadius",  "Largest blur (pixels at 1440 lines)",                      "Depth of field",   Int,   4, 48, 1, 16, nullptr, 0, "RVK_Dof"},
+    {"RVK_DofFocus",   "Focus distance (0 = auto: your character)",                "Depth of field",   Int,   0, 200, 1, 0, nullptr, 0, "RVK_Dof"},
+    {"RVK_DofRange",   "In-focus band around it",                                  "Depth of field",   Float, 0, 0.9f, 0.05f, 0.2f, nullptr, 0, "RVK_Dof"},
+
     {"RVK_Particles",  "GPU particles on sparkle effects (listed in randy-vk.ini [Particles])", "Particles", Bool, 0, 1, 1, 1, nullptr, 0},
-    {"RVK_PartCount",  "Particles per sprite",                                            "Particles",      Int,   1, 32, 1, 12, nullptr, 0},
-    {"RVK_PartUniform","Same particle size for every effect (0 = by its sprite's size)", "Particles",      Float, 0, 1, 0.05f, 1, nullptr, 0},
-    {"RVK_PartAbsSize","Particle size, same for every effect (world units)",             "Particles",      Float, 0.005f, 0.3f, 0.005f, 0.02f, nullptr, 0},
-    {"RVK_PartSize",   "Particle size by its sprite (fraction of the sprite)",           "Particles",      Float, 0.01f, 0.6f, 0.01f, 0.15f, nullptr, 0},
-    {"RVK_PartBright", "Particle brightness (hot white core from 1 up, full at 4)",       "Particles",      Float, 0.25f, 8, 0.25f, 2, nullptr, 0},
-    {"RVK_PartTrail",  "Motion trails (seconds of motion shown, 0 = off)",               "Particles",      Float, 0, 0.3f, 0.01f, 0.05f, nullptr, 0},
-    {"RVK_PartTrailMx","Longest trail (particle sizes)",                                  "Particles",      Float, 1, 20, 0.5f, 6, nullptr, 0},
-    {"RVK_PartLife",   "Particle life (seconds)",                                         "Particles",      Float, 0.25f, 5, 0.05f, 1.5f, nullptr, 0},
-    {"RVK_PartCurl",   "Flow (curl noise) speed",                                         "Particles",      Float, 0, 5, 0.1f, 1.5f, nullptr, 0},
-    {"RVK_PartScale",  "Flow feature size (world units)",                                 "Particles",      Float, 0.25f, 5, 0.05f, 1.5f, nullptr, 0},
-    {"RVK_PartSwirl",  "Swirl around the effect",                                         "Particles",      Float, 0, 5, 0.1f, 1, nullptr, 0},
-    {"RVK_PartPull",   "Pull back towards the effect",                                    "Particles",      Float, 0, 3, 0.05f, 0.6f, nullptr, 0},
-    {"RVK_PartDrag",   "How quickly particles follow the flow",                           "Particles",      Float, 0.25f, 10, 0.25f, 2.5f, nullptr, 0},
-    {"RVK_PartSpeed",  "Launch speed",                                                    "Particles",      Float, 0, 4, 0.1f, 0.6f, nullptr, 0},
-    {"RVK_PartAdapt",  "Adapt to each effect's own motion (0 = all alike)",               "Particles",      Float, 0, 1, 0.05f, 1, nullptr, 0},
-    {"RVK_PartFollow", "Young particles follow their sprite",                             "Particles",      Float, 0, 1, 0.05f, 0.7f, nullptr, 0},
-    {"RVK_PartCore",   "Brightness of the game's own sprites (1 = unchanged)",            "Particles",      Float, 0, 1, 0.05f, 0.35f, nullptr, 0},
+    {"RVK_PartCount",  "Particles per sprite",                                     "Particles",        Int,   1, 32, 1, 12, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartUniform","Same particle size for every effect (0 = by its sprite's size)", "Particles",   Float, 0, 1, 0.05f, 1, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartAbsSize","Particle size, same for every effect (world units)",       "Particles",        Float, 0.005f, 0.3f, 0.005f, 0.02f, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartSize",   "Particle size by its sprite (fraction of the sprite)",     "Particles",        Float, 0.01f, 0.6f, 0.01f, 0.15f, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartBright", "Particle brightness (hot white core from 1 up, full at 4)", "Particles",        Float, 0.25f, 8, 0.25f, 2, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartTrail",  "Motion trails (seconds of motion shown, 0 = off)",         "Particles",        Float, 0, 0.3f, 0.01f, 0.05f, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartTrailMx","Longest trail (particle sizes)",                           "Particles",        Float, 1, 20, 0.5f, 6, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartLife",   "Particle life (seconds)",                                  "Particles",        Float, 0.25f, 5, 0.05f, 1.5f, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartCurl",   "Flow (curl noise) speed",                                  "Particles",        Float, 0, 5, 0.1f, 1.5f, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartScale",  "Flow feature size (world units)",                          "Particles",        Float, 0.25f, 5, 0.05f, 1.5f, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartSwirl",  "Swirl around the effect",                                  "Particles",        Float, 0, 5, 0.1f, 1, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartPull",   "Pull back towards the effect",                             "Particles",        Float, 0, 3, 0.05f, 0.6f, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartDrag",   "How quickly particles follow the flow",                    "Particles",        Float, 0.25f, 10, 0.25f, 2.5f, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartSpeed",  "Launch speed",                                             "Particles",        Float, 0, 4, 0.1f, 0.6f, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartAdapt",  "Adapt to each effect's own motion (0 = all alike)",        "Particles",        Float, 0, 1, 0.05f, 1, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartFollow", "Young particles follow their sprite",                      "Particles",        Float, 0, 1, 0.05f, 0.7f, nullptr, 0, "RVK_Particles"},
+    {"RVK_PartCore",   "Brightness of the game's own sprites (1 = unchanged)",     "Particles",        Float, 0, 1, 0.05f, 0.35f, nullptr, 0, "RVK_Particles"},
 };
 constexpr uint32_t kCount = sizeof(g_settings) / sizeof(g_settings[0]);
 
@@ -131,7 +160,7 @@ Setting* Find(const char* name)
 struct Vanilla { const char* name; float value; };
 const Vanilla kVanilla[] = {
     {"RVK_PixelLight", 0}, {"RVK_LightOver", 0}, {"RVK_Bump", 0}, {"RVK_LeafLight", 0}, {"RVK_Headroom", 1},
-    {"RVK_Sway", 0}, {"RVK_GrassPush", 0}, {"RVK_PlantDetail", 0}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
+    {"RVK_Sway", 0}, {"RVK_GrassPush", 0}, {"RVK_PlantDetail", 0}, {"RVK_FoliageLod", 0}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
     {"RVK_Hdr", 0}, {"RVK_Bloom", 0}, {"RVK_BloomFx", 0}, {"RVK_NightGlow", 0}, {"RVK_Ao", 0}, {"RVK_Gi", 0},
     {"RVK_Volume", 0}, {"RVK_Ssr", 0}, {"RVK_MBlur", 0}, {"RVK_Taa", 0}, {"RVK_Saturation", 1}, {"RVK_Contrast", 1},
     {"RVK_Warmth", 0}, {"RVK_NightTint", 0}, {"RVK_Vignette", 0}, {"RVK_LutAmount", 0}, {"RVK_Dof", 0},
@@ -140,14 +169,21 @@ const Vanilla kVanilla[] = {
 
 float Stored(const char* name) { Setting* s = Find(name); return s ? s->value : 0.0f; }
 
-// The value a setting takes effect with.
+const Vanilla* FindVanilla(const char* name)
+{
+    for (const Vanilla& v : kVanilla)
+        if (std::strcmp(v.name, name) == 0) return &v;
+    return nullptr;
+}
+
+// The value a setting takes effect with: the game's (kVanilla) with RVK_Enhance off or its feature switched off.
 float V(const char* name)
 {
     Setting* s = Find(name);
     if (!s) return 0.0f;
-    if (Stored("RVK_Enhance") == 0.0f)
-        for (const Vanilla& v : kVanilla)
-            if (std::strcmp(v.name, name) == 0) return v.value;
+    const Vanilla* vanilla = FindVanilla(name);
+    if (vanilla && (Stored("RVK_Enhance") == 0.0f || (s->parent && Stored(s->parent) == 0.0f)))
+        return vanilla->value;
     return s->value;
 }
 
@@ -155,6 +191,17 @@ float Clamp(const Setting& s, float v)
 {
     v = std::clamp(v, s.min, s.max);
     if (s.type != Float) v = std::round(v);
+    if (s.type == Choice && s.choices) {         // the nearest allowed value
+        float best = v, bestDistance = 1e30f;
+        for (const char* c = s.choices; *c;) {
+            char* next;
+            float choice = std::strtof(c, &next);
+            if (next == c) break;
+            if (std::fabs(choice - v) < bestDistance) { bestDistance = std::fabs(choice - v); best = choice; }
+            c = next;
+        }
+        v = best;
+    }
     return v;
 }
 
@@ -178,8 +225,18 @@ void Save(const Setting& s)
     WritePrivateProfileStringA("Renderer", s.name, buf, g_iniPath);
 }
 
-// Puts a setting into effect: each device call takes the setting and its partners.
+void ApplyOne(const Setting& s, rvk::ThreadedDevice* d);
+
+// Puts a setting into effect - and, for a feature's on / off setting, the settings it switches.
 void Apply(const Setting& s, rvk::ThreadedDevice* d)
+{
+    ApplyOne(s, d);
+    for (const Setting& child : g_settings)
+        if (child.parent && std::strcmp(child.parent, s.name) == 0) ApplyOne(child, d);
+}
+
+// Puts one setting into effect: each device call takes the setting and its partners.
+void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
 {
     if (!d) return;
     const char* n = s.name;
@@ -262,10 +319,12 @@ void Load()
     if (g_loaded) return;
     g_loaded = true;
     ResolveIniPath();
+    std::vector<bool> inIni;
     for (Setting& s : g_settings) {
         s.value = s.defaultValue;
         char buf[64] = "";
         GetPrivateProfileStringA("Renderer", s.name, "", buf, sizeof(buf), g_iniPath);
+        inIni.push_back(buf[0] != 0);
         if (buf[0]) {
             s.value = float(std::atof(buf));
         } else if (s.legacyEnv && GetEnvironmentVariableA(s.legacyEnv, buf, sizeof(buf)) && buf[0]) {
@@ -274,6 +333,26 @@ void Load()
                    GetEnvironmentVariableA("RANDYVK_MOTION_BLUR_MODE", buf, sizeof(buf)) && buf[0]) {
             s.value = std::strcmp(buf, "camera") == 0 ? 0.0f : 1.0f;
         }
+    }
+    // A feature's on / off setting new to the ini (older ones had "0 = off" strengths): on unless its strength (the
+    // first setting it switches with a game value) was at the game's value - which then gets its default back, so
+    // that switching the feature on shows it.
+    for (size_t i = 0; i < kCount; ++i) {
+        Setting& t = g_settings[i];
+        if (inIni[i] || t.type != Bool) continue;
+        for (Setting& child : g_settings) {
+            const Vanilla* vanilla = child.parent && std::strcmp(child.parent, t.name) == 0 ? FindVanilla(child.name) : nullptr;
+            if (!vanilla) continue;
+            bool on = false;
+            for (const Setting& other : g_settings)
+                if (other.parent && std::strcmp(other.parent, t.name) == 0)
+                    if (const Vanilla* ov = FindVanilla(other.name)) on = on || other.value != ov->value;
+            t.value = on ? 1.0f : 0.0f;
+            if (!on && child.value == vanilla->value) child.value = child.defaultValue;
+            break;
+        }
+    }
+    for (Setting& s : g_settings) {
         s.value = Clamp(s, s.value);
         Save(s);                                  // the ini always lists every setting
     }
@@ -401,7 +480,7 @@ void LogAll()
 
 extern "C" {
 
-uint32_t RvkSettings_Version() { return 1; }
+uint32_t RvkSettings_Version() { return 2; }
 
 uint32_t RvkSettings_Count()
 {
@@ -412,7 +491,7 @@ uint32_t RvkSettings_Count()
 int RvkSettings_Get(uint32_t index, RvkSettingInfo* out)
 {
     rvk_settings::Load();
-    if (index >= kCount || !out || out->size < sizeof(RvkSettingInfo))
+    if (index >= kCount || !out || out->size < offsetof(RvkSettingInfo, parent))   // version 1 callers: no parent
         return 0;
     const Setting& s = g_settings[index];
     out->name = s.name;
@@ -424,6 +503,10 @@ int RvkSettings_Get(uint32_t index, RvkSettingInfo* out)
     out->step = s.step;
     out->value = s.value;
     out->defaultValue = s.defaultValue;
+    if (out->size >= sizeof(RvkSettingInfo)) {
+        out->parent = s.parent;
+        out->choices = s.choices;
+    }
     return 1;
 }
 

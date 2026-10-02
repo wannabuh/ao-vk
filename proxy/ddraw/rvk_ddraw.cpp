@@ -109,12 +109,13 @@ static void ProfileSweep(bool start)
 {
     struct Step { const char* label; const char* setting; float value; };
     static const Step kSteps[] = {
-        {"baseline", nullptr, 0}, {"soft shadows off", "RVK_SunSoft", 0}, {"point shadows off", "RVK_PtShadows", 0},
-        {"sun shadows off", "RVK_SunShadow", 0}, {"contact shadows off", "RVK_Contact", 0},
-        {"leaf light off", "RVK_LeafLight", 0}, {"relief (bump) off", "RVK_Bump", 0}, {"light override off", "RVK_LightOver", 0},
-        {"per-pixel lighting off", "RVK_PixelLight", 0}, {"night glow off", "RVK_NightGlow", 0}, {"sway off", "RVK_Sway", 0}, {"grass push off", "RVK_GrassPush", 0}, {"plant detail off", "RVK_PlantDetail", 0}, {"foliage lod off", "RVK_FoliageLod", 0},
-        {"gi off", "RVK_Gi", 0}, {"ao off", "RVK_Ao", 0}, {"volumetric off", "RVK_Volume", 0}, {"reflections off", "RVK_Ssr", 0},
-        {"dof off", "RVK_Dof", 0}, {"motion blur off", "RVK_MBlur", 0}, {"taa off", "RVK_Taa", 0}, {"bloom off", "RVK_Bloom", 0},
+        {"baseline", nullptr, 0}, {"soft shadows off", "RVK_SunSoft", 0}, {"point shadows off", "RVK_PtOn", 0},
+        {"sun shadows off", "RVK_SunShadow", 0}, {"contact shadows off", "RVK_ContactOn", 0},
+        {"leaf light off", "RVK_LeafOn", 0}, {"relief (bump) off", "RVK_BumpOn", 0}, {"light override off", "RVK_LightOver", 0},
+        {"per-pixel lighting off", "RVK_PixelLight", 0}, {"night glow off", "RVK_NightOn", 0}, {"sway off", "RVK_SwayOn", 0},
+        {"grass push off", "RVK_PushOn", 0}, {"plant detail off", "RVK_PlantDetOn", 0}, {"foliage lod off", "RVK_FolLodOn", 0},
+        {"gi off", "RVK_GiOn", 0}, {"ao off", "RVK_AoOn", 0}, {"volumetric off", "RVK_VolOn", 0}, {"reflections off", "RVK_SsrOn", 0},
+        {"dof off", "RVK_Dof", 0}, {"motion blur off", "RVK_MBlurOn", 0}, {"taa off", "RVK_Taa", 0}, {"bloom off", "RVK_BloomOn", 0},
         {"particles off", "RVK_Particles", 0}, {"hdr off", "RVK_Hdr", 0}, {"baseline again", nullptr, 0},
     };
     constexpr unsigned kSweepSettle = 120, kSweepMeasure = 300;
@@ -178,7 +179,8 @@ void RvkState::Present()
     static const Toggle kToggles[] = {
         {VK_F10, "RVK_PixelLight"}, {VK_F7, "RVK_SunShadow"}, {VK_F5, "RVK_Hdr"}, {VK_F8, "RVK_LightOver"},
         {'N', "RVK_MBlurObj"}, {'D', "RVK_Dof"}, {'P', "RVK_Particles"}, {'T', "RVK_Taa"},
-        {'E', "RVK_Enhance"},
+        {'E', "RVK_Enhance"}, {'M', "RVK_MBlurOn"}, {VK_F2, "RVK_BumpOn"}, {VK_F3, "RVK_AoOn"}, {VK_F4, "RVK_BloomOn"},
+        {VK_F6, "RVK_PtOn"}, {'G', "RVK_GiOn"}, {'V', "RVK_VolOn"}, {'R', "RVK_SsrOn"},
     };
     for (const Toggle& t : kToggles)
         if (pressed(t.key))
@@ -186,9 +188,7 @@ void RvkState::Present()
     // Strengths switched off and back on (to the value they had).
     struct OnOff { int key; const char* setting; float off, fallback; };
     static const OnOff kOnOff[] = {
-        {'M', "RVK_MBlur", 0, 0.5f}, {VK_F1, "RVK_Aniso", 1, 16}, {VK_F2, "RVK_Bump", 0, 1.5f},
-        {VK_F3, "RVK_Ao", 0, 1}, {VK_F4, "RVK_Bloom", 0, 1.5f}, {VK_F6, "RVK_PtShadows", 0, 8},
-        {'G', "RVK_Gi", 0, 1}, {'V', "RVK_Volume", 0, 1}, {'R', "RVK_Ssr", 0, 1},
+        {VK_F1, "RVK_Aniso", 1, 16},
     };
     static float remembered[sizeof(kOnOff) / sizeof(kOnOff[0])];
     for (size_t i = 0; i < sizeof(kOnOff) / sizeof(kOnOff[0]); ++i) {

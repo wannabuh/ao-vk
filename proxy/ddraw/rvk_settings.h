@@ -9,18 +9,22 @@ namespace rvk {
 class ThreadedDevice;
 }
 
-// ---- Exported C interface (randy31.dll), version 1 ----
+// ---- Exported C interface (randy31.dll), version 2 ----
 // RvkSettings_Count() settings, described by RvkSettings_Get(index); RvkSettings_Set(name, value) changes one
-// (clamped to its range, applied at once, saved). Bool settings are 0 / 1, int ones whole numbers.
+// (clamped to its range, applied at once, saved). Bool settings are 0 / 1, int ones whole numbers, choice ones one
+// of `choices`. Version 2 added type 3 (choice) and the fields from `parent` on (a version 1 caller's smaller size
+// gets the others).
 extern "C" {
 struct RvkSettingInfo {
     uint32_t size;              // sizeof(RvkSettingInfo), set by the caller
     const char* name;           // at most 15 characters, starts with "RVK_"
     const char* label;
     const char* section;        // grouping for display
-    uint32_t type;              // 0 bool, 1 int, 2 float
+    uint32_t type;              // 0 bool, 1 int, 2 float, 3 choice (an int from `choices`)
     float min, max, step;       // step: the slider's resolution (float settings)
     float value, defaultValue;
+    const char* parent;         // the bool switching the feature this belongs to (null: none)
+    const char* choices;        // choice: the allowed values separated by spaces
 };
 uint32_t RvkSettings_Version();
 uint32_t RvkSettings_Count();
