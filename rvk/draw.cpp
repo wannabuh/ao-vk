@@ -978,6 +978,29 @@ uint32_t Device::CarriedLight(uint32_t fvf, const void* vertices, uint32_t verte
     return 0;
 }
 
+// The frame light (index + 1; 0 = none) carried by the character the current draw is part of, if that light has a
+// shadow cube: the shader leaves the character out of its own light's shadow. By the mesh's box (cheap: every lit
+// draw asks), with the carrier test the point shadows use (FindCarriers, last frame) - but only the character's own
+// meshes: animated ones (its body), or static ones up by the light (its head, hair); the ground's grass and stones
+// at its feet stay in its shadow.
+uint32_t Device::CarriedShadowLight(uint32_t fvf) const
+{
+    if (!m_pointShadows || !m_lightOverride || !m_pixelLighting || !m_rs[d3d::RS_LIGHTING] || !m_drawMesh ||
+        (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW || (m_target != m_scene && m_target != m_main))
+        return 0;
+    float c[3], e[3];
+    DrawWorldBox(c, e);
+    float mn[3] = {c[0] - e[0], c[1] - e[1], c[2] - e[2]}, mx[3] = {c[0] + e[0], c[1] + e[1], c[2] + e[2]};
+    for (uint32_t k = 0; k < m_frameLightIndices.size(); ++k) {
+        const CapturedLight& l = m_lightsPrev[m_frameLightIndices[k]];
+        if (!l.hasCarrier || !PointShadowLayer(l.light) || !IsCarrierPart(l, m_world, mn, mx))
+            continue;
+        if (!m_drawMeshStatic || m_world.m[3][1] - l.light.position.y > -0.8f)
+            return k + 1;
+    }
+    return 0;
+}
+
 void Device::SetTexture(uint32_t stage, Texture* texture)
 {
     if (texture && !texture->m_view)            // failed creation: draw untextured
@@ -1472,6 +1495,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         }
     }
     uint32_t carrier = m_external ? 0 : CarriedLight(fvf, vertices, vertexCount, layout.stride);
+    uint32_t shadowCarrier = m_external ? 0 : CarriedShadowLight(fvf);
     // The texture's own normal map (F_NORMALMAP), when it is the surface (stage 0, plain coordinates) of a per-pixel
     // lit draw; for the ground's lightmap pass, the normal map of its chunk's base texture (as the generated normals).
     Texture* normalMap = nullptr;
@@ -1487,7 +1511,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
                    m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
                    m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
-                   m_constantsFoliageLod != foliageLod || m_constantsNormalMap != normalMap;
+                   m_constantsFoliageLod != foliageLod || m_constantsNormalMap != normalMap ||
+                   m_constantsShadowCarrier != shadowCarrier;
     VkDeviceSize uboOffset = m_constantsOffset;
     if (rewrite) {
     uboOffset = Allocate(sizeof(DrawConstants), uboAlign, &cpu);
@@ -1501,6 +1526,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsCarrier = carrier;
     m_constantsBumpBase = m_drawBumpBase;
     m_constantsFoliageLod = foliageLod;
+    m_constantsShadowCarrier = shadowCarrier;
     m_constantsNormalMap = normalMap;
     auto* c = static_cast<DrawConstants*>(cpu);
     c->view = m_view;
@@ -1651,7 +1677,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c->lightInfo[0] = lightCount;
     c->lightInfo[1] = localLights;
     c->lightInfo[2] = override ? carrier : 0;   // frame light (index + 1) this draw carries: it doesn't light it
-    c->lightInfo[3] = 0;
+    c->lightInfo[3] = shadowCarrier;            // frame light (index + 1) this draw carries: it doesn't shadow it
     }
 
     ProfileDrawSection("draw: constants", since);

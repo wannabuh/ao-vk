@@ -57,8 +57,13 @@ void AccumulateLights(vec3 posW, vec3 normalW, float sunScale, float localScale,
             while (mask != 0u) {
                 uint i = word * 32u + uint(findLSB(mask));
                 mask &= mask - 1u;
-                if (i + 1u != C.lightInfo.z)     // a character's own light doesn't light the character
-                    AccumulateLight(FL.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diffLocal, specLocal);
+                if (i + 1u == C.lightInfo.z)     // a character's own light doesn't light the character
+                    continue;
+                // ... nor shadow it (C.lightInfo.w): the cube trails the body by a frame, and that close to the light
+                // the body's own limbs and torso shadowed it in flickering patches.
+                Light l = FL.lights[i];
+                if (i + 1u == C.lightInfo.w) l.spot.z = 0.0;
+                AccumulateLight(l, posW, normalW, toEye, sunScale, localScale, ambient, diffLocal, specLocal);
             }
         }
 }

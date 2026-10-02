@@ -863,7 +863,9 @@ float g_grassWalkSpeed = 0.0f; // --grass-walk-speed: ... walking this far along
 float g_grassSize = 1.0f;      // --grass-size: the tufts' cards this many times bigger (big quads)
 bool g_grassFlip = false;
 bool g_walkerRound = false;
-int g_walkerSkip = 0;          // --walker-skip N: the "character" animates only every N-th frame (crowds: the game skips)    // --walker-round: the "character" a low-polygon smooth-shaded 8-sided column
+int g_walkerSkip = 0;
+bool g_walkerLight = false;    // --walker-light: the round "character" carries a point light at head height and swings
+                               // an arm beside its body (its own light's shadow on itself)          // --walker-skip N: the "character" animates only every N-th frame (crowds: the game skips)    // --walker-round: the "character" a low-polygon smooth-shaded 8-sided column
 int g_grassDense = 1;          // --grass-dense K: K x K as many tufts, K times closer (a field, for profiling)      // --grass-flip: the tufts modelled upside down, turned up by their world matrix
 
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
@@ -944,6 +946,16 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
         sun.direction = {0.55f, -0.7f, 0.45f};
         dev.SetLight(0, sun);
         dev.LightEnable(0, true);
+        if (g_walkerLight && g_grassWalk >= -10.0f) {   // the character's own light, as the game's (range ~6)
+            Light own{};
+            own.type = LIGHT_POINT;
+            own.diffuse = {1.0f, 0.92f, 0.65f, 1};
+            own.position = {g_grassWalk + g_grassWalkSpeed * float(frame), 2.1f, -3.2f};
+            own.range = 6.0f;
+            own.attenuation1 = 0.163f;
+            dev.SetLight(1, own);
+            dev.LightEnable(1, true);
+        }
         dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
         dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
         dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
@@ -1119,7 +1131,7 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
                     for (int s = 0; s < kSides; ++s) {
                         float a = 6.28318f * float(s) / float(kSides);
                         float nx = std::cos(a), nz = std::sin(a);
-                        cv.push_back({wx + rad * nx, y, -3.2f + rad * nz, nx, 0, nz, 0xFFFFFFFF,
+                        cv.push_back({rad * nx, y, rad * nz, nx, 0, nz, 0xFFFFFFFF,
                                       float(s) / kSides, 1.0f - float(r) / (kRings - 1)});
                     }
                 }
@@ -1133,6 +1145,20 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
                 int animFrame = g_walkerSkip > 0 ? frame / g_walkerSkip * g_walkerSkip : frame;
                 for (VtxMesh& m : cv)
                     if (m.y > 1.0f) m.x += 0.02f * std::sin(animFrame * 0.9f);
+                // Placed by its world matrix at the feet, as the game's characters (the carrier test looks there).
+                Matrix body = Identity();
+                body.m[3][0] = wx; body.m[3][2] = -3.2f;
+                dev.SetTransform(World, body);
+                if (g_walkerLight) {                 // an arm swinging beside the body: animated, its own draw
+                    std::vector<VtxMesh> av;
+                    std::vector<uint16_t> ai;
+                    AddCube(av, ai, 0.43f, 1.15f, 0.0f, 0.07f);
+                    for (VtxMesh& m : av) {
+                        m.y = 1.15f + (m.y - 1.15f) * 5.0f;
+                        m.x += (m.y - 1.5f) * 0.25f * std::sin(animFrame * 1.3f);
+                    }
+                    dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, av.data(), uint32_t(av.size()), ai.data(), uint32_t(ai.size()));
+                }
             } else {
                 AddCube(cv, ci, wx, 0.9f, -3.2f, 0.3f);
                 for (VtxMesh& m : cv) {
@@ -1141,6 +1167,7 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
                 }
             }
             dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, cv.data(), uint32_t(cv.size()), ci.data(), uint32_t(ci.size()));
+            dev.SetTransform(World, Identity());
         }
         // A static object drawn the way Anarchy Online draws most of them: alpha-blended but writing depth. Its
         // texture's transparent cells must cut holes into its shadow.
@@ -1693,6 +1720,7 @@ int main(int argc, char** argv)
         else if (a == "--grass-walk-speed" && i + 1 < argc) g_grassWalkSpeed = float(std::atof(argv[++i]));
         else if (a == "--grass-flip") g_grassFlip = true;
         else if (a == "--walker-round") g_walkerRound = true;
+        else if (a == "--walker-light") g_walkerLight = true;
         else if (a == "--walker-skip" && i + 1 < argc) g_walkerSkip = std::atoi(argv[++i]);
         else if (a == "--grass-dense" && i + 1 < argc) g_grassDense = std::atoi(argv[++i]);
         else if (a == "--grass-size" && i + 1 < argc) g_grassSize = float(std::atof(argv[++i]));
@@ -1881,6 +1909,10 @@ int main(int argc, char** argv)
         if (shadowTest) RunShadowTest(tdev, frames, shot, cacheTest, frameMs, dump);
         else RunDemo(tdev, windowed, stress, frames, shot);
     } else if (shadowTest) {
+        if (g_walkerLight) {                     // the character's own light casts point shadows, full strength by day
+            dev.SetPointShadows(pointShadows);
+            dev.SetPointShadowStrength(1.0f, 1.0f);
+        }
         RunShadowTest(dev, frames, shot, cacheTest, frameMs, dump);
     } else {
         RunDemo(dev, windowed, stress, frames, shot);
