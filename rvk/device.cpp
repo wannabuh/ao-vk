@@ -336,6 +336,10 @@ bool Device::CreateLogicalDevice(std::string* error)
     enEds3.pNext = &enVertexInput;
     enEds3.extendedDynamicState3ColorBlendEnable = VK_TRUE;
     enEds3.extendedDynamicState3ColorBlendEquation = VK_TRUE;
+    // Write masks per draw (optional): attachments a draw leaves as they are aren't read and written back.
+    m_dynamicWriteMask = eds3.extendedDynamicState3ColorWriteMask == VK_TRUE;
+    enEds3.extendedDynamicState3ColorWriteMask = m_dynamicWriteMask ? VK_TRUE : VK_FALSE;
+    Log("dynamic colour write masks: %s", m_dynamicWriteMask ? "yes" : "no");
     VkPhysicalDeviceVulkan13Features enV13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     enV13.pNext = &enEds3;
     enV13.dynamicRendering = VK_TRUE;
@@ -621,9 +625,11 @@ bool Device::CreatePipelines(std::string* error)
         VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY, VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE, VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
         VK_DYNAMIC_STATE_DEPTH_COMPARE_OP, VK_DYNAMIC_STATE_VERTEX_INPUT_EXT, VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT,
         VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT};
+    std::vector<VkDynamicState> dynamicStates(dynamic, dynamic + sizeof(dynamic) / sizeof(dynamic[0]));
+    if (m_dynamicWriteMask) dynamicStates.push_back(VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT);
     VkPipelineDynamicStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-    ds.dynamicStateCount = sizeof(dynamic) / sizeof(dynamic[0]);
-    ds.pDynamicStates = dynamic;
+    ds.dynamicStateCount = uint32_t(dynamicStates.size());
+    ds.pDynamicStates = dynamicStates.data();
     VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
     vp.viewportCount = vp.scissorCount = 1;
     VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};

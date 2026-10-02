@@ -350,6 +350,7 @@ private:
         uint32_t fractionEnable = ~0u, fractionSrc = ~0u, fractionDst = ~0u;   // attachment 2 (local-light fraction)
         uint32_t motionKeep = ~0u;               // attachment 3 (motion vectors): 1 = kept (draw doesn't write)
         uint32_t albedoEnable = ~0u, albedoSrc = ~0u, albedoDst = ~0u;   // attachment 4 (surface colour)
+        uint32_t writeMask[5] = {~0u, ~0u, ~0u, ~0u, ~0u};   // dynamic colour write masks (m_dynamicWriteMask)
     };
 
     bool CreateInstance(std::string* error);
@@ -588,6 +589,7 @@ private:
     std::unordered_map<uint64_t, SwayEntry> m_swayStatic;
     bool SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, float out[4]);
     float m_drawSway[4] = {};                    // the current draw's sway (for its shadow caster)
+    bool m_dynamicWriteMask = false;             // per-draw colour write masks (extended dynamic state 3)
     void FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, uint32_t out[4]);
     void Wind(float out[4]) const;               // direction x, z, time, strength
     bool m_taa = true;

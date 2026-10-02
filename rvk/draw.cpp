@@ -782,6 +782,27 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
             c.albedoSrc = aSrc;
             c.albedoDst = aDst;
         }
+        // Write masks: an attachment the draw only keeps (blended ZERO/ONE, or adding nothing to the glow) isn't
+        // written at all - not read and written back for every fragment of every draw.
+        if (m_dynamicWriteMask) {
+            const uint32_t all = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+                                 VK_COLOR_COMPONENT_A_BIT;
+            uint32_t masks[5] = {all, GlowDraw(fvf) ? all : 0u,
+                                 blend && fSrc == d3d::BLEND_ZERO && fDst == d3d::BLEND_ONE ? 0u : all,
+                                 keep ? 0u : all,
+                                 blend && aSrc == d3d::BLEND_ZERO && aDst == d3d::BLEND_ONE ? 0u : all};
+            if (std::memcmp(masks, c.writeMask, sizeof(masks)) != 0) {
+                VkColorComponentFlags flags[5];
+                for (int i = 0; i < 5; ++i) flags[i] = masks[i];
+                vkCmdSetColorWriteMaskEXT(cmd, 0, 5, flags);
+                std::memcpy(c.writeMask, masks, sizeof(masks));
+            }
+        }
+    } else if (m_dynamicWriteMask && c.writeMask[0] == ~0u) {
+        VkColorComponentFlags all = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+                                    VK_COLOR_COMPONENT_A_BIT;
+        vkCmdSetColorWriteMaskEXT(cmd, 0, 1, &all);          // 8-bit targets: their one attachment
+        c.writeMask[0] = all;
     }
 
     if (c.fvf != fvf) {

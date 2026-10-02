@@ -82,6 +82,7 @@
     X(vkGetQueryPoolResults) \
     X(vkCmdResetQueryPool) \
     X(vkCmdWriteTimestamp2) \
+    X(vkCmdSetColorWriteMaskEXT) \
     X(vkCmdSetViewport) \
     X(vkCmdSetScissor) \
     X(vkCmdSetCullMode) \
