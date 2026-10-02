@@ -270,8 +270,9 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->effects[0] = m_leafLight;
     fl->effects[1] = m_hdr ? m_nightGlow * night : 0.0f;
     fl->effects[2] = m_sunSoftness;
-    fl->effects[3] = 0.0f;
+    fl->effects[3] = m_grassPush;
     Wind(fl->wind);
+    FillPushers(fl, eye);
     fl->taa[0] = TaaActive() ? m_taaJitter[0] : 0.0f;
     fl->taa[1] = TaaActive() ? m_taaJitter[1] : 0.0f;
     fl->taa[2] = FrameNoise();                   // noise patterns move on each frame (averaged by the TAA)
@@ -364,7 +365,7 @@ bool Device::IsInterfaceDraw(uint32_t fvf)
 // last frame (a character's hair or cloak is CPU-skinned, its vertices change every frame). out: DrawTransform sway.
 bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, float out[4])
 {
-    if (m_sway <= 0.0f || m_target != m_scene || !m_textures[0] || !m_rs[d3d::RS_LIGHTING] || m_drawIsLabel ||
+    if ((m_sway <= 0.0f && m_grassPush <= 0.0f) || m_target != m_scene || !m_textures[0] || !m_rs[d3d::RS_LIGHTING] || m_drawIsLabel ||
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || IsTerrain(fvf) || !m_rs[d3d::RS_ZWRITEENABLE] ||
         !(m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) || vertexCount < 3 || vertexCount > 4096 ||
         !m_drawMesh)
@@ -383,6 +384,109 @@ bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uin
     out[2] = 0.06f * m_sway * height;
     out[3] = 1.0f;
     return true;
+}
+
+// Plants pushed aside by characters. A character is drawn as CPU-skinned parts: lit world meshes, depth-writing,
+// whose vertices are new this frame. A static mesh is new on the frame it first appears too, so a candidate counts
+// only if its fingerprint isn't drawn again the next frame (UpdatePushTrail) - the feet lag two frames.
+void Device::PushCandidateDraw(uint32_t fvf)
+{
+    if (m_grassPush <= 0.0f || !m_drawMesh || m_drawMeshStatic || m_target != m_scene || m_drawIsLabel ||
+        !m_rs[d3d::RS_LIGHTING] || !m_rs[d3d::RS_ZWRITEENABLE] || IsTerrain(fvf) || m_pushNew.size() >= 4096)
+        return;
+    // The part's box in the world (the model box's centre moved, its half extents through the matrix's magnitudes).
+    const auto& w = m_world.m;
+    float c[3], e[3], mc[3], me[3];
+    for (int i = 0; i < 3; ++i) {
+        mc[i] = 0.5f * (m_drawMesh->boundsMin[i] + m_drawMesh->boundsMax[i]);
+        me[i] = 0.5f * (m_drawMesh->boundsMax[i] - m_drawMesh->boundsMin[i]);
+    }
+    for (int j = 0; j < 3; ++j) {
+        c[j] = mc[0] * w[0][j] + mc[1] * w[1][j] + mc[2] * w[2][j] + w[3][j];
+        e[j] = me[0] * std::fabs(w[0][j]) + me[1] * std::fabs(w[1][j]) + me[2] * std::fabs(w[2][j]);
+    }
+    // Character-sized: not a whole animated scene (a flag, water), not a speck.
+    if (e[1] > 2.5f || e[0] > 2.0f || e[2] > 2.0f || e[0] + e[1] + e[2] < 0.05f)
+        return;
+    m_pushNew.push_back({m_drawMeshKey, c[0], c[1] - e[1], c[2]});
+}
+
+void Device::UpdatePushTrail()
+{
+    constexpr float kMerge = 1.0f;               // parts this close (x, z) are one character
+    constexpr float kSpacing = 0.35f;            // a new trail point once a character is this far from the last
+    constexpr double kRecover = 1.6;             // seconds for a pushed plant to stand up again
+    double now = SwayClock();
+    // The frame before last's candidates: animated if their mesh wasn't drawn again last frame.
+    struct Character { float x, y, z; int parts; };
+    std::vector<Character> characters;
+    for (const PushCandidate& p : m_pushOld) {
+        auto it = m_meshInfo.find(p.mesh);
+        if (it == m_meshInfo.end() || it->second.lastFrame + 2 != m_frameNumber)
+            continue;
+        Character* into = nullptr;
+        for (Character& c : characters) {
+            float dx = c.x / c.parts - p.x, dz = c.z / c.parts - p.z;
+            if (dx * dx + dz * dz < kMerge * kMerge && std::fabs(c.y - p.y) < 2.0f) { into = &c; break; }
+        }
+        if (!into) { characters.push_back({p.x, p.y, p.z, 1}); continue; }
+        into->x += p.x; into->z += p.z; into->y = std::min(into->y, p.y); ++into->parts;
+    }
+    m_pushOld.swap(m_pushNew);
+    m_pushNew.clear();
+    // Each character refreshes its nearest trail point, or leaves a new one once it has moved on.
+    for (const Character& c : characters) {
+        float x = c.x / c.parts, z = c.z / c.parts;
+        PushPoint* nearest = nullptr;
+        float best = kSpacing * kSpacing;
+        for (PushPoint& t : m_pushTrail) {
+            float dx = t.x - x, dz = t.z - z, d = dx * dx + dz * dz;
+            if (d < best && std::fabs(t.y - c.y) < 1.0f) { best = d; nearest = &t; }
+        }
+        if (nearest) {
+            nearest->time = now;
+            nearest->y = c.y;
+        } else {
+            m_pushTrail.push_back({x, c.y, z, now});
+        }
+    }
+    m_pushTrail.erase(std::remove_if(m_pushTrail.begin(), m_pushTrail.end(),
+                                     [&](const PushPoint& t) { return now - t.time > kRecover || now < t.time; }),
+                      m_pushTrail.end());
+    if (m_pushTrail.size() > 512)
+        m_pushTrail.erase(m_pushTrail.begin(), m_pushTrail.end() - 512);
+}
+
+// The trail points for this frame's plants: the strongest nearest the camera. Strength fades as a point ages, so a
+// plant stands up again behind a character.
+void Device::FillPushers(detail::FrameLights* fl, const float eye[3])
+{
+    fl->info[1] = 0;
+    if (m_grassPush <= 0.0f || m_pushTrail.empty())
+        return;
+    double now = SwayClock();
+    struct Item { float key, strength; const PushPoint* p; };
+    std::vector<Item> items;
+    items.reserve(m_pushTrail.size());
+    for (const PushPoint& t : m_pushTrail) {
+        float age = float(now - t.time);
+        float s = std::clamp(1.0f - (age - 0.1f) / 1.5f, 0.0f, 1.0f);
+        s = s * s * (3.0f - 2.0f * s);
+        if (s <= 0.0f)
+            continue;
+        float dx = t.x - eye[0], dy = t.y - eye[1], dz = t.z - eye[2];
+        items.push_back({std::sqrt(dx * dx + dy * dy + dz * dz) / s, s, &t});
+    }
+    uint32_t used = std::min<uint32_t>(uint32_t(items.size()), detail::kPushers);
+    std::partial_sort(items.begin(), items.begin() + used, items.end(),
+                      [](const Item& a, const Item& b) { return a.key < b.key; });
+    for (uint32_t i = 0; i < used; ++i) {
+        fl->pushers[i][0] = items[i].p->x;
+        fl->pushers[i][1] = items[i].p->y;
+        fl->pushers[i][2] = items[i].p->z;
+        fl->pushers[i][3] = items[i].strength;
+    }
+    fl->info[1] = used;
 }
 
 // The water doesn't write depth; the reflections need its surface (the depth buffer gives their position and
@@ -486,6 +590,7 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
         for (uint32_t i = 0; i < indexCount; i += istep)
             mix(indices[i] | uint64_t(i) << 16);
     }
+    m_drawMeshKey = key;
     auto it = m_meshInfo.find(key);
     if (it != m_meshInfo.end()) {
         m_drawMeshStatic = it->second.firstFrame < m_frameNumber;
@@ -927,6 +1032,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     FvfLayout layout = DecodeFvf(fvf);
     double since = (m_frameNumber & 15) == 0 ? ProfileCpu() : 0.0;   // per-draw CPU sections (profiling)
     DrawMeshInfo(fvf, layout.stride, vertices, vertexCount, indices, indexCount);
+    PushCandidateDraw(fvf);
 
     // Render targets bound as textures must be readable; layout changes can't happen inside rendering.
     bool needTransition = false;

@@ -756,6 +756,8 @@ float g_cameraYaw = 0.0f;  // --camera-yaw: the shadow test's camera turns this 
 bool g_sunView = false;    // --sun-view: the shadow test's camera low, looking into the sun
 float g_movingCube = 0.0f; // --moving-cube: the shadow test's big right cube moves this far a frame along x
 float g_deformCube = 0.0f; // --deform-cube: its top vertices move this far a frame along x (like CPU skinning)
+float g_grassWalk = -100.0f;  // --grass-walk X: a patch of grass and an animated "character" standing at x = X in it
+float g_grassWalkSpeed = 0.0f; // --grass-walk-speed: ... walking this far along x a frame
 
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
 // (left) and unlit like Anarchy Online's ground base pass (right) - from a camera above and behind.
@@ -812,7 +814,10 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
             dev.SetTransform(View, LookAtLH({ex, 9, ez}, {0, 0, 2}, {0, 1, 0}));
             dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 200.0f));
         } else {
-            dev.SetTransform(View, LookAtLH({0, 9, -14}, {0, 0, 2}, {0, 1, 0}));
+            if (g_grassWalk >= -10.0f)
+                dev.SetTransform(View, LookAtLH({0, 3.0f, -8.5f}, {0, 0.3f, -3.5f}, {0, 1, 0}));
+            else
+                dev.SetTransform(View, LookAtLH({0, 9, -14}, {0, 0, 2}, {0, 1, 0}));
             dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 200.0f));
         }
         dev.SetTransform(World, Identity());
@@ -937,7 +942,31 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
         VtxMesh f[4] = {{0, 0, 9, 0, 0, -1, 0xFFFFFFFF, 0, 1}, {0, 3, 9, 0, 0, -1, 0xFFFFFFFF, 0, 0},
                         {4, 3, 9, 0, 0, -1, 0xFFFFFFFF, 1, 0}, {4, 0, 9, 0, 0, -1, 0xFFFFFFFF, 1, 1}};
         dev.DrawPrimitive(TriangleFan, kFvfMesh, f, 4);
+        if (g_grassWalk >= -10.0f) {                 // --grass-walk: tufts of crossed cut-out quads, one draw each
+            for (int gz = 0; gz < 8; ++gz)
+                for (int gx = 0; gx < 13; ++gx) {
+                    float x = -3.0f + 0.5f * float(gx) + 0.11f * float(gz % 3), z = -5.0f + 0.4f * float(gz), s = 0.3f;
+                    VtxMesh t[8] = {{x - s, 0, z, 0, 0, -1, 0xFF60C060, 0, 1}, {x - s, 0.7f, z, 0, 0, -1, 0xFF60C060, 0, 0},
+                                    {x + s, 0.7f, z, 0, 0, -1, 0xFF60C060, 1, 0}, {x + s, 0, z, 0, 0, -1, 0xFF60C060, 1, 1},
+                                    {x, 0, z - s, -1, 0, 0, 0xFF60C060, 0, 1}, {x, 0.7f, z - s, -1, 0, 0, 0xFF60C060, 0, 0},
+                                    {x, 0.7f, z + s, -1, 0, 0, 0xFF60C060, 1, 0}, {x, 0, z + s, -1, 0, 0, 0xFF60C060, 1, 1}};
+                    uint16_t ti[12] = {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7};
+                    dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+                    dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, t, 8, ti, 12);
+                }
+            dev.SetRenderState(RS_CULLMODE, CULL_CCW);
+        }
         dev.SetRenderState(RS_ALPHATESTENABLE, 0);
+        if (g_grassWalk >= -10.0f) {                 // the "character": CPU-skinned (its vertices change every frame)
+            std::vector<VtxMesh> cv;
+            std::vector<uint16_t> ci;
+            AddCube(cv, ci, g_grassWalk + g_grassWalkSpeed * float(frame), 0.9f, -3.2f, 0.3f);
+            for (VtxMesh& m : cv) {
+                m.y = 0.9f + (m.y - 0.9f) * 3.0f;        // tall: 1.8 units, feet on the ground
+                if (m.y > 1.0f) m.x += 0.02f * std::sin(frame * 0.9f);
+            }
+            dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, cv.data(), uint32_t(cv.size()), ci.data(), uint32_t(ci.size()));
+        }
         // A static object drawn the way Anarchy Online draws most of them: alpha-blended but writing depth. Its
         // texture's transparent cells must cut holes into its shadow.
         {
@@ -1442,7 +1471,7 @@ int main(int argc, char** argv)
     float headroom = 1.0f;
     double fadeIn = 0.0;
     bool hdr = false;
-    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, volShafts = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, sway = 0.0f, bump = 0.0f;
+    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, volShafts = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, sway = 0.0f, bump = 0.0f, grassPush = 1.0f;
     float saturation = 1.0f, contrast = 1.0f, warmth = 0.0f, nightTint = 0.0f, vignette = 0.0f;
     bool lutSepia = false, taa = false;
     float sharpen = 0.4f;
@@ -1481,6 +1510,9 @@ int main(int argc, char** argv)
         else if (a == "--dof-focus" && i + 1 < argc) dofFocus = float(std::atof(argv[++i]));
         else if (a == "--motion-blur" && i + 1 < argc) { motionBlur = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--motion-mode" && i + 1 < argc) motionMode = uint32_t(std::atoi(argv[++i]));
+        else if (a == "--grass-walk" && i + 1 < argc) g_grassWalk = float(std::atof(argv[++i]));
+        else if (a == "--grass-walk-speed" && i + 1 < argc) g_grassWalkSpeed = float(std::atof(argv[++i]));
+        else if (a == "--grass-push" && i + 1 < argc) grassPush = float(std::atof(argv[++i]));
         else if (a == "--deform-cube" && i + 1 < argc) g_deformCube = float(std::atof(argv[++i]));
         else if (a == "--moving-cube" && i + 1 < argc) g_movingCube = float(std::atof(argv[++i]));
         else if (a == "--camera-yaw" && i + 1 < argc) g_cameraYaw = float(std::atof(argv[++i]));
@@ -1568,6 +1600,7 @@ int main(int argc, char** argv)
     dev.SetNightGlow(nightGlow);
     dev.SetContactShadows(contact);
     dev.SetSway(sway);
+    dev.SetGrassPush(grassPush);
     dev.SetTaa(taa, sharpen);
     dev.SetGrading(saturation, contrast, warmth, 1.0f, nightTint, vignette);
     if (lutSepia) {                      // --lut-sepia: a 16^3 sepia lookup table in the day slot (the 3D LUT path)

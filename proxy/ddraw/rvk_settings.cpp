@@ -40,6 +40,7 @@ Setting g_settings[] = {
     {"RVK_LeafLight",  "Sunlight through leaves",                                         "Lighting",       Float, 0, 2, 0.25f, 1, nullptr, 0},
     {"RVK_Headroom",   "Light headroom without HDR",                                       "Lighting",       Float, 1, 2, 0.05f, 1.25f, "RANDYVK_LIGHT_HEADROOM", 0},
     {"RVK_Sway",       "Plants sway in the wind (0 = still)",                             "Lighting",       Float, 0, 3, 0.25f, 1, nullptr, 0},
+    {"RVK_GrassPush",  "Grass and plants bend away from characters (0 = off)",            "Lighting",       Float, 0, 2, 0.25f, 1, nullptr, 0},
     {"RVK_Aniso",      "Anisotropic filtering (1 = off)",                                 "Lighting",       Int,   1, 16, 1, 16, "RANDYVK_ANISOTROPY", 0},
     {"RVK_SunShadow",  "Sun shadows",                                                     "Shadows",        Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
     {"RVK_SunStrength","Sun shadow strength",                                             "Shadows",        Float, 0, 1, 0.05f, 0.65f, "RANDYVK_SHADOW_STRENGTH", 0},
@@ -126,7 +127,7 @@ Setting* Find(const char* name)
 struct Vanilla { const char* name; float value; };
 const Vanilla kVanilla[] = {
     {"RVK_PixelLight", 0}, {"RVK_LightOver", 0}, {"RVK_Bump", 0}, {"RVK_LeafLight", 0}, {"RVK_Headroom", 1},
-    {"RVK_Sway", 0}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
+    {"RVK_Sway", 0}, {"RVK_GrassPush", 0}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
     {"RVK_Hdr", 0}, {"RVK_Bloom", 0}, {"RVK_BloomFx", 0}, {"RVK_NightGlow", 0}, {"RVK_Ao", 0}, {"RVK_Gi", 0},
     {"RVK_Volume", 0}, {"RVK_Ssr", 0}, {"RVK_MBlur", 0}, {"RVK_Taa", 0}, {"RVK_Saturation", 1}, {"RVK_Contrast", 1},
     {"RVK_Warmth", 0}, {"RVK_NightTint", 0}, {"RVK_Vignette", 0}, {"RVK_LutAmount", 0}, {"RVK_Dof", 0},
@@ -201,6 +202,7 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_BloomFx")) d->SetEffectGlow(V(n));
     else if (is("RVK_BloomOcc")) d->SetBloomOverNearer(V(n));
     else if (is("RVK_Sway")) d->SetSway(V(n));
+    else if (is("RVK_GrassPush")) d->SetGrassPush(V(n));
     else if (is("RVK_Taa") || is("RVK_Sharpen")) d->SetTaa(V("RVK_Taa") != 0.0f, V("RVK_Sharpen"));
     else if (is("RVK_Saturation") || is("RVK_Contrast") || is("RVK_Warmth") || is("RVK_NightTint") ||
              is("RVK_Vignette") || is("RVK_LutAmount"))

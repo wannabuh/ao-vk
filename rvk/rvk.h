@@ -206,6 +206,8 @@ public:
     void SetColorLut(uint32_t slot, uint32_t size, const uint8_t* rgba);
     // Wind for small plants (grass, bushes, flowers): 0 = still.
     void SetSway(float strength) { m_sway = strength; m_constantsDirty = true; m_frameLightsDirty = true; }
+    // Grass and plants bending out of the way of characters walking through them (0 = off; scales reach and bend).
+    void SetGrassPush(float strength) { m_grassPush = strength; m_frameLightsDirty = true; }
     // With HDR: temporal anti-aliasing (jittered scene, resolved against the last frame) and sharpening after it.
     void SetTaa(bool enable, float sharpen) { m_taa = enable; m_sharpen = sharpen; m_frameLightsDirty = true; }
     // Sun shadow penumbra growth with blocker distance (0 = hard), sunlight through leaves, night glow of bright
@@ -585,6 +587,17 @@ private:
     Texture* CreateLut(uint32_t size, const uint8_t* rgba);
     void GradingParams(float out[8]) const;
     float m_sway = 1.0f;
+    // Plants pushed aside by characters (draw.cpp): animated meshes (CPU-skinned - their fingerprint isn't drawn
+    // again the next frame) give the characters' feet; where they walked stays pushed for a moment (the trail).
+    float m_grassPush = 1.0f;
+    struct PushCandidate { uint64_t mesh; float x, y, z; };
+    std::vector<PushCandidate> m_pushNew, m_pushOld;   // the last frame's / the one before (confirmed a frame later)
+    struct PushPoint { float x, y, z; double time; };
+    std::vector<PushPoint> m_pushTrail;
+    uint64_t m_drawMeshKey = 0;                  // the current draw's mesh cache key
+    void PushCandidateDraw(uint32_t fvf);
+    void UpdatePushTrail();                      // at the start of a frame
+    void FillPushers(detail::FrameLights* fl, const float eye[3]);
     // What the draw path needs to know of a mesh's vertices (draw.cpp DrawMeshInfo): its model-space box and its
     // indices' hash, remembered by a fingerprint of the mesh (sizes and 16 sampled vertices and indices) - a static
     // mesh drawn again (most of them) needs no pass over its vertices; an animated one (CPU-skinned) changes its

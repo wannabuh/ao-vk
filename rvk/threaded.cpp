@@ -475,6 +475,11 @@ void ThreadedDevice::SetSway(float strength)
     Enqueue([this, strength](const uint8_t*) { m_device.SetSway(strength); });
 }
 
+void ThreadedDevice::SetGrassPush(float strength)
+{
+    Enqueue([this, strength](const uint8_t*) { m_device.SetGrassPush(strength); });
+}
+
 void ThreadedDevice::SetBloomOverNearer(float keep)
 {
     Enqueue([this, keep](const uint8_t*) { m_device.SetBloomOverNearer(keep); });

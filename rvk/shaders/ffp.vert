@@ -31,6 +31,37 @@ layout(set = 0, binding = 8, std430) readonly buffer PrevPositions { float prevP
 layout(set = 0, binding = 1) uniform sampler2D swayTex;    // texture 0: plants' sway (how much of it is holes)
 #include "sway.glsl"
 
+// Plants bending out of the way of characters (FL.pushers: their feet and the trail behind them; Device::FillPushers):
+// each vertex moves away from the pushers within reach, the tip most, and down so the plant bends rather than
+// stretches. sway as SwayDistance; plantHeight in world units.
+vec3 PushOffset(vec3 posW, vec3 modelPos, vec4 sway, float plantHeight)
+{
+    uint n = min(FL.info.y, 16u);
+    float amount = FL.effects.w;
+    if (n == 0u || amount <= 0.0) return vec3(0.0);
+    float h = clamp((modelPos.y - sway.x) * sway.y, 0.0, 1.0);
+    if (h <= 0.0) return vec3(0.0);
+    float reach = 0.9 * sqrt(amount);
+    vec2 push = vec2(0.0);
+    for (uint i = 0u; i < n; ++i) {
+        vec4 p = FL.pushers[i];
+        float dy = posW.y - p.y;
+        if (dy < -1.0 || dy > 3.0) continue;     // a plant on another floor, or a character standing on a roof
+        vec2 d = posW.xz - p.xz;
+        float dist = length(d);
+        if (dist >= reach) continue;
+        float f = smoothstep(reach, 0.25 * reach, dist) * p.w;
+        push += (dist > 1e-3 ? d / dist : vec2(0.7071)) * f;
+    }
+    float len = length(push);
+    if (len <= 1e-4) return vec3(0.0);
+    push /= max(len, 1.0);
+    len = min(len, 1.0);
+    float holes = smoothstep(0.92, 0.7, SwayMeanAlpha());
+    float bend = h * holes * min(0.7 * plantHeight * amount, reach);
+    return vec3(push.x * bend, -0.55 * plantHeight * h * holes * len * len * min(amount, 1.0), push.y * bend);
+}
+
 float FogFactor(uint mode, float d)
 {
     if (mode == 3u) return clamp((C.fogParams.y - d) / max(C.fogParams.y - C.fogParams.x, 1e-6), 0.0, 1.0);
@@ -104,7 +135,10 @@ void main()
         vFogFactor = specular.a;          // pre-transformed vertices carry their fog factor in specular alpha
     } else {
         vec4 posW = D.world * vec4(inPos.xyz, 1.0);
-        if (D.sway.w > 0.5) posW.xz += FL.wind.xy * SwayDistance(inPos.xyz, D.sway, D.world[3].xz, FL.wind.z);
+        if (D.sway.w > 0.5) {
+            posW.xz += FL.wind.xy * SwayDistance(inPos.xyz, D.sway, D.world[3].xz, FL.wind.z);
+            posW.xyz += PushOffset(posW.xyz, inPos.xyz, D.sway, length(D.world[1].xyz) / D.sway.y);
+        }
         vec4 pv = C.view * posW;
         gl_Position = C.proj * pv;
         vClip = gl_Position;                     // motion vectors: without the jitter

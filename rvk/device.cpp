@@ -989,6 +989,7 @@ void Device::BeginFrame()
     m_cache = StateCache{};
     ++m_frameNumber;
     ProfileBeginFrame(f.main);
+    UpdatePushTrail();
     m_lightsPrev.swap(m_lightsCur);              // last frame's complete light set lights this frame
     m_lightsCur.clear();
     m_sunLuminance = 0.0f;

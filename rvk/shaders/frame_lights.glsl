@@ -11,16 +11,17 @@ struct Light {
 // The frame's active point / spot lights nearest the camera (Device::SetLightOverride). Replaces the game's
 // per-object choice of up to 8 lights, which drops lights on big objects such as the ground.
 layout(set = 0, binding = 4, std140) uniform FrameLights {
-    uvec4 info;                 // count
+    uvec4 info;                 // light count, pusher count
     mat4 shadowViewProj[4];     // world -> each sun shadow cascade (raw D3DMATRIX memory)
     vec4 cascadeTexel;          // world size of a texel of each cascade
     vec4 cascadeDepth;          // world units per unit of each cascade's depth (soft shadows)
-    vec4 effects;               // light through leaves, night glow (x darkness), sun shadow softness, unused
+    vec4 effects;               // light through leaves, night glow (x darkness), sun shadow softness, plant push
     vec4 wind;                  // plants' sway: direction x, z, time (s), strength
     vec4 taa;                   // temporal anti-aliasing: this frame's jitter (clip x, y per w), noise offset (0..1)
     vec4 shadowParams;          // enabled, strength, cascade count, point light shadow strength
     vec4 sunDir;                // direction the sunlight travels; w = light headroom (F_OVERBRIGHT)
     vec4 sunColor;              // the sun's colour (shadow-casting sun; 0 = none)
     mat4 prevViewProj;          // the world camera last frame (motion vectors; raw D3DMATRIX memory)
+    vec4 pushers[16];           // what plants bend away from (characters and their trails): world xyz, strength
     Light lights[64];
 } FL;

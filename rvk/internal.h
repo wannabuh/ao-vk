@@ -52,18 +52,20 @@ enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE
                   F_BUMP = 2097152, F_BUMPBASE = 4194304, F_FOLIAGE = 8388608, F_EMISSIVE = 16777216 };
 
 constexpr uint32_t kFrameLights = 64;
+constexpr uint32_t kPushers = 16;            // info.y of them used
 struct FrameLights {               // binding 4: per-frame data (constants.glsl FrameLights)
     uint32_t info[4];
     d3d::Matrix shadowViewProj[4]; // world -> each sun shadow cascade
     float cascadeTexel[4];         // world size of a texel of each cascade
     float cascadeDepth[4];         // world units per unit of each cascade's depth (soft shadows)
-    float effects[4];              // light through leaves, night glow (x darkness), sun shadow softness, unused
+    float effects[4];              // light through leaves, night glow (x darkness), sun shadow softness, plant push
     float wind[4];                 // plants' sway: direction x, z, time (s), strength
     float taa[4];                  // temporal anti-aliasing: this frame's jitter (clip x, y per w), unused
     float shadowParams[4];         // enabled, strength, cascade count, point light shadow strength
     float sunDir[4];               // w: light headroom (F_OVERBRIGHT)
     float sunColor[4];             // the shadow-casting sun's colour (0 = none)
     d3d::Matrix prevViewProj;      // motion vectors: the world camera last frame
+    float pushers[kPushers][4];    // what plants bend away from (characters' feet and trails): world x, y, z, strength
     GpuLight lights[kFrameLights];
 };
 
