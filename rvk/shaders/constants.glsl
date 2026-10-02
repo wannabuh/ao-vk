@@ -28,7 +28,7 @@ layout(set = 0, binding = 0, std140) uniform DrawConstants {
     vec4 misc;                  // material power, alpha reference (0..255), effect glow gain, bump strength
     vec4 eyePos;                // camera position, world space
     vec4 eyeDir;                // camera forward, world space (non-local viewer)
-    uvec4 vtx;                  // FVF, colour scale (float bits; 0 = 1: the particles' brightness)
+    uvec4 vtx;                  // FVF, colour scale (float bits; 0 = 1: the particles' brightness), normal map strength (float bits)
     uvec4 flags;                // F_* bits, fog vertex mode, fog table mode, alpha func
     uvec4 matSources;           // diffuse, ambient, specular, emissive material sources
     uvec4 stageA[2];            // colorop, colorarg1, colorarg2, alphaop
@@ -62,4 +62,5 @@ const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8
            F_GLOW = 524288u,         // an additive effect: also adds itself (x misc.z) to the glow attachment
            F_GLOWALPHA = 1048576u,   // ... blended SRCALPHA: its contribution is colour x alpha
            F_BUMP = 2097152u,        // per-pixel lighting with a normal generated from texture 0 (C.misc.w = strength)
-           F_BUMPBASE = 4194304u;    // ... from the ground's base texture (binding 7, coordinate set 0) instead
+           F_BUMPBASE = 4194304u,    // ... from the ground's base texture (binding 7, coordinate set 0) instead
+           F_NORMALMAP = 8388608u;   // the stage 0 texture's own normal map (binding 9; C.vtx.z = strength as float bits)

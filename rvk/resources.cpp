@@ -237,9 +237,23 @@ void Device::DestroyTexture(Texture* texture)
     if (m_target == texture)
         SetRenderTarget(nullptr);
     ForgetCasterTexture(texture);
+    if (texture->m_normalMap) {
+        DestroyTexture(texture->m_normalMap);
+        texture->m_normalMap = nullptr;
+    }
     if (HoldParticleTexture(texture))
         return;                                  // freed once the particles drawn with it have faded out
     m_deadTextures.push_back({DeathTag(), texture});   // freed once every submission that may use it is done
+}
+
+void Device::SetNormalMap(Texture* texture, Texture* normal)
+{
+    if (!texture || texture->m_normalMap == normal)
+        return;
+    if (texture->m_normalMap)
+        DestroyTexture(texture->m_normalMap);
+    texture->m_normalMap = normal;
+    m_constantsDirty = true;
 }
 
 void Device::DestroyTextureNow(Texture* t)

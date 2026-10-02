@@ -75,6 +75,8 @@ public:
     void SetEffectGlow(float gain);
     void SetAo(float strength, float radius);
     void SetBump(float strength);
+    void SetNormalMaps(bool enable, float strength);
+    void SetNormalMap(Texture* texture, Texture* normal);   // the device owns `normal` from here on
     void SetAnisotropy(uint32_t level);
     void SetMotionBlur(float strength, float focusNear);
     void SetMotionBlurMode(uint32_t mode);

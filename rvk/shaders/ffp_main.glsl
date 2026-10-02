@@ -6,6 +6,7 @@ layout(set = 0, binding = 2) uniform sampler2D tex1;
 layout(set = 0, binding = 5) uniform sampler2DShadow shadowMap;
 layout(set = 0, binding = 6) uniform samplerCubeArrayShadow pointShadowMaps;
 layout(set = 0, binding = 7) uniform sampler2D bumpBase;   // F_BUMPBASE: the ground's base texture, for its relief
+layout(set = 0, binding = 9) uniform sampler2D normalMap;  // F_NORMALMAP: the stage 0 texture's tangent-space normals
 
 // Visibility of a frame light with a cube shadow map (l.spot.z = cube + 1): 1 = lit. Must match
 // Device::RenderPointShadowMaps (pointshadow.cpp): depth along the face's axis, near kPointShadowNear, far = range.
@@ -173,6 +174,17 @@ vec4 Cascade(vec4 t0, vec4 t1, float maxColor)
 // height (Mikkelsen, "Bump Mapping Unparametrized Surfaces on the GPU"): no tangents needed.
 float Luma(vec3 c) { return dot(c, vec3(0.3, 0.59, 0.11)); }
 
+// Bends n by a height field whose change across the pixel is dBs (to the right) and dBt (down the screen).
+vec3 BendNormal(vec3 n, vec3 px, vec3 py, float dBs, float dBt)
+{
+    vec3 nu = normalize(n);
+    vec3 r1 = cross(py, nu), r2 = cross(nu, px);
+    float det = dot(px, r1);
+    if (abs(det) < 1e-12) return n;
+    vec3 grad = sign(det) * (dBs * r1 + dBt * r2);
+    return normalize(abs(det) * nu - grad) * length(n);
+}
+
 vec3 BumpNormal(sampler2D tex, vec3 n, vec3 posW, vec2 uv)
 {
     vec2 size = vec2(textureSize(tex, 0));
@@ -185,13 +197,22 @@ vec3 BumpNormal(sampler2D tex, vec3 n, vec3 posW, vec2 uv)
     vec3 px = dFdx(posW), py = dFdy(posW);
     float texelWorld = sqrt(max(dot(px, px), dot(py, py)) / max(max(dot(uvx, uvx), dot(uvy, uvy)), 1e-8));
     float k = C.misc.w * texelWorld;                       // world height of a full brightness step per texel
-    float dBs = dot(slope, uvx) * k, dBt = dot(slope, uvy) * k;
-    vec3 nu = normalize(n);
-    vec3 r1 = cross(py, nu), r2 = cross(nu, px);
-    float det = dot(px, r1);
-    if (abs(det) < 1e-12) return n;
-    vec3 grad = sign(det) * (dBs * r1 + dBt * r2);
-    return normalize(abs(det) * nu - grad) * length(n);
+    return BendNormal(n, px, py, dot(slope, uvx) * k, dot(slope, uvy) * k);
+}
+
+// Normal mapping (F_NORMALMAP): the texture's own tangent-space normal map, OpenGL convention (what Blender bakes:
+// +X along +u, +Y up in the image = against D3D's v). A normal (x, y, z) is the height slope (-x/z, y/z) per world
+// unit along u and down-v; scaled by the world size of a uv unit it bends the normal exactly like the generated
+// normals above, so it needs no tangents. C.vtx.z = strength.
+vec3 NormalMapNormal(vec3 n, vec3 posW, vec2 uv)
+{
+    vec3 t = texture(normalMap, uv).xyz * 2.0 - 1.0;
+    t.z = max(t.z, 0.05);
+    vec2 slope = vec2(-t.x, t.y) / t.z * uintBitsToFloat(C.vtx.z);     // height per world unit along u, v
+    vec2 uvx = dFdx(uv), uvy = dFdy(uv);
+    vec3 px = dFdx(posW), py = dFdy(posW);
+    float worldPerUv = sqrt(max(dot(px, px), dot(py, py)) / max(max(dot(uvx, uvx), dot(uvy, uvy)), 1e-12));
+    return BendNormal(n, px, py, dot(slope, uvx) * worldPerUv, dot(slope, uvy) * worldPerUv);
 }
 
 bool AlphaPass(float a)
@@ -233,7 +254,9 @@ void main()
         float len2 = dot(n, n);
         n = len2 > 0.0 ? n * (vNormalW.w * inversesqrt(len2)) : vec3(0.0);
         // The ground's lighting pass draws the lightmap; its relief comes from the base pass's texture (F_BUMPBASE).
-        if ((C.flags.x & F_BUMP) != 0u && len2 > 0.0) {
+        if ((C.flags.x & F_NORMALMAP) != 0u && len2 > 0.0)
+            n = NormalMapNormal(n, vPosW, vTex0.xy);
+        else if ((C.flags.x & F_BUMP) != 0u && len2 > 0.0) {
             vec3 unbumped = n;
             n = (C.flags.x & F_BUMPBASE) != 0u ? BumpNormal(bumpBase, n, vPosW, vSet0) : BumpNormal(tex0, n, vPosW, vTex0.xy);
             // The ground's sunlight is baked into its lightmap (the live sun is kept off it): the relief scales the

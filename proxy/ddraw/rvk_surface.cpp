@@ -219,6 +219,7 @@ rvk::Texture* RSurface::RvkTexture()
     RSurface* t = top;
     if (!t->texture) {
         t->texture = dev->CreateTexture(t->desc.dwWidth, t->desc.dwHeight, t->format, t->levels);
+        AttachMaterialMaps(t);
         for (RSurface* l = t; l; l = l->nextLevel)
             t->anyDirty |= (l->dirty = !l->shadow.empty());
     }
@@ -245,6 +246,7 @@ void RSurface::Upload()
     if (!t->texture) {
         t->texture = dev->CreateTexture(t->desc.dwWidth, t->desc.dwHeight, t->format, t->levels);
         if (!t->texture) return;
+        AttachMaterialMaps(t);
     }
     dirty = false;
     uint32_t w = desc.dwWidth, h = desc.dwHeight;

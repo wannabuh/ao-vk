@@ -24,6 +24,12 @@ ORIGINAL = ROOT / "orig/randy31.dll"
 TARGET = "randy31.dll"
 OWN_EXPORTS = ["RvkSettings_Version", "RvkSettings_Count", "RvkSettings_Get", "RvkSettings_Set"]
 ORIG = "randy31_orig"
+# Exports the proxy implements itself (wrapping the original): mangled name -> proxy symbol.
+# proxy/texture_ids.cpp: learns which RDB texture each surface holds.
+HOOKED_EXPORTS = {
+    "?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVLBitmap_t@@PBD@Z": "@rvk_CreateTextureBitmap@16",
+    "?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVPositionIO_t@fun@@PBD@Z": "@rvk_CreateTextureStream@16",
+}
 
 
 def readobj(*args):
@@ -136,7 +142,9 @@ def main():
         for o, n, r in exps:
             is_code = section_of(secs, r) == ".text"
             d = dem.get(n, n)
-            if is_code and any(p.search(d) for p in patterns):
+            if n in HOOKED_EXPORTS:
+                f.write(f"    {n}={HOOKED_EXPORTS[n]} @{o}\n")
+            elif is_code and any(p.search(d) for p in patterns):
                 short = re.search(r"(\w+::~?\w+)\(", d)
                 short = short.group(1) if short else n
                 overloads[short] += 1

@@ -387,6 +387,16 @@ void ThreadedDevice::SetBump(float strength)
     Enqueue([this, s](const uint8_t*) { m_device.SetBump(s); });
 }
 
+void ThreadedDevice::SetNormalMaps(bool enable, float strength)
+{
+    Enqueue([this, enable, strength](const uint8_t*) { m_device.SetNormalMaps(enable, strength); });
+}
+
+void ThreadedDevice::SetNormalMap(Texture* texture, Texture* normal)
+{
+    Enqueue([this, texture, normal](const uint8_t*) { m_device.SetNormalMap(texture, normal); });
+}
+
 void ThreadedDevice::SetAo(float strength, float radius)
 {
     m_aoStrength = strength;

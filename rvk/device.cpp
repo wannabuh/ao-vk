@@ -168,6 +168,7 @@ Device::~Device()
         if (f.imageAvailable) vkDestroySemaphore(m_device, f.imageAvailable, nullptr);
     }
     if (m_blackTexture) DestroyTextureNow(m_blackTexture);
+    if (m_flatNormal) DestroyTextureNow(m_flatNormal);
     for (auto& [key, sampler] : m_samplers) vkDestroySampler(m_device, sampler, nullptr);
     for (VkPipeline p : m_pipelines) if (p) vkDestroyPipeline(m_device, p, nullptr);
     for (VkPipeline p : m_pipelinesHdr) if (p) vkDestroyPipeline(m_device, p, nullptr);
@@ -201,7 +202,9 @@ bool Device::Init(HWND window, uint32_t width, uint32_t height, std::string* err
         return false;
     uint32_t black = 0xFF000000;
     m_blackTexture = CreateTexture(1, 1, &black);
-    return m_blackTexture != nullptr;
+    uint32_t flat = 0xFF8080FF;                  // (0.5, 0.5, 1): the unbent normal
+    m_flatNormal = CreateTexture(1, 1, &flat);
+    return m_blackTexture != nullptr && m_flatNormal != nullptr;
 }
 
 bool Device::CreateInstance(std::string* error)
@@ -573,7 +576,7 @@ void Device::DestroySwapchain()
 
 bool Device::CreatePipelines(std::string* error)
 {
-    VkDescriptorSetLayoutBinding bindings[9] = {
+    VkDescriptorSetLayoutBinding bindings[10] = {
         {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
@@ -583,10 +586,11 @@ bool Device::CreatePipelines(std::string* error)
         {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
+        {9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
     };
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 9;
+    sl.bindingCount = 10;
     sl.pBindings = bindings;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_setLayout), "vkCreateDescriptorSetLayout", error))
         return false;

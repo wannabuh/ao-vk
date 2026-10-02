@@ -7,8 +7,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")   # static CRT: no extra runtime
 
 # Drop-in randy31.dll. Exports not implemented here forward to the original, renamed randy31_orig.dll.
 add_library(randy31 SHARED proxy/dllmain.cpp proxy/trace.cpp proxy/ddraw/com_trace.cpp proxy/ddraw/com_trace_detail.cpp
-            proxy/ddraw/rvk_ddraw.cpp proxy/ddraw/rvk_surface.cpp proxy/ddraw/rvk_device.cpp proxy/ddraw/rvk_settings.cpp proxy/ddraw/rvk_particles.cpp proxy/randy31.def)
-target_include_directories(randy31 PRIVATE proxy)
+            proxy/ddraw/rvk_ddraw.cpp proxy/ddraw/rvk_surface.cpp proxy/ddraw/rvk_device.cpp proxy/ddraw/rvk_settings.cpp proxy/ddraw/rvk_particles.cpp
+            proxy/ddraw/rvk_materials.cpp proxy/randy31.def)
+target_include_directories(randy31 PRIVATE proxy third_party)
 target_compile_definitions(randy31 PRIVATE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(randy31 PRIVATE rvk user32)
 set_target_properties(randy31 PROPERTIES OUTPUT_NAME randy31 PREFIX "")

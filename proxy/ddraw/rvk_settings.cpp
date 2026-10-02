@@ -33,6 +33,8 @@ Setting g_settings[] = {
     {"RVK_PixelLight", "Per-pixel lighting",                                              "Lighting",       Bool,  0, 1, 1, 1, "RANDYVK_PIXEL_LIGHTING", 0},
     {"RVK_LightOver",  "All nearby lights light every surface (light override)",          "Lighting",       Bool,  0, 1, 1, 1, "RANDYVK_LIGHT_OVERRIDE", 0},
     {"RVK_Bump",       "Generated surface relief (normal maps from textures)",            "Lighting",       Float, 0, 4, 0.25f, 1.5f, "RANDYVK_BUMP", 0},
+    {"RVK_NormalMaps", "Normal maps (from the randy-vk materials folder)",                 "Lighting",       Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_NormalStr",  "Normal map strength",                                             "Lighting",       Float, 0, 4, 0.1f, 1, nullptr, 0},
     {"RVK_Headroom",   "Light headroom without HDR",                                       "Lighting",       Float, 1, 2, 0.05f, 1.25f, "RANDYVK_LIGHT_HEADROOM", 0},
     {"RVK_Aniso",      "Anisotropic filtering (1 = off)",                                 "Lighting",       Int,   1, 16, 1, 16, "RANDYVK_ANISOTROPY", 0},
     {"RVK_SunShadow",  "Sun shadows",                                                     "Shadows",        Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
@@ -131,6 +133,7 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     if (is("RVK_PixelLight")) d->SetPixelLighting(s.value != 0.0f);
     else if (is("RVK_LightOver")) d->SetLightOverride(s.value != 0.0f);
     else if (is("RVK_Bump")) d->SetBump(s.value);
+    else if (is("RVK_NormalMaps") || is("RVK_NormalStr")) d->SetNormalMaps(V("RVK_NormalMaps") != 0.0f, V("RVK_NormalStr"));
     else if (is("RVK_Headroom")) d->SetLightHeadroom(s.value);
     else if (is("RVK_Aniso")) d->SetAnisotropy(uint32_t(s.value));
     else if (is("RVK_SunShadow")) d->SetShadows(s.value != 0.0f);

@@ -796,9 +796,17 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         }
     }
     uint32_t carrier = m_external ? 0 : CarriedLight(fvf, vertices, vertexCount, layout.stride);
+    // The texture's own normal map (F_NORMALMAP), when it is the surface (stage 0, plain coordinates) of a per-pixel
+    // lit draw; the ground's lightmap pass is excluded like for the generated normals.
+    Texture* normalMap = nullptr;
+    if (m_normalMaps && m_pixelLighting && m_textures[0] && m_textures[0]->m_normalMap && !terrain &&
+        m_rs[d3d::RS_LIGHTING] && m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
+        !(m_tss[0][d3d::TSS_TEXTURETRANSFORMFLAGS] & 256u) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
+        normalMap = m_textures[0]->m_normalMap;
     bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
                    m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
-                   m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase;
+                   m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
+                   m_constantsNormalMap != normalMap;
     VkDeviceSize uboOffset = m_constantsOffset;
     if (rewrite) {
     uboOffset = Allocate(sizeof(DrawConstants), uboAlign, &cpu);
@@ -811,6 +819,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsLabel = m_drawIsLabel;
     m_constantsCarrier = carrier;
     m_constantsBumpBase = m_drawBumpBase;
+    m_constantsNormalMap = normalMap;
     auto* c = static_cast<DrawConstants*>(cpu);
     c->view = m_view;
     c->proj = m_proj;
@@ -848,6 +857,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     std::memcpy(&c->vtx[1], &m_drawColorScale, 4);
     if (m_drawColorScale == 1.0f) c->vtx[1] = 0;
     c->vtx[2] = c->vtx[3] = 0;
+    std::memcpy(&c->vtx[2], &m_normalStrength, 4);   // F_NORMALMAP: slope scale
     uint32_t flags = 0;
     if (m_rs[d3d::RS_LIGHTING] && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) flags |= F_LIGHTING;
     if ((flags & F_LIGHTING) && m_pixelLighting) flags |= F_PERPIXEL;
@@ -858,7 +868,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (hdrTarget) flags |= F_HDR;
     // Generated normals: per-pixel lit 3D drawn with a texture in stage 0 as its surface (not the ground's
     // lightmap pass, whose stage 0 is the lightmap), with plain coordinates.
-    if ((flags & F_PERPIXEL) && m_bump > 0.0f && m_textures[0] && !terrain && m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
+    if ((flags & F_PERPIXEL) && normalMap)
+        flags |= F_NORMALMAP;
+    else if ((flags & F_PERPIXEL) && m_bump > 0.0f && m_textures[0] && !terrain && m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
         !(m_tss[0][d3d::TSS_TEXTURETRANSFORMFLAGS] & 256u) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
         flags |= F_BUMP;
     else if ((flags & F_PERPIXEL) && m_drawBumpBase)
@@ -951,8 +963,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     VkDescriptorImageInfo bump{m_bumpSampler, bumpBase->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     // Binding 8: an animated mesh's last positions, else any small part of the ring (unread).
     VkDescriptorBufferInfo prevPositions{f.ring, prevPositionsOffset, prevPositionsBytes ? prevPositionsBytes : 16};
-    VkWriteDescriptorSet writes[9] = {};
-    for (int i = 0; i < 9; ++i) {
+    VkDescriptorImageInfo normal{m_normalSampler, (normalMap ? normalMap : m_flatNormal)->m_view,
+                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet writes[10] = {};
+    for (int i = 0; i < 10; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstBinding = uint32_t(i);
         writes[i].descriptorCount = 1;
@@ -974,7 +988,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[7].pImageInfo = &bump;
     writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[8].pBufferInfo = &prevPositions;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 9, writes);
+    writes[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[9].pImageInfo = &normal;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 10, writes);
 
     if (m_external) {
         VkBuffer buffers[2] = {m_external->vertices, m_nullBuffer};

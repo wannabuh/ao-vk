@@ -143,8 +143,8 @@ EXPORTS
     ?CreatePalette@render_t@@QAEXKPAUtagPALETTEENTRY@@PAPAUIDirectDrawPalette@@PAUIUnknown@@@Z=randy31_orig.?CreatePalette@render_t@@QAEXKPAUtagPALETTEENTRY@@PAPAUIDirectDrawPalette@@PAUIUnknown@@@Z @139
     ?CreateSubstMaterial@RCATMesh_t@@QAEPAVRMaterial_t@@H@Z=randy31_orig.?CreateSubstMaterial@RCATMesh_t@@QAEPAVRMaterial_t@@H@Z @140
     ?CreateSurface@render_t@@QAEJPAU_DDSURFACEDESC2@@PAPAUIDirectDrawSurface7@@PAUIUnknown@@@Z=trace_thunk_4 @141
-    ?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVLBitmap_t@@PBD@Z=randy31_orig.?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVLBitmap_t@@PBD@Z @142
-    ?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVPositionIO_t@fun@@PBD@Z=randy31_orig.?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVPositionIO_t@fun@@PBD@Z @143
+    ?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVLBitmap_t@@PBD@Z=@rvk_CreateTextureBitmap@16 @142
+    ?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVPositionIO_t@fun@@PBD@Z=@rvk_CreateTextureStream@16 @143
     ?CreateVertexBuffer@render_t@@QAEXPAU_D3DVERTEXBUFFERDESC@@PAPAUIDirect3DVertexBuffer7@@K@Z=randy31_orig.?CreateVertexBuffer@render_t@@QAEXPAU_D3DVERTEXBUFFERDESC@@PAPAUIDirect3DVertexBuffer7@@K@Z @144
     ?CullBySphere@RRefFrame_t@@QAE_NABVVector3_t@@M@Z=randy31_orig.?CullBySphere@RRefFrame_t@@QAE_NABVVector3_t@@M@Z @145
     ?CullBySphere@RRefFrame_t@@QAE_NABVVector3_t@@MAAV2@@Z=randy31_orig.?CullBySphere@RRefFrame_t@@QAE_NABVVector3_t@@MAAV2@@Z @146
