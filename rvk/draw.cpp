@@ -1330,9 +1330,13 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         }
     }
     uint32_t carrier = m_external ? 0 : CarriedLight(fvf, vertices, vertexCount, layout.stride);
+    // The foliage level of detail depends on the draw's distance, not the render state: part of the block's key, or
+    // a run of plants with the same state would all get the first one's (flickering as the camera moves).
+    uint32_t foliageLod = FoliageFar() ? (m_drawSway[3] > 0.5f ? 2u : 1u) : 0u;
     bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
                    m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
-                   m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase;
+                   m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
+                   m_constantsFoliageLod != foliageLod;
     VkDeviceSize uboOffset = m_constantsOffset;
     if (rewrite) {
     uboOffset = Allocate(sizeof(DrawConstants), uboAlign, &cpu);
@@ -1345,6 +1349,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsLabel = m_drawIsLabel;
     m_constantsCarrier = carrier;
     m_constantsBumpBase = m_drawBumpBase;
+    m_constantsFoliageLod = foliageLod;
     auto* c = static_cast<DrawConstants*>(cpu);
     c->view = m_view;
     c->proj = m_proj;
@@ -1436,9 +1441,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // Distance level of detail (RVK_FoliageLod): foliage beyond it - many layers of it, a few pixels each - gets a
     // single-tap sun shadow and no relief; small plants (the swaying ones) are lit per vertex, the sun kept apart
     // (F_VERTEXSUN) so that its shadow darkens only the sunlight, as per pixel.
-    if (foliage && FoliageFar()) {
+    if (foliage && foliageLod) {
         flags = (flags & ~(F_BUMP | F_BUMPBASE)) | F_SHADOWCHEAP;
-        if (m_drawSway[3] > 0.5f && (flags & F_PERPIXEL))
+        if (foliageLod == 2u && (flags & F_PERPIXEL))
             flags = (flags & ~F_PERPIXEL) | F_VERTEXSUN;
     }
     // Blended (not additive) with depth writes, as the game draws most statics: the see-through parts must not write

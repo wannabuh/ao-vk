@@ -873,6 +873,7 @@ private:
     uint32_t m_constantsFvf = ~0u;
     uint32_t m_constantsTexMask = ~0u;
     bool m_constantsTerrain = false, m_constantsLabel = false;
+    uint32_t m_constantsFoliageLod = 0;          // FoliageFar: 0 near, 1 far foliage, 2 far plant
     uint32_t m_constantsCarrier = 0;
     void BeginRenderingOn(Texture* target);
     void EndRendering();
