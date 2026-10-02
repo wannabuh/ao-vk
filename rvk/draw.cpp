@@ -882,6 +882,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     Frame& f = m_frames[m_frameIndex];
     VkCommandBuffer cmd = f.main;
     FvfLayout layout = DecodeFvf(fvf);
+    double since = (m_frameNumber & 15) == 0 ? ProfileCpu() : 0.0;   // per-draw CPU sections (profiling)
 
     // Render targets bound as textures must be readable; layout changes can't happen inside rendering.
     bool needTransition = false;
@@ -914,6 +915,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (needLights && (m_frameLightsDirty || m_frameLightsGeneration != m_ringGeneration))   // once per frame
         frameLightsOffset = WriteFrameLights();
 
+    ProfileDrawSection("draw: setup", since);
     // Per-draw world matrix (small block).
     void* cpu;
     VkDeviceSize transformOffset = Allocate(sizeof(DrawTransform), uboAlign, &cpu);
@@ -926,7 +928,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_external || !SwayParams(fvf, layout.stride, vertices, vertexCount, drawTransform->sway))
         drawTransform->sway[0] = drawTransform->sway[1] = drawTransform->sway[2] = drawTransform->sway[3] = 0.0f;
     std::memcpy(m_drawSway, drawTransform->sway, sizeof(m_drawSway));
+    ProfileDrawSection("draw: sway", since);
     FrameLightMask(fvf, layout.stride, vertices, vertexCount, drawTransform->lightMask);
+    ProfileDrawSection("draw: light mask", since);
     if (motion) {
         // Motion vectors: the same object last frame - same mesh, nearest to where this one is (within 3 units). Not
         // found (new, or a different level of detail): its current matrix, i.e. it moved with the world.
@@ -966,6 +970,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         m_motionCur[key].push_back({m_world, false, std::move(positions)});
     }
 
+    ProfileDrawSection("draw: motion vectors", since);
     // The big constant block: reused unless something feeding it changed since it was written.
     uint32_t texMask = (m_textures[0] ? 1u : 0u) | (m_textures[1] ? 2u : 0u);
     bool terrain = IsTerrain(fvf);
@@ -1130,6 +1135,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c->lightInfo[3] = 0;
     }
 
+    ProfileDrawSection("draw: constants", since);
     // Geometry: vertices aligned to their stride and indices to 2 bytes, so the draw can address them inside
     // the ring buffer bound once (vertexOffset / firstIndex) instead of rebinding buffers per draw.
     VkDeviceSize vbOffset = 0, ibOffset = 0;
@@ -1145,6 +1151,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         RecordShadowCaster(primitive, fvf, layout.stride, vertices, vertexCount, vbOffset, indices,
                            indices ? indexCount : 0, ibOffset);
     }
+    ProfileDrawSection("draw: geometry + casters", since);
     m_drawOverbright2x = Overbright2x(fvf);
     if (GlowDraw(fvf)) ++m_glowDraws;
     ApplyDynamicState(primitive, fvf, layout.stride);
@@ -1212,6 +1219,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         m_particlePending = nullptr;
         DrawParticles(*block);
     }
+    ProfileDrawSection("draw: state + descriptors + draw", since);
 }
 
 }  // namespace rvk

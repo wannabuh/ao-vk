@@ -107,6 +107,15 @@ void Device::ProfileWindow(bool start, const char* label)
 
 void Device::ProfileManualEnd() { m_profileManual = false; }
 
+void Device::ProfileDrawSection(const char* name, double& since)
+{
+    if ((m_frameNumber & 15) != 0)
+        return;
+    double now = CpuNow();
+    ProfileAdd(m_profileCpu, name, (now - since) * 16.0);
+    since = now;
+}
+
 void Device::ProfileLog(const char* label)
 {
     if (!m_profileFrames) return;
@@ -122,6 +131,9 @@ void Device::ProfileLog(const char* label)
         sums.clear();
     };
     line("gpu ms:", m_profileGpu);
+    ProfileAdd(m_profileCpu, "render thread idle", m_profileIdleMs);
+    ProfileAdd(m_profileCpu, "game thread waiting", double(m_profileGameWaitUs.exchange(0)) * 1e-3);
+    m_profileIdleMs = 0.0;
     line("cpu ms (frame recording):", m_profileCpu);
     m_profileFrames = 0;
 }

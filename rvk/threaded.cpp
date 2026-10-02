@@ -1,5 +1,7 @@
 #include "threaded.h"
 
+#include <chrono>
+
 #include <cstdio>
 #include <malloc.h>
 
@@ -145,6 +147,7 @@ void ThreadedDevice::Worker()
         if (r == w) {
             if (m_stop.load())
                 return;
+            auto idleStart = std::chrono::steady_clock::now();   // profiling: the render thread waiting for work
             // Idle: spin briefly (the next record usually follows quickly), then sleep until woken.
             bool woke = false;
             for (int i = 0; i < 4000 && !woke; ++i) {
@@ -157,6 +160,7 @@ void ThreadedDevice::Worker()
                     WaitWhileEqual(m_writePos, r, INFINITE);
                 m_workerSleeping.store(0, std::memory_order_relaxed);
             }
+            m_device.ProfileAddIdle(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - idleStart).count());
             continue;
         }
         RunOne(r);
@@ -206,12 +210,15 @@ void ThreadedDevice::EndFrame()
     });
     // Run at most kMaxFramesAhead frames ahead of the GPU-facing thread.
     uint64_t queued = m_framesQueued.fetch_add(1) + 1;
+    auto waitStart = std::chrono::steady_clock::now();     // profiling: the game waiting for the render thread
     for (;;) {
         uint64_t done = m_framesDone.load(std::memory_order_acquire);
         if (queued - done <= kMaxFramesAhead)
             break;
         WaitWhileEqual(m_framesDone, done, 100);
     }
+    m_device.m_profileGameWaitUs.fetch_add(uint64_t(
+        std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - waitStart).count()));
 }
 
 bool ThreadedDevice::ReadPixels(Texture* target, void* out)

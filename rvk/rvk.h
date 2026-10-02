@@ -11,6 +11,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <atomic>
 #include <unordered_map>
 #include <vector>
 
@@ -889,6 +890,13 @@ public:
     // The settings sweep's measurement windows: start (clears) / end (logs with the label). Automatic logging pauses.
     void ProfileWindow(bool start, const char* label);
     void ProfileManualEnd();
+    // Threads (threaded.cpp): the render thread's idle time (waiting for the game's records), the game thread's
+    // waits for the render thread (frames ahead, queue full) - microseconds since the last log.
+    void ProfileAddIdle(double ms) { m_profileIdleMs += ms; }
+    std::atomic<uint64_t> m_profileGameWaitUs{0};
+    double m_profileIdleMs = 0.0;
+    // Per-draw CPU sections, timed on every 16th frame (Draw); scaled to a per-frame average.
+    void ProfileDrawSection(const char* name, double& since);
 private:
     uint32_t m_frameIndex = 0;
     bool m_inFrame = false;
