@@ -42,7 +42,7 @@ const FormatInfo kFormats[] = {
     {VK_FORMAT_R16G16B16A16_SFLOAT, kIdentity, 8, false},     // RGBA16F (HDR scene)
     {VK_FORMAT_B10G11R11_UFLOAT_PACK32, kIdentity, 4, false}, // RG11B10F (HDR glow)
     {VK_FORMAT_R16G16_SFLOAT, kIdentity, 4, false},          // RG16F (ambient occlusion)
-    {VK_FORMAT_R8_UNORM, kIdentity, 1, false},               // R8 (local-light fraction)
+    {VK_FORMAT_R8G8_UNORM, kIdentity, 2, false},             // RG8 (local-light fraction, reflectivity)
 };
 static_assert(sizeof(kFormats) / sizeof(kFormats[0]) == size_t(Format::Count), "format table");
 

@@ -1402,7 +1402,7 @@ int main(int argc, char** argv)
     float headroom = 1.0f;
     double fadeIn = 0.0;
     bool hdr = false;
-    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volLamps = 1.0f, volHaze = 1.0f, bump = 0.0f;
+    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volLamps = 1.0f, volHaze = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bump = 0.0f;
     uint32_t anisotropy = 1;
     float motionBlur = 0.0f, dof = 0.0f, dofFocus = 0.0f;
     bool dofBokeh = true, dofFar = true;
@@ -1450,6 +1450,8 @@ int main(int argc, char** argv)
         else if (a == "--volume" && i + 1 < argc) { volume = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--vol-lamps" && i + 1 < argc) volLamps = float(std::atof(argv[++i]));
         else if (a == "--vol-haze" && i + 1 < argc) volHaze = float(std::atof(argv[++i]));
+        else if (a == "--ssr" && i + 1 < argc) { ssr = float(std::atof(argv[++i])); hdr = true; }
+        else if (a == "--ssr-wet" && i + 1 < argc) ssrWet = float(std::atof(argv[++i]));
         else if (a == "--effect-glow" && i + 1 < argc) effectGlow = float(std::atof(argv[++i]));
         else if (a == "--bloom" && i + 1 < argc) { bloom = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--tonemap-knee" && i + 1 < argc) knee = float(std::atof(argv[++i]));
@@ -1504,6 +1506,7 @@ int main(int argc, char** argv)
     dev.SetAo(ao, aoRadius);
     dev.SetGi(gi, giRadius);
     dev.SetVolume(volume, volLamps, volHaze);
+    dev.SetSsr(ssr, 1.0f, 0.3f, ssrWet);
     dev.SetBump(bump);
     dev.SetAnisotropy(anisotropy);
     dev.SetMotionBlur(motionBlur, 8.0f);

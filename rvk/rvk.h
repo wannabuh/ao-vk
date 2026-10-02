@@ -34,7 +34,7 @@ enum class Format : uint32_t {
     RGBA16F,    // internal: the HDR scene target
     RG11B10F,   // internal: the HDR glow target (additive effects, for the bloom)
     RG16F,      // internal: ambient occlusion (factor, view depth)
-    R8,         // internal: the HDR scene's local-light fraction (ambient occlusion spares it)
+    RG8,        // internal: the HDR scene's local-light fraction (ambient occlusion spares it), reflectivity
     Count
 };
 
@@ -193,6 +193,9 @@ public:
     void SetGi(float strength, float radius) { m_giStrength = strength; m_giRadius = radius; }
     // With HDR: light scattered by the air - sun shafts (strength; 0 = off), lamp glow (relative), haze density.
     void SetVolume(float strength, float lamps, float haze) { m_volume = strength; m_volumeLamps = lamps; m_volumeHaze = haze; }
+    // With HDR: screen-space reflections - strength (0 = off), reflectivity of water, glossy surfaces, wet ground.
+    void SetSsr(float strength, float water, float gloss, float wet)
+    { m_ssr = strength; m_ssrWater = water; m_ssrGloss = gloss; m_ssrWet = wet; m_constantsDirty = true; }
     void SetEffectGlow(float gain) { if (m_effectGlow != gain) { m_effectGlow = gain; m_constantsDirty = true; } }
     float EffectGlow() const { return m_effectGlow; }
     float BloomStrength() const { return m_bloomStrength; }
@@ -551,11 +554,12 @@ private:
     std::vector<Texture*> m_bloomLevels;         // half resolution and down, float
     float m_effectGlow = 1.0f;
     Texture* m_glow = nullptr;                   // second scene attachment: what additive effects add (F_GLOW)
-    Texture* m_localFraction = nullptr;          // third: how much of each pixel's colour local lights gave it
+    Texture* m_localFraction = nullptr;          // third: how much of each pixel's colour local lights gave it; G: reflectivity
     bool m_glowCleared = false;                  // this frame
     uint32_t m_glowDraws = 0;                    // this frame's draws feeding the glow (frame dumps)
     bool GlowDraw(uint32_t fvf) const;
     static bool IsInterfaceDraw(uint32_t fvf);
+    static bool IsWater(uint32_t fvf);           // VisualLiquid_t: pre-transformed, with specular (FVF 0x1C4)
     VkDescriptorSetLayout m_bloomSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_bloomLayout = VK_NULL_HANDLE;
     VkPipeline m_bloomDown = VK_NULL_HANDLE, m_bloomUp = VK_NULL_HANDLE;
@@ -580,6 +584,12 @@ private:
     VkPipelineLayout m_volumeLayout = VK_NULL_HANDLE;
     VkPipeline m_volumePipeline = VK_NULL_HANDLE, m_volumeBlurPipeline = VK_NULL_HANDLE;
     bool RenderVolume(VkCommandBuffer cmd);
+    // Screen-space reflections (hdr.cpp, ssr.frag): strength (0 = off) and reflectivity of water, glossy surfaces
+    // and the wet look of surfaces facing up.
+    float m_ssr = 1.0f, m_ssrWater = 1.0f, m_ssrGloss = 0.3f, m_ssrWet = 0.0f;
+    Texture* m_ssrTex = nullptr;                 // full resolution: reflected colour, how much it shows
+    VkPipeline m_ssrPipeline = VK_NULL_HANDLE;
+    bool RenderSsr(VkCommandBuffer cmd);
     d3d::Matrix m_aoProj{};                      // the world camera's projection (first depth-writing 3D draw)
     d3d::Matrix m_aoView{};                      // ... and view
     float m_motionBlur = 0.0f, m_motionNear = 8.0f;
@@ -618,7 +628,7 @@ private:
                m_dofPrefilterPipeline = VK_NULL_HANDLE, m_dofTilesPipeline = VK_NULL_HANDLE,
                m_dofGatherPipeline = VK_NULL_HANDLE, m_dofFinalPipeline = VK_NULL_HANDLE;
     bool RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, bool volume, const float tonemapParams[8]);
-    static constexpr uint32_t kTonemapInputs = 8;   // occlusion.glsl's bindings
+    static constexpr uint32_t kTonemapInputs = 9;   // occlusion.glsl's bindings
     void TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, Texture* scene, bool bloom, bool ao,
                            bool gi, bool volume, const float params[8]);
     void MakeDepthReadable(VkCommandBuffer cmd);

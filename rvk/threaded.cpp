@@ -408,6 +408,11 @@ void ThreadedDevice::SetVolume(float strength, float lamps, float haze)
     Enqueue([this, strength, lamps, haze](const uint8_t*) { m_device.SetVolume(strength, lamps, haze); });
 }
 
+void ThreadedDevice::SetSsr(float strength, float water, float gloss, float wet)
+{
+    Enqueue([this, strength, water, gloss, wet](const uint8_t*) { m_device.SetSsr(strength, water, gloss, wet); });
+}
+
 void ThreadedDevice::SetEffectGlow(float gain)
 {
     m_effectGlow = gain < 0.0f ? 0.0f : gain;

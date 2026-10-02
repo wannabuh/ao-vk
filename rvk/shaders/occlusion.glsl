@@ -7,10 +7,11 @@ layout(set = 0, binding = 4) uniform sampler2D localFraction;   // how much of e
 layout(set = 0, binding = 5) uniform sampler2D gi;      // half resolution: indirect light, view depth
 layout(set = 0, binding = 6) uniform sampler2D albedo;  // the surfaces' own colour (fogged)
 layout(set = 0, binding = 7) uniform sampler2D volume;  // half resolution: light scattered by the air, view depth
+layout(set = 0, binding = 8) uniform sampler2D ssr;     // reflected colour, how much of it shows
 layout(push_constant) uniform Push {
     vec4 params;        // knee, exposure, bloom strength, ambient occlusion on (1)
     vec4 proj;          // D3D projection m[2][2], m[3][2] (view depth from the depth buffer), indirect light strength,
-                        // volumetric light on (1)
+                        // volumetric light on (bit 1), reflections on (bit 2)
 } P;
 
 // A half-resolution image at this pixel: of the 4 nearest texels, those at this pixel's depth (the same surface,
@@ -61,6 +62,14 @@ float AmbientFactor()
 // Light scattered towards the camera by the air in front of this pixel (volumetric light); 0 when off.
 vec3 Volumetric()
 {
-    if (P.proj.w <= 0.0) return vec3(0.0);
+    if ((int(P.proj.w) & 1) == 0) return vec3(0.0);
     return Upsample(volume, 3).rgb;
+}
+
+// The surface's colour with its reflection over it (screen-space reflections).
+vec3 Reflected(vec3 c)
+{
+    if ((int(P.proj.w) & 2) == 0) return c;
+    vec4 r = texelFetch(ssr, ivec2(gl_FragCoord.xy), 0);
+    return mix(c, r.rgb, r.a);
 }

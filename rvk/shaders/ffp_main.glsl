@@ -65,7 +65,7 @@ float gLightmapRelief = 1.0;                    // F_BUMPBASE: the ground's reli
 layout(location = 0) out vec4 outColor;
 #ifdef RVK_GLOW
 layout(location = 1) out vec4 outGlow;     // HDR scene only: the glow attachment (F_GLOW)
-layout(location = 2) out vec4 outLocal;    // HDR scene only: the fraction of the colour local lights gave it
+layout(location = 2) out vec4 outLocal;    // HDR scene only: the fraction of the colour local lights gave it, reflectivity
 layout(location = 3) out vec4 outMotion;   // HDR scene only: screen motion since last frame, pixels (solid geometry)
 layout(location = 4) out vec4 outAlbedo;   // HDR scene only: the surface's colour without lighting (indirect light)
 #endif
@@ -344,6 +344,12 @@ void main()
             current.rgb = mix(current.rgb, vec3(peak), core * clamp((bright - 1.0) / 3.0, 0.0, 1.0));
         }
     }
+#ifdef RVK_GLOW
+    // How much the surface reflects (screen-space reflections): the draw's own, or its wet look where it faces up.
+    float reflectivity = uintBitsToFloat(C.vtx.z), wet = uintBitsToFloat(C.vtx.w);
+    if (wet > 0.0 && dot(vNormalW.xyz, vNormalW.xyz) > 0.0)
+        reflectivity = max(reflectivity, wet * smoothstep(0.7, 0.95, normalize(vNormalW.xyz).y));
+#endif
     if ((C.flags.x & F_FOG) != 0u) {
         float f = vFogFactor;
         uint table = C.flags.z;
@@ -356,6 +362,7 @@ void main()
         current.rgb = mix(C.fogColor.rgb, current.rgb, f);
 #ifdef RVK_GLOW
         albedo *= f;                                      // indirect light fades into the fog with the surface
+        reflectivity *= f;                                // ... and so do reflections
 #endif
     }
     if ((C.flags.x & F_DEBUGLIGHT) != 0u && (C.vtx.x & 0xEu) != 4u) {
@@ -374,7 +381,7 @@ void main()
         glow = current.rgb * ((C.flags.x & F_GLOWALPHA) != 0u ? clamp(current.a, 0.0, 1.0) : 1.0) * C.misc.z;
     outGlow = vec4(glow, 0.0);
     // Blended with this fragment's alpha like the colour (attachment 2's blend state follows the colour's).
-    outLocal = vec4(gLocalFraction, 0.0, 0.0, current.a);
+    outLocal = vec4(gLocalFraction, clamp(reflectivity, 0.0, 1.0), 0.0, current.a);
     // Motion vectors (written by depth-writing draws only, see the blend state): where this point was last frame.
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * C.viewport.zw * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);

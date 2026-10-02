@@ -77,6 +77,7 @@ public:
     void SetAo(float strength, float radius);
     void SetGi(float strength, float radius);
     void SetVolume(float strength, float lamps, float haze);
+    void SetSsr(float strength, float water, float gloss, float wet);
     void SetBump(float strength);
     void SetAnisotropy(uint32_t level);
     void SetMotionBlur(float strength, float focusNear);

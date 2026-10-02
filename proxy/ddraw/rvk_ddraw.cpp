@@ -138,7 +138,7 @@ void RvkState::Present()
     static const OnOff kOnOff[] = {
         {'M', "RVK_MBlur", 0, 0.5f}, {VK_F1, "RVK_Aniso", 1, 16}, {VK_F2, "RVK_Bump", 0, 1.5f},
         {VK_F3, "RVK_Ao", 0, 1}, {VK_F4, "RVK_Bloom", 0, 1.5f}, {VK_F6, "RVK_PtShadows", 0, 8},
-        {'G', "RVK_Gi", 0, 1}, {'V', "RVK_Volume", 0, 1},
+        {'G', "RVK_Gi", 0, 1}, {'V', "RVK_Volume", 0, 1}, {'R', "RVK_Ssr", 0, 1},
     };
     static float remembered[sizeof(kOnOff) / sizeof(kOnOff[0])];
     for (size_t i = 0; i < sizeof(kOnOff) / sizeof(kOnOff[0]); ++i) {

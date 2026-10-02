@@ -338,8 +338,12 @@ uint64_t Device::MotionKey(uint32_t primitive, uint32_t fvf, uint32_t vertexCoun
 // middle of the scene - taking it for the interface ended the scene early wherever water was in view.
 bool Device::IsInterfaceDraw(uint32_t fvf)
 {
-    return (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW &&
-           fvf != (d3d::FVF_XYZRHW | d3d::FVF_DIFFUSE | d3d::FVF_SPECULAR | (1u << d3d::FVF_TEXCOUNT_SHIFT));
+    return (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW && !IsWater(fvf);
+}
+
+bool Device::IsWater(uint32_t fvf)
+{
+    return fvf == (d3d::FVF_XYZRHW | d3d::FVF_DIFFUSE | d3d::FVF_SPECULAR | (1u << d3d::FVF_TEXCOUNT_SHIFT));
 }
 
 bool Device::GlowDraw(uint32_t fvf) const
@@ -565,6 +569,10 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     // back-to-front sorted list, so nothing drawn after them needs their depth.
     if (m_drawIsLabel && m_target == m_scene && m_aoStrength > 0.0f)
         zWrite = 0;
+    // The water doesn't write depth; the reflections need its surface (the depth buffer gives their position and
+    // normal), as do the ambient occlusion and the volumetric light, which then end at the water.
+    if (zEnable && m_target == m_scene && m_ssr > 0.0f && IsWater(fvf))
+        zWrite = 1;
     uint32_t zFunc = m_rs[d3d::RS_ZFUNC];
     if (c.depthTest != zEnable) { vkCmdSetDepthTestEnable(cmd, zEnable); c.depthTest = zEnable; }
     if (c.depthWrite != zWrite) { vkCmdSetDepthWriteEnable(cmd, zWrite); c.depthWrite = zWrite; }
@@ -876,7 +884,19 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c->vtx[0] = fvf;
     std::memcpy(&c->vtx[1], &m_drawColorScale, 4);
     if (m_drawColorScale == 1.0f) c->vtx[1] = 0;
-    c->vtx[2] = c->vtx[3] = 0;
+    // Reflectivity (screen-space reflections, the scene's attachment 2 G): water; glossy (specular) surfaces; and a
+    // wet look on surfaces facing up, which the shader scales by how much the surface faces up.
+    float reflectivity = 0.0f, wet = 0.0f;
+    if (m_ssr > 0.0f) {
+        if (IsWater(fvf)) {
+            reflectivity = m_ssrWater;
+        } else if ((fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) {
+            if (m_rs[d3d::RS_SPECULARENABLE] && m_material.power > 0.0f) reflectivity = m_ssrGloss;
+            wet = m_ssrWet;
+        }
+    }
+    std::memcpy(&c->vtx[2], &reflectivity, 4);
+    std::memcpy(&c->vtx[3], &wet, 4);
     uint32_t flags = 0;
     if (m_rs[d3d::RS_LIGHTING] && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) flags |= F_LIGHTING;
     if ((flags & F_LIGHTING) && m_pixelLighting) flags |= F_PERPIXEL;

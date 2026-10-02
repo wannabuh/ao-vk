@@ -57,6 +57,10 @@ Setting g_settings[] = {
     {"RVK_Volume",     "Volumetric light: sun shafts and lamp glow (0 = off)",            "HDR and effects", Float, 0, 4, 0.25f, 1, nullptr, 0},
     {"RVK_VolLamps",   "Volumetric light: lamp glow (relative to sun shafts)",            "HDR and effects", Float, 0, 4, 0.25f, 1, nullptr, 0},
     {"RVK_VolHaze",    "Volumetric light: how hazy the air is",                           "HDR and effects", Float, 0.25f, 4, 0.25f, 1, nullptr, 0},
+    {"RVK_Ssr",        "Reflections (screen-space; 0 = off)",                            "HDR and effects", Float, 0, 2, 0.25f, 1, nullptr, 0},
+    {"RVK_SsrWater",   "Reflections: water",                                              "HDR and effects", Float, 0, 1, 0.05f, 1, nullptr, 0},
+    {"RVK_SsrGloss",   "Reflections: glossy surfaces",                                    "HDR and effects", Float, 0, 1, 0.05f, 0.3f, nullptr, 0},
+    {"RVK_SsrWet",     "Reflections: wet look of floors and ground (0 = dry)",            "HDR and effects", Float, 0, 1, 0.05f, 0, nullptr, 0},
     {"RVK_MBlur",      "Motion blur (exposure, fraction of 1/60 s; 0 = off)",             "HDR and effects", Float, 0, 2, 0.05f, 0.5f, "RANDYVK_MOTION_BLUR", 0},
     {"RVK_MBlurObj",   "Per-object motion blur (off = camera only)",                      "HDR and effects", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_MBlurNear",  "Camera motion blur: sharp nearer than (world units)",             "HDR and effects", Float, 2, 20, 0.5f, 8, "RANDYVK_MOTION_BLUR_NEAR", 0},
@@ -153,6 +157,8 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_BloomFx")) d->SetEffectGlow(s.value);
     else if (is("RVK_Ao") || is("RVK_AoRadius")) d->SetAo(V("RVK_Ao"), V("RVK_AoRadius"));
     else if (is("RVK_Gi") || is("RVK_GiRadius")) d->SetGi(V("RVK_Gi"), V("RVK_GiRadius"));
+    else if (std::strncmp(n, "RVK_Ssr", 7) == 0)
+        d->SetSsr(V("RVK_Ssr"), V("RVK_SsrWater"), V("RVK_SsrGloss"), V("RVK_SsrWet"));
     else if (std::strncmp(n, "RVK_Vol", 7) == 0) d->SetVolume(V("RVK_Volume"), V("RVK_VolLamps"), V("RVK_VolHaze"));
     else if (is("RVK_MBlur") || is("RVK_MBlurNear")) d->SetMotionBlur(V("RVK_MBlur"), V("RVK_MBlurNear"));
     else if (is("RVK_MBlurObj")) d->SetMotionBlurMode(s.value != 0.0f ? 1u : 0u);
