@@ -382,6 +382,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
 
     std::vector<uint32_t> inRange;               // casters within the current light's range
     ShadowBind bind;
+    bool stateSet = false;                       // viewport, scissor and depth bias for the cube faces
     for (uint32_t k = 0; k < count; ++k) {
         const d3d::Light& l = m_lightsCur[candidates[k].index].light;
         float pos[3] = {l.position.x, l.position.y, l.position.z};
@@ -426,7 +427,8 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             ri.layerCount = 1;
             ri.pDepthAttachment = &depthAtt;
             vkCmdBeginRendering(cmd, &ri);
-            if (face == 0 && k == 0) {
+            if (!stateSet) {                     // the first face drawn this frame (cubes may skip a frame)
+                stateSet = true;
                 VkViewport viewport{0.0f, 0.0f, float(kPointShadowSize), float(kPointShadowSize), 0.0f, 1.0f};
                 VkRect2D scissor{{0, 0}, {kPointShadowSize, kPointShadowSize}};
                 vkCmdSetViewport(cmd, 0, 1, &viewport);
