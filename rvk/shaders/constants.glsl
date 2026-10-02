@@ -1,11 +1,5 @@
 // Per-draw constants shared by ffp.vert / ffp.frag. Must match DrawConstants in rvk/device.cpp (std140).
-struct Light {
-    vec4 diffuse, specular, ambient;
-    vec4 position;      // xyz world space, w = D3DLIGHTTYPE
-    vec4 direction;     // xyz world space, w = range
-    vec4 atten;         // attenuation0, attenuation1, attenuation2, falloff
-    vec4 spot;          // cos(theta/2), cos(phi/2), frame lights: point shadow cube + 1 (0 = none), its fade-in (0..1)
-};
+#include "frame_lights.glsl"
 
 // Changes on nearly every draw, so it has its own small block (binding 3); the big block below is only
 // rewritten when render state changes.
@@ -37,16 +31,6 @@ layout(set = 0, binding = 0, std140) uniform DrawConstants {
     Light lights[8];
 } C;
 
-// The frame's active point / spot lights nearest the camera (Device::SetLightOverride). Replaces the game's
-// per-object choice of up to 8 lights, which drops lights on big objects such as the ground.
-layout(set = 0, binding = 4, std140) uniform FrameLights {
-    uvec4 info;                 // count
-    mat4 shadowViewProj;        // world -> shadow map (raw D3DMATRIX memory)
-    vec4 shadowParams;          // enabled, strength, texel size (world units), point light shadow strength
-    vec4 sunDir;                // direction the sunlight travels; w = light headroom (F_OVERBRIGHT)
-    mat4 prevViewProj;          // the world camera last frame (motion vectors; raw D3DMATRIX memory)
-    Light lights[64];
-} FL;
 
 const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8u, F_FOG = 16u,
            F_RANGEFOG = 32u, F_LOCALVIEWER = 64u, F_TEX0 = 128u, F_TEX1 = 256u, F_ALPHATEST = 512u,

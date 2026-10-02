@@ -40,6 +40,12 @@ const uint32_t kGiSpirv[] = {
 const uint32_t kGiBlurSpirv[] = {
 #include "gi_blur.frag.inc"
 };
+const uint32_t kVolumeSpirv[] = {
+#include "volume.frag.inc"
+};
+const uint32_t kVolumeBlurSpirv[] = {
+#include "volume_blur.frag.inc"
+};
 const uint32_t kMotionBlurSpirv[] = {
 #include "motion_blur.frag.inc"
 };
@@ -113,6 +119,20 @@ bool Device::CreateHdrResources(std::string* error)
     if (!setLayout(kTonemapInputs, &m_tonemapSetLayout) || !pipelineLayout(m_tonemapSetLayout, &m_tonemapLayout) ||
         !setLayout(4, &m_bloomSetLayout) || !pipelineLayout(m_bloomSetLayout, &m_bloomLayout))
         return false;
+    {
+        // Volumetric light: depth, the sun shadow cascades, the frame lights (binding 4, as in the scene shaders).
+        VkDescriptorSetLayoutBinding b[3] = {
+            {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+            {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+            {4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
+        VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+        sl.bindingCount = 3;
+        sl.pBindings = b;
+        if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_volumeSetLayout), "volume set layout", error) ||
+            !pipelineLayout(m_volumeSetLayout, &m_volumeLayout))
+            return false;
+    }
 
     auto module = [&](const uint32_t* code, size_t size, VkShaderModule* out) {
         VkShaderModuleCreateInfo mi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
@@ -189,6 +209,8 @@ bool Device::CreateHdrResources(std::string* error)
                          &m_aoBlurPipeline) &&
               fullscreen(kGiSpirv, sizeof(kGiSpirv), hdrFormat, false, m_bloomLayout, &m_giPipeline) &&
               fullscreen(kGiBlurSpirv, sizeof(kGiBlurSpirv), hdrFormat, false, m_bloomLayout, &m_giBlurPipeline) &&
+              fullscreen(kVolumeSpirv, sizeof(kVolumeSpirv), hdrFormat, false, m_volumeLayout, &m_volumePipeline) &&
+              fullscreen(kVolumeBlurSpirv, sizeof(kVolumeBlurSpirv), hdrFormat, false, m_bloomLayout, &m_volumeBlurPipeline) &&
               fullscreen(kMotionBlurSpirv, sizeof(kMotionBlurSpirv), kColorFormat, false, m_bloomLayout, &m_motionPipeline) &&
               fullscreen(kTileMaxSpirv, sizeof(kTileMaxSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout,
                          &m_tileMaxPipeline) &&
@@ -218,18 +240,24 @@ void Device::DestroyHdrResources()
         if (t) { DestroyTextureNow(t); t = nullptr; }
     for (Texture*& t : m_giTex)
         if (t) { DestroyTextureNow(t); t = nullptr; }
+    for (Texture*& t : m_volumeTex)
+        if (t) { DestroyTextureNow(t); t = nullptr; }
     if (m_tonemapped) { DestroyTextureNow(m_tonemapped); m_tonemapped = nullptr; }
     for (Texture*& t : m_motionTiles)
         if (t) { DestroyTextureNow(t); t = nullptr; }
     for (Texture** t : {&m_dofIn, &m_dofOut, &m_dofHalf, &m_dofBlur, &m_dofTiles[0], &m_dofTiles[1], &m_dofFocus[0], &m_dofFocus[1]})
         if (*t) { DestroyTextureNow(*t); *t = nullptr; }
     for (VkPipeline* p : {&m_bloomDown, &m_bloomUp, &m_aoPipeline, &m_aoBlurPipeline, &m_giPipeline, &m_giBlurPipeline,
-                          &m_motionPipeline,
+                          &m_volumePipeline, &m_volumeBlurPipeline, &m_motionPipeline,
                           &m_tileMaxPipeline, &m_neighbourMaxPipeline, &m_objectBlurPipeline, &m_dofCompositePipeline,
                           &m_dofFocusPipeline, &m_dofPrefilterPipeline, &m_dofTilesPipeline, &m_dofGatherPipeline,
                           &m_dofFinalPipeline})
         if (*p) { vkDestroyPipeline(m_device, *p, nullptr); *p = VK_NULL_HANDLE; }
     if (m_bloomLayout) vkDestroyPipelineLayout(m_device, m_bloomLayout, nullptr);
+    if (m_volumeLayout) vkDestroyPipelineLayout(m_device, m_volumeLayout, nullptr);
+    if (m_volumeSetLayout) vkDestroyDescriptorSetLayout(m_device, m_volumeSetLayout, nullptr);
+    m_volumeLayout = VK_NULL_HANDLE;
+    m_volumeSetLayout = VK_NULL_HANDLE;
     if (m_bloomSetLayout) vkDestroyDescriptorSetLayout(m_device, m_bloomSetLayout, nullptr);
     if (m_linearSampler) vkDestroySampler(m_device, m_linearSampler, nullptr);
     if (m_bumpSampler) vkDestroySampler(m_device, m_bumpSampler, nullptr);
@@ -281,16 +309,18 @@ void Device::EndScene()
         RenderBloom(cmd);
     bool ao = RenderAo(cmd);
     bool gi = RenderGi(cmd);
+    bool volume = RenderVolume(cmd);
     Transition(cmd, m_localFraction, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     Transition(cmd, m_albedo, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     // The upsampled bloom chain sums every level's light: averaged here.
     float params[8] = {m_tonemapKnee, m_exposure, bloom ? m_bloomStrength / float(m_bloomLevels.size()) : 0.0f,
-                       ao ? 1.0f : 0.0f, m_aoProj.m[2][2], m_aoProj.m[3][2], gi ? m_giStrength : 0.0f, 0.0f};
-    // Depth of field blurs the scene with its ambient occlusion and indirect light applied; the tone mapping then
-    // leaves them out.
-    bool dof = RenderDof(cmd, bloom, ao, gi, params);
+                       ao ? 1.0f : 0.0f, m_aoProj.m[2][2], m_aoProj.m[3][2], gi ? m_giStrength : 0.0f,
+                       volume ? 1.0f : 0.0f};
+    // Depth of field blurs the scene with its ambient occlusion, indirect and volumetric light applied; the tone
+    // mapping then leaves them out.
+    bool dof = RenderDof(cmd, bloom, ao, gi, volume, params);
     Texture* scene = dof ? m_dofOut : m_scene;
-    if (dof) params[3] = params[6] = 0.0f;
+    if (dof) params[3] = params[6] = params[7] = 0.0f;
     // With motion blur the tone mapping goes to an intermediate image, which the blur reads into the main target.
     float motion[24];
     bool blur = MotionBlurParams(motion);
@@ -300,7 +330,7 @@ void Device::EndScene()
         blur = m_tonemapped != nullptr;
     }
     Texture* toned = blur ? m_tonemapped : m_ldrMain;
-    TonemapInputsPass(cmd, toned, m_tonemapPipeline, scene, bloom, ao, gi, params);
+    TonemapInputsPass(cmd, toned, m_tonemapPipeline, scene, bloom, ao, gi, volume, params);
     if (blur) {
         Transition(cmd, m_tonemapped, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         MakeDepthReadable(cmd);
@@ -335,7 +365,7 @@ void Device::MakeDepthReadable(VkCommandBuffer cmd)
 // the local-light fraction, the indirect light and the surface colour - the tone mapping itself, or the depth of
 // field's composite.
 void Device::TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, Texture* scene, bool bloom, bool ao,
-                               bool gi, const float params[8])
+                               bool gi, bool volume, const float params[8])
 {
     Transition(cmd, dst, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
@@ -357,6 +387,7 @@ void Device::TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pip
     Texture* glow = bloom ? m_bloomLevels[0] : m_scene;          // unread when the strength is 0
     Texture* occlusion = ao ? m_aoTex[1] : m_scene;               // unread when off
     Texture* indirect = gi ? m_giTex[1] : m_scene;                // unread when off
+    Texture* scattered = volume ? m_volumeTex[1] : m_scene;       // unread when off
     // The depth buffer is readable after the AO pass; without AO, any readable image stands in (unread).
     VkImageView depthView = m_depthLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ? m_depthView : m_scene->m_view;
     VkDescriptorImageInfo images[] = {{m_pointSampler, scene->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
@@ -365,7 +396,8 @@ void Device::TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pip
                                        {m_pointSampler, depthView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                                        {m_pointSampler, m_localFraction->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                                        {m_pointSampler, indirect->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-                                       {m_pointSampler, m_albedo->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+                                       {m_pointSampler, m_albedo->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                       {m_pointSampler, scattered->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
     static_assert(sizeof(images) / sizeof(images[0]) == kTonemapInputs, "occlusion.glsl bindings");
     VkWriteDescriptorSet w[kTonemapInputs] = {};
     for (uint32_t i = 0; i < kTonemapInputs; ++i) {
@@ -384,7 +416,7 @@ void Device::TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pip
 // Depth of field (dof_*.frag): the scene with its occlusion -> focus distance (1x1, eased) -> half resolution colour
 // and circle of confusion -> largest CoC per tile and neighbourhood -> depth-aware blur (normal or bokeh) -> blended
 // with the sharp scene into m_dofOut, which the tone mapping reads. False: off (or no world camera this frame).
-bool Device::RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, const float tonemapParams[8])
+bool Device::RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, bool volume, const float tonemapParams[8])
 {
     double now = SwayClock(), dt = std::clamp(now - m_dofPrevTime, 0.0, 0.25);
     m_dofPrevTime = now;
@@ -414,8 +446,8 @@ bool Device::RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, const 
             vkCmdClearColorImage(cmd, t->m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
         }
     }
-    // 1. The scene with its ambient occlusion and indirect light (the tone mapping's inputs).
-    TonemapInputsPass(cmd, m_dofIn, m_dofCompositePipeline, m_scene, bloom, ao, gi, tonemapParams);
+    // 1. The scene with its ambient occlusion, indirect and volumetric light (the tone mapping's inputs).
+    TonemapInputsPass(cmd, m_dofIn, m_dofCompositePipeline, m_scene, bloom, ao, gi, volume, tonemapParams);
     Transition(cmd, m_dofIn, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     // Parameters: projection and size; strength, max radius (scaled from 1440 lines), in-focus band, flags; frame
     // time, manual focus.
@@ -561,6 +593,89 @@ bool Device::RenderGi(VkCommandBuffer cmd)
     // Four passes end in m_giTex[0]: swap so that [1] holds the result.
     std::swap(m_giTex[0], m_giTex[1]);
     Transition(cmd, m_giTex[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    return true;
+}
+
+// Volumetric light (volume.frag): sun shafts marched through the shadow cascades and lamp glow, at half resolution,
+// blurred both ways; m_volumeTex[1] holds it. The frame lights are written again into the frame's post buffer (the
+// scene's copy may be in an earlier ring generation).
+bool Device::RenderVolume(VkCommandBuffer cmd)
+{
+    bool perspective = m_aoProjValid && m_aoProj.m[2][3] == 1.0f && m_aoProj.m[3][3] == 0.0f;
+    d3d::Matrix inverse;
+    if (m_volume <= 0.0f || !perspective || !m_depth || !InvertMatrix(MulMatrix(m_aoView, m_aoProj), &inverse))
+        return false;
+    uint32_t w = std::max(1u, m_scene->m_width / 2), h = std::max(1u, m_scene->m_height / 2);
+    if (!m_volumeTex[0] || m_volumeTex[0]->m_width != w || m_volumeTex[0]->m_height != h) {
+        for (Texture*& t : m_volumeTex) {
+            if (t) DestroyTexture(t);
+            t = CreateImage(w, h, Format::RGBA16F, 1, true);
+        }
+        if (!m_volumeTex[0] || !m_volumeTex[1])
+            return false;
+    }
+    MakeDepthReadable(cmd);
+    Frame& frame = m_frames[m_frameIndex];
+    FillFrameLights(static_cast<FrameLights*>(frame.postData), false);
+
+    struct {
+        d3d::Matrix invViewProj;
+        float eye[4], params[4], size[4];
+    } push;
+    push.invViewProj = inverse;
+    const auto& v = m_aoView.m;
+    for (int i = 0; i < 3; ++i) push.eye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
+    push.eye[3] = 250.0f;                                         // longest ray
+    push.params[0] = 0.0015f * m_volumeHaze;                      // scattering per world unit
+    push.params[1] = m_volume;
+    push.params[2] = 0.02f * m_volume * m_volumeLamps * m_volumeHaze;
+    push.params[3] = m_aoProj.m[2][2];
+    push.size[0] = float(m_scene->m_width);
+    push.size[1] = float(m_scene->m_height);
+    push.size[2] = 32.0f;                                         // sun steps
+    push.size[3] = m_aoProj.m[3][2];
+    static_assert(sizeof(push) <= 128, "push constant range");
+
+    Texture* dst = m_volumeTex[0];
+    Transition(cmd, dst, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+    color.imageView = dst->m_view;
+    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
+    ri.renderArea = {{0, 0}, {w, h}};
+    ri.layerCount = 1;
+    ri.colorAttachmentCount = 1;
+    ri.pColorAttachments = &color;
+    vkCmdBeginRendering(cmd, &ri);
+    VkViewport viewport{0.0f, 0.0f, float(w), float(h), 0.0f, 1.0f};
+    VkRect2D scissor{{0, 0}, {w, h}};
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_volumePipeline);
+    VkDescriptorImageInfo depth{m_pointSampler, m_depthView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo shadow{m_shadowSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorBufferInfo lights{frame.post, 0, sizeof(FrameLights)};
+    VkWriteDescriptorSet wr[3] = {};
+    for (auto& x : wr) { x.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET; x.descriptorCount = 1; }
+    wr[0].dstBinding = 0; wr[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; wr[0].pImageInfo = &depth;
+    wr[1].dstBinding = 1; wr[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; wr[1].pImageInfo = &shadow;
+    wr[2].dstBinding = 4; wr[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; wr[2].pBufferInfo = &lights;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_volumeLayout, 0, 3, wr);
+    vkCmdPushConstants(cmd, m_volumeLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    vkCmdEndRendering(cmd);
+
+    for (int pass = 0; pass < 2; ++pass) {
+        Texture* src = m_volumeTex[pass];
+        Texture* out = m_volumeTex[pass ^ 1];
+        Transition(cmd, src, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        float dir[4] = {pass == 0 ? 1.0f : 0.0f, pass == 0 ? 0.0f : 1.0f, 2.0f, 0.0f};
+        FullscreenPass(cmd, out, m_volumeBlurPipeline, src->m_view, src->m_view, m_pointSampler, dir, sizeof(dir), false);
+    }
+    std::swap(m_volumeTex[0], m_volumeTex[1]);    // the second pass wrote [0]
+    Transition(cmd, m_volumeTex[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     return true;
 }
 

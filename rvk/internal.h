@@ -52,9 +52,11 @@ enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE
 constexpr uint32_t kFrameLights = 64;
 struct FrameLights {               // binding 4: per-frame data (constants.glsl FrameLights)
     uint32_t info[4];
-    d3d::Matrix shadowViewProj;
-    float shadowParams[4];         // enabled, strength, texel size (world units), point light shadow strength
+    d3d::Matrix shadowViewProj[4]; // world -> each sun shadow cascade
+    float cascadeTexel[4];         // world size of a texel of each cascade
+    float shadowParams[4];         // enabled, strength, cascade count, point light shadow strength
     float sunDir[4];               // w: light headroom (F_OVERBRIGHT)
+    float sunColor[4];             // the shadow-casting sun's colour (0 = none)
     d3d::Matrix prevViewProj;      // motion vectors: the world camera last frame
     GpuLight lights[kFrameLights];
 };

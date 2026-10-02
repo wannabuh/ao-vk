@@ -99,7 +99,7 @@ void ImageBarrier(VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect,
     b.newLayout = to;
     b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     b.image = image;
-    b.subresourceRange = {aspect, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
+    b.subresourceRange = {aspect, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
     VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
     dep.imageMemoryBarrierCount = 1;
     dep.pImageMemoryBarriers = &b;
@@ -164,6 +164,7 @@ Device::~Device()
     CollectGarbage();
     for (auto& f : m_frames) {
         if (f.ring) vmaDestroyBuffer(m_allocator, f.ring, f.ringAllocation);
+        if (f.post) vmaDestroyBuffer(m_allocator, f.post, f.postAllocation);
         if (f.fence) vkDestroyFence(m_device, f.fence, nullptr);
         if (f.imageAvailable) vkDestroySemaphore(m_device, f.imageAvailable, nullptr);
     }
@@ -728,6 +729,12 @@ bool Device::CreateFrames(std::string* error)
         if (!Check(vmaCreateBuffer(m_allocator, &bi, &ac, &f.ring, &f.ringAllocation, &info), "ring buffer", error))
             return false;
         f.ringData = static_cast<uint8_t*>(info.pMappedData);
+        bi.size = sizeof(FrameLights);
+        bi.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        if (!Check(vmaCreateBuffer(m_allocator, &bi, &ac, &f.post, &f.postAllocation, &info), "post buffer", error))
+            return false;
+        f.postData = info.pMappedData;
+        vmaGetAllocationInfo(m_allocator, f.ringAllocation, &info);
         VkMemoryPropertyFlags props;
         vmaGetMemoryTypeProperties(m_allocator, info.memoryType, &props);
         Log("ring buffer: memory type %u (flags 0x%x%s)", info.memoryType, props,

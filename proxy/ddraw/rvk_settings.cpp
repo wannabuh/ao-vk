@@ -38,7 +38,8 @@ Setting g_settings[] = {
     {"RVK_Aniso",      "Anisotropic filtering (1 = off)",                                 "Lighting",       Int,   1, 16, 1, 16, "RANDYVK_ANISOTROPY", 0},
     {"RVK_SunShadow",  "Sun shadows",                                                     "Shadows",        Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
     {"RVK_SunStrength","Sun shadow strength",                                             "Shadows",        Float, 0, 1, 0.05f, 0.65f, "RANDYVK_SHADOW_STRENGTH", 0},
-    {"RVK_SunRange",   "Sun shadow range (world units)",                                  "Shadows",        Int,   20, 200, 5, 60, "RANDYVK_SHADOW_RANGE", 0},
+    {"RVK_SunDist",    "Sun shadow distance (world units)",                               "Shadows",        Int,   40, 1000, 20, 400, nullptr, 0},
+    {"RVK_SunCascade", "Sun shadow cascades (more = sharper near, same reach)",           "Shadows",        Int,   1, 4, 1, 4, nullptr, 0},
     {"RVK_PtShadows",  "Point light shadows (lights, 0 = off)",                           "Shadows",        Int,   0, 8, 1, 8, "RANDYVK_POINT_SHADOWS", 0},
     {"RVK_PtStrength", "Point light shadow strength",                                     "Shadows",        Float, 0, 1, 0.05f, 0.9f, "RANDYVK_POINT_SHADOW_STRENGTH", 0},
     {"RVK_PtDay",      "Point light shadow strength in daylight (fraction)",              "Shadows",        Float, 0, 1, 0.05f, 0.25f, "RANDYVK_POINT_SHADOW_DAY", 0},
@@ -53,6 +54,9 @@ Setting g_settings[] = {
     {"RVK_AoRadius",   "Ambient occlusion radius (world units)",                          "HDR and effects", Float, 0.25f, 4, 0.25f, 1.5f, "RANDYVK_AO_RADIUS", 0},
     {"RVK_Gi",         "Indirect light: bounce light from the lit scene (0 = off)",       "HDR and effects", Float, 0, 3, 0.25f, 1, nullptr, 0},
     {"RVK_GiRadius",   "Indirect light reach (world units)",                              "HDR and effects", Float, 1, 12, 0.5f, 4, nullptr, 0},
+    {"RVK_Volume",     "Volumetric light: sun shafts and lamp glow (0 = off)",            "HDR and effects", Float, 0, 4, 0.25f, 1, nullptr, 0},
+    {"RVK_VolLamps",   "Volumetric light: lamp glow (relative to sun shafts)",            "HDR and effects", Float, 0, 4, 0.25f, 1, nullptr, 0},
+    {"RVK_VolHaze",    "Volumetric light: how hazy the air is",                           "HDR and effects", Float, 0.25f, 4, 0.25f, 1, nullptr, 0},
     {"RVK_MBlur",      "Motion blur (exposure, fraction of 1/60 s; 0 = off)",             "HDR and effects", Float, 0, 2, 0.05f, 0.5f, "RANDYVK_MOTION_BLUR", 0},
     {"RVK_MBlurObj",   "Per-object motion blur (off = camera only)",                      "HDR and effects", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_MBlurNear",  "Camera motion blur: sharp nearer than (world units)",             "HDR and effects", Float, 2, 20, 0.5f, 8, "RANDYVK_MOTION_BLUR_NEAR", 0},
@@ -138,7 +142,8 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_Headroom")) d->SetLightHeadroom(s.value);
     else if (is("RVK_Aniso")) d->SetAnisotropy(uint32_t(s.value));
     else if (is("RVK_SunShadow")) d->SetShadows(s.value != 0.0f);
-    else if (is("RVK_SunStrength") || is("RVK_SunRange")) d->SetShadowParams(V("RVK_SunStrength"), V("RVK_SunRange"));
+    else if (is("RVK_SunStrength") || is("RVK_SunDist") || is("RVK_SunCascade"))
+        d->SetShadowParams(V("RVK_SunStrength"), V("RVK_SunDist"), uint32_t(V("RVK_SunCascade")));
     else if (is("RVK_PtShadows")) d->SetPointShadows(uint32_t(s.value));
     else if (is("RVK_PtStrength") || is("RVK_PtDay")) d->SetPointShadowStrength(V("RVK_PtStrength"), V("RVK_PtDay"));
     else if (is("RVK_Hdr")) d->SetHdr(s.value != 0.0f);
@@ -148,6 +153,7 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_BloomFx")) d->SetEffectGlow(s.value);
     else if (is("RVK_Ao") || is("RVK_AoRadius")) d->SetAo(V("RVK_Ao"), V("RVK_AoRadius"));
     else if (is("RVK_Gi") || is("RVK_GiRadius")) d->SetGi(V("RVK_Gi"), V("RVK_GiRadius"));
+    else if (std::strncmp(n, "RVK_Vol", 7) == 0) d->SetVolume(V("RVK_Volume"), V("RVK_VolLamps"), V("RVK_VolHaze"));
     else if (is("RVK_MBlur") || is("RVK_MBlurNear")) d->SetMotionBlur(V("RVK_MBlur"), V("RVK_MBlurNear"));
     else if (is("RVK_MBlurObj")) d->SetMotionBlurMode(s.value != 0.0f ? 1u : 0u);
     else if (std::strncmp(n, "RVK_Part", 8) == 0 && !is("RVK_PartCore")) {

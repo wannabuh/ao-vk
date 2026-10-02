@@ -328,9 +328,9 @@ void ThreadedDevice::SetShadows(bool enable)
     Enqueue([this, enable](const uint8_t*) { m_device.SetShadows(enable); });
 }
 
-void ThreadedDevice::SetShadowParams(float strength, float range)
+void ThreadedDevice::SetShadowParams(float strength, float distance, uint32_t cascades)
 {
-    Enqueue([this, strength, range](const uint8_t*) { m_device.SetShadowParams(strength, range); });
+    Enqueue([this, strength, distance, cascades](const uint8_t*) { m_device.SetShadowParams(strength, distance, cascades); });
 }
 
 void ThreadedDevice::SetPointShadows(uint32_t count)
@@ -401,6 +401,11 @@ void ThreadedDevice::SetAo(float strength, float radius)
 void ThreadedDevice::SetGi(float strength, float radius)
 {
     Enqueue([this, strength, radius](const uint8_t*) { m_device.SetGi(strength, radius); });
+}
+
+void ThreadedDevice::SetVolume(float strength, float lamps, float haze)
+{
+    Enqueue([this, strength, lamps, haze](const uint8_t*) { m_device.SetVolume(strength, lamps, haze); });
 }
 
 void ThreadedDevice::SetEffectGlow(float gain)

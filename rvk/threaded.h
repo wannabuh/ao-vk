@@ -63,7 +63,7 @@ public:
     bool LightOverride() const { return m_lightOverride; }
     void SetShadows(bool enable);
     bool Shadows() const { return m_shadows; }
-    void SetShadowParams(float strength, float range);
+    void SetShadowParams(float strength, float distance, uint32_t cascades);
     void SetPointShadows(uint32_t count);
     uint32_t PointShadows() const { return m_pointShadows; }
     void SetPointShadowStrength(float strength, float dayFactor);
@@ -76,6 +76,7 @@ public:
     void SetEffectGlow(float gain);
     void SetAo(float strength, float radius);
     void SetGi(float strength, float radius);
+    void SetVolume(float strength, float lamps, float haze);
     void SetBump(float strength);
     void SetAnisotropy(uint32_t level);
     void SetMotionBlur(float strength, float focusNear);

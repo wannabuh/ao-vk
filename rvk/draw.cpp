@@ -237,6 +237,12 @@ VkDeviceSize Device::WriteFrameLights()
     m_frameLightsOffset = offset;
     m_frameLightsGeneration = m_ringGeneration;
     m_frameLightsDirty = false;
+    FillFrameLights(static_cast<FrameLights*>(cpu), m_dumpFile != nullptr);
+    return offset;
+}
+
+void Device::FillFrameLights(FrameLights* fl, bool dump)
+{
     // One camera per frame: the view at the frame's first lit draw (the world), not that of later draws
     // under other views (sky, 3D interface elements).
     UpdateFrameEye();
@@ -252,16 +258,20 @@ VkDeviceSize Device::WriteFrameLights()
     uint32_t used = std::min(count, kFrameLights);
     std::partial_sort(candidates, candidates + used, candidates + count,
                       [](const Candidate& a, const Candidate& b) { return a.key < b.key; });
-    auto* fl = static_cast<FrameLights*>(cpu);
     fl->info[0] = used;
     fl->info[1] = fl->info[2] = fl->info[3] = 0;
-    fl->shadowViewProj = m_shadowViewProj;
+    for (uint32_t i = 0; i < kShadowCascades; ++i) {
+        fl->shadowViewProj[i] = m_cascadeViewProj[i];
+        fl->cascadeTexel[i] = m_cascadeTexel[i];
+    }
     fl->shadowParams[0] = m_shadowValid ? 1.0f : 0.0f;
     fl->shadowParams[1] = m_shadowStrength;
-    fl->shadowParams[2] = 2.0f * m_shadowRange / float(kShadowSize);
+    fl->shadowParams[2] = float(m_cascadeCount);
     fl->shadowParams[3] = PointShadowStrength();
     fl->sunDir[0] = m_shadowSunDir[0]; fl->sunDir[1] = m_shadowSunDir[1]; fl->sunDir[2] = m_shadowSunDir[2];
     fl->sunDir[3] = m_hdr ? m_hdrHeadroom : m_lightHeadroom;
+    for (int i = 0; i < 3; ++i) fl->sunColor[i] = m_shadowSunColor[i];
+    fl->sunColor[3] = 0.0f;
     fl->prevViewProj = m_prevViewProj;           // the world camera last frame (motion vectors)
     m_frameLightIndices.clear();
     for (uint32_t k = 0; k < used; ++k) {
@@ -272,7 +282,7 @@ VkDeviceSize Device::WriteFrameLights()
         fl->lights[k].spot[2] = float(cube);                        // its cube shadow map + 1, 0 = none
         fl->lights[k].spot[3] = cube ? m_pointShadowLights[cube - 1].fade : 0.0f;   // how far its shadow faded in
     }
-    if (m_dumpFile) {
+    if (dump) {
         std::fprintf(m_dumpFile, "FL at draw %u: %u of %u lights captured last frame, eye (%.1f %.1f %.1f):", m_dumpDraw,
                      used, count, eye[0], eye[1], eye[2]);
         for (uint32_t k = 0; k < used; ++k) {
@@ -281,7 +291,6 @@ VkDeviceSize Device::WriteFrameLights()
         }
         std::fprintf(m_dumpFile, "\n");
     }
-    return offset;
 }
 
 // Identity of a ground chunk within a frame: its sizes and a sample of its vertices (base and lighting passes draw

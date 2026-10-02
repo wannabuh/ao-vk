@@ -17,6 +17,8 @@
 struct VmaAllocator_T;
 struct VmaAllocation_T;
 
+namespace rvk::detail { struct FrameLights; }
+
 namespace rvk {
 
 class Device;
@@ -139,7 +141,9 @@ public:
     // range = half the width of the shadowed square around the camera, in world units.
     void SetShadows(bool enable) { if (m_shadows != enable) { m_shadows = enable; m_constantsDirty = true; } }
     bool Shadows() const { return m_shadows; }
-    void SetShadowParams(float strength, float range) { m_shadowStrength = strength; m_shadowRange = range; }
+    // distance: how far from the camera sun shadows reach (world units), split into `cascades` maps (1..4).
+    void SetShadowParams(float strength, float distance, uint32_t cascades)
+    { m_shadowStrength = strength; m_shadowRange = distance; m_shadowCascades = cascades < 1 ? 1 : cascades > kShadowCascades ? kShadowCascades : cascades; }
     // Enhancement, with the light override: shadows from up to `count` of the frame's point lights nearest the camera
     // (cube shadow maps, pointshadow.cpp; 0 = off). strength = how much of such a light a shadow takes away (0..1).
     void SetPointShadows(uint32_t count) { m_pointShadows = count < kMaxPointShadows ? count : kMaxPointShadows; }
@@ -187,6 +191,8 @@ public:
     float AoStrength() const { return m_aoStrength; }
     // With HDR: indirect light from the lit scene on screen (hdr.cpp). strength 0 = off; radius in world units.
     void SetGi(float strength, float radius) { m_giStrength = strength; m_giRadius = radius; }
+    // With HDR: light scattered by the air - sun shafts (strength; 0 = off), lamp glow (relative), haze density.
+    void SetVolume(float strength, float lamps, float haze) { m_volume = strength; m_volumeLamps = lamps; m_volumeHaze = haze; }
     void SetEffectGlow(float gain) { if (m_effectGlow != gain) { m_effectGlow = gain; m_constantsDirty = true; } }
     float EffectGlow() const { return m_effectGlow; }
     float BloomStrength() const { return m_bloomStrength; }
@@ -294,6 +300,9 @@ private:
         VkBuffer ring = VK_NULL_HANDLE;
         VmaAllocation_T* ringAllocation = nullptr;
         uint8_t* ringData = nullptr;
+        VkBuffer post = VK_NULL_HANDLE;            // the frame lights again, for the post passes (volumetric light)
+        VmaAllocation_T* postAllocation = nullptr;
+        void* postData = nullptr;
         VkDeviceSize ringOffset = 0;
         uint64_t serial = 0;                       // submission number last signalled through `fence`
         bool uploadsRecorded = false;
@@ -371,6 +380,7 @@ private:
     uint64_t m_frameLightsGeneration = ~0ull;
     VkDeviceSize m_frameLightsOffset = 0;
     VkDeviceSize WriteFrameLights();
+    void FillFrameLights(detail::FrameLights* fl, bool dump);
     // The frame lights in binding-4 order, as indices into m_lightsPrev (WriteFrameLights), and which of them the
     // current draw carries.
     std::vector<uint32_t> m_frameLightIndices;
@@ -396,6 +406,8 @@ private:
 
     // Sun shadows (shadow.cpp)
     static constexpr uint32_t kShadowSize = 4096;
+    static constexpr uint32_t kShadowCascades = 4;   // layers of the sun shadow map, each 3x the area of the last
+    static constexpr float kCasterCacheRange = 60.0f; // remembered casters: kept within 3x, forgotten beyond 4x
     struct ShadowCaster {
         uint32_t primitive, stride, vertexCount, indexCount;
         VkDeviceSize vbOffset, ibOffset;
@@ -445,10 +457,12 @@ private:
     bool IsLabel(uint32_t primitive, uint32_t fvf, uint32_t vertexCount) const;
     uint32_t m_midFrameFlushes = 0;
     bool m_shadows = false;
-    float m_shadowStrength = 0.65f, m_shadowRange = 60.0f;
+    float m_shadowStrength = 0.65f, m_shadowRange = 400.0f;
+    uint32_t m_shadowCascades = kShadowCascades;
     VkImage m_shadowImage = VK_NULL_HANDLE;
     VmaAllocation_T* m_shadowAllocation = nullptr;
-    VkImageView m_shadowView = VK_NULL_HANDLE;
+    VkImageView m_shadowView = VK_NULL_HANDLE;   // all cascades (sampled)
+    VkImageView m_shadowLayerViews[kShadowCascades] = {};   // one cascade each (rendered)
     VkImageLayout m_shadowImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkSampler m_shadowSampler = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_shadowSetLayout = VK_NULL_HANDLE;
@@ -457,8 +471,12 @@ private:
     std::vector<ShadowCaster> m_casters;
     float m_sunDir[3] = {}, m_sunLuminance = 0.0f;   // this frame's brightest directional light
     bool m_shadowValid = false;                  // the map holds last frame's shadows
-    d3d::Matrix m_shadowViewProj{};
+    d3d::Matrix m_cascadeViewProj[kShadowCascades] = {};   // world -> each cascade's map
+    float m_cascadeTexel[kShadowCascades] = {};  // world size of a texel of each
+    uint32_t m_cascadeCount = 0;                 // cascades the map holds
+    uint64_t m_cascadeFrame = 0;                 // the far cascades are redrawn on alternate frames
     float m_shadowSunDir[3] = {};
+    float m_sunColor[3] = {}, m_shadowSunColor[3] = {};   // this frame's sun / the shadow map's
     bool CreateShadowResources(std::string* error);
     void DestroyShadowResources();
     void PrepareShadowMap(VkCommandBuffer cmd);
@@ -555,6 +573,13 @@ private:
     Texture* m_giTex[2] = {};                    // half resolution: indirect light + view depth (ping-pong)
     VkPipeline m_giPipeline = VK_NULL_HANDLE, m_giBlurPipeline = VK_NULL_HANDLE;
     bool RenderGi(VkCommandBuffer cmd);
+    // Volumetric light: sun shafts through the shadow cascades and lamp glow (hdr.cpp, volume.frag).
+    float m_volume = 1.0f, m_volumeLamps = 1.0f, m_volumeHaze = 1.0f;
+    Texture* m_volumeTex[2] = {};                // half resolution: scattered light + view depth (ping-pong)
+    VkDescriptorSetLayout m_volumeSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout m_volumeLayout = VK_NULL_HANDLE;
+    VkPipeline m_volumePipeline = VK_NULL_HANDLE, m_volumeBlurPipeline = VK_NULL_HANDLE;
+    bool RenderVolume(VkCommandBuffer cmd);
     d3d::Matrix m_aoProj{};                      // the world camera's projection (first depth-writing 3D draw)
     d3d::Matrix m_aoView{};                      // ... and view
     float m_motionBlur = 0.0f, m_motionNear = 8.0f;
@@ -592,10 +617,10 @@ private:
     VkPipeline m_dofCompositePipeline = VK_NULL_HANDLE, m_dofFocusPipeline = VK_NULL_HANDLE,
                m_dofPrefilterPipeline = VK_NULL_HANDLE, m_dofTilesPipeline = VK_NULL_HANDLE,
                m_dofGatherPipeline = VK_NULL_HANDLE, m_dofFinalPipeline = VK_NULL_HANDLE;
-    bool RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, const float tonemapParams[8]);
-    static constexpr uint32_t kTonemapInputs = 7;   // occlusion.glsl's bindings
+    bool RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, bool volume, const float tonemapParams[8]);
+    static constexpr uint32_t kTonemapInputs = 8;   // occlusion.glsl's bindings
     void TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, Texture* scene, bool bloom, bool ao,
-                           bool gi, const float params[8]);
+                           bool gi, bool volume, const float params[8]);
     void MakeDepthReadable(VkCommandBuffer cmd);
     bool m_aoProjValid = false;
     bool RenderAo(VkCommandBuffer cmd);          // false: no AO this frame

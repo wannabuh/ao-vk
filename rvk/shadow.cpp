@@ -2,8 +2,9 @@
 // they are drawn (their geometry is already in the frame's ring buffer); at the end of the frame they are drawn
 // again from the sun into a depth map, which the next frame samples. Shadows therefore lag one frame.
 //
-// The sun is the brightest directional light the game used during the frame. The map covers a square around
-// the camera, oriented with the sun and snapped to whole texels so it doesn't shimmer while the camera moves.
+// The sun is the brightest directional light the game used during the frame. The map is a set of cascades: squares
+// around the camera, each three times as wide as the one before (the nearest sharpest, the last reaching the shadow
+// distance), oriented with the sun and snapped to whole texels so they don't shimmer while the camera moves.
 #include "internal.h"
 
 #include <algorithm>
@@ -156,7 +157,7 @@ bool Device::CreateShadowResources(std::string* error)
     ci.format = kDepthFormat;
     ci.extent = {kShadowSize, kShadowSize, 1};
     ci.mipLevels = 1;
-    ci.arrayLayers = 1;
+    ci.arrayLayers = kShadowCascades;
     ci.samples = VK_SAMPLE_COUNT_1_BIT;
     ci.tiling = VK_IMAGE_TILING_OPTIMAL;
     ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -167,11 +168,17 @@ bool Device::CreateShadowResources(std::string* error)
         return false;
     VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     vi.image = m_shadowImage;
-    vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    vi.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
     vi.format = kDepthFormat;
-    vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, kShadowCascades};
     if (!Check(vkCreateImageView(m_device, &vi, nullptr, &m_shadowView), "shadow map view", error))
         return false;
+    vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    for (uint32_t i = 0; i < kShadowCascades; ++i) {
+        vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, i, 1};
+        if (!Check(vkCreateImageView(m_device, &vi, nullptr, &m_shadowLayerViews[i]), "shadow cascade view", error))
+            return false;
+    }
     m_shadowImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -270,6 +277,8 @@ void Device::DestroyShadowResources()
     if (m_shadowSetLayout) vkDestroyDescriptorSetLayout(m_device, m_shadowSetLayout, nullptr);
     if (m_shadowSampler) vkDestroySampler(m_device, m_shadowSampler, nullptr);
     if (m_shadowView) vkDestroyImageView(m_device, m_shadowView, nullptr);
+    for (VkImageView& v : m_shadowLayerViews)
+        if (v) { vkDestroyImageView(m_device, v, nullptr); v = VK_NULL_HANDLE; }
     if (m_shadowImage) vmaDestroyImage(m_allocator, m_shadowImage, m_shadowAllocation);
     m_shadowPipelineLayout = VK_NULL_HANDLE;
     m_shadowSetLayout = VK_NULL_HANDLE;
@@ -287,7 +296,7 @@ void Device::PrepareShadowMap(VkCommandBuffer cmd)
                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, 0,
                  VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
     VkClearDepthStencilValue clear{1.0f, 0};
-    VkImageSubresourceRange range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    VkImageSubresourceRange range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, kShadowCascades};
     vkCmdClearDepthStencilImage(cmd, m_shadowImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1, &range);
     ImageBarrier(cmd, m_shadowImage, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
@@ -480,7 +489,7 @@ void Device::CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertic
         float d = std::max({e.boundsMin[j] - m_frameEye[j], 0.0f, m_frameEye[j] - e.boundsMax[j]});
         d2 += d * d;
     }
-    if (d2 > 9.0f * m_shadowRange * m_shadowRange)
+    if (d2 > 9.0f * kCasterCacheRange * kCasterCacheRange)
         return;
     VkDeviceSize vbBytes = VkDeviceSize(c.stride) * c.vertexCount;
     e.indexOffset = (vbBytes + 3) & ~VkDeviceSize(3);
@@ -535,7 +544,7 @@ void Device::UpdateCasterCache()
             // "the game would draw it": if it then wasn't drawn, it's gone.
             float centre[3];
             for (int j = 0; j < 3; ++j) centre[j] = 0.5f * (e.boundsMin[j] + e.boundsMax[j]);
-            if (d2 > 16.0f * m_shadowRange * m_shadowRange) {
+            if (d2 > 16.0f * kCasterCacheRange * kCasterCacheRange) {
                 ++m_forgottenFar;
                 ForgetCachedCaster(it);
             } else if (m_frameViewProjValid && BoxInClip(centre, centre, m_frameViewProj, true) == 1) {
@@ -633,6 +642,7 @@ void Device::CaptureSun(const d3d::Light& l)
         return;
     m_sunLuminance = lum;
     std::memcpy(m_sunDir, d, sizeof(d));
+    m_sunColor[0] = l.diffuse.r; m_sunColor[1] = l.diffuse.g; m_sunColor[2] = l.diffuse.b;
 }
 
 // A model-space box through a matrix: the world-space box around it.
@@ -828,7 +838,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     if (!m_shadows || !haveSun)
         return;
 
-    // Light view: z along the sun's direction, the map centred ahead of the camera, snapped to texels.
+    // Light view: z along the sun's direction; each cascade centred ahead of the camera, snapped to its texels.
     float z[3] = {m_sunDir[0], m_sunDir[1], m_sunDir[2]};
     float up[3] = {0.0f, 1.0f, 0.0f};
     if (std::fabs(z[1]) > 0.99f) { up[1] = 0.0f; up[2] = 1.0f; }
@@ -836,64 +846,78 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     Cross(up, z, x);
     Normalize(x);
     Cross(z, x, y);
-    float center[3];
-    for (int i = 0; i < 3; ++i) center[i] = eye[i] + forward[i] * m_shadowRange * 0.4f;
-    float texel = 2.0f * m_shadowRange / float(kShadowSize);
-    float cx = std::round(Dot(x, center) / texel) * texel, cy = std::round(Dot(y, center) / texel) * texel;
-    float cz = Dot(z, center);
-    d3d::Matrix view{};
-    for (int i = 0; i < 3; ++i) { view.m[i][0] = x[i]; view.m[i][1] = y[i]; view.m[i][2] = z[i]; }
-    view.m[3][0] = -cx; view.m[3][1] = -cy; view.m[3][2] = -cz; view.m[3][3] = 1.0f;
-    const float depth = 600.0f;                                   // light-space z range around the centre
-    d3d::Matrix proj{};
-    proj.m[0][0] = 1.0f / m_shadowRange;
-    proj.m[1][1] = 1.0f / m_shadowRange;
-    proj.m[2][2] = 1.0f / (2.0f * depth);
-    proj.m[3][2] = 0.5f;
-    proj.m[3][3] = 1.0f;
-    d3d::Matrix lightViewProj = Mul(view, proj);
+    bool sunMoved = Dot(z, m_shadowSunDir) < 0.99999f;
+    uint32_t count = m_shadowCascades;
+    if (count != m_cascadeCount)                 // cascades changed: draw them all this frame
+        sunMoved = true;
 
     ImageBarrier(cmd, m_shadowImage, VK_IMAGE_ASPECT_DEPTH_BIT, m_shadowImageLayout,
                  VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 0,
                  VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
                  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-    VkRenderingAttachmentInfo depthAtt{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-    depthAtt.imageView = m_shadowView;
-    depthAtt.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthAtt.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAtt.clearValue.depthStencil = {1.0f, 0};
-    VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
-    ri.renderArea = {{0, 0}, {kShadowSize, kShadowSize}};
-    ri.layerCount = 1;
-    ri.pDepthAttachment = &depthAtt;
-    vkCmdBeginRendering(cmd, &ri);
-
     VkViewport viewport{0.0f, 0.0f, float(kShadowSize), float(kShadowSize), 0.0f, 1.0f};
     VkRect2D scissor{{0, 0}, {kShadowSize, kShadowSize}};
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-    vkCmdSetDepthBias(cmd, 2.0f, 0.0f, 2.5f);
-
-    ShadowBind bind;
     m_cachedCastersDrawn = 0;
-    for (const ShadowItem& item : m_shadowItems) {
-        // Remembered casters only if they reach into the map (the game's own casters are near the camera anyway).
-        if (item.cached) {
-            if (BoxInClip(item.boundsMin, item.boundsMax, lightViewProj, false) == -1)
+    ++m_cascadeFrame;
+    for (uint32_t c = 0; c < count; ++c) {
+        // The two widest cascades take turns (their shadows are far away, a frame's lag doesn't show).
+        bool alternate = count >= 3 && c >= count - 2;
+        if (alternate && !sunMoved && ((m_cascadeFrame & 1) != ((count - 1 - c) & 1)))
+            continue;
+        float range = m_shadowRange / std::pow(3.0f, float(count - 1 - c));   // half the cascade's width
+        float center[3];
+        for (int i = 0; i < 3; ++i) center[i] = eye[i] + forward[i] * range * 0.4f;
+        float texel = 2.0f * range / float(kShadowSize);
+        float cx = std::round(Dot(x, center) / texel) * texel, cy = std::round(Dot(y, center) / texel) * texel;
+        float cz = Dot(z, center);
+        d3d::Matrix view{};
+        for (int i = 0; i < 3; ++i) { view.m[i][0] = x[i]; view.m[i][1] = y[i]; view.m[i][2] = z[i]; }
+        view.m[3][0] = -cx; view.m[3][1] = -cy; view.m[3][2] = -cz; view.m[3][3] = 1.0f;
+        const float depth = std::max(600.0f, 2.0f * range);      // light-space z range around the centre
+        d3d::Matrix proj{};
+        proj.m[0][0] = 1.0f / range;
+        proj.m[1][1] = 1.0f / range;
+        proj.m[2][2] = 1.0f / (2.0f * depth);
+        proj.m[3][2] = 0.5f;
+        proj.m[3][3] = 1.0f;
+        d3d::Matrix lightViewProj = Mul(view, proj);
+
+        VkRenderingAttachmentInfo depthAtt{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        depthAtt.imageView = m_shadowLayerViews[c];
+        depthAtt.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depthAtt.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        depthAtt.clearValue.depthStencil = {1.0f, 0};
+        VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
+        ri.renderArea = {{0, 0}, {kShadowSize, kShadowSize}};
+        ri.layerCount = 1;
+        ri.pDepthAttachment = &depthAtt;
+        vkCmdBeginRendering(cmd, &ri);
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+        // Bias in depth units grows with the cascade's depth range; slope bias per texel stays the same.
+        vkCmdSetDepthBias(cmd, 2.0f * 600.0f / depth, 0.0f, 2.5f);
+        ShadowBind bind;
+        for (const ShadowItem& item : m_shadowItems) {
+            // Only casters reaching into this cascade's square (the widest takes every one the game drew).
+            bool last = c == count - 1;
+            if ((item.cached || !last) && BoxInClip(item.boundsMin, item.boundsMax, lightViewProj, false) == -1)
                 continue;
-            ++m_cachedCastersDrawn;
+            if (item.cached) ++m_cachedCastersDrawn;
+            DrawShadowItem(cmd, bind, item, lightViewProj);
         }
-        DrawShadowItem(cmd, bind, item, lightViewProj);
+        vkCmdEndRendering(cmd);
+        m_cascadeViewProj[c] = lightViewProj;
+        m_cascadeTexel[c] = texel;
     }
-    vkCmdEndRendering(cmd);
     ImageBarrier(cmd, m_shadowImage, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
                  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
                  VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
     m_shadowImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    m_shadowViewProj = lightViewProj;
+    m_cascadeCount = count;
     std::memcpy(m_shadowSunDir, m_sunDir, sizeof(m_sunDir));
+    std::memcpy(m_shadowSunColor, m_sunColor, sizeof(m_sunColor));
     m_shadowValid = true;
 }
 

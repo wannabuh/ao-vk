@@ -3,7 +3,7 @@
 
 layout(set = 0, binding = 1) uniform sampler2D tex0;
 layout(set = 0, binding = 2) uniform sampler2D tex1;
-layout(set = 0, binding = 5) uniform sampler2DShadow shadowMap;
+layout(set = 0, binding = 5) uniform sampler2DArrayShadow shadowMap;   // sun shadow cascades
 layout(set = 0, binding = 6) uniform samplerCubeArrayShadow pointShadowMaps;
 layout(set = 0, binding = 7) uniform sampler2D bumpBase;   // F_BUMPBASE: the ground's base texture, for its relief
 
@@ -114,28 +114,51 @@ vec4 Sample(uint stage)
     return stage == 0u ? texture(tex0, tc.xy) : texture(tex1, tc.xy);
 }
 
-// Sun visibility at a surface point: 1 = lit, 0 = in shadow. 3x3 taps of 2x2 comparison filtering.
-float SunVisibility(vec3 posW, vec3 n)
+// Sun visibility at a surface point in one shadow cascade: 1 = lit, 0 = in shadow; edge: how near the point is to
+// the cascade's border (0 = centre, >= 1 = outside). 3x3 taps of 2x2 comparison filtering.
+float CascadeVisibility(int c, vec3 posW, vec3 n, float nl, out float edge)
 {
-    vec3 L = -FL.sunDir.xyz;
-    float texel = FL.shadowParams.z;
-    if (dot(n, n) > 0.0) {
-        n = normalize(n);
-        float nl = dot(n, L);
-        if (nl <= 0.0) return 1.0;                        // faces away: the light equation / lightmap handles it
-        posW += n * texel * (1.5 + 2.0 * (1.0 - nl));     // normal offset against self-shadowing
-    }
-    vec4 sc = FL.shadowViewProj * vec4(posW, 1.0);
+    if (nl >= 0.0)
+        posW += n * FL.cascadeTexel[c] * (1.5 + 2.0 * (1.0 - nl));   // normal offset against self-shadowing
+    vec4 sc = FL.shadowViewProj[c] * vec4(posW, 1.0);
     vec3 ndc = sc.xyz / sc.w;
-    float edge = max(abs(ndc.x), abs(ndc.y));
-    if (edge >= 1.0 || ndc.z <= 0.0 || ndc.z >= 1.0) return 1.0;
+    edge = max(abs(ndc.x), abs(ndc.y));
+    if (edge >= 1.0 || ndc.z <= 0.0 || ndc.z >= 1.0) { edge = 2.0; return 1.0; }
     vec2 uv = ndc.xy * 0.5 + 0.5;
-    vec2 ts = 1.0 / vec2(textureSize(shadowMap, 0));
+    vec2 ts = 1.0 / vec2(textureSize(shadowMap, 0).xy);
     float sum = 0.0;
     for (int y = -1; y <= 1; ++y)
         for (int x = -1; x <= 1; ++x)
-            sum += texture(shadowMap, vec3(uv + vec2(x, y) * ts, ndc.z));
-    return mix(sum / 9.0, 1.0, smoothstep(0.8, 1.0, edge));   // fade out towards the map's edge
+            sum += texture(shadowMap, vec4(uv + vec2(x, y) * ts, float(c), ndc.z));
+    return sum / 9.0;
+}
+
+// Sun visibility at a surface point: 1 = lit, 0 = in shadow. The sharpest cascade covering the point, blended into
+// the next one towards its border; the last fades out to lit.
+float SunVisibility(vec3 posW, vec3 n)
+{
+    vec3 L = -FL.sunDir.xyz;
+    float nl = -1.0;
+    if (dot(n, n) > 0.0) {
+        n = normalize(n);
+        nl = dot(n, L);
+        if (nl <= 0.0) return 1.0;                        // faces away: the light equation / lightmap handles it
+    }
+    int count = int(FL.shadowParams.z);
+    for (int c = 0; c < count; ++c) {
+        float edge;
+        float v = CascadeVisibility(c, posW, n, nl, edge);
+        if (edge >= 1.0) continue;
+        float blend = smoothstep(0.8, 1.0, edge);
+        if (blend <= 0.0) return v;
+        float next = 1.0;
+        if (c + 1 < count) {
+            float e2;
+            next = CascadeVisibility(c + 1, posW, n, nl, e2);
+        }
+        return mix(v, next, blend);
+    }
+    return 1.0;
 }
 
 // What local light adds to a clamped lit colour: as is up to 1, then rolling off smoothly towards the headroom.
