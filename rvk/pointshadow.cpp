@@ -331,6 +331,45 @@ void Device::FindCarriers()
     }
 }
 
+// Diagnostics (log, once a second): how often the shadowed lights change - lights getting a cube, losing it, and
+// losing it only to get it back within 3 frames (a shadow vanishing for a frame).
+void Device::PointShadowChurn(const PointShadowLight* previous, uint32_t previousCount, size_t candidates,
+                              const std::function<const d3d::Light&(uint32_t)>& chosen, uint32_t count)
+{
+    auto same = [](const float p[3], float range, const d3d::Light& l) {
+        float dx = p[0] - l.position.x, dy = p[1] - l.position.y, dz = p[2] - l.position.z;
+        return range == l.range && dx * dx + dy * dy + dz * dz < 0.5f * 0.5f;
+    };
+    for (uint32_t k = 0; k < count; ++k) {
+        const d3d::Light& l = chosen(k);
+        bool was = false;
+        for (uint32_t p = 0; p < previousCount && !was; ++p) was = same(previous[p].position, previous[p].range, l);
+        if (was) continue;
+        ++m_churnIn;
+        for (const ChurnLeft& g : m_churnLeft)
+            if (g.frame + 3 >= m_frameNumber && same(g.position, g.range, l)) { ++m_churnBack; break; }
+    }
+    for (uint32_t p = 0; p < previousCount; ++p) {
+        bool still = false;
+        for (uint32_t k = 0; k < count && !still; ++k) still = same(previous[p].position, previous[p].range, chosen(k));
+        if (still) continue;
+        ++m_churnOut;
+        m_churnLeft.push_back({{previous[p].position[0], previous[p].position[1], previous[p].position[2]},
+                               previous[p].range, m_frameNumber});
+    }
+    m_churnLeft.erase(std::remove_if(m_churnLeft.begin(), m_churnLeft.end(),
+                                     [&](const ChurnLeft& g) { return g.frame + 3 < m_frameNumber; }),
+                      m_churnLeft.end());
+    double now = SwayClock();
+    if (now - m_churnTime >= 1.0) {
+        if (m_churnIn || m_churnOut)
+            Log("rvk: point shadows: %u of %zu candidate lights; last second %u got a cube, %u lost one, %u back "
+                "within 3 frames", count, candidates, m_churnIn, m_churnOut, m_churnBack);
+        m_churnIn = m_churnOut = m_churnBack = 0;
+        m_churnTime = now;
+    }
+}
+
 // Which cube (1-based; 0 = none) holds a frame light's shadow: lights are matched by their data, which the frame
 // light list copies unchanged from the set the cubes were rendered for.
 uint32_t Device::PointShadowLayer(const d3d::Light& l) const
@@ -392,6 +431,9 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
         return;
     std::partial_sort(candidates.begin(), candidates.begin() + count, candidates.end(),
                       [](const Candidate& a, const Candidate& b) { return a.key < b.key; });
+    PointShadowChurn(previous, previousCount, candidates.size(), [&](uint32_t k) -> const d3d::Light& {
+        return m_lightsCur[candidates[k].index].light;
+    }, count);
 
     VkImageSubresourceRange all{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, kMaxPointShadows * 6};
     VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};

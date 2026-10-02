@@ -13,6 +13,7 @@
 #include <string>
 #include <atomic>
 #include <algorithm>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -879,6 +880,12 @@ private:
     void PreparePointShadowMaps(VkCommandBuffer cmd);
     void RenderPointShadowMaps(VkCommandBuffer cmd);
     uint32_t PointShadowLayer(const d3d::Light& light) const;   // cube index + 1 the light's shadow is in, or 0
+    struct ChurnLeft { float position[3]; float range; uint64_t frame; };
+    std::vector<ChurnLeft> m_churnLeft;
+    uint32_t m_churnIn = 0, m_churnOut = 0, m_churnBack = 0;
+    double m_churnTime = 0.0;
+    void PointShadowChurn(const PointShadowLight* previous, uint32_t previousCount, size_t candidates,
+                          const std::function<const d3d::Light&(uint32_t)>& chosen, uint32_t count);
     uint64_t m_ringGeneration = 0, m_constantsGeneration = ~0ull;
     VkDeviceSize m_constantsOffset = 0;
     uint32_t m_constantsFvf = ~0u;
