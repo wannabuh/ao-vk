@@ -177,10 +177,20 @@ bool Device::IsCarrierPart(const CapturedLight& c, const d3d::Matrix& world, con
     return cx * cx + cz * cz < 1.0f && cy > -2.6f && cy < 0.5f;
 }
 
+// Drawn this frame: the carrier's own run of draws (GroupShadowItems), so a character walking through the carrier
+// keeps casting. Remembered copies have no run; near the carrier they're copies of it from where it stood.
+bool Device::IsCarrierItem(const CapturedLight& c, const ShadowItem& item)
+{
+    if (!item.cached)
+        return c.hasCarrier && item.group == c.carrierGroup;
+    return IsCarrierPart(c, item.world, item.boundsMin, item.boundsMax);
+}
+
 void Device::FindCarriers()
 {
     for (CapturedLight& c : m_lightsCur) {
         c.hasCarrier = false;
+        c.carrierGroup = ~0u;
         if (c.light.range < 1.0f)
             continue;
         const d3d::Vector& p = c.light.position;
@@ -230,6 +240,7 @@ void Device::FindCarriers()
             c.carrier[0] = it.world.m[3][0];
             c.carrier[1] = it.world.m[3][1];
             c.carrier[2] = it.world.m[3][2];
+            c.carrierGroup = it.group;
         }
     }
 }
@@ -329,7 +340,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
                                      it.boundsMax[2] - it.boundsMin[2]});
             bool housing = d2 == 0.0f && extent < 1.5f;              // smaller than a character
-            if (housing || IsCarrierPart(m_lightsCur[candidates[k].index], it.world, it.boundsMin, it.boundsMax))
+            if (housing || IsCarrierItem(m_lightsCur[candidates[k].index], it))
                 continue;
             inRange.push_back(i);
         }

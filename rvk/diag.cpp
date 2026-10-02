@@ -52,30 +52,32 @@ void Device::EndFrameDump()
         std::fprintf(m_dumpFile, " cube %u at (%.1f %.1f %.1f) r%.1f;", i + 1, l.position[0], l.position[1], l.position[2], l.range);
     }
     std::fprintf(m_dumpFile, "\n");
-    // Carrier detection: last frame's carrier of each shadowing light, and the small casters under it now.
-    for (uint32_t i = 0; i < m_pointShadowCount; ++i) {
-        const PointShadowLight& l = m_pointShadowLights[i];
-        const CapturedLight* used = nullptr;
-        for (const CapturedLight& c : m_lightsPrev)
-            if (c.light.position.x == l.position[0] && c.light.position.y == l.position[1] &&
-                c.light.position.z == l.position[2] && c.light.range == l.range)
-                used = &c;
-        if (!used) continue;
-        std::fprintf(m_dumpFile, "# cube %u carrier:", i + 1);
-        if (used->hasCarrier)
-            std::fprintf(m_dumpFile, " origin (%.2f %.2f %.2f), %.2f under the light;", used->carrier[0],
-                         used->carrier[1], used->carrier[2], l.position[1] - used->carrier[1]);
+    // Carrier detection this frame: each light's carrier and the small casters under it (g = run of draws).
+    for (const CapturedLight& c : m_lightsCur) {
+        if (c.light.range < 1.0f)
+            continue;
+        bool cube = false;
+        for (uint32_t i = 0; i < m_pointShadowCount; ++i)
+            cube |= m_pointShadowLights[i].range == c.light.range &&
+                    std::fabs(m_pointShadowLights[i].position[0] - c.light.position.x) < 1.0f &&
+                    std::fabs(m_pointShadowLights[i].position[2] - c.light.position.z) < 1.0f;
+        if (!c.hasCarrier && !cube)
+            continue;
+        const d3d::Vector& l = c.light.position;
+        std::fprintf(m_dumpFile, "# light (%.1f %.1f %.1f) r%.1f carrier:", l.x, l.y, l.z, c.light.range);
+        if (c.hasCarrier)
+            std::fprintf(m_dumpFile, " g%u origin (%.2f %.2f %.2f), %.2f under the light;", c.carrierGroup,
+                         c.carrier[0], c.carrier[1], c.carrier[2], l.y - c.carrier[1]);
         else
             std::fprintf(m_dumpFile, " none;");
-        std::fprintf(m_dumpFile, " small casters within 1 sideways (dy, sideways, extent):");
+        std::fprintf(m_dumpFile, " casters within 1.5 sideways (g dy sideways extent):");
         for (const ShadowItem& it : m_shadowItems) {
-            float dx = it.world.m[3][0] - l.position[0], dz = it.world.m[3][2] - l.position[2];
-            float dy = it.world.m[3][1] - l.position[1];
+            float dx = it.world.m[3][0] - l.x, dz = it.world.m[3][2] - l.z, dy = it.world.m[3][1] - l.y;
             float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
                                      it.boundsMax[2] - it.boundsMin[2]});
-            if (dx * dx + dz * dz >= 1.0f || dy < -3.5f || dy > 1.0f || extent >= 3.0f) continue;
-            std::fprintf(m_dumpFile, " (%.2f %.2f %.2f%s)", dy, std::sqrt(dx * dx + dz * dz), extent,
-                         it.cached ? " cached" : "");
+            if (dx * dx + dz * dz >= 1.5f * 1.5f || dy < -3.5f || dy > 1.0f || extent >= 3.0f) continue;
+            std::fprintf(m_dumpFile, " (%s%u %.2f %.2f %.2f%s)", it.cached ? "c" : "g", it.cached ? 0u : it.group, dy,
+                         std::sqrt(dx * dx + dz * dz), extent, IsCarrierItem(c, it) ? " excluded" : "");
         }
         std::fprintf(m_dumpFile, "\n");
     }

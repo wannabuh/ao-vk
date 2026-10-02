@@ -975,6 +975,7 @@ void Device::BeginFrame()
     m_lightsCur.clear();
     m_sunLuminance = 0.0f;
     m_casters.clear();
+    m_frameDraw = 0;
     m_casterViews.clear();
     m_frameLightsDirty = true;
     m_constantsDirty = true;                     // shadow receiving depends on last frame's map
@@ -1005,11 +1006,11 @@ void Device::EndFrame()
         DrawOrphanParticles();
     }
     EndScene();                                  // if the interface didn't end it (no interface drawn)
-    EndFrameDump();
     Frame& f = m_frames[m_frameIndex];
     EndRendering();
     RenderShadowMap(f.main);
     FindCarriers();
+    EndFrameDump();                              // after the carriers: it lists them
     RenderPointShadowMaps(f.main);
     FinishShadowFrame();
     Transition(f.main, m_main, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);

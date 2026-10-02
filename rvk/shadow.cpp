@@ -365,6 +365,7 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     ShadowCutout(fvf, &c.texture, &c.texOffset, &c.alphaRef);
     uint64_t key = CasterKey(primitive, fvf, stride, vertices, vertexCount, indices, indexCount, c.boundsMin, c.boundsMax);
     c.key = key;
+    c.draw = m_frameDraw;
     m_casters.push_back(c);
     auto cached = m_casterCache.find(key);
     if (cached != m_casterCache.end()) {
@@ -658,6 +659,7 @@ void Device::CollectShadowItems()
     for (uint32_t i = 1; i < m_casterViews.size(); ++i)
         if (m_casterViews[i].count > m_casterViews[world].count) world = i;
     std::vector<uint64_t> staleKeys;
+    std::vector<uint32_t> drawOf;                // per item: its draw number
     for (const ShadowCaster& c : m_casters) {
         if (c.view != world)
             continue;
@@ -679,8 +681,11 @@ void Device::CollectShadowItems()
         it.world = c.world;
         TransformBounds(c.boundsMin, c.boundsMax, c.world, it.boundsMin, it.boundsMax);
         it.cached = false;
+        it.group = 0;
         m_shadowItems.push_back(it);
+        drawOf.push_back(c.draw);
     }
+    GroupShadowItems(drawOf);
     for (auto& [key, e] : m_casterCache) {
         if (e.lastSeen == m_frameNumber && std::find(staleKeys.begin(), staleKeys.end(), key) == staleKeys.end())
             continue;                            // drawn this frame: in the list above
@@ -699,7 +704,30 @@ void Device::CollectShadowItems()
         std::memcpy(it.boundsMin, e.boundsMin, sizeof(it.boundsMin));
         std::memcpy(it.boundsMax, e.boundsMax, sizeof(it.boundsMax));
         it.cached = true;
+        it.group = ~0u;
         m_shadowItems.push_back(it);
+    }
+}
+
+// The game draws each character's parts (body pieces, head, held weapon) one after another, so a run of consecutive
+// draws close together is one object. In the dumps a character's parts lie within 0.7 sideways of each other and
+// another character starts a new run. Characters drawn back to back stay apart unless their origins are within
+// 1 of each other: only when one walks right through the other.
+void Device::GroupShadowItems(const std::vector<uint32_t>& drawOf)
+{
+    uint32_t group = 0;
+    size_t first = 0;
+    for (size_t i = 0; i < drawOf.size(); ++i) {
+        if (i > 0) {
+            const auto& a = m_shadowItems[first].world.m[3];
+            const auto& b = m_shadowItems[i].world.m[3];
+            float dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+            if (drawOf[i] != drawOf[i - 1] + 1 || dx * dx + dz * dz > 1.0f || std::fabs(dy) > 2.6f) {
+                ++group;
+                first = i;
+            }
+        }
+        m_shadowItems[i].group = group;
     }
 }
 

@@ -667,6 +667,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 {
     if (!m_inFrame || !vertexCount)
         return;
+    ++m_frameDraw;
     // Particles whose effect the game no longer draws: at the end of the 3D scene - the first interface draw after 3D,
     // both into the main target (other targets - refraction, offscreen copies - have their own pre-transformed draws).
     if (!m_external && m_target == m_main) {

@@ -376,6 +376,7 @@ private:
         d3d::Light light;
         float cosHalfTheta, cosHalfPhi;
         bool hasCarrier = false;                 // a character carries it (FindCarriers): its origin
+        uint32_t carrierGroup = ~0u;             // and its ShadowItem group this frame (the point shadow pass)
         float carrier[3] = {};
     };
     // End of frame: for each light, the character carrying it - the body origin nearest under it. The game places a
@@ -384,6 +385,8 @@ private:
     void FindCarriers();
     static bool IsCarrierPart(const CapturedLight& c, const d3d::Matrix& world, const float boundsMin[3],
                               const float boundsMax[3]);
+    struct ShadowItem;
+    static bool IsCarrierItem(const CapturedLight& c, const ShadowItem& item);
     std::vector<CapturedLight> m_lightsCur, m_lightsPrev;   // point / spot lights used this / last frame
     void CaptureLight(LightSlot& slot);
 
@@ -400,6 +403,7 @@ private:
         uint64_t key;                            // caster cache identity
         uint32_t view;                           // index into m_casterViews
         float boundsMin[3], boundsMax[3];        // model space
+        uint32_t draw;                           // m_frameDraw when the game drew it
     };
     // One caster as the shadow passes draw it: from this frame's ring or from the caster cache (own buffer).
     struct ShadowItem {
@@ -412,6 +416,7 @@ private:
         d3d::Matrix world;
         float boundsMin[3], boundsMax[3];        // world space
         bool cached;                             // remembered, not drawn by the game this frame
+        uint32_t group;                          // drawn as part of the same object (character); ~0u = cached
     };
     std::vector<ShadowItem> m_shadowItems;       // EndFrame: what the shadow passes draw
     // What a shadow pass has bound, so unchanged state isn't re-issued.
@@ -423,6 +428,7 @@ private:
         VkDeviceSize ibOffset = ~0ull;
     };
     void CollectShadowItems();
+    void GroupShadowItems(const std::vector<uint32_t>& drawOf);
     void DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowItem& item, const d3d::Matrix& lightViewProj);
     void FinishShadowFrame();
     // The cameras casters were drawn with this frame; the shadow map follows the one most casters share (the
@@ -776,6 +782,7 @@ private:
     std::string m_dumpPath;
     FILE* m_dumpFile = nullptr;
     uint32_t m_dumpDraw = 0;
+    uint32_t m_frameDraw = 0;                    // draws so far this frame (Draw calls)
     std::vector<d3d::Light> m_dumpedLights;
     std::vector<bool> m_dumpedLightValid;
     void BeginFrameDump();
