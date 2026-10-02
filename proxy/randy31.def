@@ -44,7 +44,7 @@ EXPORTS
     ??0RTexture_t@@QAE@PAVObjectArchive_c@fun@@@Z=randy31_orig.??0RTexture_t@@QAE@PAVObjectArchive_c@fun@@@Z @40
     ??0RTexture_t@@QAE@PBD@Z=randy31_orig.??0RTexture_t@@QAE@PBD@Z @41
     ??0RTexture_t@@QAE@PBDGGW4TextureFormat_e@0@_NPAX@Z=randy31_orig.??0RTexture_t@@QAE@PBDGGW4TextureFormat_e@0@_NPAX@Z @42
-    ??0RTexture_t@@QAE@PBDPAVTextureCreator@@@Z=randy31_orig.??0RTexture_t@@QAE@PBDPAVTextureCreator@@@Z @43
+    ??0RTexture_t@@QAE@PBDPAVTextureCreator@@@Z=@rvk_RTextureFromCreator@16 @43
     ??0RTriMeshData_t@@IAE@ABV0@@Z=randy31_orig.??0RTriMeshData_t@@IAE@ABV0@@Z @44
     ??0RTriMeshData_t@@IAE@PBD@Z=randy31_orig.??0RTriMeshData_t@@IAE@PBD@Z @45
     ??0RTriMesh_t@@QAE@PBVRTriMeshData_t@@PAVRRefFrame_t@@PAVRAnimation_t@@@Z=randy31_orig.??0RTriMesh_t@@QAE@PBVRTriMeshData_t@@PAVRRefFrame_t@@PAVRAnimation_t@@@Z @46

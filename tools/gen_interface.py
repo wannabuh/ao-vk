@@ -29,6 +29,7 @@ ORIG = "randy31_orig"
 HOOKED_EXPORTS = {
     "?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVLBitmap_t@@PBD@Z": "@rvk_CreateTextureBitmap@16",
     "?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVPositionIO_t@fun@@PBD@Z": "@rvk_CreateTextureStream@16",
+    "??0RTexture_t@@QAE@PBDPAVTextureCreator@@@Z": "@rvk_RTextureFromCreator@16",
 }
 
 

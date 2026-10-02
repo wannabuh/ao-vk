@@ -4,11 +4,14 @@
 //   <id>_n.png           the same, any type (fallback)
 // ao-assets writes these names (python -m aoassets material-template).
 //
-// Identity: every RDB texture is made by DisplaySystem's RDB texture object, which hands randy an
-// AnarchyTexCreator_t {+0x40 type, +0x44 id} and lets RTexture_t's constructor call back into the exported
-// TextureStreamCreator::CreateTexture with that creator as `this`. Both overloads are implemented here (see
-// HOOKED_EXPORTS in tools/gen_interface.py): they call the original, and when the creator's RTTI says
-// AnarchyTexCreator_t, the returned surface_t's IDirectDrawSurface7 (if it is one of ours) records the identity.
+// Identity (see HOOKED_EXPORTS in tools/gen_interface.py; the hooks call the original, then record the identity on the
+// surface_t's IDirectDrawSurface7 when it is one of ours):
+// - World textures: DisplaySystem's RDBTexture_t hands randy an AnarchyTexCreator_t {+0x40 type, +0x44 id}, whose
+//   create method calls the exported TextureStreamCreator::CreateTexture with the creator as `this`.
+// - Ground textures: RDBGroundTexture_t {DbObject_t: +0x08 type, +0x0C id, +0x20 its RTexture_t once made} uses a
+//   plain TextureStreamCreator, created and called inside randy. What crosses the export table is the
+//   RTexture_t(name, TextureCreator*) constructor it calls; the RDBGroundTexture_t making it is found by RTTI in the
+//   caller's saved registers and stack, and the new RTexture_t's surface_t (+0x30) gets its identity.
 #define NOMINMAX
 #include <windows.h>
 
@@ -48,30 +51,48 @@ bool Readable(const void* p, size_t n)
     return static_cast<const uint8_t*>(p) + n <= end;
 }
 
-// Class name of a polymorphic object from its vtable's complete object locator (x86: vtable[-1] -> COL,
-// COL+12 -> type descriptor, name at +8, e.g. ".?AVAnarchyTexCreator_t@@").
-bool IsAnarchyTexCreator(const void* object)
+enum class Kind { Other, AnarchyTexCreator, RDBGroundTexture };
+
+// Class of a polymorphic object from its vtable's complete object locator (x86: vtable[-1] -> COL, COL+12 -> type
+// descriptor, name at +8, e.g. ".?AVAnarchyTexCreator_t@@").
+Kind ClassOf(const void* object)
 {
-    static std::unordered_map<const void*, bool> cache;   // vtable -> answer
+    static std::unordered_map<const void*, Kind> cache;   // vtable -> class
     if (!Readable(object, 4))
-        return false;
+        return Kind::Other;
     const void* vtable = *static_cast<void* const*>(object);
     auto it = cache.find(vtable);
     if (it != cache.end())
         return it->second;
-    bool yes = false;
+    Kind kind = Kind::Other;
     auto vt = static_cast<const uint8_t* const*>(vtable);
     if (Readable(vt - 1, 4)) {
         const uint8_t* col = vt[-1];
         if (Readable(col, 16)) {
             const uint8_t* td = *reinterpret_cast<const uint8_t* const*>(col + 12);
-            static const char kName[] = ".?AVAnarchyTexCreator_t@@";
-            if (Readable(td + 8, sizeof(kName)))
-                yes = std::memcmp(td + 8, kName, sizeof(kName)) == 0;
+            static const char kTex[] = ".?AVAnarchyTexCreator_t@@", kGround[] = ".?AVRDBGroundTexture_t@@";
+            if (Readable(td + 8, sizeof(kTex)) && std::memcmp(td + 8, kTex, sizeof(kTex)) == 0)
+                kind = Kind::AnarchyTexCreator;
+            else if (Readable(td + 8, sizeof(kGround)) && std::memcmp(td + 8, kGround, sizeof(kGround)) == 0)
+                kind = Kind::RDBGroundTexture;
         }
     }
-    cache.emplace(vtable, yes);
-    return yes;
+    cache.emplace(vtable, kind);
+    return kind;
+}
+
+uint32_t U32(const void* p, size_t offset)
+{
+    return *reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(p) + offset);
+}
+
+// An RDBGroundTexture_t still making its texture: a ground texture type, no RTexture_t yet.
+bool IsGroundMaker(const void* p)
+{
+    if (!p || (reinterpret_cast<uintptr_t>(p) & 3) || !Readable(p, 0x28) || ClassOf(p) != Kind::RDBGroundTexture)
+        return false;
+    uint32_t type = U32(p, 0x08);
+    return (type == 1010006 || type == 1010021 || type == 1010022) && U32(p, 0x20) == 0;
 }
 
 // ---------------------------------------------------------------- material folder
@@ -184,13 +205,11 @@ rvk::Texture* LoadNormalMap(const std::string& path, rvk::ThreadedDevice* dev)
 
 unsigned g_registered = 0, g_attached = 0;
 
-void Register(void* surface_t, const void* creator)
+unsigned g_ground = 0;
+
+void Register(void* surface_t, uint32_t type, uint32_t id)
 {
-    if (!surface_t || !IsAnarchyTexCreator(creator) || !Readable(creator, 0x48))
-        return;
-    uint32_t type = *reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(creator) + 0x40);
-    uint32_t id = *reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(creator) + 0x44);
-    if (!Readable(surface_t, 4))
+    if (!surface_t || !Readable(surface_t, 4))
         return;
     auto* dds = *static_cast<IUnknown**>(surface_t);
     if (!dds)
@@ -201,7 +220,9 @@ void Register(void* surface_t, const void* creator)
     RSurface* top = s->top ? s->top : s;
     top->rdbType = type;
     top->rdbId = id;
-    if (++g_registered <= 8 || (g_registered & (g_registered - 1)) == 0)
+    bool ground = type == 1010006 || type == 1010021 || type == 1010022;
+    g_ground += ground;
+    if (++g_registered <= 8 || (g_registered & (g_registered - 1)) == 0 || (ground && g_ground <= 4))
         RvkLog("materials: RDB texture %u:%u is a %lux%lu surface (%u textures identified)", type, id,
                top->desc.dwWidth, top->desc.dwHeight, g_registered);
     if (top->texture)
@@ -209,8 +230,18 @@ void Register(void* surface_t, const void* creator)
     s->Release();
 }
 
+void RegisterCreator(void* surface, const void* creator)
+{
+    if (ClassOf(creator) != Kind::AnarchyTexCreator || !Readable(creator, 0x48))
+        return;
+    static const unsigned index = ComIndex("rvk::Materials");
+    ComScope scope(index);
+    Register(surface, U32(creator, 0x40), U32(creator, 0x44));
+}
+
 using CreateFromBitmap = void*(__thiscall*)(void* self, void* bitmap, const char* name);
 using CreateFromStream = void*(__thiscall*)(void* self, void* stream, const char* name);
+using RTextureFromCreator = void*(__thiscall*)(void* self, const char* name, void* creator);
 
 template <typename F>
 F Original(const char* mangled)
@@ -247,9 +278,7 @@ extern "C" void* __fastcall rvk_CreateTextureBitmap(void* self, void*, void* bit
 {
     static auto original = Original<CreateFromBitmap>("?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVLBitmap_t@@PBD@Z");
     void* surface = original(self, bitmap, name);
-    static const unsigned index = ComIndex("rvk::Materials");
-    ComScope scope(index);
-    Register(surface, self);
+    RegisterCreator(surface, self);
     return surface;
 }
 
@@ -257,8 +286,29 @@ extern "C" void* __fastcall rvk_CreateTextureStream(void* self, void*, void* str
 {
     static auto original = Original<CreateFromStream>("?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVPositionIO_t@fun@@PBD@Z");
     void* surface = original(self, stream, name);
-    static const unsigned index = ComIndex("rvk::Materials");
-    ComScope scope(index);
-    Register(surface, self);
+    RegisterCreator(surface, self);
     return surface;
 }
+
+// RTexture_t::RTexture_t(char const*, TextureCreator*): world textures are identified by the CreateTexture hooks above;
+// a plain creator may be an RDBGroundTexture_t's. Its `this` is in a callee-saved register of the caller, which this
+// function's prologue pushes just below its return address, or on the caller's stack above it.
+extern "C" void* __fastcall rvk_RTextureFromCreator(void* self, void*, const char* name, void* creator)
+{
+    const void* maker = nullptr;
+    if (ClassOf(creator) != Kind::AnarchyTexCreator) {
+        auto* sp = reinterpret_cast<const uint32_t*>(_AddressOfReturnAddress()) - 8;
+        for (int i = 0; !maker && i < 264 && Readable(sp + i, 4); ++i)
+            if (IsGroundMaker(reinterpret_cast<const void*>(uintptr_t(sp[i]))))
+                maker = reinterpret_cast<const void*>(uintptr_t(sp[i]));
+    }
+    static auto original = Original<RTextureFromCreator>("??0RTexture_t@@QAE@PBDPAVTextureCreator@@@Z");
+    void* texture = original(self, name, creator);
+    if (maker && texture && Readable(static_cast<uint8_t*>(texture) + 0x30, 4)) {
+        static const unsigned index = ComIndex("rvk::Materials");
+        ComScope scope(index);
+        Register(*reinterpret_cast<void**>(static_cast<uint8_t*>(texture) + 0x30), U32(maker, 0x08), U32(maker, 0x0C));
+    }
+    return texture;
+}
+
