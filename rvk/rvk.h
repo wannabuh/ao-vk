@@ -366,6 +366,7 @@ private:
         VmaAllocation_T* postAllocation = nullptr;
         void* postData = nullptr;
         VkDeviceSize ringOffset = 0;
+        VkDeviceSize ringSize = 0;                 // grows (GrowRing) after a frame overflowed it
         uint64_t serial = 0;                       // submission number last signalled through `fence`
         bool uploadsRecorded = false;
     };
@@ -1024,7 +1025,12 @@ private:
     uint32_t m_frameIndex = 0;
     bool m_inFrame = false;
     bool m_rendering = false;
-    static constexpr VkDeviceSize kRingSize = 64ull << 20;
+    static constexpr VkDeviceSize kRingSize = 64ull << 20;      // each frame's ring to start with
+    static constexpr VkDeviceSize kRingMaxSize = 256ull << 20;  // ... at most (a 32-bit process: address space)
+    VkDeviceSize m_ringWanted = kRingSize;       // after a mid-frame flush: the next frames' ring size
+    VkDeviceSize m_ringPeak = 0;                 // the most a frame used (logged with the flushes)
+    uint32_t m_ringFlushesLogged = 0;
+    bool CreateRing(Frame& f, VkDeviceSize size, std::string* error);
 
     VkDescriptorSetLayout m_setLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;

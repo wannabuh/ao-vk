@@ -791,20 +791,13 @@ bool Device::CreateFrames(std::string* error)
         if (!Check(vkCreateFence(m_device, &fi, nullptr, &f.fence), "vkCreateFence", error) ||
             !Check(vkCreateSemaphore(m_device, &si, nullptr, &f.imageAvailable), "vkCreateSemaphore", error))
             return false;
+        if (!CreateRing(f, kRingSize, error))
+            return false;
         VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        bi.size = kRingSize;
-        bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                   VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;   // last frame's vertex positions (motion vectors)
         VmaAllocationCreateInfo ac{};
-        // System memory, never the CPU-visible VRAM window: without resizable BAR that window is ~256 MB,
-        // shared with the driver and other programs, and running it out makes allocations fail.
         ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
         ac.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
         VmaAllocationInfo info;
-        if (!Check(vmaCreateBuffer(m_allocator, &bi, &ac, &f.ring, &f.ringAllocation, &info), "ring buffer", error))
-            return false;
-        f.ringData = static_cast<uint8_t*>(info.pMappedData);
         bi.size = sizeof(FrameLights);
         bi.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
         if (!Check(vmaCreateBuffer(m_allocator, &bi, &ac, &f.post, &f.postAllocation, &info), "post buffer", error))
@@ -819,6 +812,30 @@ bool Device::CreateFrames(std::string* error)
     return true;
 }
 
+// A frame's ring buffer (vertices, indices, per-draw blocks): `size` bytes, replacing any it had (the slot idle).
+bool Device::CreateRing(Frame& f, VkDeviceSize size, std::string* error)
+{
+    if (f.ring) vmaDestroyBuffer(m_allocator, f.ring, f.ringAllocation);
+    f.ring = VK_NULL_HANDLE;
+    VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bi.size = size;
+    bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+               VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;   // last frame's vertex positions (motion vectors)
+    VmaAllocationCreateInfo ac{};
+    // System memory, never the CPU-visible VRAM window: without resizable BAR that window is ~256 MB,
+    // shared with the driver and other programs, and running it out makes allocations fail.
+    ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    ac.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo info;
+    if (!Check(vmaCreateBuffer(m_allocator, &bi, &ac, &f.ring, &f.ringAllocation, &info), "ring buffer", error))
+        return false;
+    f.ringData = static_cast<uint8_t*>(info.pMappedData);
+    f.ringSize = size;
+    f.ringOffset = 0;
+    return true;
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Frames
 
@@ -828,8 +845,8 @@ VkDeviceSize Device::Allocate(VkDeviceSize size, VkDeviceSize alignment, void** 
     // Any alignment (vertex strides); 32-bit math, the ring is far below 4 GB (64-bit division is a libcall on x86).
     uint32_t a = uint32_t(alignment), o = uint32_t(f.ringOffset);
     VkDeviceSize offset = (o + a - 1) / a * a;
-    if (offset + size > kRingSize) {
-        Log("per-frame ring buffer full (%llu bytes)\n", (unsigned long long)kRingSize);
+    if (offset + size > f.ringSize) {
+        Log("per-frame ring buffer full (%llu bytes)\n", (unsigned long long)f.ringSize);
         offset = 0;     // overwrites this frame's data; visible corruption rather than a crash
         ++m_ringGeneration;
     }
@@ -885,16 +902,22 @@ void Device::EnsureRingSpace(VkDeviceSize bytes)
 {
     Frame& f = m_frames[m_frameIndex];
     VkDeviceSize needed = bytes + 1024;                      // alignment slack for a few allocations
-    if (f.ringOffset + needed <= kRingSize)
+    if (f.ringOffset + needed <= f.ringSize)
         return;
-    if (needed > kRingSize) {
+    if (needed > f.ringSize) {
         Log("%llu bytes do not fit in the %llu-byte ring buffer\n",
-                     (unsigned long long)bytes, (unsigned long long)kRingSize);
+                     (unsigned long long)bytes, (unsigned long long)f.ringSize);
         return;
     }
     if (m_inFrame) {
-        if (m_midFrameFlushes++ < 20)
-            Log("ring buffer full mid-frame (%llu bytes wanted): flushing\n", (unsigned long long)bytes);
+        // A flush waits for the GPU, and the frame's shadow casters recorded before it (their data overwritten)
+        // drop out of this frame's shadows: the next frames get a bigger ring (BeginFrame).
+        ++m_midFrameFlushes;
+        m_ringPeak = std::max(m_ringPeak, f.ringOffset);
+        m_ringWanted = std::min(std::max(m_ringWanted, f.ringSize * 2), kRingMaxSize);
+        if (m_ringFlushesLogged++ < 20)
+            Log("ring buffer full mid-frame (%llu bytes wanted, ring %llu MB): flushing\n", (unsigned long long)bytes,
+                (unsigned long long)(f.ringSize >> 20));
         bool wasRendering = m_rendering;
         SubmitAndWait();                                     // also submits pending uploads
         if (wasRendering)
@@ -1048,8 +1071,27 @@ void Device::BeginFrame()
     vkResetFences(m_device, 1, &f.fence);
     CollectGarbage();
     ApplyShadowResolution();
-    if (!uploadsPending)
+    if (!uploadsPending) {
+        if (f.ringSize < m_ringWanted) {         // the slot is idle (waited for): a bigger ring
+            std::string error;
+            VkDeviceSize old = f.ringSize;
+            if (CreateRing(f, m_ringWanted, &error))
+                Log("ring buffer: %llu -> %llu MB (frames overflowed it)", (unsigned long long)(old >> 20),
+                    (unsigned long long)(m_ringWanted >> 20));
+            else if (!CreateRing(f, old, &error))
+                Log("ring buffer: %s", error.c_str());
+            else
+                m_ringWanted = old;              // no memory for more: stay
+        }
+        m_ringPeak = std::max(m_ringPeak, f.ringOffset);
         f.ringOffset = 0;
+    }
+    if (m_frameNumber % 600 == 599) {            // how full frames get (logged with the profiler's numbers)
+        Log("ring buffer: peak %.1f of %llu MB a frame, %u mid-frame flushes (last 600 frames)",
+            double(m_ringPeak) / 1048576.0, (unsigned long long)(f.ringSize >> 20), m_midFrameFlushes);
+        m_ringPeak = 0;
+        m_midFrameFlushes = 0;
+    }
     ++m_ringGeneration;                          // a different slot's ring: cached offsets are invalid
 
     VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
