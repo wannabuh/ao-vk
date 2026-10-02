@@ -45,12 +45,14 @@ Setting g_settings[] = {
     {"RVK_FoliageLod", "Foliage further than this is shaded more cheaply (0 = off)",      "Lighting",       Float, 0, 150, 5, 35, nullptr, 0},
     {"RVK_Aniso",      "Anisotropic filtering (1 = off)",                                 "Lighting",       Int,   1, 16, 1, 16, "RANDYVK_ANISOTROPY", 0},
     {"RVK_SunShadow",  "Sun shadows",                                                     "Shadows",        Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
+    {"RVK_SunRes",     "Sun shadow resolution (pixels; 4096 = 256 MB, 8192 = 1 GB)",      "Shadows",        Int,   1024, 8192, 512, 4096, nullptr, 0},
     {"RVK_SunStrength","Sun shadow strength",                                             "Shadows",        Float, 0, 1, 0.05f, 0.65f, "RANDYVK_SHADOW_STRENGTH", 0},
     {"RVK_SunDist",    "Sun shadow distance (world units)",                               "Shadows",        Int,   40, 1000, 20, 400, nullptr, 0},
     {"RVK_SunCascade", "Sun shadow cascades (more = sharper near, same reach)",           "Shadows",        Int,   1, 4, 1, 4, nullptr, 0},
     {"RVK_SunSoft",    "Sun shadow softness (penumbra grows with distance; 0 = hard)",    "Shadows",        Float, 0, 4, 0.25f, 1, nullptr, 0},
     {"RVK_Contact",    "Contact shadows (small sun shadows the map misses; 0 = off)",     "Shadows",        Float, 0, 1, 0.05f, 0.6f, nullptr, 0},
     {"RVK_PtShadows",  "Point light shadows (lights, 0 = off)",                           "Shadows",        Int,   0, 8, 1, 8, "RANDYVK_POINT_SHADOWS", 0},
+    {"RVK_PtRes",      "Point light shadow resolution (pixels per cube face)",            "Shadows",        Int,   256, 2048, 256, 1024, nullptr, 0},
     {"RVK_PtStrength", "Point light shadow strength",                                     "Shadows",        Float, 0, 1, 0.05f, 0.9f, "RANDYVK_POINT_SHADOW_STRENGTH", 0},
     {"RVK_PtDay",      "Point light shadow strength in daylight (fraction)",              "Shadows",        Float, 0, 1, 0.05f, 0.25f, "RANDYVK_POINT_SHADOW_DAY", 0},
     {"RVK_Hdr",        "HDR scene and tone mapping",                                      "HDR and effects", Bool, 0, 1, 1, 1, "RANDYVK_HDR", 0},
@@ -193,6 +195,8 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_Headroom")) d->SetLightHeadroom(V(n));
     else if (is("RVK_Aniso")) d->SetAnisotropy(uint32_t(V(n)));
     else if (is("RVK_SunShadow")) d->SetShadows(V(n) != 0.0f);
+    else if (is("RVK_SunRes") || is("RVK_PtRes"))
+        d->SetShadowResolution(uint32_t(V("RVK_SunRes")), uint32_t(V("RVK_PtRes")));
     else if (is("RVK_SunStrength") || is("RVK_SunDist") || is("RVK_SunCascade"))
         d->SetShadowParams(V("RVK_SunStrength"), V("RVK_SunDist"), uint32_t(V("RVK_SunCascade")));
     else if (is("RVK_PtShadows")) d->SetPointShadows(uint32_t(V(n)));

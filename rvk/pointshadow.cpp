@@ -63,13 +63,14 @@ float BoxDistance2(const float mn[3], const float mx[3], const float p[3])
 
 }  // namespace
 
-bool Device::CreatePointShadowResources(std::string* error)
+// The point lights' cube array: kMaxPointShadows cubes of m_pointShadowSize faces.
+bool Device::CreatePointShadowMaps(std::string* error)
 {
     VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     ci.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     ci.imageType = VK_IMAGE_TYPE_2D;
     ci.format = kDepthFormat;
-    ci.extent = {kPointShadowSize, kPointShadowSize, 1};
+    ci.extent = {m_pointShadowSize, m_pointShadowSize, 1};
     ci.mipLevels = 1;
     ci.arrayLayers = kMaxPointShadows * 6;
     ci.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -95,7 +96,24 @@ bool Device::CreatePointShadowResources(std::string* error)
             return false;
     }
     m_cubeLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    return true;
+}
 
+void Device::DestroyPointShadowMaps()
+{
+    for (VkImageView& v : m_cubeFaceViews)
+        if (v) { vkDestroyImageView(m_device, v, nullptr); v = VK_NULL_HANDLE; }
+    if (m_cubeArrayView) vkDestroyImageView(m_device, m_cubeArrayView, nullptr);
+    if (m_cubeImage) vmaDestroyImage(m_allocator, m_cubeImage, m_cubeAllocation);
+    m_cubeArrayView = VK_NULL_HANDLE;
+    m_cubeImage = VK_NULL_HANDLE;
+    m_cubeLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+}
+
+bool Device::CreatePointShadowResources(std::string* error)
+{
+    if (!CreatePointShadowMaps(error))
+        return false;
     VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     si.magFilter = si.minFilter = VK_FILTER_LINEAR;               // 2x2 comparison filtering per tap
     si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
@@ -109,13 +127,8 @@ bool Device::CreatePointShadowResources(std::string* error)
 void Device::DestroyPointShadowResources()
 {
     if (m_cubeSampler) vkDestroySampler(m_device, m_cubeSampler, nullptr);
-    for (VkImageView& v : m_cubeFaceViews)
-        if (v) { vkDestroyImageView(m_device, v, nullptr); v = VK_NULL_HANDLE; }
-    if (m_cubeArrayView) vkDestroyImageView(m_device, m_cubeArrayView, nullptr);
-    if (m_cubeImage) vmaDestroyImage(m_allocator, m_cubeImage, m_cubeAllocation);
+    DestroyPointShadowMaps();
     m_cubeSampler = VK_NULL_HANDLE;
-    m_cubeArrayView = VK_NULL_HANDLE;
-    m_cubeImage = VK_NULL_HANDLE;
 }
 
 // Before the frame's first rendering: the cubes must be sampleable from the start (cleared = lit).
@@ -425,14 +438,14 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             depthAtt.clearValue.depthStencil = {1.0f, 0};
             VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
-            ri.renderArea = {{0, 0}, {kPointShadowSize, kPointShadowSize}};
+            ri.renderArea = {{0, 0}, {m_pointShadowSize, m_pointShadowSize}};
             ri.layerCount = 1;
             ri.pDepthAttachment = &depthAtt;
             vkCmdBeginRendering(cmd, &ri);
             if (!stateSet) {                     // the first face drawn this frame (cubes may skip a frame)
                 stateSet = true;
-                VkViewport viewport{0.0f, 0.0f, float(kPointShadowSize), float(kPointShadowSize), 0.0f, 1.0f};
-                VkRect2D scissor{{0, 0}, {kPointShadowSize, kPointShadowSize}};
+                VkViewport viewport{0.0f, 0.0f, float(m_pointShadowSize), float(m_pointShadowSize), 0.0f, 1.0f};
+                VkRect2D scissor{{0, 0}, {m_pointShadowSize, m_pointShadowSize}};
                 vkCmdSetViewport(cmd, 0, 1, &viewport);
                 vkCmdSetScissor(cmd, 0, 1, &scissor);
                 vkCmdSetDepthBias(cmd, 1.0f, 0.0f, 1.5f);

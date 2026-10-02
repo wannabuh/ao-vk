@@ -154,13 +154,13 @@ d3d::Matrix detail::MulMatrix(const d3d::Matrix& a, const d3d::Matrix& b)
     return r;
 }
 
-bool Device::CreateShadowResources(std::string* error)
+// The sun's shadow map: a depth image of m_shadowSize per cascade, sampled with comparison.
+bool Device::CreateShadowMap(std::string* error)
 {
-    // Depth map, sampled with comparison.
     VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     ci.imageType = VK_IMAGE_TYPE_2D;
     ci.format = kDepthFormat;
-    ci.extent = {kShadowSize, kShadowSize, 1};
+    ci.extent = {m_shadowSize, m_shadowSize, 1};
     ci.mipLevels = 1;
     ci.arrayLayers = kShadowCascades;
     ci.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -185,7 +185,50 @@ bool Device::CreateShadowResources(std::string* error)
             return false;
     }
     m_shadowImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    return true;
+}
 
+void Device::DestroyShadowMap()
+{
+    if (m_shadowView) vkDestroyImageView(m_device, m_shadowView, nullptr);
+    for (VkImageView& v : m_shadowLayerViews)
+        if (v) { vkDestroyImageView(m_device, v, nullptr); v = VK_NULL_HANDLE; }
+    if (m_shadowImage) vmaDestroyImage(m_allocator, m_shadowImage, m_shadowAllocation);
+    m_shadowView = VK_NULL_HANDLE;
+    m_shadowImage = VK_NULL_HANDLE;
+    m_shadowImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+}
+
+// Shadow map sizes changed (SetShadowResolution): wait for the GPU, recreate the maps (cleared to lit when first
+// used). The sun's shadow is invalid until drawn again; the point lights' cubes are all redrawn.
+void Device::ApplyShadowResolution()
+{
+    if (m_shadowSizeWanted == m_shadowSize && m_pointShadowSizeWanted == m_pointShadowSize)
+        return;
+    vkDeviceWaitIdle(m_device);
+    std::string error;
+    if (m_shadowSizeWanted != m_shadowSize) {
+        DestroyShadowMap();
+        m_shadowSize = m_shadowSizeWanted;
+        if (!CreateShadowMap(&error))
+            Log("rvk: sun shadow map %u: %s", m_shadowSize, error.c_str());
+        m_shadowValid = false;
+    }
+    if (m_pointShadowSizeWanted != m_pointShadowSize) {
+        DestroyPointShadowMaps();
+        m_pointShadowSize = m_pointShadowSizeWanted;
+        if (!CreatePointShadowMaps(&error))
+            Log("rvk: point shadow maps %u: %s", m_pointShadowSize, error.c_str());
+        for (PointShadowLight& l : m_pointShadowLights) l = {};
+        m_pointShadowCount = 0;
+    }
+    Log("rvk: shadow maps: sun %u, point lights %u", m_shadowSize, m_pointShadowSize);
+}
+
+bool Device::CreateShadowResources(std::string* error)
+{
+    if (!CreateShadowMap(error))
+        return false;
     VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     si.magFilter = si.minFilter = VK_FILTER_LINEAR;               // 2x2 comparison filtering per tap
     si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
@@ -288,15 +331,10 @@ void Device::DestroyShadowResources()
     if (m_shadowSampler) vkDestroySampler(m_device, m_shadowSampler, nullptr);
     if (m_shadowDepthSampler) vkDestroySampler(m_device, m_shadowDepthSampler, nullptr);
     m_shadowDepthSampler = VK_NULL_HANDLE;
-    if (m_shadowView) vkDestroyImageView(m_device, m_shadowView, nullptr);
-    for (VkImageView& v : m_shadowLayerViews)
-        if (v) { vkDestroyImageView(m_device, v, nullptr); v = VK_NULL_HANDLE; }
-    if (m_shadowImage) vmaDestroyImage(m_allocator, m_shadowImage, m_shadowAllocation);
+    DestroyShadowMap();
     m_shadowPipelineLayout = VK_NULL_HANDLE;
     m_shadowSetLayout = VK_NULL_HANDLE;
     m_shadowSampler = VK_NULL_HANDLE;
-    m_shadowView = VK_NULL_HANDLE;
-    m_shadowImage = VK_NULL_HANDLE;
 }
 
 // Before the frame's first rendering: the map must be in a sampleable layout from the start (cleared = lit).
@@ -896,8 +934,8 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
                  VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 0,
                  VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
                  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-    VkViewport viewport{0.0f, 0.0f, float(kShadowSize), float(kShadowSize), 0.0f, 1.0f};
-    VkRect2D scissor{{0, 0}, {kShadowSize, kShadowSize}};
+    VkViewport viewport{0.0f, 0.0f, float(m_shadowSize), float(m_shadowSize), 0.0f, 1.0f};
+    VkRect2D scissor{{0, 0}, {m_shadowSize, m_shadowSize}};
     m_cachedCastersDrawn = 0;
     ++m_cascadeFrame;
     for (uint32_t c = 0; c < count; ++c) {
@@ -908,7 +946,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         float range = m_shadowRange / std::pow(3.0f, float(count - 1 - c));   // half the cascade's width
         float center[3];
         for (int i = 0; i < 3; ++i) center[i] = eye[i] + forward[i] * range * 0.4f;
-        float texel = 2.0f * range / float(kShadowSize);
+        float texel = 2.0f * range / float(m_shadowSize);
         float cx = std::round(Dot(x, center) / texel) * texel, cy = std::round(Dot(y, center) / texel) * texel;
         float cz = Dot(z, center);
         d3d::Matrix view{};
@@ -930,7 +968,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depthAtt.clearValue.depthStencil = {1.0f, 0};
         VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
-        ri.renderArea = {{0, 0}, {kShadowSize, kShadowSize}};
+        ri.renderArea = {{0, 0}, {m_shadowSize, m_shadowSize}};
         ri.layerCount = 1;
         ri.pDepthAttachment = &depthAtt;
         vkCmdBeginRendering(cmd, &ri);

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <string>
 #include <atomic>
+#include <algorithm>
 #include <unordered_map>
 #include <vector>
 
@@ -210,6 +211,13 @@ public:
     void SetGrassPush(float strength) { m_grassPush = strength; m_frameLightsDirty = true; }
     // Plants' big quads split into pieces for smooth bending (0 = off; 1 = pieces about 0.3 units across).
     void SetPlantDetail(float detail) { m_plantDetail = detail; }
+    // Shadow map sizes in pixels: the sun's (each cascade) and the point lights' (each cube face). Takes effect at
+    // the next frame (the maps are recreated).
+    void SetShadowResolution(uint32_t sun, uint32_t point)
+    {
+        m_shadowSizeWanted = std::clamp<uint32_t>(sun, 512, 8192);
+        m_pointShadowSizeWanted = std::clamp<uint32_t>(point, 128, 2048);
+    }
     // Foliage beyond this distance (world units) is shaded more cheaply (0 = off).
     void SetFoliageLod(float distance) { m_foliageLod = distance; }
     // With HDR: temporal anti-aliasing (jittered scene, resolved against the last frame) and sharpening after it.
@@ -433,7 +441,14 @@ private:
     void CaptureLight(LightSlot& slot);
 
     // Sun shadows (shadow.cpp)
-    static constexpr uint32_t kShadowSize = 4096;
+    uint32_t m_shadowSize = 4096;                // sun shadow map size (pixels, each cascade)
+    uint32_t m_pointShadowSize = 1024;           // point light shadow cube face size (pixels)
+    uint32_t m_shadowSizeWanted = 4096, m_pointShadowSizeWanted = 1024;   // SetShadowResolution: at the next frame
+    bool CreateShadowMap(std::string* error);    // the sun's map image and views (m_shadowSize)
+    void DestroyShadowMap();
+    bool CreatePointShadowMaps(std::string* error);   // the cube array and views (m_pointShadowSize)
+    void DestroyPointShadowMaps();
+    void ApplyShadowResolution();                // at a frame's start: recreates maps whose size changed
     static constexpr uint32_t kShadowCascades = 4;   // layers of the sun shadow map, each 3x the area of the last
     static constexpr float kCasterCacheRange = 60.0f; // remembered casters: kept within 3x, forgotten beyond 4x
     struct ShadowCaster {
@@ -828,7 +843,6 @@ private:
     float m_drawColorScale = 1.0f;               // the current draw's colour multiplier (particles)
 
     // Point light shadows (pointshadow.cpp): a cube map per shadowed light, layers 6*i .. 6*i+5 of one cube array.
-    static constexpr uint32_t kPointShadowSize = 1024;
     static constexpr float kPointShadowNear = 0.25f;   // geometry closer to the light (its fixture) is clipped
     uint32_t m_pointShadows = 0;                 // lights to shadow (0 = off)
     float m_pointShadowStrength = 0.9f, m_pointShadowDay = 0.25f;

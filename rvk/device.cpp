@@ -988,6 +988,7 @@ void Device::BeginFrame()
     WaitFrame(f, "GPU frame work");
     vkResetFences(m_device, 1, &f.fence);
     CollectGarbage();
+    ApplyShadowResolution();
     if (!uploadsPending)
         f.ringOffset = 0;
     ++m_ringGeneration;                          // a different slot's ring: cached offsets are invalid
