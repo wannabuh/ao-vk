@@ -383,7 +383,8 @@ bool Device::CreateMainTargets(std::string* error)
     m_glow = CreateImage(m_width, m_height, Format::RG11B10F, 1, true);
     m_localFraction = CreateImage(m_width, m_height, Format::R8, 1, true);
     m_motionVectors = CreateImage(m_width, m_height, Format::RG16F, 1, true);
-    if (!m_ldrMain || !m_scene || !m_glow || !m_localFraction || !m_motionVectors) {
+    m_albedo = CreateImage(m_width, m_height, Format::A8R8G8B8, 1, true);
+    if (!m_ldrMain || !m_scene || !m_glow || !m_localFraction || !m_motionVectors || !m_albedo) {
         if (error) *error = "main colour target";
         return false;
     }
@@ -453,6 +454,7 @@ void Device::DestroyMainTargets()
     if (m_glow) { DestroyTextureNow(m_glow); m_glow = nullptr; }
     if (m_localFraction) { DestroyTextureNow(m_localFraction); m_localFraction = nullptr; }
     if (m_motionVectors) { DestroyTextureNow(m_motionVectors); m_motionVectors = nullptr; }
+    if (m_albedo) { DestroyTextureNow(m_albedo); m_albedo = nullptr; }
     m_main = nullptr;
     for (auto& [tag, d] : m_deadImages) { vkDestroyImageView(m_device, d.view, nullptr); vmaDestroyImage(m_allocator, d.image, d.allocation); }
     m_deadImages.clear();
@@ -627,15 +629,15 @@ bool Device::CreatePipelines(std::string* error)
     VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     VkPipelineDepthStencilStateCreateInfo dss{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    VkPipelineColorBlendAttachmentState att[4] = {};
+    VkPipelineColorBlendAttachmentState att[5] = {};
     for (auto& a : att) a.colorWriteMask = 0xF;
     VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
     cb.attachmentCount = 1;
     cb.pAttachments = att;
     // 8-bit targets: one colour attachment. HDR scene: the float scene, the glow (additive effects, for the bloom) and
-    // the local-light fraction (for the ambient occlusion).
-    VkFormat colorFormats[4] = {kColorFormat, GetFormatInfo(Format::RG11B10F).vk, GetFormatInfo(Format::R8).vk,
-                                GetFormatInfo(Format::RG16F).vk};      // ... and the motion vectors
+    // the local-light fraction (for the ambient occlusion), the motion vectors and the surface colour (indirect light).
+    VkFormat colorFormats[5] = {kColorFormat, GetFormatInfo(Format::RG11B10F).vk, GetFormatInfo(Format::R8).vk,
+                                GetFormatInfo(Format::RG16F).vk, GetFormatInfo(Format::A8R8G8B8).vk};
     VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     rendering.colorAttachmentCount = 1;
     rendering.pColorAttachmentFormats = colorFormats;
@@ -649,7 +651,7 @@ bool Device::CreatePipelines(std::string* error)
     for (int set = 0; set < 2 && ok; ++set)
     for (int c = 0; c < 3 && ok; ++c) {
         colorFormats[0] = set ? GetFormatInfo(Format::RGBA16F).vk : kColorFormat;
-        rendering.colorAttachmentCount = cb.attachmentCount = set ? 4 : 1;
+        rendering.colorAttachmentCount = cb.attachmentCount = set ? 5 : 1;
         stages[1].module = set ? fragGlow : frag;
         VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         ia.topology = kClassTopology[c];
@@ -895,20 +897,20 @@ void Device::BeginRenderingOn(Texture* target)
     depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    // The HDR scene has the glow and the local-light fraction as further attachments, cleared at their first use in
-    // the frame.
-    VkRenderingAttachmentInfo colors[4] = {color, color, color, color};
+    // The HDR scene has the glow, the local-light fraction, the motion vectors and the surface colour as further
+    // attachments, cleared at their first use in the frame.
+    VkRenderingAttachmentInfo colors[5] = {color, color, color, color, color};
     uint32_t colorCount = 1;
-    if (target == m_scene && m_glow && m_localFraction && m_motionVectors) {
-        Texture* extra[3] = {m_glow, m_localFraction, m_motionVectors};
-        for (int i = 0; i < 3; ++i) {
+    if (target == m_scene && m_glow && m_localFraction && m_motionVectors && m_albedo) {
+        Texture* extra[4] = {m_glow, m_localFraction, m_motionVectors, m_albedo};
+        for (int i = 0; i < 4; ++i) {
             Transition(cmd, extra[i], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
             colors[1 + i].imageView = extra[i]->m_view;
             colors[1 + i].loadOp = m_glowCleared ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
             colors[1 + i].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
         }
         m_glowCleared = true;
-        colorCount = 4;
+        colorCount = 5;
     }
     VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
     ri.renderArea = {{0, 0}, {target->m_width, target->m_height}};

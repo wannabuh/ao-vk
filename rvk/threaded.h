@@ -75,6 +75,7 @@ public:
     void SetBloom(float strength, float threshold);
     void SetEffectGlow(float gain);
     void SetAo(float strength, float radius);
+    void SetGi(float strength, float radius);
     void SetBump(float strength);
     void SetAnisotropy(uint32_t level);
     void SetMotionBlur(float strength, float focusNear);

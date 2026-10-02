@@ -67,6 +67,7 @@ layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outGlow;     // HDR scene only: the glow attachment (F_GLOW)
 layout(location = 2) out vec4 outLocal;    // HDR scene only: the fraction of the colour local lights gave it
 layout(location = 3) out vec4 outMotion;   // HDR scene only: screen motion since last frame, pixels (solid geometry)
+layout(location = 4) out vec4 outAlbedo;   // HDR scene only: the surface's colour without lighting (indirect light)
 #endif
 
 vec4 Arg(uint a, vec4 current, vec4 tex)
@@ -267,8 +268,25 @@ void main()
         }
     }
     vec4 t0 = Sample(0u), t1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
+#ifdef RVK_GLOW
+    // The surface's own colour, for the indirect light it reflects: lit draws through the stages under white light,
+    // unlit ones as they are (the ground's base pass is its bare texture; its lightmap pass keeps this).
+    vec3 albedo;
+    if ((C.flags.x & F_LIGHTING) != 0u) {
+        vec4 d = gDiffuse, sp = gSpecular;
+        gDiffuse = vec4(1.0, 1.0, 1.0, d.a);
+        gSpecular = vec4(0.0);
+        albedo = Cascade(t0, t1, 1.0).rgb;
+        gDiffuse = d;
+        gSpecular = sp;
+    }
+#endif
     t0.rgb *= texShade * gLightmapRelief;
     vec4 current = Cascade(t0, t1, 1.0);
+#ifdef RVK_GLOW
+    if ((C.flags.x & F_LIGHTING) == 0u)
+        albedo = current.rgb;
+#endif
     if (any(greaterThan(gLocalDiffuse + gLocalSpecular, vec3(0.0)))) {
         // What the frame lights add through the stages (with and without them, unclamped), on top of the
         // D3D result: identical to it wherever that didn't clip.
@@ -313,6 +331,9 @@ void main()
             else { float x = C.fogParams.z * d; f = clamp(exp(-x * x), 0.0, 1.0); }
         }
         current.rgb = mix(C.fogColor.rgb, current.rgb, f);
+#ifdef RVK_GLOW
+        albedo *= f;                                      // indirect light fades into the fog with the surface
+#endif
     }
     if ((C.flags.x & F_DEBUGLIGHT) != 0u && (C.vtx.x & 0xEu) != 4u) {
         // Blue: lighting off. Red: lit, but no point / spot light reaches the draw. Green: lit by a point light.
@@ -334,6 +355,8 @@ void main()
     // Motion vectors (written by depth-writing draws only, see the blend state): where this point was last frame.
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * C.viewport.zw * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
+    // Blended with this fragment's alpha like the colour (kept by multiplying and additive passes, see the blend state).
+    outAlbedo = vec4(clamp(albedo, 0.0, 1.0), current.a);
 #endif
     if ((C.flags.x & F_OVERBRIGHT2X) != 0u)
         current.rgb *= 0.5;                               // blended as dst * src * 2

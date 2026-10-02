@@ -625,6 +625,24 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
             c.fractionSrc = fSrc;
             c.fractionDst = fDst;
         }
+        // Attachment 4, the surface colour (indirect light): blended like the colour, kept by multiplying passes (the
+        // ground's lightmap pass: the unlit base pass wrote its colour), additive effects and anything else blending
+        // by the colour already there.
+        uint32_t aSrc = src, aDst = dst;
+        bool byTarget = src == kBlendOverbright2x || src == d3d::BLEND_DESTCOLOR || src == d3d::BLEND_INVDESTCOLOR ||
+                        dst == d3d::BLEND_SRCCOLOR || dst == d3d::BLEND_INVSRCCOLOR;
+        if (blend && (IsMultiplyPass() || byTarget || dst == d3d::BLEND_ONE)) { aSrc = d3d::BLEND_ZERO; aDst = d3d::BLEND_ONE; }
+        if (c.albedoEnable != blend) {
+            vkCmdSetColorBlendEnableEXT(cmd, 4, 1, &blend);
+            c.albedoEnable = blend;
+        }
+        if (c.albedoSrc == ~0u || (blend && (c.albedoSrc != aSrc || c.albedoDst != aDst))) {
+            VkColorBlendEquationEXT eq{BlendFactor(aSrc), BlendFactor(aDst), VK_BLEND_OP_ADD,
+                                       BlendFactor(aSrc), BlendFactor(aDst), VK_BLEND_OP_ADD};
+            vkCmdSetColorBlendEquationEXT(cmd, 4, 1, &eq);
+            c.albedoSrc = aSrc;
+            c.albedoDst = aDst;
+        }
     }
 
     if (c.fvf != fvf) {

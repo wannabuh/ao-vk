@@ -398,6 +398,11 @@ void ThreadedDevice::SetAo(float strength, float radius)
     Enqueue([this, strength, radius](const uint8_t*) { m_device.SetAo(strength, radius); });
 }
 
+void ThreadedDevice::SetGi(float strength, float radius)
+{
+    Enqueue([this, strength, radius](const uint8_t*) { m_device.SetGi(strength, radius); });
+}
+
 void ThreadedDevice::SetEffectGlow(float gain)
 {
     m_effectGlow = gain < 0.0f ? 0.0f : gain;

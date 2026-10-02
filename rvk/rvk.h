@@ -185,6 +185,8 @@ public:
     // With HDR: ambient occlusion from the depth buffer (hdr.cpp). strength 0 = off; radius in world units.
     void SetAo(float strength, float radius) { m_aoStrength = strength; m_aoRadius = radius; }
     float AoStrength() const { return m_aoStrength; }
+    // With HDR: indirect light from the lit scene on screen (hdr.cpp). strength 0 = off; radius in world units.
+    void SetGi(float strength, float radius) { m_giStrength = strength; m_giRadius = radius; }
     void SetEffectGlow(float gain) { if (m_effectGlow != gain) { m_effectGlow = gain; m_constantsDirty = true; } }
     float EffectGlow() const { return m_effectGlow; }
     float BloomStrength() const { return m_bloomStrength; }
@@ -318,6 +320,7 @@ private:
         bool glowBlendSet = false;               // attachment 1 (glow) blend state, HDR pipelines
         uint32_t fractionEnable = ~0u, fractionSrc = ~0u, fractionDst = ~0u;   // attachment 2 (local-light fraction)
         uint32_t motionKeep = ~0u;               // attachment 3 (motion vectors): 1 = kept (draw doesn't write)
+        uint32_t albedoEnable = ~0u, albedoSrc = ~0u, albedoDst = ~0u;   // attachment 4 (surface colour)
     };
 
     bool CreateInstance(std::string* error);
@@ -547,6 +550,11 @@ private:
     float m_aoStrength = 1.0f, m_aoRadius = 1.5f;
     Texture* m_aoTex[2] = {};                    // half resolution: raw, blurred (ping-pong)
     VkPipeline m_aoPipeline = VK_NULL_HANDLE, m_aoBlurPipeline = VK_NULL_HANDLE;
+    float m_giStrength = 1.0f, m_giRadius = 4.0f;
+    Texture* m_albedo = nullptr;                 // fifth scene attachment: surface colour without lighting (fogged)
+    Texture* m_giTex[2] = {};                    // half resolution: indirect light + view depth (ping-pong)
+    VkPipeline m_giPipeline = VK_NULL_HANDLE, m_giBlurPipeline = VK_NULL_HANDLE;
+    bool RenderGi(VkCommandBuffer cmd);
     d3d::Matrix m_aoProj{};                      // the world camera's projection (first depth-writing 3D draw)
     d3d::Matrix m_aoView{};                      // ... and view
     float m_motionBlur = 0.0f, m_motionNear = 8.0f;
@@ -584,9 +592,10 @@ private:
     VkPipeline m_dofCompositePipeline = VK_NULL_HANDLE, m_dofFocusPipeline = VK_NULL_HANDLE,
                m_dofPrefilterPipeline = VK_NULL_HANDLE, m_dofTilesPipeline = VK_NULL_HANDLE,
                m_dofGatherPipeline = VK_NULL_HANDLE, m_dofFinalPipeline = VK_NULL_HANDLE;
-    bool RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, const float tonemapParams[8]);
+    bool RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, const float tonemapParams[8]);
+    static constexpr uint32_t kTonemapInputs = 7;   // occlusion.glsl's bindings
     void TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, Texture* scene, bool bloom, bool ao,
-                           const float params[8]);
+                           bool gi, const float params[8]);
     void MakeDepthReadable(VkCommandBuffer cmd);
     bool m_aoProjValid = false;
     bool RenderAo(VkCommandBuffer cmd);          // false: no AO this frame

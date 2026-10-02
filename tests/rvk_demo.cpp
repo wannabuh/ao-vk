@@ -1402,7 +1402,7 @@ int main(int argc, char** argv)
     float headroom = 1.0f;
     double fadeIn = 0.0;
     bool hdr = false;
-    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, bump = 0.0f;
+    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, bump = 0.0f;
     uint32_t anisotropy = 1;
     float motionBlur = 0.0f, dof = 0.0f, dofFocus = 0.0f;
     bool dofBokeh = true, dofFar = true;
@@ -1445,6 +1445,8 @@ int main(int argc, char** argv)
         else if (a == "--bump" && i + 1 < argc) bump = float(std::atof(argv[++i]));
         else if (a == "--ao" && i + 1 < argc) { ao = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--ao-radius" && i + 1 < argc) aoRadius = float(std::atof(argv[++i]));
+        else if (a == "--gi" && i + 1 < argc) { gi = float(std::atof(argv[++i])); hdr = true; }
+        else if (a == "--gi-radius" && i + 1 < argc) giRadius = float(std::atof(argv[++i]));
         else if (a == "--effect-glow" && i + 1 < argc) effectGlow = float(std::atof(argv[++i]));
         else if (a == "--bloom" && i + 1 < argc) { bloom = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--tonemap-knee" && i + 1 < argc) knee = float(std::atof(argv[++i]));
@@ -1497,6 +1499,7 @@ int main(int argc, char** argv)
     dev.SetBloom(bloom, 1.0f);
     dev.SetEffectGlow(effectGlow);
     dev.SetAo(ao, aoRadius);
+    dev.SetGi(gi, giRadius);
     dev.SetBump(bump);
     dev.SetAnisotropy(anisotropy);
     dev.SetMotionBlur(motionBlur, 8.0f);

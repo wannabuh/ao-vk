@@ -51,6 +51,8 @@ Setting g_settings[] = {
     {"RVK_BloomThr",   "Bloom threshold (1 = above white)",                               "HDR and effects", Float, 0.5f, 2, 0.05f, 1, "RANDYVK_BLOOM_THRESHOLD", 0},
     {"RVK_Ao",         "Ambient occlusion strength (0 = off)",                            "HDR and effects", Float, 0, 3, 0.25f, 1, "RANDYVK_AO", 0},
     {"RVK_AoRadius",   "Ambient occlusion radius (world units)",                          "HDR and effects", Float, 0.25f, 4, 0.25f, 1.5f, "RANDYVK_AO_RADIUS", 0},
+    {"RVK_Gi",         "Indirect light: bounce light from the lit scene (0 = off)",       "HDR and effects", Float, 0, 3, 0.25f, 1, nullptr, 0},
+    {"RVK_GiRadius",   "Indirect light reach (world units)",                              "HDR and effects", Float, 1, 12, 0.5f, 4, nullptr, 0},
     {"RVK_MBlur",      "Motion blur (exposure, fraction of 1/60 s; 0 = off)",             "HDR and effects", Float, 0, 2, 0.05f, 0.5f, "RANDYVK_MOTION_BLUR", 0},
     {"RVK_MBlurObj",   "Per-object motion blur (off = camera only)",                      "HDR and effects", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_MBlurNear",  "Camera motion blur: sharp nearer than (world units)",             "HDR and effects", Float, 2, 20, 0.5f, 8, "RANDYVK_MOTION_BLUR_NEAR", 0},
@@ -145,6 +147,7 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_Bloom") || is("RVK_BloomThr")) d->SetBloom(V("RVK_Bloom"), V("RVK_BloomThr"));
     else if (is("RVK_BloomFx")) d->SetEffectGlow(s.value);
     else if (is("RVK_Ao") || is("RVK_AoRadius")) d->SetAo(V("RVK_Ao"), V("RVK_AoRadius"));
+    else if (is("RVK_Gi") || is("RVK_GiRadius")) d->SetGi(V("RVK_Gi"), V("RVK_GiRadius"));
     else if (is("RVK_MBlur") || is("RVK_MBlurNear")) d->SetMotionBlur(V("RVK_MBlur"), V("RVK_MBlurNear"));
     else if (is("RVK_MBlurObj")) d->SetMotionBlurMode(s.value != 0.0f ? 1u : 0u);
     else if (std::strncmp(n, "RVK_Part", 8) == 0 && !is("RVK_PartCore")) {
