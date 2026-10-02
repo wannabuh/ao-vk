@@ -1,8 +1,11 @@
-# randy-vk
+# ao-vk
 
 A modern Vulkan renderer for Anarchy Online (the Project Rubi-Ka client), dropped in as a replacement for the
-game's renderer DLL, `randy31.dll`. The game keeps running its own code; randy-vk takes over the Direct3D 7 drawing
+game's renderer DLL, `randy31.dll`. The game keeps running its own code; ao-vk takes over the Direct3D 7 drawing
 underneath it and draws everything with Vulkan, adding modern lighting, shadows and effects while doing so.
+
+(Its files still carry the project's earlier name, randy-vk: `randy-vk.ini`, `randy-vk.log`, the `RANDYVK_*`
+environment variables.)
 
 It is client-side only: no game files, network traffic or gameplay are changed, and no Funcom files are part of this
 repository. Every enhancement can be switched off (in-game or with one hotkey) to get the game's own look back.
@@ -75,39 +78,39 @@ You need up to two files from a [release](../../releases) (or your own build, se
 
 | File | What it is |
 | --- | --- |
-| `randy31.dll` | randy-vk itself |
+| `randy31.dll` | ao-vk itself |
 | `version.dll` | optional: [AOReloaded](https://github.com/wannabuh/AOReloaded) with an in-game **Renderer** settings tab |
 
 ### Steps (Windows and Wine alike)
 
 1. **Close the game** and open your Anarchy Online client folder (the one with `AnarchyOnline.exe`).
 2. **Keep the game's own renderer:** rename (or copy) the existing `randy31.dll` to **`randy31_orig.dll`**.
-   randy-vk loads it and lets the game's renderer code do its usual work; it must sit in the same folder.
-3. **Copy randy-vk's `randy31.dll`** into the client folder.
+   ao-vk loads it and lets the game's renderer code do its usual work; it must sit in the same folder.
+3. **Copy ao-vk's `randy31.dll`** into the client folder.
 4. Optional: **copy AOReloaded's `version.dll`** into the client folder for the in-game settings tab
    (Options, F10, **Renderer** tab). Without it, settings are changed in `randy-vk.ini` or with the hotkeys.
-5. **Start the game as usual** (launcher or `AnarchyOnline.exe`). randy-vk creates `randy-vk.ini` (settings) and
+5. **Start the game as usual** (launcher or `AnarchyOnline.exe`). ao-vk creates `randy-vk.ini` (settings) and
    `randy-vk.log` (log) in the client folder on the first start.
 
 To check it is active: the log's first lines say `rvk backend installed` and name your GPU, and Ctrl+Shift+E
-switches between randy-vk's look and the game's own.
+switches between ao-vk's look and the game's own.
 
 ### Wine / Linux notes
 
-- Use a prefix where Vulkan works (any DXVK game in it proves that). randy-vk talks to Vulkan directly; it does
+- Use a prefix where Vulkan works (any DXVK game in it proves that). ao-vk talks to Vulkan directly; it does
   not need DXVK.
 - The game still asks DirectDraw for display information outside the renderer. Wine's builtin DirectDraw should do
   for that; the tested setup used D7VK as the prefix's DirectDraw, which works. dgVoodoo is not needed.
 
 ### After a game patch
 
-The game's patcher may replace `randy31.dll` with a fresh stock one. If randy-vk's look is gone after an update:
+The game's patcher may replace `randy31.dll` with a fresh stock one. If ao-vk's look is gone after an update:
 rename the new `randy31.dll` to `randy31_orig.dll` again (it may be a newer version of the game's renderer) and put
-randy-vk's `randy31.dll` back.
+ao-vk's `randy31.dll` back.
 
 ### Uninstalling
 
-Delete randy-vk's `randy31.dll`, rename `randy31_orig.dll` back to `randy31.dll`, and delete `randy-vk.ini` /
+Delete ao-vk's `randy31.dll`, rename `randy31_orig.dll` back to `randy31.dll`, and delete `randy-vk.ini` /
 `randy-vk.log` if you like. Remove `version.dll` to remove AOReloaded.
 
 ## Settings
@@ -145,7 +148,7 @@ Some useful ones:
 | L | reload the colour look-up tables | F11 | lighting debug view |
 | F9 | frame dump (draw list + screenshot next to the log) | O | profiling sweep (below) |
 
-**Profiling sweep (Ctrl+Shift+O):** stand still for a minute or two; randy-vk switches each enhancement off in turn,
+**Profiling sweep (Ctrl+Shift+O):** stand still for a minute or two; ao-vk switches each enhancement off in turn,
 measures, and writes lines like `sweep sun shadows off (133.6 fps): gpu ms: ...` to the log. It shows what each
 feature costs exactly where you are.
 
@@ -153,7 +156,7 @@ feature costs exactly where you are.
 
 | Variable | |
 | --- | --- |
-| `RANDYVK_DDRAW` | `rvk` (default): render with randy-vk. `off`: the game's stock renderer, randy-vk passing everything through. `trace`: the stock renderer, counting its Direct3D calls |
+| `RANDYVK_DDRAW` | `rvk` (default): render with ao-vk. `off`: the game's stock renderer, ao-vk passing everything through. `trace`: the stock renderer, counting its Direct3D calls |
 | `RANDYVK_THREADED` | `0` runs the Vulkan work on the game's thread (for comparison) |
 | `RANDYVK_LOG` | log file path (default `randy-vk.log` in the client folder; moved to `randy-vk.old.log` once over 8 MB) |
 
@@ -169,7 +172,7 @@ feature costs exactly where you are.
 ## How it works
 
 The built `randy31.dll` exports the same 771 functions as the game's original. Almost all of them forward to the
-original (`randy31_orig.dll`), so the game's renderer code still manages its scene; randy-vk replaces what is under
+original (`randy31_orig.dll`), so the game's renderer code still manages its scene; ao-vk replaces what is under
 it: the original's Direct3D 7 / DirectDraw calls are redirected to an implementation of those interfaces on top of
 **rvk**, a Vulkan 1.3 renderer shaped like Direct3D 7's fixed-function pipeline (`docs/rvk.md`), which adds the
 enhancements. A few exports are implemented directly (texture creation, to identify game textures).
