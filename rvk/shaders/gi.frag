@@ -1,5 +1,5 @@
 #version 450
-// Indirect light (hdr.cpp), at half resolution: the light the lit scene on screen reflects onto each surface point -
+// Indirect light (hdr.cpp), at quarter resolution (it is very soft): the light the lit scene on screen reflects onto each surface point -
 // one bounce, gathered from the HDR scene along the same kind of horizon search as the ambient occlusion. Per
 // direction, a sample adds its light only where it rises above everything nearer in that direction (what it shows
 // of the hemisphere above the point), so light doesn't come through walls. Output: incoming light (the tone mapping
@@ -8,7 +8,7 @@ layout(set = 0, binding = 0) uniform sampler2D depthTex;
 layout(set = 0, binding = 1) uniform sampler2D scene;     // HDR scene, full resolution
 layout(push_constant) uniform Push {
     vec4 proj;          // D3D projection: m[2][2], m[3][2], m[0][0], m[1][1]
-    vec4 params;        // radius (world units), unused, full target width, height
+    vec4 params;        // radius (world units), this frame's noise offset, full target width, height
 } P;
 layout(location = 0) out vec4 outGi;
 
@@ -25,7 +25,7 @@ vec3 ViewPos(vec2 pix, out bool sky)
 
 void main()
 {
-    vec2 pix = floor(gl_FragCoord.xy) * 2.0;     // the full-resolution pixel this one stands for
+    vec2 pix = floor(gl_FragCoord.xy) * 4.0;     // the full-resolution pixel this one stands for
     bool sky;
     vec3 p = ViewPos(pix, sky);
     if (sky) { outGi = vec4(0.0, 0.0, 0.0, 1e6); return; }
@@ -39,7 +39,7 @@ void main()
 
     float radius = P.params.x;
     float pixRadius = clamp(radius * P.proj.z * 0.5 * P.params.z / p.z, 4.0, 0.25 * P.params.z);
-    float noise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    float noise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + P.params.y);
     const int kDirs = 8, kSteps = 8;
     vec3 light = vec3(0.0);
     for (int i = 0; i < kDirs; ++i) {

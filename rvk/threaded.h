@@ -79,6 +79,8 @@ public:
     void SetColorLut(uint32_t slot, uint32_t size, const uint8_t* rgba);   // copied
     void SetSway(float strength);
     void SetTaa(bool enable, float sharpen);
+    void ProfileWindow(bool start, const std::string& label);
+    void ProfileManualEnd();
     void SetSunSoftness(float s);
     void SetLeafLight(float s);
     void SetNightGlow(float s);

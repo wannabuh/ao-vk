@@ -1,5 +1,5 @@
 #version 450
-// Indirect light (hdr.cpp): separable blur at half resolution, taps spread by params.z texels - the sampling pattern
+// Indirect light (hdr.cpp): separable blur at quarter resolution, taps spread by params.z texels - the sampling pattern
 // is coarse, the light it gathers smooth. Only taps on the centre's surface plane mix in (planes from the depth
 // buffer), so a wall's light doesn't spread onto the floor behind it, while a floor at a grazing angle - its depth
 // changing quickly - still blurs along itself.
@@ -25,7 +25,7 @@ void main()
     ivec2 c = ivec2(gl_FragCoord.xy), size = textureSize(src, 0);
     vec4 centre = texelFetch(src, c, 0);
     if (centre.a >= 1e5) { outGi = centre; return; }              // sky
-    vec2 pix = vec2(c) * 2.0;
+    vec2 pix = vec2(c) * 4.0;
     vec3 p = ViewPos(pix);
     vec3 r = ViewPos(pix + vec2(1, 0)) - p, l = p - ViewPos(pix - vec2(1, 0));
     vec3 d = ViewPos(pix + vec2(0, 1)) - p, u = p - ViewPos(pix - vec2(0, 1));
@@ -37,7 +37,7 @@ void main()
         ivec2 q = clamp(c + ivec2(P.params.xy * P.params.z) * i, ivec2(0), size - 1);
         vec4 s = texelFetch(src, q, 0);
         if (s.a >= 1e5) continue;
-        float off = abs(dot(n, ViewPos(vec2(q) * 2.0) - p)) / max(p.z, 1e-3);   // distance from the plane, by depth
+        float off = abs(dot(n, ViewPos(vec2(q) * 4.0) - p)) / max(p.z, 1e-3);   // distance from the plane, by depth
         float w = exp(-float(i * i) / 8.0) * exp(-off * 200.0);
         sum += s.rgb * w;
         weight += w;

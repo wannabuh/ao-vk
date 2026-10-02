@@ -274,7 +274,8 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     Wind(fl->wind);
     fl->taa[0] = TaaActive() ? m_taaJitter[0] : 0.0f;
     fl->taa[1] = TaaActive() ? m_taaJitter[1] : 0.0f;
-    fl->taa[2] = fl->taa[3] = 0.0f;
+    fl->taa[2] = FrameNoise();                   // noise patterns move on each frame (averaged by the TAA)
+    fl->taa[3] = 0.0f;
     fl->shadowParams[0] = m_shadowValid ? 1.0f : 0.0f;
     fl->shadowParams[1] = m_shadowStrength;
     fl->shadowParams[2] = float(m_cascadeCount);

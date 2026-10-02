@@ -20,14 +20,14 @@ layout(push_constant) uniform Push {
     vec4 grade2;        // night (0 day .. 1 night), night tint, vignette, unused
 } P;
 
-// A half-resolution image at this pixel: of the 4 nearest texels, those at this pixel's depth (the same surface,
+// A reduced-resolution image at this pixel: of the 4 nearest texels, those at this pixel's depth (the same surface,
 // view depth in channel depthChannel), so an object's occlusion or light doesn't spill onto the background around
 // its outline.
-vec4 Upsample(sampler2D t, int depthChannel)
+vec4 Upsample(sampler2D t, int depthChannel, float scale)
 {
     ivec2 pix = ivec2(gl_FragCoord.xy), size = textureSize(t, 0);
     float z = P.proj.y / (min(texelFetch(depthTex, pix, 0).r, 0.999999) - P.proj.x);
-    vec2 h = gl_FragCoord.xy * 0.5 - 0.5;        // texel i stands for full-resolution pixel 2i
+    vec2 h = (gl_FragCoord.xy - 0.5) / scale;    // texel i stands for full-resolution pixel scale * i
     ivec2 base = ivec2(floor(h));
     vec2 f = h - vec2(base);
     vec4 sum = vec4(0.0);
@@ -46,14 +46,14 @@ vec4 Upsample(sampler2D t, int depthChannel)
 float Occlusion()
 {
     if (texelFetch(depthTex, ivec2(gl_FragCoord.xy), 0).r >= 1.0) return 1.0;
-    return Upsample(ao, 1).r;
+    return Upsample(ao, 1, 2.0).r;
 }
 
 // The light surfaces reflect from the lit scene around them (indirect light x their own colour); 0 when off.
 vec3 Indirect()
 {
     if (P.proj.z <= 0.0 || texelFetch(depthTex, ivec2(gl_FragCoord.xy), 0).r >= 1.0) return vec3(0.0);
-    return Upsample(gi, 3).rgb * texelFetch(albedo, ivec2(gl_FragCoord.xy), 0).rgb * P.proj.z;
+    return Upsample(gi, 3, 4.0).rgb * texelFetch(albedo, ivec2(gl_FragCoord.xy), 0).rgb * P.proj.z;
 }
 
 // What the scene's colour is multiplied by for ambient occlusion - which takes ambient light away, not the light
@@ -68,7 +68,7 @@ float AmbientFactor()
     // Contact shadows take away the direct sunlight's share of the colour (the local-fraction target's B).
     if ((int(P.proj.w) & 8) != 0 && texelFetch(depthTex, ivec2(gl_FragCoord.xy), 0).r < 1.0) {
         float sunShare = texelFetch(localFraction, ivec2(gl_FragCoord.xy), 0).b;
-        factor *= 1.0 - (1.0 - Upsample(contact, 1).r) * sunShare;
+        factor *= 1.0 - (1.0 - Upsample(contact, 1, 2.0).r) * sunShare;
     }
     return factor;
 }
@@ -77,7 +77,7 @@ float AmbientFactor()
 vec3 Volumetric()
 {
     if ((int(P.proj.w) & 1) == 0) return vec3(0.0);
-    return Upsample(volume, 3).rgb;
+    return Upsample(volume, 3, 2.0).rgb;
 }
 
 // The surface's colour with its reflection over it (screen-space reflections).

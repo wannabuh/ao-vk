@@ -25,21 +25,17 @@ float Weight(vec4 c) { return 1.0 / (1.0 + max(c.r, max(c.g, c.b))); }
 
 float Luma(vec3 c) { return dot(c, vec3(0.3, 0.59, 0.11)); }
 
+float gInvZ = 0.0;                              // first pass: 1 / view depth at this pixel's centre
+
 // A tap: the source, or in the first pass the scene's light above the threshold plus the glow, and its brightness
-// over its view depth.
+// over its view depth - the scene's light at the depth of the pixel's centre (one depth read for all 13 taps; the
+// levels average it anyway), the glow (effects, which don't write depth) with its own.
 vec4 Tap(vec2 uv)
 {
     if (P.params.w > 0.5) {
-        // The scene's light is as far away as the depth buffer says; the glow (effects, which don't write depth)
-        // brings its own brightness / depth.
         vec3 lit = Prefilter(texture(src, uv).rgb);
         vec4 g = texture(glow, uv);
-        float invZ = 0.0;
-        if (P.proj.z > 0.5) {
-            float d = textureLod(depthTex, uv, 0.0).r;
-            invZ = d >= 1.0 ? 0.0 : (d - P.proj.x) / P.proj.y;   // 1 / z; the sky: infinitely far
-        }
-        return vec4(lit + g.rgb, Luma(lit) * invZ + g.a);
+        return vec4(lit + g.rgb, Luma(lit) * gInvZ + g.a);
     }
     return texture(src, uv);
 }
@@ -47,6 +43,10 @@ vec4 Tap(vec2 uv)
 void main()
 {
     vec2 ts = P.params.xy, uv = gl_FragCoord.xy * 2.0 * ts;   // centre of this pixel in the (2x larger) source
+    if (P.params.w > 0.5 && P.proj.z > 0.5) {
+        float d = textureLod(depthTex, uv, 0.0).r;
+        gInvZ = d >= 1.0 ? 0.0 : (d - P.proj.x) / P.proj.y;   // the sky: infinitely far
+    }
     vec4 a = Tap(uv + ts * vec2(-2, -2)), b = Tap(uv + ts * vec2(0, -2));
     vec4 c = Tap(uv + ts * vec2(2, -2)), d = Tap(uv + ts * vec2(-2, 0));
     vec4 e = Tap(uv), f = Tap(uv + ts * vec2(2, 0));

@@ -146,21 +146,25 @@ float CascadeVisibility(int c, vec3 posW, vec3 n, float nl, out float edge)
         return sum / 9.0;
     }
     float texel = FL.cascadeTexel[c];
-    float rotation = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    float rotation = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + FL.taa.z);
     float k = 0.02 * soft;                       // penumbra width per world unit from blocker to receiver
-    // Blockers: depths in front of the receiver within the widest penumbra (blockers up to ~30 units away).
+    // Blockers: depths in front of the receiver within the widest penumbra (blockers up to ~30 units away). None:
+    // lit; all: deep in the shadow (the filter wouldn't reach out of it) - both without the filter.
+    // The centre too: a thin shadow (a pole) must not fall between the taps.
     float searchTexels = clamp(k * 30.0 / texel, 1.5, 24.0), blockerSum = 0.0, blockers = 0.0;
-    for (int i = 0; i < 12; ++i) {
-        float d = texture(shadowDepths, vec3(uv + Vogel(i, 12, rotation) * searchTexels * ts, float(c))).r;
+    for (int i = 0; i < 9; ++i) {
+        vec2 o = i == 8 ? vec2(0.0) : Vogel(i, 8, rotation) * searchTexels * ts;
+        float d = texture(shadowDepths, vec3(uv + o, float(c))).r;
         if (d < ndc.z) { blockerSum += d; blockers += 1.0; }
     }
     if (blockers == 0.0) return 1.0;
+    if (blockers == 9.0) return 0.0;
     float distance = (ndc.z - blockerSum / blockers) * FL.cascadeDepth[c];
     float radius = clamp(distance * k / texel, 1.0, 24.0);
     float sum = 0.0;
-    for (int i = 0; i < 16; ++i)
-        sum += texture(shadowMap, vec4(uv + Vogel(i, 16, rotation) * radius * ts, float(c), ndc.z));
-    return sum / 16.0;
+    for (int i = 0; i < 12; ++i)
+        sum += texture(shadowMap, vec4(uv + Vogel(i, 12, rotation) * radius * ts, float(c), ndc.z));
+    return sum / 12.0;
 }
 
 // The texture's mean alpha around a point (~16 texels across): a coarse mip, or without mips a ring of taps.

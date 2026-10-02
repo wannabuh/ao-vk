@@ -275,6 +275,25 @@ float Get(const char* name)
     return Stored(name);
 }
 
+// Puts a value into effect without storing it (the profiling sweep); Restore puts the stored one back.
+void ApplyTemporary(const char* name, float value)
+{
+    Load();
+    Setting* s = Find(name);
+    if (!s || !g_rvk.device) return;
+    float stored = s->value;
+    s->value = value;
+    Apply(*s, g_rvk.device);
+    s->value = stored;
+}
+
+void Restore(const char* name)
+{
+    Load();
+    Setting* s = Find(name);
+    if (s && g_rvk.device) Apply(*s, g_rvk.device);
+}
+
 float GetEffective(const char* name)
 {
     Load();

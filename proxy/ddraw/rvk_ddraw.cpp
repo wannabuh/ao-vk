@@ -102,6 +102,55 @@ void RvkState::SetWindow(HWND hwnd)
     }
 }
 
+// Ctrl+Shift+O: what each enhancement costs here - every one switched off in turn (in effect only, not saved) for
+// kSweepSettle + kSweepMeasure frames, the GPU passes measured over the last kSweepMeasure, logged as
+// "sweep <label>: gpu ms: ...". A baseline first and last (drift). Stand still while it runs (~1-2 min).
+static void ProfileSweep(bool start)
+{
+    struct Step { const char* label; const char* setting; float value; };
+    static const Step kSteps[] = {
+        {"baseline", nullptr, 0}, {"soft shadows off", "RVK_SunSoft", 0}, {"point shadows off", "RVK_PtShadows", 0},
+        {"sun shadows off", "RVK_SunShadow", 0}, {"contact shadows off", "RVK_Contact", 0},
+        {"leaf light off", "RVK_LeafLight", 0}, {"relief (bump) off", "RVK_Bump", 0}, {"light override off", "RVK_LightOver", 0},
+        {"per-pixel lighting off", "RVK_PixelLight", 0}, {"night glow off", "RVK_NightGlow", 0}, {"sway off", "RVK_Sway", 0},
+        {"gi off", "RVK_Gi", 0}, {"ao off", "RVK_Ao", 0}, {"volumetric off", "RVK_Volume", 0}, {"reflections off", "RVK_Ssr", 0},
+        {"dof off", "RVK_Dof", 0}, {"motion blur off", "RVK_MBlur", 0}, {"taa off", "RVK_Taa", 0}, {"bloom off", "RVK_Bloom", 0},
+        {"particles off", "RVK_Particles", 0}, {"hdr off", "RVK_Hdr", 0}, {"baseline again", nullptr, 0},
+    };
+    constexpr unsigned kSweepSettle = 120, kSweepMeasure = 300;
+    constexpr unsigned kCount = sizeof(kSteps) / sizeof(kSteps[0]);
+    static int step = -1;
+    static unsigned frame;
+    static DWORD stepTick;
+    rvk::ThreadedDevice* device = g_rvk.device;
+    if (!device) return;
+    if (start && step < 0) {
+        step = 0;
+        frame = 0;
+        RvkLog("sweep: started - stand still");
+    }
+    if (step < 0) return;
+    const Step& s = kSteps[step];
+    if (frame == 0 && s.setting)
+        rvk_settings::ApplyTemporary(s.setting, s.value);
+    if (frame == kSweepSettle) {
+        device->ProfileWindow(true, "");
+        stepTick = GetTickCount();
+    }
+    if (++frame < kSweepSettle + kSweepMeasure) return;
+    char label[96];
+    std::snprintf(label, sizeof(label), "sweep %s (%.1f fps): ", s.label,
+                  1000.0 * kSweepMeasure / std::max<double>(GetTickCount() - stepTick, 1.0));
+    device->ProfileWindow(false, label);
+    if (s.setting) rvk_settings::Restore(s.setting);
+    frame = 0;
+    if (++step == int(kCount)) {
+        step = -1;
+        device->ProfileManualEnd();
+        RvkLog("sweep: done");
+    }
+}
+
 void RvkState::Frame()
 {
     if (device && !device->InFrame())
@@ -188,6 +237,7 @@ void RvkState::Present()
         RvkLog("frame dump: %s.txt / .bmp", base);
     }
     f9Down = f9;
+    ProfileSweep(pressed('O'));
     // Heartbeat: shows whether frames keep coming (a frozen picture vs. a hung game).
     static unsigned frames;
     static DWORD lastTick = GetTickCount();

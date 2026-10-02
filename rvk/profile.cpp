@@ -67,8 +67,8 @@ void Device::ProfileBeginFrame(VkCommandBuffer cmd)
     vkCmdResetQueryPool(cmd, p.pool, 0, kProfileMarks);
     m_profileCpuStart = CpuNow();
     ProfileMark("start");
-    if (m_profileFrames >= kProfileFrames)
-        ProfileLog();
+    if (m_profileFrames >= kProfileFrames && !m_profileManual)
+        ProfileLog("");
 }
 
 // A GPU timestamp after everything recorded so far; the interval up to it is named `name` (a string literal).
@@ -92,8 +92,24 @@ void Device::ProfileAdd(std::vector<std::pair<const char*, double>>& sums, const
     sums.push_back({name, ms});
 }
 
-void Device::ProfileLog()
+// A measurement window for the settings sweep (rvk_ddraw.cpp): automatic logging off while one runs.
+void Device::ProfileWindow(bool start, const char* label)
 {
+    m_profileManual = true;
+    if (start) {
+        m_profileGpu.clear();
+        m_profileCpu.clear();
+        m_profileFrames = 0;
+    } else {
+        ProfileLog(label);
+    }
+}
+
+void Device::ProfileManualEnd() { m_profileManual = false; }
+
+void Device::ProfileLog(const char* label)
+{
+    if (!m_profileFrames) return;
     auto line = [&](const char* label, std::vector<std::pair<const char*, double>>& sums) {
         std::string out = label;
         char buf[64];
@@ -102,7 +118,7 @@ void Device::ProfileLog()
             out += buf;
         }
         if (!out.empty() && out.back() == '|') out.pop_back();
-        Log("%s (avg of %u frames)", out.c_str(), m_profileFrames);
+        Log("%s%s (avg of %u frames)", label, out.c_str(), m_profileFrames);
         sums.clear();
     };
     line("gpu ms:", m_profileGpu);

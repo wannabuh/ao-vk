@@ -448,6 +448,16 @@ void ThreadedDevice::SetColorLut(uint32_t slot, uint32_t size, const uint8_t* rg
     });
 }
 
+void ThreadedDevice::ProfileWindow(bool start, const std::string& label)
+{
+    Enqueue([this, start, label](const uint8_t*) { m_device.ProfileWindow(start, label.c_str()); });
+}
+
+void ThreadedDevice::ProfileManualEnd()
+{
+    Enqueue([this](const uint8_t*) { m_device.ProfileManualEnd(); });
+}
+
 void ThreadedDevice::SetTaa(bool enable, float sharpen)
 {
     Enqueue([this, enable, sharpen](const uint8_t*) { m_device.SetTaa(enable, sharpen); });

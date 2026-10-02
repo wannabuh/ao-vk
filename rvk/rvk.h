@@ -597,6 +597,8 @@ private:
     uint64_t m_taaFrame = ~0ull;                 // frame of the last resolve (history valid if it was the previous)
     VkPipeline m_taaPipeline = VK_NULL_HANDLE, m_sharpenPipeline = VK_NULL_HANDLE;
     bool TaaActive() const { return m_taa && m_hdr; }
+    // A per-frame offset (0..1) for the noise patterns of sampled effects while the TAA averages frames; else 0.
+    float FrameNoise() const { return TaaActive() ? float(m_frameNumber % 64 * 618034 % 1000000) * 1e-6f : 0.0f; }
     bool TaaParams(float out[24]);               // before MotionBlurParams (it moves on the last frame's camera)
     void RenderTaa(VkCommandBuffer cmd, Texture* dst, const float params[24]);
     float m_bloomOverNearer = 0.15f;             // bloom left on objects in front of its light (1 = all)
@@ -878,7 +880,13 @@ private:
     double ProfileCpu() const;
     void ProfileCpuAdd(const char* name, double since);
     static void ProfileAdd(std::vector<std::pair<const char*, double>>& sums, const char* name, double ms);
-    void ProfileLog();
+    void ProfileLog(const char* label);
+    bool m_profileManual = false;
+public:
+    // The settings sweep's measurement windows: start (clears) / end (logs with the label). Automatic logging pauses.
+    void ProfileWindow(bool start, const char* label);
+    void ProfileManualEnd();
+private:
     uint32_t m_frameIndex = 0;
     bool m_inFrame = false;
     bool m_rendering = false;

@@ -631,13 +631,13 @@ bool Device::RenderAo(VkCommandBuffer cmd)
     return true;
 }
 
-// Indirect light (gi.frag): one bounce of the lit HDR scene, gathered at half resolution from the depth buffer and the
+// Indirect light (gi.frag): one bounce of the lit HDR scene, gathered at quarter resolution from the depth buffer and the
 // scene, blurred both ways (depth-aware); m_giTex[1] holds it. Like the AO, needs the world camera's projection.
 bool Device::RenderGi(VkCommandBuffer cmd)
 {
     if (m_giStrength <= 0.0f || !m_aoProjValid || m_aoProj.m[2][3] != 1.0f || m_aoProj.m[3][3] != 0.0f || !m_depth)
         return false;
-    uint32_t w = std::max(1u, m_scene->m_width / 2), h = std::max(1u, m_scene->m_height / 2);
+    uint32_t w = std::max(1u, (m_scene->m_width + 3) / 4), h = std::max(1u, (m_scene->m_height + 3) / 4);
     if (!m_giTex[0] || m_giTex[0]->m_width != w || m_giTex[0]->m_height != h) {
         for (Texture*& t : m_giTex) {
             if (t) DestroyTexture(t);
@@ -648,9 +648,9 @@ bool Device::RenderGi(VkCommandBuffer cmd)
     }
     MakeDepthReadable(cmd);
     float params[8] = {m_aoProj.m[2][2], m_aoProj.m[3][2], m_aoProj.m[0][0], m_aoProj.m[1][1],
-                       m_giRadius, 0.0f, float(m_scene->m_width), float(m_scene->m_height)};
+                       m_giRadius, FrameNoise(), float(m_scene->m_width), float(m_scene->m_height)};
     FullscreenPass(cmd, m_giTex[0], m_giPipeline, m_depthView, m_scene->m_view, m_pointSampler, params, sizeof(params), false);
-    // Two blurs each way: wide taps, then the gaps between them.
+    // Two blurs each way (quarter resolution): wide taps, then the gaps between them.
     static const float kPasses[4][2] = {{1, 0}, {0, 1}, {1, 0}, {0, 1}};
     for (int pass = 0; pass < 4; ++pass) {
         Texture* src = m_giTex[pass & 1];
