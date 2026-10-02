@@ -1027,6 +1027,7 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
 
 bool g_slabTest = false;   // --point-shadow-slab
 bool g_twoLamps = false;   // --two-lamps: the point shadow test with a second lamp
+bool g_lampWobble = false; // --lamp-wobble: lamp positions change in their last bits each frame
 bool g_nightSign = false;  // --night-glow: the point shadow test gets an unlit sign of lit windows (night glow)
 float g_off[3] = {};        // --world-offset x y z: the scene far from the origin, like Anarchy Online's world
 Matrix Offset()
@@ -1101,11 +1102,14 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
             lamp.attenuation1 = 0.1631f;
         }
         lamp.position = {lamp.position.x + g_off[0], lamp.position.y + g_off[1], lamp.position.z + g_off[2]};
+        // --lamp-wobble: the position moves in its last bits from frame to frame, as the game's lamps do.
+        float wobble = g_lampWobble && (frame & 1) ? 1e-4f : 0.0f;
+        lamp.position.x += wobble;
         dev.SetLight(0, lamp);
         dev.LightEnable(0, true);
         if (g_twoLamps) {                      // --two-lamps: a second shadowed lamp (cube slots skipping frames)
             Light lamp2 = lamp;
-            lamp2.position = {-4.0f + g_off[0], 1.5f + g_off[1], 5.0f + g_off[2]};
+            lamp2.position = {-4.0f + g_off[0] + wobble, 1.5f + g_off[1], 5.0f + g_off[2]};
             lamp2.diffuse = {0.5f, 0.7f, 1.0f, 1};
             dev.SetLight(2, lamp2);
             dev.LightEnable(2, true);
@@ -1501,6 +1505,7 @@ int main(int argc, char** argv)
         else if (a == "--taa") taa = true;
         else if (a == "--sun-view") g_sunView = true;
         else if (a == "--two-lamps") g_twoLamps = true;
+        else if (a == "--lamp-wobble") g_lampWobble = true;
         else if (a == "--sharpen" && i + 1 < argc) sharpen = float(std::atof(argv[++i]));
         else if (a == "--grade" && i + 5 < argc) {   // saturation contrast warmth night-tint vignette
             saturation = float(std::atof(argv[++i])); contrast = float(std::atof(argv[++i]));
