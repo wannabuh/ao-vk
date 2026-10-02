@@ -1013,6 +1013,7 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
 }
 
 bool g_slabTest = false;   // --point-shadow-slab
+bool g_nightSign = false;  // --night-glow: the point shadow test gets an unlit sign of lit windows (night glow)
 float g_off[3] = {};        // --world-offset x y z: the scene far from the origin, like Anarchy Online's world
 Matrix Offset()
 {
@@ -1032,6 +1033,8 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
     // --point-shadow-sun: daytime - a sun (with its shadows) and a brighter lightmap with the sun baked in.
     std::vector<uint32_t> lightmapPixels(64, sun ? 0xFFE8E8E8 : 0xFF202020);
     Texture* lightmap = dev.CreateTexture(8, 8, lightmapPixels.data());
+    auto windowPixels = Checker(64, 16, 0xFFFFD890, 0xFF1A1C24);
+    Texture* windows = dev.CreateTexture(64, 64, windowPixels.data());
     struct VtxTerrain { float x, y, z, nx, ny, nz, u0, v0, u1, v1; };
     const uint32_t kFvfTerrain = FVF_XYZ | FVF_NORMAL | (2 << 8);
     std::vector<VtxTerrain> terrain;
@@ -1122,6 +1125,17 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
         dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
         dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
         dev.SetRenderState(RS_AMBIENT, 0xFF181818);
+        if (g_nightSign) {
+            // A building's lit windows: an unlit, textured, opaque quad standing behind the scene.
+            struct VtxSign { float x, y, z; uint32_t c; float u, v; };
+            VtxSign q[4] = {{-7, 0, 9, 0xFFFFFFFF, 0, 1}, {-1, 0, 9, 0xFFFFFFFF, 3, 1},
+                            {-1, 4, 9, 0xFFFFFFFF, 3, 0}, {-7, 4, 9, 0xFFFFFFFF, 0, 0}};
+            dev.SetRenderState(RS_LIGHTING, 0);
+            dev.SetTexture(0, windows);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+            dev.DrawPrimitive(TriangleFan, FVF_XYZ | FVF_DIFFUSE | (1 << 8), q, 4);
+            dev.SetRenderState(RS_LIGHTING, 1);
+        }
         if (g_slabTest) {
             // Like the city floors: a static platform (XYZ | NORMAL | TEX1) blended SRCALPHA/INVSRCALPHA with depth
             // writes, its top 1 unit below the lamp, lit by material (ambient 0x6F).
@@ -1187,6 +1201,7 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
     }
     dev.DestroyTexture(ground);
     dev.DestroyTexture(lightmap);
+    dev.DestroyTexture(windows);
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
@@ -1402,7 +1417,7 @@ int main(int argc, char** argv)
     float headroom = 1.0f;
     double fadeIn = 0.0;
     bool hdr = false;
-    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, bump = 0.0f;
+    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, bump = 0.0f;
     uint32_t anisotropy = 1;
     float motionBlur = 0.0f, dof = 0.0f, dofFocus = 0.0f;
     bool dofBokeh = true, dofFar = true;
@@ -1452,6 +1467,10 @@ int main(int argc, char** argv)
         else if (a == "--ssr" && i + 1 < argc) { ssr = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--ssr-wet" && i + 1 < argc) ssrWet = float(std::atof(argv[++i]));
         else if (a == "--bloom-occ" && i + 1 < argc) bloomOcc = float(std::atof(argv[++i]));
+        else if (a == "--sun-soft" && i + 1 < argc) sunSoft = float(std::atof(argv[++i]));
+        else if (a == "--leaf" && i + 1 < argc) leaf = float(std::atof(argv[++i]));
+        else if (a == "--night-glow" && i + 1 < argc) { nightGlow = float(std::atof(argv[++i])); g_nightSign = true; }
+        else if (a == "--contact" && i + 1 < argc) contact = float(std::atof(argv[++i]));
         else if (a == "--effect-glow" && i + 1 < argc) effectGlow = float(std::atof(argv[++i]));
         else if (a == "--bloom" && i + 1 < argc) { bloom = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--tonemap-knee" && i + 1 < argc) knee = float(std::atof(argv[++i]));
@@ -1504,6 +1523,10 @@ int main(int argc, char** argv)
     dev.SetBloom(bloom, 1.0f);
     dev.SetEffectGlow(effectGlow);
     dev.SetBloomOverNearer(bloomOcc);
+    dev.SetSunSoftness(sunSoft);
+    dev.SetLeafLight(leaf);
+    dev.SetNightGlow(nightGlow);
+    dev.SetContactShadows(contact);
     dev.SetAo(ao, aoRadius);
     dev.SetGi(gi, giRadius);
     dev.SetVolume(volume, volHaze);

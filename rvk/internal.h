@@ -47,13 +47,15 @@ enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE
                   F_SHADOW = 8192, F_SHADOWCOMP = 16384,
                   F_SHADOWTEX = 32768, F_OVERBRIGHT = 65536, F_OVERBRIGHT2X = 131072,
                   F_HDR = 262144, F_GLOW = 524288, F_GLOWALPHA = 1048576,
-                  F_BUMP = 2097152, F_BUMPBASE = 4194304 };
+                  F_BUMP = 2097152, F_BUMPBASE = 4194304, F_FOLIAGE = 8388608, F_EMISSIVE = 16777216 };
 
 constexpr uint32_t kFrameLights = 64;
 struct FrameLights {               // binding 4: per-frame data (constants.glsl FrameLights)
     uint32_t info[4];
     d3d::Matrix shadowViewProj[4]; // world -> each sun shadow cascade
     float cascadeTexel[4];         // world size of a texel of each cascade
+    float cascadeDepth[4];         // world units per unit of each cascade's depth (soft shadows)
+    float effects[4];              // light through leaves, night glow (x darkness), sun shadow softness, unused
     float shadowParams[4];         // enabled, strength, cascade count, point light shadow strength
     float sunDir[4];               // w: light headroom (F_OVERBRIGHT)
     float sunColor[4];             // the shadow-casting sun's colour (0 = none)

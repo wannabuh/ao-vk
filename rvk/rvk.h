@@ -34,7 +34,7 @@ enum class Format : uint32_t {
     RGBA16F,    // internal: the HDR scene target
     RG11B10F,   // internal: the HDR glow target (additive effects, for the bloom)
     RG16F,      // internal: ambient occlusion (factor, view depth)
-    RG8,        // internal: the HDR scene's local-light fraction (ambient occlusion spares it), reflectivity
+    RGBA8,      // internal: the HDR scene's local-light fraction (AO spares it), reflectivity, direct sun share
     Count
 };
 
@@ -197,6 +197,12 @@ public:
     void SetSsr(float strength, float water, float gloss, float wet)
     { m_ssr = strength; m_ssrWater = water; m_ssrGloss = gloss; m_ssrWet = wet; m_constantsDirty = true; }
     void SetBloomOverNearer(float keep) { m_bloomOverNearer = keep; }
+    // Sun shadow penumbra growth with blocker distance (0 = hard), sunlight through leaves, night glow of bright
+    // texels on unlit / self-lit surfaces, contact shadows (screen-space, against the sun).
+    void SetSunSoftness(float s) { m_sunSoftness = s; m_frameLightsDirty = true; }
+    void SetLeafLight(float s) { m_leafLight = s; m_frameLightsDirty = true; }
+    void SetNightGlow(float s) { m_nightGlow = s; m_frameLightsDirty = true; m_constantsDirty = true; }
+    void SetContactShadows(float s) { m_contact = s; m_constantsDirty = true; }
     void SetEffectGlow(float gain) { if (m_effectGlow != gain) { m_effectGlow = gain; m_constantsDirty = true; } }
     float EffectGlow() const { return m_effectGlow; }
     float BloomStrength() const { return m_bloomStrength; }
@@ -469,6 +475,7 @@ private:
     VkImageView m_shadowLayerViews[kShadowCascades] = {};   // one cascade each (rendered)
     VkImageLayout m_shadowImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkSampler m_shadowSampler = VK_NULL_HANDLE;
+    VkSampler m_shadowDepthSampler = VK_NULL_HANDLE;   // the same map without comparison
     VkDescriptorSetLayout m_shadowSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_shadowPipelineLayout = VK_NULL_HANDLE;
     VkPipeline m_shadowPipelines[2] = {};        // opaque, alpha-tested
@@ -477,6 +484,8 @@ private:
     bool m_shadowValid = false;                  // the map holds last frame's shadows
     d3d::Matrix m_cascadeViewProj[kShadowCascades] = {};   // world -> each cascade's map
     float m_cascadeTexel[kShadowCascades] = {};  // world size of a texel of each
+    float m_cascadeDepth[kShadowCascades] = {};  // world units per unit of each one's depth
+    float m_frameSunDir[3] = {0.0f, -1.0f, 0.0f}, m_frameSunColor[3] = {};   // this frame's sun, shadows or not (0: none)
     uint32_t m_cascadeCount = 0;                 // cascades the map holds
     uint64_t m_cascadeFrame = 0;                 // the far cascades are redrawn on alternate frames
     float m_shadowSunDir[3] = {};
@@ -552,13 +561,18 @@ private:
     VkPipeline m_tonemapPipeline = VK_NULL_HANDLE;
     VkSampler m_pointSampler = VK_NULL_HANDLE, m_linearSampler = VK_NULL_HANDLE;
     float m_bloomStrength = 1.5f, m_bloomThreshold = 1.0f;
+    float m_sunSoftness = 1.0f, m_leafLight = 1.0f, m_nightGlow = 1.5f, m_contact = 0.6f;
+    Texture* m_contactTex[2] = {};               // half resolution: contact shadow (1 = lit), view depth (ping-pong)
+    VkPipeline m_contactPipeline = VK_NULL_HANDLE;
+    bool RenderContactShadows(VkCommandBuffer cmd);
     float m_bloomOverNearer = 0.15f;             // bloom left on objects in front of its light (1 = all)
     bool m_bloomDepth = false;                   // this frame's bloom carries its light's depth
     std::vector<Texture*> m_bloomLevels;         // half resolution and down, float
     float m_effectGlow = 1.0f;
     Texture* m_glow = nullptr;                   // second scene attachment: what additive effects add (F_GLOW);
                                                  // alpha: its brightness / view depth (the bloom's depth)
-    Texture* m_localFraction = nullptr;          // third: how much of each pixel's colour local lights gave it; G: reflectivity
+    Texture* m_localFraction = nullptr;          // third: how much of each pixel's colour local lights gave it;
+                                                 // G: reflectivity; B: the direct sunlight's share (contact shadows)
     bool m_glowCleared = false;                  // this frame
     uint32_t m_glowDraws = 0;                    // this frame's draws feeding the glow (frame dumps)
     bool GlowDraw(uint32_t fvf) const;
@@ -632,7 +646,7 @@ private:
                m_dofPrefilterPipeline = VK_NULL_HANDLE, m_dofTilesPipeline = VK_NULL_HANDLE,
                m_dofGatherPipeline = VK_NULL_HANDLE, m_dofFinalPipeline = VK_NULL_HANDLE;
     bool RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, bool volume, const float tonemapParams[8]);
-    static constexpr uint32_t kTonemapInputs = 9;   // occlusion.glsl's bindings
+    static constexpr uint32_t kTonemapInputs = 10;   // occlusion.glsl's bindings
     void TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, Texture* scene, bool bloom, bool ao,
                            bool gi, bool volume, const float params[8]);
     void MakeDepthReadable(VkCommandBuffer cmd);

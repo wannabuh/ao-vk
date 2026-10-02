@@ -191,6 +191,10 @@ bool Device::CreateShadowResources(std::string* error)
     si.maxLod = 0.0f;
     if (!Check(vkCreateSampler(m_device, &si, nullptr, &m_shadowSampler), "shadow sampler", error))
         return false;
+    si.magFilter = si.minFilter = VK_FILTER_NEAREST;              // depths as stored (soft shadows' blocker search)
+    si.compareEnable = VK_FALSE;
+    if (!Check(vkCreateSampler(m_device, &si, nullptr, &m_shadowDepthSampler), "shadow depth sampler", error))
+        return false;
 
     // Pass pipelines: depth only (opaque casters) and with an alpha-testing fragment shader.
     VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
@@ -276,6 +280,8 @@ void Device::DestroyShadowResources()
     if (m_shadowPipelineLayout) vkDestroyPipelineLayout(m_device, m_shadowPipelineLayout, nullptr);
     if (m_shadowSetLayout) vkDestroyDescriptorSetLayout(m_device, m_shadowSetLayout, nullptr);
     if (m_shadowSampler) vkDestroySampler(m_device, m_shadowSampler, nullptr);
+    if (m_shadowDepthSampler) vkDestroySampler(m_device, m_shadowDepthSampler, nullptr);
+    m_shadowDepthSampler = VK_NULL_HANDLE;
     if (m_shadowView) vkDestroyImageView(m_device, m_shadowView, nullptr);
     for (VkImageView& v : m_shadowLayerViews)
         if (v) { vkDestroyImageView(m_device, v, nullptr); v = VK_NULL_HANDLE; }
@@ -814,6 +820,10 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
 {
     bool haveSun = m_sunLuminance > 0.0f && m_sunDir[1] < -0.05f;   // below the horizon / grazing: none
     m_shadowValid = false;
+    // The sun for effects that don't need the shadow map (light through leaves, contact shadows).
+    if (haveSun) std::memcpy(m_frameSunDir, m_sunDir, sizeof(m_sunDir));
+    for (int i = 0; i < 3; ++i) m_frameSunColor[i] = haveSun ? m_sunColor[i] : 0.0f;
+    m_frameLightsDirty = true;
     // The world camera: the one most casters were drawn with.
     uint32_t world = 0;
     for (uint32_t i = 1; i < m_casterViews.size(); ++i)
@@ -909,6 +919,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         vkCmdEndRendering(cmd);
         m_cascadeViewProj[c] = lightViewProj;
         m_cascadeTexel[c] = texel;
+        m_cascadeDepth[c] = 2.0f * depth;
     }
     ImageBarrier(cmd, m_shadowImage, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,

@@ -413,6 +413,26 @@ void ThreadedDevice::SetSsr(float strength, float water, float gloss, float wet)
     Enqueue([this, strength, water, gloss, wet](const uint8_t*) { m_device.SetSsr(strength, water, gloss, wet); });
 }
 
+void ThreadedDevice::SetSunSoftness(float s)
+{
+    Enqueue([this, s](const uint8_t*) { m_device.SetSunSoftness(s); });
+}
+
+void ThreadedDevice::SetLeafLight(float s)
+{
+    Enqueue([this, s](const uint8_t*) { m_device.SetLeafLight(s); });
+}
+
+void ThreadedDevice::SetNightGlow(float s)
+{
+    Enqueue([this, s](const uint8_t*) { m_device.SetNightGlow(s); });
+}
+
+void ThreadedDevice::SetContactShadows(float s)
+{
+    Enqueue([this, s](const uint8_t*) { m_device.SetContactShadows(s); });
+}
+
 void ThreadedDevice::SetBloomOverNearer(float keep)
 {
     Enqueue([this, keep](const uint8_t*) { m_device.SetBloomOverNearer(keep); });

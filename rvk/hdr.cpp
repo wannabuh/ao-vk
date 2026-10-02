@@ -49,6 +49,9 @@ const uint32_t kVolumeBlurSpirv[] = {
 const uint32_t kSsrSpirv[] = {
 #include "ssr.frag.inc"
 };
+const uint32_t kContactSpirv[] = {
+#include "contact.frag.inc"
+};
 const uint32_t kMotionBlurSpirv[] = {
 #include "motion_blur.frag.inc"
 };
@@ -215,6 +218,8 @@ bool Device::CreateHdrResources(std::string* error)
               fullscreen(kVolumeSpirv, sizeof(kVolumeSpirv), hdrFormat, false, m_volumeLayout, &m_volumePipeline) &&
               fullscreen(kVolumeBlurSpirv, sizeof(kVolumeBlurSpirv), hdrFormat, false, m_bloomLayout, &m_volumeBlurPipeline) &&
               fullscreen(kSsrSpirv, sizeof(kSsrSpirv), hdrFormat, false, m_bloomLayout, &m_ssrPipeline) &&
+              fullscreen(kContactSpirv, sizeof(kContactSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout,
+                         &m_contactPipeline) &&
               fullscreen(kMotionBlurSpirv, sizeof(kMotionBlurSpirv), kColorFormat, false, m_bloomLayout, &m_motionPipeline) &&
               fullscreen(kTileMaxSpirv, sizeof(kTileMaxSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout,
                          &m_tileMaxPipeline) &&
@@ -247,6 +252,8 @@ void Device::DestroyHdrResources()
     for (Texture*& t : m_volumeTex)
         if (t) { DestroyTextureNow(t); t = nullptr; }
     if (m_ssrTex) { DestroyTextureNow(m_ssrTex); m_ssrTex = nullptr; }
+    for (Texture*& t : m_contactTex)
+        if (t) { DestroyTextureNow(t); t = nullptr; }
     if (m_tonemapped) { DestroyTextureNow(m_tonemapped); m_tonemapped = nullptr; }
     for (Texture*& t : m_motionTiles)
         if (t) { DestroyTextureNow(t); t = nullptr; }
@@ -254,7 +261,7 @@ void Device::DestroyHdrResources()
         if (*t) { DestroyTextureNow(*t); *t = nullptr; }
     for (VkPipeline* p : {&m_bloomDown, &m_bloomUp, &m_aoPipeline, &m_aoBlurPipeline, &m_giPipeline, &m_giBlurPipeline,
                           &m_volumePipeline, &m_volumeBlurPipeline, &m_ssrPipeline,
-                          &m_motionPipeline,
+                          &m_contactPipeline, &m_motionPipeline,
                           &m_tileMaxPipeline, &m_neighbourMaxPipeline, &m_objectBlurPipeline, &m_dofCompositePipeline,
                           &m_dofFocusPipeline, &m_dofPrefilterPipeline, &m_dofTilesPipeline, &m_dofGatherPipeline,
                           &m_dofFinalPipeline})
@@ -318,12 +325,14 @@ void Device::EndScene()
     bool volume = RenderVolume(cmd);
     Transition(cmd, m_localFraction, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     bool ssr = RenderSsr(cmd);
+    bool contact = RenderContactShadows(cmd);
     Transition(cmd, m_albedo, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     // The upsampled bloom chain sums every level's light: averaged here.
     // params[3]: how much bloom reaches objects nearer than its light (-1: the bloom carries no depth).
     float params[8] = {m_tonemapKnee, m_exposure, bloom ? m_bloomStrength / float(m_bloomLevels.size()) : 0.0f,
                        m_bloomDepth ? m_bloomOverNearer : -1.0f, m_aoProj.m[2][2], m_aoProj.m[3][2],
-                       gi ? m_giStrength : 0.0f, float((volume ? 1 : 0) | (ssr ? 2 : 0) | (ao ? 4 : 0))};
+                       gi ? m_giStrength : 0.0f,
+                       float((volume ? 1 : 0) | (ssr ? 2 : 0) | (ao ? 4 : 0) | (contact ? 8 : 0))};
     // Depth of field blurs the scene with its ambient occlusion, indirect and volumetric light applied; the tone
     // mapping then leaves them out.
     bool dof = RenderDof(cmd, bloom, ao, gi, volume, params);
@@ -397,6 +406,7 @@ void Device::TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pip
     Texture* indirect = gi ? m_giTex[1] : m_scene;                // unread when off
     Texture* scattered = volume ? m_volumeTex[1] : m_scene;       // unread when off
     Texture* reflections = m_ssrTex && (int(params[7]) & 2) ? m_ssrTex : m_scene;   // unread when off
+    Texture* contact = (int(params[7]) & 8) ? m_contactTex[1] : m_scene;              // unread when off
     // The depth buffer is readable after the AO pass; without AO, any readable image stands in (unread).
     VkImageView depthView = m_depthLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ? m_depthView : m_scene->m_view;
     VkDescriptorImageInfo images[] = {{m_pointSampler, scene->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
@@ -407,7 +417,8 @@ void Device::TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pip
                                        {m_pointSampler, indirect->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                                        {m_pointSampler, m_albedo->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                                        {m_pointSampler, scattered->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-                                       {m_pointSampler, reflections->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+                                       {m_pointSampler, reflections->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                       {m_pointSampler, contact->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
     static_assert(sizeof(images) / sizeof(images[0]) == kTonemapInputs, "occlusion.glsl bindings");
     VkWriteDescriptorSet w[kTonemapInputs] = {};
     for (uint32_t i = 0; i < kTonemapInputs; ++i) {
@@ -709,6 +720,47 @@ bool Device::RenderSsr(VkCommandBuffer cmd)
     FullscreenPass(cmd, m_ssrTex, m_ssrPipeline, m_depthView, m_scene->m_view, m_pointSampler, params, sizeof(params), false,
                    m_localFraction->m_view);
     Transition(cmd, m_ssrTex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    return true;
+}
+
+// Contact shadows (contact.frag): a short march towards the sun through the depth buffer at half resolution,
+// blurred both ways like the ambient occlusion; m_contactTex[1] holds it. Needs a sun and the world camera.
+bool Device::RenderContactShadows(VkCommandBuffer cmd)
+{
+    bool perspective = m_aoProjValid && m_aoProj.m[2][3] == 1.0f && m_aoProj.m[3][3] == 0.0f;
+    const float* sunDir = m_shadowValid ? m_shadowSunDir : m_frameSunDir;
+    bool sun = m_frameSunColor[0] + m_frameSunColor[1] + m_frameSunColor[2] > 0.0f;
+    if (m_contact <= 0.0f || !perspective || !m_depth || !sun)
+        return false;
+    uint32_t w = std::max(1u, m_scene->m_width / 2), h = std::max(1u, m_scene->m_height / 2);
+    if (!m_contactTex[0] || m_contactTex[0]->m_width != w || m_contactTex[0]->m_height != h) {
+        for (Texture*& t : m_contactTex) {
+            if (t) DestroyTexture(t);
+            t = CreateImage(w, h, Format::RG16F, 1, true);
+        }
+        if (!m_contactTex[0] || !m_contactTex[1])
+            return false;
+    }
+    MakeDepthReadable(cmd);
+    // Towards the sun in view space (the view matrix's rotation; D3D row vectors).
+    const auto& v = m_aoView.m;
+    float L[3];
+    for (int j = 0; j < 3; ++j) L[j] = -(sunDir[0] * v[0][j] + sunDir[1] * v[1][j] + sunDir[2] * v[2][j]);
+    float params[16] = {m_aoProj.m[2][2], m_aoProj.m[3][2], m_aoProj.m[0][0], m_aoProj.m[1][1],
+                        float(m_scene->m_width), float(m_scene->m_height), 16.0f, 1.0f,
+                        L[0], L[1], L[2], 40.0f,
+                        m_contact, 0.0f, 0.0f, 0.0f};
+    FullscreenPass(cmd, m_contactTex[0], m_contactPipeline, m_depthView, m_depthView, m_pointSampler, params, sizeof(params),
+                   false);
+    for (int pass = 0; pass < 2; ++pass) {
+        Texture* src = m_contactTex[pass];
+        Texture* dst = m_contactTex[pass ^ 1];
+        Transition(cmd, src, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        float dir[4] = {pass == 0 ? 1.0f : 0.0f, pass == 0 ? 0.0f : 1.0f, 0.0f, 0.0f};
+        FullscreenPass(cmd, dst, m_aoBlurPipeline, src->m_view, src->m_view, m_pointSampler, dir, sizeof(dir), false);
+    }
+    std::swap(m_contactTex[0], m_contactTex[1]);   // the second pass wrote [0]
+    Transition(cmd, m_contactTex[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     return true;
 }
 

@@ -14,6 +14,8 @@ layout(set = 0, binding = 4, std140) uniform FrameLights {
     uvec4 info;                 // count
     mat4 shadowViewProj[4];     // world -> each sun shadow cascade (raw D3DMATRIX memory)
     vec4 cascadeTexel;          // world size of a texel of each cascade
+    vec4 cascadeDepth;          // world units per unit of each cascade's depth (soft shadows)
+    vec4 effects;               // light through leaves, night glow (x darkness), sun shadow softness, unused
     vec4 shadowParams;          // enabled, strength, cascade count, point light shadow strength
     vec4 sunDir;                // direction the sunlight travels; w = light headroom (F_OVERBRIGHT)
     vec4 sunColor;              // the sun's colour (shadow-casting sun; 0 = none)

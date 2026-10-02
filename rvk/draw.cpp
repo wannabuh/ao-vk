@@ -263,14 +263,23 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     for (uint32_t i = 0; i < kShadowCascades; ++i) {
         fl->shadowViewProj[i] = m_cascadeViewProj[i];
         fl->cascadeTexel[i] = m_cascadeTexel[i];
+        fl->cascadeDepth[i] = m_cascadeDepth[i];
     }
+    // Night: the sun's light on flat ground (smoothed) below a tenth of full day.
+    float night = 1.0f - std::clamp(m_daylight / 0.35f, 0.0f, 1.0f);
+    fl->effects[0] = m_leafLight;
+    fl->effects[1] = m_hdr ? m_nightGlow * night : 0.0f;
+    fl->effects[2] = m_sunSoftness;
+    fl->effects[3] = 0.0f;
     fl->shadowParams[0] = m_shadowValid ? 1.0f : 0.0f;
     fl->shadowParams[1] = m_shadowStrength;
     fl->shadowParams[2] = float(m_cascadeCount);
     fl->shadowParams[3] = PointShadowStrength();
-    fl->sunDir[0] = m_shadowSunDir[0]; fl->sunDir[1] = m_shadowSunDir[1]; fl->sunDir[2] = m_shadowSunDir[2];
+    // The sun the shadow map was drawn with (shadows lag a frame), or without shadows this frame's.
+    const float* sunDir = m_shadowValid ? m_shadowSunDir : m_frameSunDir;
+    fl->sunDir[0] = sunDir[0]; fl->sunDir[1] = sunDir[1]; fl->sunDir[2] = sunDir[2];
     fl->sunDir[3] = m_hdr ? m_hdrHeadroom : m_lightHeadroom;
-    for (int i = 0; i < 3; ++i) fl->sunColor[i] = m_shadowSunColor[i];
+    for (int i = 0; i < 3; ++i) fl->sunColor[i] = m_shadowValid ? m_shadowSunColor[i] : m_frameSunColor[i];
     fl->sunColor[3] = 0.0f;
     fl->prevViewProj = m_prevViewProj;           // the world camera last frame (motion vectors)
     m_frameLightIndices.clear();
@@ -927,6 +936,20 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_textures[0]) flags |= F_TEX0;
     if (m_textures[1]) flags |= F_TEX1;
     if (m_rs[d3d::RS_ALPHATESTENABLE]) flags |= F_ALPHATEST;
+    bool solid3d = (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW && !terrain && !m_drawIsLabel && m_textures[0] &&
+                   m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE] && m_rs[d3d::RS_ZFUNC] != d3d::CMP_ALWAYS;
+    // Foliage candidates: lit, cut out of their texture (alpha test, or blended with depth writes as most of the
+    // game's statics are) - the shader keeps those whose texture actually has holes (leaves, not walls).
+    if (m_leafLight > 0.0f && solid3d && (flags & F_LIGHTING) &&
+        (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
+        flags |= F_FOLIAGE;
+    // Night glow candidates: opaque 3D surfaces drawn unlit (self-lit, like windows and signs) or with an emissive
+    // material - not effects, the sky, the ground or lighting passes.
+    bool additive = m_rs[d3d::RS_ALPHABLENDENABLE] && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_ONE;
+    float emissive = std::max({m_material.emissive.r, m_material.emissive.g, m_material.emissive.b});
+    if (m_nightGlow > 0.0f && hdrTarget && solid3d && !additive && !IsMultiplyPass() &&
+        (!(flags & F_LIGHTING) || emissive > 0.05f))
+        flags |= F_EMISSIVE;
     c->flags[0] = flags;
     c->flags[1] = m_rs[d3d::RS_FOGVERTEXMODE];
     c->flags[2] = m_rs[d3d::RS_FOGTABLEMODE];
@@ -1000,8 +1023,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     VkDescriptorImageInfo bump{m_bumpSampler, bumpBase->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     // Binding 8: an animated mesh's last positions, else any small part of the ring (unread).
     VkDescriptorBufferInfo prevPositions{f.ring, prevPositionsOffset, prevPositionsBytes ? prevPositionsBytes : 16};
-    VkWriteDescriptorSet writes[9] = {};
-    for (int i = 0; i < 9; ++i) {
+    // Binding 9: the sun shadow cascades' depths, read without comparison (soft shadows' blocker search).
+    VkDescriptorImageInfo shadowDepths{m_shadowDepthSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet writes[10] = {};
+    for (int i = 0; i < 10; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstBinding = uint32_t(i);
         writes[i].descriptorCount = 1;
@@ -1023,7 +1048,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[7].pImageInfo = &bump;
     writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[8].pBufferInfo = &prevPositions;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 9, writes);
+    writes[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[9].pImageInfo = &shadowDepths;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 10, writes);
 
     if (m_external) {
         VkBuffer buffers[2] = {m_external->vertices, m_nullBuffer};

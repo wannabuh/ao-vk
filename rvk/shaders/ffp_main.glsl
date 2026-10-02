@@ -6,6 +6,7 @@ layout(set = 0, binding = 2) uniform sampler2D tex1;
 layout(set = 0, binding = 5) uniform sampler2DArrayShadow shadowMap;   // sun shadow cascades
 layout(set = 0, binding = 6) uniform samplerCubeArrayShadow pointShadowMaps;
 layout(set = 0, binding = 7) uniform sampler2D bumpBase;   // F_BUMPBASE: the ground's base texture, for its relief
+layout(set = 0, binding = 9) uniform sampler2DArray shadowDepths;   // the sun cascades' depths (soft shadows' blockers)
 
 // Visibility of a frame light with a cube shadow map (l.spot.z = cube + 1): 1 = lit. Must match
 // Device::RenderPointShadowMaps (pointshadow.cpp): depth along the face's axis, near kPointShadowNear, far = range.
@@ -61,11 +62,12 @@ vec4 gDiffuse, gSpecular;
 vec3 gLocalDiffuse = vec3(0.0), gLocalSpecular = vec3(0.0);
 float gLocalFraction = 0.0;                     // how much of the final colour the local lights gave (outLocal)
 float gLightmapRelief = 1.0;                    // F_BUMPBASE: the ground's relief in its baked sunlight (stage 0)
+float gSunShare = 0.0;                          // how much of the colour is direct sunlight (contact shadows)
 
 layout(location = 0) out vec4 outColor;
 #ifdef RVK_GLOW
 layout(location = 1) out vec4 outGlow;     // HDR scene only: the glow attachment (F_GLOW)
-layout(location = 2) out vec4 outLocal;    // HDR scene only: the fraction of the colour local lights gave it, reflectivity
+layout(location = 2) out vec4 outLocal;    // HDR scene only: local lights' fraction of the colour, reflectivity, sun's share
 layout(location = 3) out vec4 outMotion;   // HDR scene only: screen motion since last frame, pixels (solid geometry)
 layout(location = 4) out vec4 outAlbedo;   // HDR scene only: the surface's colour without lighting (indirect light)
 #endif
@@ -114,8 +116,17 @@ vec4 Sample(uint stage)
     return stage == 0u ? texture(tex0, tc.xy) : texture(tex1, tc.xy);
 }
 
+// A point of a Vogel (golden angle) disk of n points, radius 1, rotated.
+vec2 Vogel(int i, int n, float rotation)
+{
+    float r = sqrt((float(i) + 0.5) / float(n)), a = float(i) * 2.39996323 + rotation;
+    return r * vec2(cos(a), sin(a));
+}
+
 // Sun visibility at a surface point in one shadow cascade: 1 = lit, 0 = in shadow; edge: how near the point is to
-// the cascade's border (0 = centre, >= 1 = outside). 3x3 taps of 2x2 comparison filtering.
+// the cascade's border (0 = centre, >= 1 = outside). Soft (FL.effects.z > 0): the penumbra grows with the distance
+// between the blocker and the receiver, as under a sun of some size - sharp where a trunk meets the ground, soft at
+// the far edge of a canopy's shadow (blocker search, then a filter that wide). Hard: 3x3 taps of 2x2 filtering.
 float CascadeVisibility(int c, vec3 posW, vec3 n, float nl, out float edge)
 {
     if (nl >= 0.0)
@@ -126,10 +137,42 @@ float CascadeVisibility(int c, vec3 posW, vec3 n, float nl, out float edge)
     if (edge >= 1.0 || ndc.z <= 0.0 || ndc.z >= 1.0) { edge = 2.0; return 1.0; }
     vec2 uv = ndc.xy * 0.5 + 0.5;
     vec2 ts = 1.0 / vec2(textureSize(shadowMap, 0).xy);
+    float soft = FL.effects.z;
+    if (soft <= 0.0) {
+        float sum = 0.0;
+        for (int y = -1; y <= 1; ++y)
+            for (int x = -1; x <= 1; ++x)
+                sum += texture(shadowMap, vec4(uv + vec2(x, y) * ts, float(c), ndc.z));
+        return sum / 9.0;
+    }
+    float texel = FL.cascadeTexel[c];
+    float rotation = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    float k = 0.02 * soft;                       // penumbra width per world unit from blocker to receiver
+    // Blockers: depths in front of the receiver within the widest penumbra (blockers up to ~30 units away).
+    float searchTexels = clamp(k * 30.0 / texel, 1.5, 24.0), blockerSum = 0.0, blockers = 0.0;
+    for (int i = 0; i < 12; ++i) {
+        float d = texture(shadowDepths, vec3(uv + Vogel(i, 12, rotation) * searchTexels * ts, float(c))).r;
+        if (d < ndc.z) { blockerSum += d; blockers += 1.0; }
+    }
+    if (blockers == 0.0) return 1.0;
+    float distance = (ndc.z - blockerSum / blockers) * FL.cascadeDepth[c];
+    float radius = clamp(distance * k / texel, 1.0, 24.0);
     float sum = 0.0;
-    for (int y = -1; y <= 1; ++y)
-        for (int x = -1; x <= 1; ++x)
-            sum += texture(shadowMap, vec4(uv + vec2(x, y) * ts, float(c), ndc.z));
+    for (int i = 0; i < 16; ++i)
+        sum += texture(shadowMap, vec4(uv + Vogel(i, 16, rotation) * radius * ts, float(c), ndc.z));
+    return sum / 16.0;
+}
+
+// The texture's mean alpha around a point (~16 texels across): a coarse mip, or without mips a ring of taps.
+float NeighbourhoodAlpha(vec2 uv)
+{
+    if (textureQueryLevels(tex0) > 4) return textureLod(tex0, uv, 4.0).a;
+    vec2 step = 8.0 / vec2(textureSize(tex0, 0));
+    float sum = textureLod(tex0, uv, 0.0).a;
+    for (int i = 0; i < 8; ++i) {
+        float a = float(i) * 0.7853982;
+        sum += textureLod(tex0, uv + vec2(cos(a), sin(a)) * step, 0.0).a;
+    }
     return sum / 9.0;
 }
 
@@ -277,6 +320,18 @@ void main()
         vec3 base = (vMatEmissive + vMatAmbient * C.ambient.rgb) * texShade;
         vec3 lit = base + vMatAmbient * ambient + vDiffuse.rgb * diff, litSpec = vSpecular.rgb * spec;
         vec3 local = vDiffuse.rgb * diffL, localSpec = vSpecular.rgb * specL;
+        // The direct sunlight's share of the colour: what the contact shadows may take away. The ground's sunlight
+        // is baked into its lightmap: about the lit side's part of it.
+        if (dot(FL.sunColor.rgb, FL.sunColor.rgb) > 0.0 && len2 > 0.0) {
+            float ndl = max(dot(normalize(n), -normalize(FL.sunDir.xyz)), 0.0);
+            if ((C.flags.x & F_SHADOWTEX) != 0u) {
+                gSunShare = 0.6 * ndl * texShade;
+            } else {
+                const vec3 kLuma = vec3(0.3, 0.59, 0.11);
+                float sunPart = dot(vDiffuse.rgb * FL.sunColor.rgb, kLuma) * ndl * sunScale;
+                gSunShare = clamp(sunPart / max(dot(lit + local, kLuma), 1e-3), 0.0, 1.0);
+            }
+        }
         if ((C.flags.x & F_OVERBRIGHT) != 0u) {
             // The game's lighting is clamped as D3D does; the frame lights add on top, up to the headroom. Under a
             // bright sun a surface is already near 1, and a light (and its shadow) would otherwise barely show on
@@ -328,6 +383,29 @@ void main()
     }
     if (!shadeSun)
         current.rgb *= shade;
+    // Sunlight through leaves: where the sun is behind a leaf (seen from the camera), its light comes through tinted
+    // by the leaf, most looking into the sun; other leaves' shadows still block it. Only textures with holes around
+    // this point (their coarse mip's alpha) are leaves - not walls drawn the same way.
+    bool sun = dot(FL.sunColor.rgb, FL.sunColor.rgb) > 0.0 && dot(FL.sunDir.xyz, FL.sunDir.xyz) > 0.0;
+    if ((C.flags.x & F_FOLIAGE) != 0u && sun && FL.effects.x > 0.0 && dot(vNormalW.xyz, vNormalW.xyz) > 0.0) {
+        float holes = smoothstep(0.97, 0.75, NeighbourhoodAlpha(vTex0.xy));
+        if (holes > 0.0) {
+            vec3 L = -normalize(FL.sunDir.xyz), toEye = normalize(C.eyePos.xyz - vPosW);
+            vec3 nf = normalize(vNormalW.xyz);
+            if (dot(nf, toEye) < 0.0) nf = -nf;                  // the side the camera sees
+            float through = max(-dot(nf, L), 0.0), glare = pow(max(dot(-toEye, L), 0.0), 4.0);
+            if (through + glare > 0.0) {
+                float visible = FL.shadowParams.x > 0.5 ? SunVisibility(vPosW, -nf) : 1.0;
+                current.rgb += t0.rgb * FL.sunColor.rgb * ((0.5 * through + 0.7 * glare) * visible * holes * FL.effects.x);
+            }
+        }
+    }
+    // Night glow: on self-lit surfaces (windows, signs, screens), bright texels shine beyond white, for the bloom.
+    if ((C.flags.x & F_EMISSIVE) != 0u && FL.effects.y > 0.0) {
+        float glow = smoothstep(0.55, 0.9, max(t0.r, max(t0.g, t0.b))) * FL.effects.y;
+        if ((C.flags.x & F_LIGHTING) != 0u) current.rgb += t0.rgb * vMatEmissive * glow;
+        else current.rgb *= 1.0 + glow;
+    }
     if (C.vtx.y != 0u) {
         // GPU particles' brightness: a hot core. Where in the particle a pixel is comes from its texture (a sparkle is
         // bright and opaque in the middle, fading out to the edge; shape in alpha or in intensity). Brighter settings
@@ -382,7 +460,7 @@ void main()
     // Alpha: its brightness over its view depth (1 / w), summed like the colour - the bloom's light's distance.
     outGlow = vec4(glow, dot(glow, vec3(0.3, 0.59, 0.11)) * gl_FragCoord.w);
     // Blended with this fragment's alpha like the colour (attachment 2's blend state follows the colour's).
-    outLocal = vec4(gLocalFraction, clamp(reflectivity, 0.0, 1.0), 0.0, current.a);
+    outLocal = vec4(gLocalFraction, clamp(reflectivity, 0.0, 1.0), gSunShare, current.a);
     // Motion vectors (written by depth-writing draws only, see the blend state): where this point was last frame.
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * C.viewport.zw * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);

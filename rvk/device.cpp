@@ -382,7 +382,7 @@ bool Device::CreateMainTargets(std::string* error)
     m_ldrMain = CreateImage(m_width, m_height, Format::A8R8G8B8, 1, true);
     m_scene = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);
     m_glow = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);
-    m_localFraction = CreateImage(m_width, m_height, Format::RG8, 1, true);
+    m_localFraction = CreateImage(m_width, m_height, Format::RGBA8, 1, true);
     m_motionVectors = CreateImage(m_width, m_height, Format::RG16F, 1, true);
     m_albedo = CreateImage(m_width, m_height, Format::A8R8G8B8, 1, true);
     if (!m_ldrMain || !m_scene || !m_glow || !m_localFraction || !m_motionVectors || !m_albedo) {
@@ -576,7 +576,7 @@ void Device::DestroySwapchain()
 
 bool Device::CreatePipelines(std::string* error)
 {
-    VkDescriptorSetLayoutBinding bindings[9] = {
+    VkDescriptorSetLayoutBinding bindings[10] = {
         {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
@@ -586,10 +586,11 @@ bool Device::CreatePipelines(std::string* error)
         {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
+        {9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},   // shadow depths
     };
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 9;
+    sl.bindingCount = 10;
     sl.pBindings = bindings;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_setLayout), "vkCreateDescriptorSetLayout", error))
         return false;
@@ -637,7 +638,7 @@ bool Device::CreatePipelines(std::string* error)
     cb.pAttachments = att;
     // 8-bit targets: one colour attachment. HDR scene: the float scene, the glow (additive effects, for the bloom) and
     // the local-light fraction (for the ambient occlusion), the motion vectors and the surface colour (indirect light).
-    VkFormat colorFormats[5] = {kColorFormat, GetFormatInfo(Format::RGBA16F).vk, GetFormatInfo(Format::RG8).vk,
+    VkFormat colorFormats[5] = {kColorFormat, GetFormatInfo(Format::RGBA16F).vk, GetFormatInfo(Format::RGBA8).vk,
                                 GetFormatInfo(Format::RG16F).vk, GetFormatInfo(Format::A8R8G8B8).vk};
     VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     rendering.colorAttachmentCount = 1;

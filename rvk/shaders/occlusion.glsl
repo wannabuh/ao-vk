@@ -8,10 +8,12 @@ layout(set = 0, binding = 5) uniform sampler2D gi;      // half resolution: indi
 layout(set = 0, binding = 6) uniform sampler2D albedo;  // the surfaces' own colour (fogged)
 layout(set = 0, binding = 7) uniform sampler2D volume;  // half resolution: light scattered by the air, view depth
 layout(set = 0, binding = 8) uniform sampler2D ssr;     // reflected colour, how much of it shows
+layout(set = 0, binding = 9) uniform sampler2D contact; // half resolution: contact shadow (1 = lit), view depth
 layout(push_constant) uniform Push {
     vec4 params;        // knee, exposure, bloom strength, bloom left on objects nearer than its light (-1: no depth)
     vec4 proj;          // D3D projection m[2][2], m[3][2] (view depth from the depth buffer), indirect light strength,
-                        // volumetric light on (bit 1), reflections on (bit 2), ambient occlusion on (bit 4)
+                        // volumetric light on (bit 1), reflections on (bit 2), ambient occlusion on (bit 4),
+                        // contact shadows on (bit 8)
 } P;
 
 // A half-resolution image at this pixel: of the 4 nearest texels, those at this pixel's depth (the same surface,
@@ -50,13 +52,21 @@ vec3 Indirect()
     return Upsample(gi, 3).rgb * texelFetch(albedo, ivec2(gl_FragCoord.xy), 0).rgb * P.proj.z;
 }
 
-// What the scene's colour is multiplied by for ambient occlusion: occlusion takes ambient light away, not the light
-// local lights shine into the corner.
+// What the scene's colour is multiplied by for ambient occlusion - which takes ambient light away, not the light
+// local lights shine into the corner - and contact shadows.
 float AmbientFactor()
 {
-    if ((int(P.proj.w) & 4) == 0) return 1.0;
-    float local = texelFetch(localFraction, ivec2(gl_FragCoord.xy), 0).r;
-    return mix(Occlusion(), 1.0, local);
+    float factor = 1.0;
+    if ((int(P.proj.w) & 4) != 0) {
+        float local = texelFetch(localFraction, ivec2(gl_FragCoord.xy), 0).r;
+        factor = mix(Occlusion(), 1.0, local);
+    }
+    // Contact shadows take away the direct sunlight's share of the colour (the local-fraction target's B).
+    if ((int(P.proj.w) & 8) != 0 && texelFetch(depthTex, ivec2(gl_FragCoord.xy), 0).r < 1.0) {
+        float sunShare = texelFetch(localFraction, ivec2(gl_FragCoord.xy), 0).b;
+        factor *= 1.0 - (1.0 - Upsample(contact, 1).r) * sunShare;
+    }
+    return factor;
 }
 
 // Light scattered towards the camera by the air in front of this pixel (volumetric light); 0 when off.

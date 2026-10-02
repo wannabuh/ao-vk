@@ -75,6 +75,10 @@ public:
     void SetBloom(float strength, float threshold);
     void SetEffectGlow(float gain);
     void SetBloomOverNearer(float keep);
+    void SetSunSoftness(float s);
+    void SetLeafLight(float s);
+    void SetNightGlow(float s);
+    void SetContactShadows(float s);
     void SetAo(float strength, float radius);
     void SetGi(float strength, float radius);
     void SetVolume(float strength, float haze);

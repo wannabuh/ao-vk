@@ -34,12 +34,15 @@ Setting g_settings[] = {
     {"RVK_LightOver",  "All nearby lights light every surface (light override)",          "Lighting",       Bool,  0, 1, 1, 1, "RANDYVK_LIGHT_OVERRIDE", 0},
     {"RVK_OwnLight",   "A character's own light lights the character",                    "Lighting",       Bool,  0, 1, 1, 1, nullptr, 0},
     {"RVK_Bump",       "Generated surface relief (normal maps from textures)",            "Lighting",       Float, 0, 4, 0.25f, 1.5f, "RANDYVK_BUMP", 0},
+    {"RVK_LeafLight",  "Sunlight through leaves",                                         "Lighting",       Float, 0, 2, 0.25f, 1, nullptr, 0},
     {"RVK_Headroom",   "Light headroom without HDR",                                       "Lighting",       Float, 1, 2, 0.05f, 1.25f, "RANDYVK_LIGHT_HEADROOM", 0},
     {"RVK_Aniso",      "Anisotropic filtering (1 = off)",                                 "Lighting",       Int,   1, 16, 1, 16, "RANDYVK_ANISOTROPY", 0},
     {"RVK_SunShadow",  "Sun shadows",                                                     "Shadows",        Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
     {"RVK_SunStrength","Sun shadow strength",                                             "Shadows",        Float, 0, 1, 0.05f, 0.65f, "RANDYVK_SHADOW_STRENGTH", 0},
     {"RVK_SunDist",    "Sun shadow distance (world units)",                               "Shadows",        Int,   40, 1000, 20, 400, nullptr, 0},
     {"RVK_SunCascade", "Sun shadow cascades (more = sharper near, same reach)",           "Shadows",        Int,   1, 4, 1, 4, nullptr, 0},
+    {"RVK_SunSoft",    "Sun shadow softness (penumbra grows with distance; 0 = hard)",    "Shadows",        Float, 0, 4, 0.25f, 1, nullptr, 0},
+    {"RVK_Contact",    "Contact shadows (small sun shadows the map misses; 0 = off)",     "Shadows",        Float, 0, 1, 0.05f, 0.6f, nullptr, 0},
     {"RVK_PtShadows",  "Point light shadows (lights, 0 = off)",                           "Shadows",        Int,   0, 8, 1, 8, "RANDYVK_POINT_SHADOWS", 0},
     {"RVK_PtStrength", "Point light shadow strength",                                     "Shadows",        Float, 0, 1, 0.05f, 0.9f, "RANDYVK_POINT_SHADOW_STRENGTH", 0},
     {"RVK_PtDay",      "Point light shadow strength in daylight (fraction)",              "Shadows",        Float, 0, 1, 0.05f, 0.25f, "RANDYVK_POINT_SHADOW_DAY", 0},
@@ -51,6 +54,7 @@ Setting g_settings[] = {
     {"RVK_BloomFx",    "Glow of effects (spells, fire, light halos)",                     "HDR and effects", Float, 0, 4, 0.25f, 1, "RANDYVK_BLOOM_EFFECTS", 0},
     {"RVK_BloomThr",   "Bloom threshold (1 = above white)",                               "HDR and effects", Float, 0.5f, 2, 0.05f, 1, "RANDYVK_BLOOM_THRESHOLD", 0},
     {"RVK_BloomOcc",   "Bloom over objects in front of its light (1 = unchanged)",        "HDR and effects", Float, 0, 1, 0.05f, 0.15f, nullptr, 0},
+    {"RVK_NightGlow",  "Night glow of windows, signs and screens (0 = off)",              "HDR and effects", Float, 0, 4, 0.25f, 1.5f, nullptr, 0},
     {"RVK_Ao",         "Ambient occlusion strength (0 = off)",                            "HDR and effects", Float, 0, 3, 0.25f, 1, "RANDYVK_AO", 0},
     {"RVK_AoRadius",   "Ambient occlusion radius (world units)",                          "HDR and effects", Float, 0.25f, 4, 0.25f, 1.5f, "RANDYVK_AO_RADIUS", 0},
     {"RVK_Gi",         "Indirect light: bounce light from the lit scene (0 = off)",       "HDR and effects", Float, 0, 3, 0.25f, 1, nullptr, 0},
@@ -156,6 +160,10 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_Bloom") || is("RVK_BloomThr")) d->SetBloom(V("RVK_Bloom"), V("RVK_BloomThr"));
     else if (is("RVK_BloomFx")) d->SetEffectGlow(s.value);
     else if (is("RVK_BloomOcc")) d->SetBloomOverNearer(s.value);
+    else if (is("RVK_SunSoft")) d->SetSunSoftness(s.value);
+    else if (is("RVK_LeafLight")) d->SetLeafLight(s.value);
+    else if (is("RVK_NightGlow")) d->SetNightGlow(s.value);
+    else if (is("RVK_Contact")) d->SetContactShadows(s.value);
     else if (is("RVK_Ao") || is("RVK_AoRadius")) d->SetAo(V("RVK_Ao"), V("RVK_AoRadius"));
     else if (is("RVK_Gi") || is("RVK_GiRadius")) d->SetGi(V("RVK_Gi"), V("RVK_GiRadius"));
     else if (std::strncmp(n, "RVK_Ssr", 7) == 0)
