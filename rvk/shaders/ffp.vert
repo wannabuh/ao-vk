@@ -35,13 +35,15 @@ layout(set = 0, binding = 1) uniform sampler2D swayTex;    // texture 0: plants'
 // Plants bending out of the way of characters (FL.pushers: where they are and the trail behind them, w = seconds since
 // a character was there; FL.pusherBorn: seconds since the point was made - fresh while the character walks on;
 // Device::FillPushers). The nearer a character, the further a plant bends away from it - each vertex on its own, so a
-// quad's top parts around the legs while its base stays. Behind a character a plant springs back past upright and
-// settles (a damped spring); while one walks through, the plants it touches rustle. The bend turns each vertex about
-// the base (sideways and down), so the plant keeps its length. sway as SwayDistance; plantHeight in world units.
+// quad's top parts around the legs while its base stays. Behind a character a plant springs back a little past upright
+// and settles (a well-damped spring); while one walks through, the plants it touches rustle gently. A vertex moves at
+// most a fixed distance (world units, not an angle: a tall plant leans just enough to clear the character instead of
+// swinging its whole height), and down so it keeps its distance from the base. sway as SwayDistance; plantHeight in
+// world units.
 float PushSpring(float age)
 {
     float t = max(age - 0.08, 0.0);
-    return exp(-4.0 * t) * cos(10.0 * t);
+    return exp(-6.0 * t) * cos(7.0 * t);         // overshoot ~7%
 }
 
 vec3 PushOffset(vec3 posW, vec3 modelPos, vec4 sway, float plantHeight, vec2 originXZ)
@@ -66,16 +68,18 @@ vec3 PushOffset(vec3 posW, vec3 modelPos, vec4 sway, float plantHeight, vec2 ori
         push += dir * near * PushSpring(p.w);
         float born = FL.pusherBorn[i >> 2u][i & 3u];
         float moving = exp(-3.0 * born) * exp(-4.0 * max(p.w - 0.1, 0.0));
-        rustle += vec2(-dir.y, dir.x) * near * moving * sin(FL.wind.z * 17.0 + phase + float(i));
+        rustle += vec2(-dir.y, dir.x) * near * moving * sin(FL.wind.z * 11.0 + phase + float(i));
     }
-    vec2 v = push + 0.3 * rustle;
+    vec2 v = push + 0.12 * rustle;
     float len = length(v);
     if (len <= 1e-4) return vec3(0.0);
     vec2 dir = v / len;
     float holes = smoothstep(0.92, 0.7, SwayMeanAlpha());
-    float angle = radians(75.0) * min(amount, 1.3) * min(len, 1.0) * holes * (0.4 + 0.6 * h);   // bends most up top
     float above = h * plantHeight;               // the vertex's height above the base
-    return vec3(dir.x * above * sin(angle), -above * (1.0 - cos(angle)), dir.y * above * sin(angle));
+    float most = min(0.45 * amount, 0.7 * plantHeight);   // the top's furthest lean
+    float lean = most * min(len, 1.0) * holes * h * sqrt(h);   // bends most up top
+    lean = min(lean, 0.9 * above);
+    return vec3(dir.x * lean, -(above - sqrt(max(above * above - lean * lean, 0.0))), dir.y * lean);
 }
 
 float FogFactor(uint mode, float d)
