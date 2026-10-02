@@ -605,7 +605,7 @@ bool Device::RenderGi(VkCommandBuffer cmd)
     return true;
 }
 
-// Volumetric light (volume.frag): sun shafts marched through the shadow cascades and lamp glow, at half resolution,
+// Volumetric light (volume.frag): sun shafts marched through the shadow cascades, at half resolution,
 // blurred both ways; m_volumeTex[1] holds it. The frame lights are written again into the frame's post buffer (the
 // scene's copy may be in an earlier ring generation).
 bool Device::RenderVolume(VkCommandBuffer cmd)
@@ -637,7 +637,7 @@ bool Device::RenderVolume(VkCommandBuffer cmd)
     push.eye[3] = 250.0f;                                         // longest ray
     push.params[0] = 0.0015f * m_volumeHaze;                      // scattering per world unit
     push.params[1] = m_volume;
-    push.params[2] = 0.02f * m_volume * m_volumeLamps * m_volumeHaze;
+    push.params[2] = 0.0f;
     push.params[3] = m_aoProj.m[2][2];
     push.size[0] = float(m_scene->m_width);
     push.size[1] = float(m_scene->m_height);

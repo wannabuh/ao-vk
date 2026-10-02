@@ -76,7 +76,7 @@ public:
     void SetEffectGlow(float gain);
     void SetAo(float strength, float radius);
     void SetGi(float strength, float radius);
-    void SetVolume(float strength, float lamps, float haze);
+    void SetVolume(float strength, float haze);
     void SetSsr(float strength, float water, float gloss, float wet);
     void SetBump(float strength);
     void SetAnisotropy(uint32_t level);

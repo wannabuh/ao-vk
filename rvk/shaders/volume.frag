@@ -1,16 +1,16 @@
 #version 450
-// Volumetric light (hdr.cpp), at half resolution: the light the air between the camera and each surface scatters
-// towards the camera. Sunlight: marched along the ray through the sun shadow cascades, so shadowed air stays dark
-// and light coming through gaps forms shafts, brightest looking towards the sun (forward scattering). Lamps: the
-// glow of each frame light along the ray, integrated in closed form (no shadows). Output: the scattered light and
-// view depth, for the depth-aware blur and upsampling.
+// Volumetric light (hdr.cpp), at half resolution: the sunlight the air between the camera and each surface scatters
+// towards the camera, marched along the ray through the sun shadow cascades, so shadowed air stays dark and light
+// coming through gaps forms shafts, brightest looking towards the sun (forward scattering). No lamp glow: the game's
+// point lights sit away from their lamps (half a metre under them), so a glow around them is misplaced; the bloom
+// gives lamps their halo. Output: the scattered light and view depth, for the depth-aware blur and upsampling.
 #include "frame_lights.glsl"
 layout(set = 0, binding = 0) uniform sampler2D depthTex;
 layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadowMap;
 layout(push_constant) uniform Push {
     mat4 invViewProj;   // the world camera's clip -> world (raw D3DMATRIX memory)
     vec4 eye;           // camera position; w = longest ray (world units)
-    vec4 params;        // haze density, sun strength, lamp strength, D3D projection m[2][2]
+    vec4 params;        // haze density, sun strength, unused, D3D projection m[2][2]
     vec4 size;          // full target width, height, steps, D3D projection m[3][2]
 } P;
 layout(location = 0) out vec4 outVolume;
@@ -60,25 +60,5 @@ void main()
         light += FL.sunColor.rgb * (lit * stepLen * P.params.x * P.params.y * phase);
     }
 
-    // Lamps: their light scattered along the ray within their range, falling off with the square of the distance;
-    // the integral of 1 / (h^2 + t^2) is atan(t / h) / h.
-    if (P.params.z > 0.0) {
-        for (uint i = 0u; i < FL.info.x; ++i) {
-            Light l = FL.lights[i];
-            float range = l.direction.w;
-            vec3 oc = l.position.xyz - P.eye.xyz;
-            float t0 = dot(oc, dir);
-            vec3 perp = oc - t0 * dir;
-            float h2 = dot(perp, perp), r2 = range * range;
-            if (h2 >= r2) continue;
-            float halfChord = sqrt(r2 - h2);
-            float a = max(0.0, t0 - halfChord), b = min(dist, t0 + halfChord);
-            if (b <= a) continue;
-            float h = max(sqrt(h2), 0.3);        // passing right through a lamp: no infinite core
-            float along = (atan((b - t0) / h) - atan((a - t0) / h)) / h;
-            float fade = 1.0 - h2 / r2;
-            light += l.diffuse.rgb * (along * fade * fade * P.params.z);
-        }
-    }
     outVolume = vec4(light, viewZ);
 }

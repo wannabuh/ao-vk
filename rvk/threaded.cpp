@@ -403,9 +403,9 @@ void ThreadedDevice::SetGi(float strength, float radius)
     Enqueue([this, strength, radius](const uint8_t*) { m_device.SetGi(strength, radius); });
 }
 
-void ThreadedDevice::SetVolume(float strength, float lamps, float haze)
+void ThreadedDevice::SetVolume(float strength, float haze)
 {
-    Enqueue([this, strength, lamps, haze](const uint8_t*) { m_device.SetVolume(strength, lamps, haze); });
+    Enqueue([this, strength, haze](const uint8_t*) { m_device.SetVolume(strength, haze); });
 }
 
 void ThreadedDevice::SetSsr(float strength, float water, float gloss, float wet)
