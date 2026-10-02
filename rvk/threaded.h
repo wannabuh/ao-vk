@@ -13,6 +13,7 @@
 #include "rvk.h"
 
 #include <atomic>
+#include <memory>
 #include <cstdint>
 #include <cstring>
 #include <new>
@@ -127,6 +128,13 @@ public:
     // Vertex buffers live in CPU memory; draws copy the range they use into the record, so the caller may
     // rewrite a buffer right after drawing from it.
     void DrawPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32_t startVertex, uint32_t vertexCount);
+    // Draws from a shared snapshot of a static vertex buffer (the caller's copy of its data, made once after it last
+    // changed): no copy of the vertices per draw - the record holds a reference, released by the worker.
+    using SharedVertices = std::shared_ptr<const std::vector<uint8_t>>;
+    void DrawPrimitiveShared(uint32_t primitive, uint32_t fvf, const SharedVertices& data, size_t byteOffset,
+                             uint32_t vertexCount);
+    void DrawIndexedPrimitiveShared(uint32_t primitive, uint32_t fvf, const SharedVertices& data, size_t byteOffset,
+                                    uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount);
     void DrawIndexedPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32_t startVertex, uint32_t vertexCount,
                                 const uint16_t* indices, uint32_t indexCount);
     VertexBuffer* CreateVertexBuffer(uint32_t fvf, uint32_t vertexCount) { return m_device.CreateVertexBuffer(fvf, vertexCount); }

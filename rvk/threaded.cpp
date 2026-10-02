@@ -611,6 +611,24 @@ void ThreadedDevice::DrawIndexedPrimitive(uint32_t primitive, uint32_t fvf, cons
     Commit();
 }
 
+void ThreadedDevice::DrawPrimitiveShared(uint32_t primitive, uint32_t fvf, const SharedVertices& data, size_t byteOffset,
+                                         uint32_t vertexCount)
+{
+    Enqueue([this, primitive, fvf, vertexCount, data, byteOffset](const uint8_t*) {
+        m_device.DrawPrimitive(primitive, fvf, data->data() + byteOffset, vertexCount);
+    });
+}
+
+void ThreadedDevice::DrawIndexedPrimitiveShared(uint32_t primitive, uint32_t fvf, const SharedVertices& data,
+                                                size_t byteOffset, uint32_t vertexCount, const uint16_t* indices,
+                                                uint32_t indexCount)
+{
+    Enqueue([this, primitive, fvf, vertexCount, indexCount, data, byteOffset](const uint8_t* idx) {
+        m_device.DrawIndexedPrimitive(primitive, fvf, data->data() + byteOffset, vertexCount,
+                                      reinterpret_cast<const uint16_t*>(idx), indexCount);
+    }, indices, indexCount * 2);
+}
+
 void ThreadedDevice::DrawPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32_t startVertex, uint32_t vertexCount)
 {
     if (!vb || startVertex + vertexCount > vb->m_count)

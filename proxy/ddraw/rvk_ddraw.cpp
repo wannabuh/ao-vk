@@ -162,6 +162,7 @@ void RvkState::Present()
 {
     if (!device)
         return;
+    ++presentCount;
     Frame();                  // a present without any rendering still shows a frame
     device->EndFrame();
     ParticleFrame();

@@ -336,7 +336,10 @@ HRESULT RDevice::DoDrawPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !vb || start + count > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
-    dev->DrawPrimitive(type, vb->desc.dwFVF, vb->data.data() + size_t(start) * vb->stride, count);
+    if (auto* shared = vb->StaticShared())
+        dev->DrawPrimitiveShared(type, vb->desc.dwFVF, *shared, size_t(start) * vb->stride, count);
+    else
+        dev->DrawPrimitive(type, vb->desc.dwFVF, vb->Bytes() + size_t(start) * vb->stride, count);
     return D3D_OK;
 }
 
@@ -349,7 +352,10 @@ HRESULT RDevice::DoDrawIndexedPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTE
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !vb || !idx || start + vcount > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
-    dev->DrawIndexedPrimitive(type, vb->desc.dwFVF, vb->data.data() + size_t(start) * vb->stride, vcount, idx, icount);
+    if (auto* shared = vb->StaticShared())
+        dev->DrawIndexedPrimitiveShared(type, vb->desc.dwFVF, *shared, size_t(start) * vb->stride, vcount, idx, icount);
+    else
+        dev->DrawIndexedPrimitive(type, vb->desc.dwFVF, vb->Bytes() + size_t(start) * vb->stride, vcount, idx, icount);
     return D3D_OK;
 }
 
@@ -367,14 +373,37 @@ RVertexBuffer::RVertexBuffer(const D3DVERTEXBUFFERDESC& d) : desc(d)
 {
     desc.dwSize = sizeof(desc);
     stride = rvk::Device::FvfStride(desc.dwFVF);
-    data.assign(size_t(stride) * desc.dwNumVertices, 0);
+    buf = std::make_shared<std::vector<uint8_t>>(size_t(stride) * desc.dwNumVertices, 0);
+}
+
+// About to be written (or the pointer for writing handed out): if queued draws still reference the vertices, the
+// buffer goes on with a copy of its own (they keep theirs). Only the game's thread makes references, so a count of 1
+// means none are left.
+void RVertexBuffer::Written()
+{
+    shared.reset();
+    if (buf.use_count() > 1)
+        buf = std::make_shared<std::vector<uint8_t>>(*buf);
+    lastWriteFrame = g_rvk.presentCount;
+}
+
+// The vertices to reference for a buffer unchanged for two frames, or null for one written lately - those
+// (characters the game skins into their buffers each frame) are copied per draw, as before.
+const std::shared_ptr<const std::vector<uint8_t>>* RVertexBuffer::StaticShared()
+{
+    if (g_rvk.presentCount < lastWriteFrame + 2)
+        return nullptr;
+    if (!shared)
+        shared = buf;
+    return &shared;
 }
 
 HRESULT RVertexBuffer::DoLock(DWORD, LPVOID* out, LPDWORD size)
 {
     if (!out) return DDERR_INVALIDPARAMS;
-    *out = data.data();
-    if (size) *size = DWORD(data.size());
+    Written();
+    *out = Bytes();
+    if (size) *size = DWORD(buf->size());
     return D3D_OK;
 }
 
@@ -467,9 +496,10 @@ HRESULT RDevice::ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, D
     eyePos.y = -(v[3][0] * v[1][0] + v[3][1] * v[1][1] + v[3][2] * v[1][2]);
     eyePos.z = -(v[3][0] * v[2][0] + v[3][1] * v[2][1] + v[3][2] * v[2][2]);
 
+    dst->Written();                              // its shared copy (StaticSnapshot) is out of date
     for (DWORD i = 0; i < count; ++i) {
-        const uint8_t* in = src->data.data() + size_t(srcIndex + i) * sf.stride;
-        uint8_t* out = dst->data.data() + size_t(dstIndex + i) * df.stride;
+        const uint8_t* in = src->Bytes() + size_t(srcIndex + i) * sf.stride;
+        uint8_t* out = dst->Bytes() + size_t(dstIndex + i) * df.stride;
         float p[4] = {0, 0, 0, 1}, c[4];
         std::memcpy(p, in + sf.pos, 12);
         Transform(wvp, p, c);

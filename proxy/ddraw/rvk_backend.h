@@ -9,6 +9,7 @@
 #include <atomic>
 #include <map>
 #include <string>
+#include <memory>
 #include <vector>
 
 namespace rvkproxy {
@@ -100,6 +101,7 @@ struct RvkState {
     void SetWindow(HWND hwnd);                             // remember / attach the presentation window
     void Frame();                                          // begins a frame if none is open
     void Present();                                        // ends (presents) the current frame
+    uint64_t presentCount = 0;                             // frames presented (vertex buffers' change tracking)
 };
 extern RvkState g_rvk;
 
@@ -221,8 +223,16 @@ class RVertexBuffer final : public Com<BaseIDirect3DVertexBuffer7> {
 public:
     explicit RVertexBuffer(const D3DVERTEXBUFFERDESC& d);
     D3DVERTEXBUFFERDESC desc{};
-    std::vector<uint8_t> data;
+    // The vertices, shared: draws of a buffer that stays unchanged hold a reference to them (StaticShared) instead
+    // of a copy of their range each. Before any write (Lock, ProcessVertices into it - Written) a buffer still
+    // referenced by queued draws gets a copy of its own to write into (copy on write), so those keep what they drew.
+    std::shared_ptr<std::vector<uint8_t>> buf;
     uint32_t stride = 0;
+    uint64_t lastWriteFrame = 0;
+    uint8_t* Bytes() { return buf->data(); }
+    void Written();
+    const std::shared_ptr<const std::vector<uint8_t>>* StaticShared();   // null: written lately (copy per draw)
+    std::shared_ptr<const std::vector<uint8_t>> shared;                  // StaticShared's const view of buf
 
 protected:
     void* Cast(REFIID iid) override { return iid == IID_IDirect3DVertexBuffer7 ? this : nullptr; }
