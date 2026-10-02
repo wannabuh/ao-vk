@@ -148,6 +148,8 @@ float CascadeVisibility(int c, vec3 posW, vec3 n, float nl, out float edge)
         return sum / 9.0;
     }
     float texel = FL.cascadeTexel[c];
+    if ((C.flags.x & F_SHADOWCHEAP) != 0u)              // far foliage: one filtered tap
+        return texture(shadowMap, vec4(uv, float(c), ndc.z));
     float rotation = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + FL.taa.z);
     // Far cascades (distance level of detail): a texel there is wider than most penumbrae, so a small fixed filter
     // instead of the blocker search and the wide one - a quarter of the taps.
@@ -206,7 +208,7 @@ float SunVisibility(vec3 posW, vec3 n)
         float edge;
         float v = CascadeVisibility(c, posW, n, nl, edge);
         if (edge >= 1.0) continue;
-        float blend = smoothstep(0.8, 1.0, edge);
+        float blend = (C.flags.x & F_SHADOWCHEAP) != 0u ? 0.0 : smoothstep(0.8, 1.0, edge);
         if (blend <= 0.0) return v;
         float next = 1.0;
         if (c + 1 < count) {
@@ -328,6 +330,10 @@ void main()
         shade = 1.0;
     }
     bool shadeSun = (C.flags.x & (F_PERPIXEL | F_LIGHTING)) == (F_PERPIXEL | F_LIGHTING);
+    if ((C.flags.x & F_VERTEXSUN) != 0u) {             // far plant lit per vertex: only its sunlight is shadowed
+        gDiffuse.rgb = clamp(vDiffuse.rgb + vMatAmbient * shade, 0.0, 1.0);
+        shadeSun = true;
+    }
     if ((C.flags.x & F_PERPIXEL) != 0u) {
         // Interpolated normals shrink between vertices; restore the length the vertex path lights with
         // (1 with NORMALIZENORMALS, otherwise whatever the world matrix made of the vertex normal).

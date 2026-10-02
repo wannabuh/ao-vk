@@ -202,7 +202,16 @@ void main()
                 specular = vec4(mSpecular.rgb, specular.a);
             } else {
                 vec3 ambient = C.ambient.rgb, diff = vec3(0.0), spec = vec3(0.0), diffL = vec3(0.0), specL = vec3(0.0);
-                AccumulateLights(posW.xyz, normalW, 1.0, 1.0, ambient, diff, spec, diffL, specL);
+                // F_VERTEXSUN: the lights without the sun's direct light, which goes apart to be shadowed per pixel.
+                bool sunApart = (C.flags.x & F_VERTEXSUN) != 0u;
+                AccumulateLights(posW.xyz, normalW, sunApart ? 0.0 : 1.0, 1.0, ambient, diff, spec, diffL, specL);
+                if (sunApart) {
+                    vec3 a2 = vec3(0.0), withSun = vec3(0.0), s2 = vec3(0.0), dl2 = vec3(0.0), sl2 = vec3(0.0);
+                    AccumulateLights(posW.xyz, normalW, 1.0, 0.0, a2, withSun, s2, dl2, sl2);
+                    vec3 a3 = vec3(0.0), without = vec3(0.0), s3 = vec3(0.0), dl3 = vec3(0.0), sl3 = vec3(0.0);
+                    AccumulateLights(posW.xyz, normalW, 0.0, 0.0, a3, without, s3, dl3, sl3);
+                    vMatAmbient = mDiffuse.rgb * max(withSun - without, vec3(0.0));
+                }
                 diff += diffL;
                 spec += specL;
                 diffuse = vec4(mEmissive.rgb + mAmbient.rgb * ambient + mDiffuse.rgb * diff, mDiffuse.a);

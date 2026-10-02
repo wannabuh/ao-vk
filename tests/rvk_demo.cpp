@@ -1492,7 +1492,7 @@ int main(int argc, char** argv)
     float headroom = 1.0f;
     double fadeIn = 0.0;
     bool hdr = false;
-    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, volShafts = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, sway = 0.0f, bump = 0.0f, grassPush = 1.0f, plantDetail = 1.0f;
+    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, volShafts = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, sway = 0.0f, bump = 0.0f, grassPush = 1.0f, plantDetail = 1.0f, foliageLod = 35.0f;
     float saturation = 1.0f, contrast = 1.0f, warmth = 0.0f, nightTint = 0.0f, vignette = 0.0f;
     bool lutSepia = false, taa = false;
     float sharpen = 0.4f;
@@ -1536,6 +1536,7 @@ int main(int argc, char** argv)
         else if (a == "--grass-flip") g_grassFlip = true;
         else if (a == "--grass-dense" && i + 1 < argc) g_grassDense = std::atoi(argv[++i]);
         else if (a == "--grass-size" && i + 1 < argc) g_grassSize = float(std::atof(argv[++i]));
+        else if (a == "--foliage-lod" && i + 1 < argc) foliageLod = float(std::atof(argv[++i]));
         else if (a == "--plant-detail" && i + 1 < argc) plantDetail = float(std::atof(argv[++i]));
         else if (a == "--grass-push" && i + 1 < argc) grassPush = float(std::atof(argv[++i]));
         else if (a == "--deform-cube" && i + 1 < argc) g_deformCube = float(std::atof(argv[++i]));
@@ -1627,6 +1628,7 @@ int main(int argc, char** argv)
     dev.SetSway(sway);
     dev.SetGrassPush(grassPush);
     dev.SetPlantDetail(plantDetail);
+    dev.SetFoliageLod(foliageLod);
     dev.SetTaa(taa, sharpen);
     dev.SetGrading(saturation, contrast, warmth, 1.0f, nightTint, vignette);
     if (lutSepia) {                      // --lut-sepia: a 16^3 sepia lookup table in the day slot (the 3D LUT path)

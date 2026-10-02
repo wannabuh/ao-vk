@@ -80,6 +80,7 @@ public:
     void SetSway(float strength);
     void SetGrassPush(float strength);
     void SetPlantDetail(float detail);
+    void SetFoliageLod(float distance);
     void SetTaa(bool enable, float sharpen);
     void ProfileWindow(bool start, const std::string& label);
     void ProfileManualEnd();

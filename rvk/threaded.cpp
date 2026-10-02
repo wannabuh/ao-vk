@@ -485,6 +485,11 @@ void ThreadedDevice::SetPlantDetail(float detail)
     Enqueue([this, detail](const uint8_t*) { m_device.SetPlantDetail(detail); });
 }
 
+void ThreadedDevice::SetFoliageLod(float distance)
+{
+    Enqueue([this, distance](const uint8_t*) { m_device.SetFoliageLod(distance); });
+}
+
 void ThreadedDevice::SetBloomOverNearer(float keep)
 {
     Enqueue([this, keep](const uint8_t*) { m_device.SetBloomOverNearer(keep); });

@@ -51,7 +51,7 @@ enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE
                   F_SHADOWTEX = 32768, F_OVERBRIGHT = 65536, F_OVERBRIGHT2X = 131072,
                   F_HDR = 262144, F_GLOW = 524288, F_GLOWALPHA = 1048576,
                   F_BUMP = 2097152, F_BUMPBASE = 4194304, F_FOLIAGE = 8388608, F_EMISSIVE = 16777216,
-                  F_CUTOUT = 33554432 };
+                  F_CUTOUT = 33554432, F_SHADOWCHEAP = 67108864, F_VERTEXSUN = 134217728 };
 
 constexpr uint32_t kFrameLights = 64;
 constexpr uint32_t kPushers = 16;            // info.y of them used

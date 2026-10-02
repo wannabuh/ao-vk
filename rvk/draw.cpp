@@ -399,6 +399,20 @@ bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uin
 // Plants pushed aside by characters. A character is drawn as CPU-skinned parts: lit world meshes, depth-writing,
 // whose vertices are new this frame. A static mesh is new on the frame it first appears too, so a candidate counts
 // only if its fingerprint isn't drawn again the next frame (UpdatePushTrail) - the feet lag two frames.
+// The current draw is further from the camera than the foliage level of detail's distance (its box's nearest point).
+bool Device::FoliageFar() const
+{
+    if (m_foliageLod <= 0.0f || !m_drawMesh || !m_frameEyeValid || m_target != m_scene)
+        return false;
+    float c[3], e[3], d2 = 0.0f;
+    DrawWorldBox(c, e);
+    for (int j = 0; j < 3; ++j) {
+        float d = std::max(std::fabs(m_frameEye[j] - c[j]) - e[j], 0.0f);
+        d2 += d * d;
+    }
+    return d2 > m_foliageLod * m_foliageLod;
+}
+
 // The current draw's mesh box in the world: centre and half extents (the model box's centre moved, its half extents
 // through the matrix's magnitudes).
 void Device::DrawWorldBox(float c[3], float e[3]) const
@@ -1415,9 +1429,18 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                    m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE] && m_rs[d3d::RS_ZFUNC] != d3d::CMP_ALWAYS;
     // Foliage candidates: lit, cut out of their texture (alpha test, or blended with depth writes as most of the
     // game's statics are) - the shader keeps those whose texture actually has holes (leaves, not walls).
-    if (m_leafLight > 0.0f && solid3d && (flags & F_LIGHTING) &&
-        (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
+    bool foliage = solid3d && (flags & F_LIGHTING) && (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) &&
+                   (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0;
+    if (m_leafLight > 0.0f && foliage)
         flags |= F_FOLIAGE;
+    // Distance level of detail (RVK_FoliageLod): foliage beyond it - many layers of it, a few pixels each - gets a
+    // single-tap sun shadow and no relief; small plants (the swaying ones) are lit per vertex, the sun kept apart
+    // (F_VERTEXSUN) so that its shadow darkens only the sunlight, as per pixel.
+    if (foliage && FoliageFar()) {
+        flags = (flags & ~(F_BUMP | F_BUMPBASE)) | F_SHADOWCHEAP;
+        if (m_drawSway[3] > 0.5f && (flags & F_PERPIXEL))
+            flags = (flags & ~F_PERPIXEL) | F_VERTEXSUN;
+    }
     // Blended (not additive) with depth writes, as the game draws most statics: the see-through parts must not write
     // depth or motion - plants' quads would show in the ambient occlusion and smear in the motion blur. Fragments
     // nearly invisible anyway are dropped; a plant's (ffp.vert vCutout) below half, like its shadow.

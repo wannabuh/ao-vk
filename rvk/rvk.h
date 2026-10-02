@@ -210,6 +210,8 @@ public:
     void SetGrassPush(float strength) { m_grassPush = strength; m_frameLightsDirty = true; }
     // Plants' big quads split into pieces for smooth bending (0 = off; 1 = pieces about 0.3 units across).
     void SetPlantDetail(float detail) { m_plantDetail = detail; }
+    // Foliage beyond this distance (world units) is shaded more cheaply (0 = off).
+    void SetFoliageLod(float distance) { m_foliageLod = distance; }
     // With HDR: temporal anti-aliasing (jittered scene, resolved against the last frame) and sharpening after it.
     void SetTaa(bool enable, float sharpen) { m_taa = enable; m_sharpen = sharpen; m_frameLightsDirty = true; }
     // Sun shadow penumbra growth with blocker distance (0 = hard), sunlight through leaves, night glow of bright
@@ -624,7 +626,9 @@ private:
     struct PlantMesh { std::vector<uint8_t> vertices; std::vector<uint16_t> indices; uint64_t lastFrame = 0; };
     std::unordered_map<uint64_t, PlantMesh> m_plantMeshes;
     std::unordered_map<uint64_t, float> m_plantMaxEdge;   // a plant mesh's longest edge (model units)
-    float m_plantDetail = 1.0f;                  // pieces per 0.3 world units (0 = plants drawn as the game gives them)
+    float m_plantDetail = 1.0f;
+    float m_foliageLod = 35.0f;                  // RVK_FoliageLod (draw.cpp FoliageFar)
+    bool FoliageFar() const;                  // pieces per 0.3 world units (0 = plants drawn as the game gives them)
     void SubdividePlant(uint32_t& primitive, uint32_t fvf, const detail::FvfLayout& layout, const void*& vertices,
                         uint32_t& vertexCount, const uint16_t*& indices, uint32_t& indexCount);
     float m_drawSway[4] = {};                    // the current draw's sway (for its shadow caster)

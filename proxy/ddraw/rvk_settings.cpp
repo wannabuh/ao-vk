@@ -42,6 +42,7 @@ Setting g_settings[] = {
     {"RVK_Sway",       "Plants sway in the wind (0 = still)",                             "Lighting",       Float, 0, 3, 0.25f, 1, nullptr, 0},
     {"RVK_GrassPush",  "Grass and plants bend away from characters (0 = off)",            "Lighting",       Float, 0, 2, 0.25f, 1, nullptr, 0},
     {"RVK_PlantDetail", "Split big plant quads so they bend smoothly (0 = off)",          "Lighting",       Float, 0, 2, 0.5f, 1, nullptr, 0},
+    {"RVK_FoliageLod", "Foliage further than this is shaded more cheaply (0 = off)",      "Lighting",       Float, 0, 150, 5, 35, nullptr, 0},
     {"RVK_Aniso",      "Anisotropic filtering (1 = off)",                                 "Lighting",       Int,   1, 16, 1, 16, "RANDYVK_ANISOTROPY", 0},
     {"RVK_SunShadow",  "Sun shadows",                                                     "Shadows",        Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
     {"RVK_SunStrength","Sun shadow strength",                                             "Shadows",        Float, 0, 1, 0.05f, 0.65f, "RANDYVK_SHADOW_STRENGTH", 0},
@@ -205,6 +206,7 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_Sway")) d->SetSway(V(n));
     else if (is("RVK_GrassPush")) d->SetGrassPush(V(n));
     else if (is("RVK_PlantDetail")) d->SetPlantDetail(V(n));
+    else if (is("RVK_FoliageLod")) d->SetFoliageLod(V(n));
     else if (is("RVK_Taa") || is("RVK_Sharpen")) d->SetTaa(V("RVK_Taa") != 0.0f, V("RVK_Sharpen"));
     else if (is("RVK_Saturation") || is("RVK_Contrast") || is("RVK_Warmth") || is("RVK_NightTint") ||
              is("RVK_Vignette") || is("RVK_LutAmount"))
