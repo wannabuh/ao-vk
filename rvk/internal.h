@@ -39,6 +39,7 @@ struct DrawTransform {
     d3d::Matrix world;
     d3d::Matrix prevWorld;         // motion vectors: the object's world matrix last frame
     float motion[4];               // x: 1 = world camera; y: 1 = previous positions (binding 8); z: base vertex
+    float sway[4];                 // plants: model y of the base, 1 / model height, tip sway (world units), 1 = on
 };
 
 enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE = 8, F_FOG = 16, F_RANGEFOG = 32,
@@ -56,6 +57,7 @@ struct FrameLights {               // binding 4: per-frame data (constants.glsl 
     float cascadeTexel[4];         // world size of a texel of each cascade
     float cascadeDepth[4];         // world units per unit of each cascade's depth (soft shadows)
     float effects[4];              // light through leaves, night glow (x darkness), sun shadow softness, unused
+    float wind[4];                 // plants' sway: direction x, z, time (s), strength
     float shadowParams[4];         // enabled, strength, cascade count, point light shadow strength
     float sunDir[4];               // w: light headroom (F_OVERBRIGHT)
     float sunColor[4];             // the shadow-casting sun's colour (0 = none)

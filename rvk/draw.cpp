@@ -271,6 +271,13 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->effects[1] = m_hdr ? m_nightGlow * night : 0.0f;
     fl->effects[2] = m_sunSoftness;
     fl->effects[3] = 0.0f;
+    // Wind: a slowly turning direction; the vertex shader adds waves and gusts.
+    double t = std::fmod(SwayClock(), 3600.0);
+    float windAngle = 0.6f + 0.4f * float(std::sin(t * 0.013));
+    fl->wind[0] = std::cos(windAngle);
+    fl->wind[1] = std::sin(windAngle);
+    fl->wind[2] = float(t);
+    fl->wind[3] = m_sway;
     fl->shadowParams[0] = m_shadowValid ? 1.0f : 0.0f;
     fl->shadowParams[1] = m_shadowStrength;
     fl->shadowParams[2] = float(m_cascadeCount);
@@ -348,6 +355,48 @@ uint64_t Device::MotionKey(uint32_t primitive, uint32_t fvf, uint32_t vertexCoun
 bool Device::IsInterfaceDraw(uint32_t fvf)
 {
     return (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW && !IsWater(fvf);
+}
+
+// Plants that sway in the wind: small (0.2 - 3 units tall), lit, drawn into the scene with a cut-out texture (the
+// vertex shader keeps those whose texture is mostly holes - leaves, grass), and static: their vertices are the same as
+// last frame (a character's hair or cloak is CPU-skinned, its vertices change every frame). out: DrawTransform sway.
+bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, float out[4])
+{
+    if (m_sway <= 0.0f || m_target != m_scene || !m_textures[0] || !m_rs[d3d::RS_LIGHTING] || m_drawIsLabel ||
+        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || IsTerrain(fvf) || !m_rs[d3d::RS_ZWRITEENABLE] ||
+        !(m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) || vertexCount < 3 || vertexCount > 4096)
+        return false;
+    const uint8_t* v = static_cast<const uint8_t*>(vertices);
+    float minY = 1e30f, maxY = -1e30f;
+    uint64_t h = 1469598103934665603ull;
+    uint32_t sampleStep = vertexCount > 16 ? vertexCount / 16 : 1;
+    for (uint32_t i = 0; i < vertexCount; ++i) {
+        float y;
+        std::memcpy(&y, v + size_t(i) * stride + 4, 4);
+        minY = std::min(minY, y);
+        maxY = std::max(maxY, y);
+        if (i % sampleStep == 0)
+            for (uint32_t b = 0; b < 12; ++b) h = (h ^ v[size_t(i) * stride + b]) * 1099511628211ull;
+    }
+    const auto& w = m_world.m;
+    float scaleY = std::sqrt(w[1][0] * w[1][0] + w[1][1] * w[1][1] + w[1][2] * w[1][2]);
+    float height = (maxY - minY) * scaleY;
+    if (height < 0.2f || height > 3.0f)
+        return false;
+    // Same mesh in the same place last frame: identity from its size, texture and position (rounded).
+    uint64_t key = (uint64_t(vertexCount) << 40) ^ uint64_t(reinterpret_cast<uintptr_t>(m_textures[0]));
+    for (int j = 0; j < 3; ++j) key = (key ^ uint64_t(int64_t(std::floor(w[3][j] * 4.0f)))) * 1099511628211ull;
+    SwayEntry& e = m_swayStatic[key];
+    e.stable = e.frame + 1 == m_frameNumber && e.positions == h ? e.stable + 1 : (e.frame == m_frameNumber ? e.stable : 0);
+    e.positions = h;
+    e.frame = m_frameNumber;
+    if (e.stable < 2)
+        return false;
+    out[0] = minY;
+    out[1] = 1.0f / (maxY - minY);
+    out[2] = 0.06f * m_sway * height;
+    out[3] = 1.0f;
+    return true;
 }
 
 bool Device::IsWater(uint32_t fvf)
@@ -788,6 +837,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     drawTransform->prevWorld = m_world;
     drawTransform->motion[0] = motion ? 1.0f : 0.0f;
     drawTransform->motion[1] = drawTransform->motion[2] = drawTransform->motion[3] = 0.0f;
+    if (m_external || !SwayParams(fvf, layout.stride, vertices, vertexCount, drawTransform->sway))
+        drawTransform->sway[0] = drawTransform->sway[1] = drawTransform->sway[2] = drawTransform->sway[3] = 0.0f;
     if (motion) {
         // Motion vectors: the same object last frame - same mesh, nearest to where this one is (within 3 units). Not
         // found (new, or a different level of detail): its current matrix, i.e. it moved with the world.

@@ -8,6 +8,7 @@ layout(set = 0, binding = 3, std140) uniform DrawTransform {
     mat4 prevWorld;             // the same object's world matrix last frame (motion vectors)
     vec4 motion;                // x: 1 = world camera, write its motion; y: 1 = last frame's vertex positions in
                                 // binding 8; z: the draw's base vertex (gl_VertexIndex - z = its vertex)
+    vec4 sway;                  // plants: model y of the base, 1 / model height, tip sway (world units), 1 = on
 } D;
 
 layout(set = 0, binding = 0, std140) uniform DrawConstants {

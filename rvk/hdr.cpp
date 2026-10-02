@@ -252,6 +252,8 @@ void Device::DestroyHdrResources()
     for (Texture*& t : m_volumeTex)
         if (t) { DestroyTextureNow(t); t = nullptr; }
     if (m_ssrTex) { DestroyTextureNow(m_ssrTex); m_ssrTex = nullptr; }
+    for (Texture*& t : m_lut)
+        if (t) { DestroyTextureNow(t); t = nullptr; }
     for (Texture*& t : m_contactTex)
         if (t) { DestroyTextureNow(t); t = nullptr; }
     if (m_tonemapped) { DestroyTextureNow(m_tonemapped); m_tonemapped = nullptr; }
@@ -329,10 +331,14 @@ void Device::EndScene()
     Transition(cmd, m_albedo, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     // The upsampled bloom chain sums every level's light: averaged here.
     // params[3]: how much bloom reaches objects nearer than its light (-1: the bloom carries no depth).
-    float params[8] = {m_tonemapKnee, m_exposure, bloom ? m_bloomStrength / float(m_bloomLevels.size()) : 0.0f,
-                       m_bloomDepth ? m_bloomOverNearer : -1.0f, m_aoProj.m[2][2], m_aoProj.m[3][2],
-                       gi ? m_giStrength : 0.0f,
-                       float((volume ? 1 : 0) | (ssr ? 2 : 0) | (ao ? 4 : 0) | (contact ? 8 : 0))};
+    // params[8..15]: colour grading (identity lookup tables until the proxy loads others).
+    for (Texture*& lut : m_lut)
+        if (!lut) lut = CreateLut(16, nullptr);
+    float params[16] = {m_tonemapKnee, m_exposure, bloom ? m_bloomStrength / float(m_bloomLevels.size()) : 0.0f,
+                        m_bloomDepth ? m_bloomOverNearer : -1.0f, m_aoProj.m[2][2], m_aoProj.m[3][2],
+                        gi ? m_giStrength : 0.0f,
+                        float((volume ? 1 : 0) | (ssr ? 2 : 0) | (ao ? 4 : 0) | (contact ? 8 : 0))};
+    GradingParams(params + 8);
     // Depth of field blurs the scene with its ambient occlusion, indirect and volumetric light applied; the tone
     // mapping then leaves them out.
     bool dof = RenderDof(cmd, bloom, ao, gi, volume, params);
@@ -382,7 +388,7 @@ void Device::MakeDepthReadable(VkCommandBuffer cmd)
 // the local-light fraction, the indirect light and the surface colour - the tone mapping itself, or the depth of
 // field's composite.
 void Device::TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, Texture* scene, bool bloom, bool ao,
-                               bool gi, bool volume, const float params[8])
+                               bool gi, bool volume, const float params[16])
 {
     Transition(cmd, dst, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
@@ -418,7 +424,9 @@ void Device::TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pip
                                        {m_pointSampler, m_albedo->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                                        {m_pointSampler, scattered->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                                        {m_pointSampler, reflections->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-                                       {m_pointSampler, contact->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+                                       {m_pointSampler, contact->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                       {m_linearSampler, m_lut[0]->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                       {m_linearSampler, m_lut[1]->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
     static_assert(sizeof(images) / sizeof(images[0]) == kTonemapInputs, "occlusion.glsl bindings");
     VkWriteDescriptorSet w[kTonemapInputs] = {};
     for (uint32_t i = 0; i < kTonemapInputs; ++i) {
@@ -429,7 +437,7 @@ void Device::TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pip
         w[i].pImageInfo = &images[i];
     }
     vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_tonemapLayout, 0, kTonemapInputs, w);
-    vkCmdPushConstants(cmd, m_tonemapLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32, params);
+    vkCmdPushConstants(cmd, m_tonemapLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 64, params);
     vkCmdDraw(cmd, 3, 1, 0, 0);
     vkCmdEndRendering(cmd);
 }
@@ -437,7 +445,7 @@ void Device::TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pip
 // Depth of field (dof_*.frag): the scene with its occlusion -> focus distance (1x1, eased) -> half resolution colour
 // and circle of confusion -> largest CoC per tile and neighbourhood -> depth-aware blur (normal or bokeh) -> blended
 // with the sharp scene into m_dofOut, which the tone mapping reads. False: off (or no world camera this frame).
-bool Device::RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, bool volume, const float tonemapParams[8])
+bool Device::RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, bool volume, const float tonemapParams[16])
 {
     double now = SwayClock(), dt = std::clamp(now - m_dofPrevTime, 0.0, 0.25);
     m_dofPrevTime = now;

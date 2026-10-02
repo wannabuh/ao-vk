@@ -75,6 +75,9 @@ public:
     void SetBloom(float strength, float threshold);
     void SetEffectGlow(float gain);
     void SetBloomOverNearer(float keep);
+    void SetGrading(float saturation, float contrast, float warmth, float lutAmount, float nightTint, float vignette);
+    void SetColorLut(uint32_t slot, uint32_t size, const uint8_t* rgba);   // copied
+    void SetSway(float strength);
     void SetSunSoftness(float s);
     void SetLeafLight(float s);
     void SetNightGlow(float s);

@@ -1417,7 +1417,9 @@ int main(int argc, char** argv)
     float headroom = 1.0f;
     double fadeIn = 0.0;
     bool hdr = false;
-    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, bump = 0.0f;
+    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, sway = 0.0f, bump = 0.0f;
+    float saturation = 1.0f, contrast = 1.0f, warmth = 0.0f, nightTint = 0.0f, vignette = 0.0f;
+    bool lutSepia = false;
     uint32_t anisotropy = 1;
     float motionBlur = 0.0f, dof = 0.0f, dofFocus = 0.0f;
     bool dofBokeh = true, dofFar = true;
@@ -1471,6 +1473,12 @@ int main(int argc, char** argv)
         else if (a == "--leaf" && i + 1 < argc) leaf = float(std::atof(argv[++i]));
         else if (a == "--night-glow" && i + 1 < argc) { nightGlow = float(std::atof(argv[++i])); g_nightSign = true; }
         else if (a == "--contact" && i + 1 < argc) contact = float(std::atof(argv[++i]));
+        else if (a == "--sway" && i + 1 < argc) sway = float(std::atof(argv[++i]));
+        else if (a == "--lut-sepia") lutSepia = true;
+        else if (a == "--grade" && i + 5 < argc) {   // saturation contrast warmth night-tint vignette
+            saturation = float(std::atof(argv[++i])); contrast = float(std::atof(argv[++i]));
+            warmth = float(std::atof(argv[++i])); nightTint = float(std::atof(argv[++i])); vignette = float(std::atof(argv[++i]));
+        }
         else if (a == "--effect-glow" && i + 1 < argc) effectGlow = float(std::atof(argv[++i]));
         else if (a == "--bloom" && i + 1 < argc) { bloom = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--tonemap-knee" && i + 1 < argc) knee = float(std::atof(argv[++i]));
@@ -1527,6 +1535,21 @@ int main(int argc, char** argv)
     dev.SetLeafLight(leaf);
     dev.SetNightGlow(nightGlow);
     dev.SetContactShadows(contact);
+    dev.SetSway(sway);
+    dev.SetGrading(saturation, contrast, warmth, 1.0f, nightTint, vignette);
+    if (lutSepia) {                      // --lut-sepia: a 16^3 sepia lookup table in the day slot (the 3D LUT path)
+        const uint32_t n = 16;
+        std::vector<uint8_t> lut(size_t(n) * n * n * 4);
+        for (uint32_t b = 0; b < n; ++b)
+            for (uint32_t g = 0; g < n; ++g)
+                for (uint32_t r = 0; r < n; ++r) {
+                    float y = (0.3f * r + 0.59f * g + 0.11f * b) / float(n - 1);
+                    uint8_t* p = &lut[((size_t(b) * n + g) * n + r) * 4];
+                    p[0] = uint8_t(std::min(1.0f, y * 1.07f) * 255); p[1] = uint8_t(y * 0.74f * 255);
+                    p[2] = uint8_t(y * 0.43f * 255); p[3] = 255;
+                }
+        dev.SetColorLut(0, n, lut.data());
+    }
     dev.SetAo(ao, aoRadius);
     dev.SetGi(gi, giRadius);
     dev.SetVolume(volume, volHaze);

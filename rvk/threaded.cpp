@@ -433,6 +433,26 @@ void ThreadedDevice::SetContactShadows(float s)
     Enqueue([this, s](const uint8_t*) { m_device.SetContactShadows(s); });
 }
 
+void ThreadedDevice::SetGrading(float saturation, float contrast, float warmth, float lutAmount, float nightTint,
+                                float vignette)
+{
+    Enqueue([=, this](const uint8_t*) { m_device.SetGrading(saturation, contrast, warmth, lutAmount, nightTint, vignette); });
+}
+
+void ThreadedDevice::SetColorLut(uint32_t slot, uint32_t size, const uint8_t* rgba)
+{
+    std::vector<uint8_t> data;
+    if (size && rgba) data.assign(rgba, rgba + size_t(size) * size * size * 4);
+    Enqueue([this, slot, size, data = std::move(data)](const uint8_t*) {
+        m_device.SetColorLut(slot, data.empty() ? 0 : size, data.empty() ? nullptr : data.data());
+    });
+}
+
+void ThreadedDevice::SetSway(float strength)
+{
+    Enqueue([this, strength](const uint8_t*) { m_device.SetSway(strength); });
+}
+
 void ThreadedDevice::SetBloomOverNearer(float keep)
 {
     Enqueue([this, keep](const uint8_t*) { m_device.SetBloomOverNearer(keep); });

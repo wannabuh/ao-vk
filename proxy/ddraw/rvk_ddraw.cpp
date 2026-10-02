@@ -163,6 +163,9 @@ void RvkState::Present()
         if (dn || upKey)
             rvk_settings::Set(s.setting, rvk_settings::Get(s.setting) + (upKey ? s.step : -s.step));
     }
+    // Ctrl+Shift+L: reload the colour lookup tables (randy-vk-day/night.cube).
+    if (pressed('L'))
+        rvk_settings::LoadLuts(device);
     // Ctrl+Shift+F11: lighting debug view (not a setting).
     if (pressed(VK_F11)) {
         device->SetLightingDebug(!device->LightingDebug());

@@ -197,6 +197,14 @@ public:
     void SetSsr(float strength, float water, float gloss, float wet)
     { m_ssr = strength; m_ssrWater = water; m_ssrGloss = gloss; m_ssrWet = wet; m_constantsDirty = true; }
     void SetBloomOverNearer(float keep) { m_bloomOverNearer = keep; }
+    // With HDR: colour grading after the tone mapping (grading.cpp). Neutral: 1, 1, 0, any, 0, 0.
+    void SetGrading(float saturation, float contrast, float warmth, float lutAmount, float nightTint, float vignette)
+    { m_saturation = saturation; m_contrast = contrast; m_warmth = warmth; m_lutAmount = lutAmount;
+      m_nightTint = nightTint; m_vignette = vignette; }
+    // A 3D colour lookup table: slot 0 day, 1 night; size^3 RGBA8, red fastest. size 0: the identity.
+    void SetColorLut(uint32_t slot, uint32_t size, const uint8_t* rgba);
+    // Wind for small plants (grass, bushes, flowers): 0 = still.
+    void SetSway(float strength) { m_sway = strength; m_constantsDirty = true; m_frameLightsDirty = true; }
     // Sun shadow penumbra growth with blocker distance (0 = hard), sunlight through leaves, night glow of bright
     // texels on unlit / self-lit surfaces, contact shadows (screen-space, against the sun).
     void SetSunSoftness(float s) { m_sunSoftness = s; m_frameLightsDirty = true; }
@@ -565,6 +573,15 @@ private:
     Texture* m_contactTex[2] = {};               // half resolution: contact shadow (1 = lit), view depth (ping-pong)
     VkPipeline m_contactPipeline = VK_NULL_HANDLE;
     bool RenderContactShadows(VkCommandBuffer cmd);
+    float m_saturation = 1.0f, m_contrast = 1.0f, m_warmth = 0.0f, m_lutAmount = 1.0f, m_nightTint = 0.3f, m_vignette = 0.0f;
+    Texture* m_lut[2] = {};                      // colour lookup tables: day, night (3D)
+    Texture* CreateLut(uint32_t size, const uint8_t* rgba);
+    void GradingParams(float out[8]) const;
+    float m_sway = 1.0f;
+    // Plants sway only while their vertices stay put (characters' CPU-skinned meshes change every frame).
+    struct SwayEntry { uint64_t positions; uint64_t frame; uint32_t stable; };
+    std::unordered_map<uint64_t, SwayEntry> m_swayStatic;
+    bool SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, float out[4]);
     float m_bloomOverNearer = 0.15f;             // bloom left on objects in front of its light (1 = all)
     bool m_bloomDepth = false;                   // this frame's bloom carries its light's depth
     std::vector<Texture*> m_bloomLevels;         // half resolution and down, float
@@ -645,10 +662,10 @@ private:
     VkPipeline m_dofCompositePipeline = VK_NULL_HANDLE, m_dofFocusPipeline = VK_NULL_HANDLE,
                m_dofPrefilterPipeline = VK_NULL_HANDLE, m_dofTilesPipeline = VK_NULL_HANDLE,
                m_dofGatherPipeline = VK_NULL_HANDLE, m_dofFinalPipeline = VK_NULL_HANDLE;
-    bool RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, bool volume, const float tonemapParams[8]);
-    static constexpr uint32_t kTonemapInputs = 10;   // occlusion.glsl's bindings
+    bool RenderDof(VkCommandBuffer cmd, bool bloom, bool ao, bool gi, bool volume, const float tonemapParams[16]);
+    static constexpr uint32_t kTonemapInputs = 12;   // occlusion.glsl's bindings
     void TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pipeline, Texture* scene, bool bloom, bool ao,
-                           bool gi, bool volume, const float params[8]);
+                           bool gi, bool volume, const float params[16]);
     void MakeDepthReadable(VkCommandBuffer cmd);
     bool m_aoProjValid = false;
     bool RenderAo(VkCommandBuffer cmd);          // false: no AO this frame

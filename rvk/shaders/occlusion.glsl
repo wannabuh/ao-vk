@@ -9,11 +9,15 @@ layout(set = 0, binding = 6) uniform sampler2D albedo;  // the surfaces' own col
 layout(set = 0, binding = 7) uniform sampler2D volume;  // half resolution: light scattered by the air, view depth
 layout(set = 0, binding = 8) uniform sampler2D ssr;     // reflected colour, how much of it shows
 layout(set = 0, binding = 9) uniform sampler2D contact; // half resolution: contact shadow (1 = lit), view depth
+layout(set = 0, binding = 10) uniform sampler3D lutDay;  // colour grading lookup tables (identity unless loaded)
+layout(set = 0, binding = 11) uniform sampler3D lutNight;
 layout(push_constant) uniform Push {
     vec4 params;        // knee, exposure, bloom strength, bloom left on objects nearer than its light (-1: no depth)
     vec4 proj;          // D3D projection m[2][2], m[3][2] (view depth from the depth buffer), indirect light strength,
                         // volumetric light on (bit 1), reflections on (bit 2), ambient occlusion on (bit 4),
                         // contact shadows on (bit 8)
+    vec4 grade;         // saturation, contrast, warmth (-1 cool .. 1 warm), lookup table amount
+    vec4 grade2;        // night (0 day .. 1 night), night tint, vignette, unused
 } P;
 
 // A half-resolution image at this pixel: of the 4 nearest texels, those at this pixel's depth (the same surface,

@@ -10,6 +10,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <vector>
 
 using namespace rvkproxy;
 
@@ -36,6 +38,7 @@ Setting g_settings[] = {
     {"RVK_Bump",       "Generated surface relief (normal maps from textures)",            "Lighting",       Float, 0, 4, 0.25f, 1.5f, "RANDYVK_BUMP", 0},
     {"RVK_LeafLight",  "Sunlight through leaves",                                         "Lighting",       Float, 0, 2, 0.25f, 1, nullptr, 0},
     {"RVK_Headroom",   "Light headroom without HDR",                                       "Lighting",       Float, 1, 2, 0.05f, 1.25f, "RANDYVK_LIGHT_HEADROOM", 0},
+    {"RVK_Sway",       "Plants sway in the wind (0 = still)",                             "Lighting",       Float, 0, 3, 0.25f, 1, nullptr, 0},
     {"RVK_Aniso",      "Anisotropic filtering (1 = off)",                                 "Lighting",       Int,   1, 16, 1, 16, "RANDYVK_ANISOTROPY", 0},
     {"RVK_SunShadow",  "Sun shadows",                                                     "Shadows",        Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
     {"RVK_SunStrength","Sun shadow strength",                                             "Shadows",        Float, 0, 1, 0.05f, 0.65f, "RANDYVK_SHADOW_STRENGTH", 0},
@@ -68,6 +71,12 @@ Setting g_settings[] = {
     {"RVK_MBlur",      "Motion blur (exposure, fraction of 1/60 s; 0 = off)",             "HDR and effects", Float, 0, 2, 0.05f, 0.5f, "RANDYVK_MOTION_BLUR", 0},
     {"RVK_MBlurObj",   "Per-object motion blur (off = camera only)",                      "HDR and effects", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_MBlurNear",  "Camera motion blur: sharp nearer than (world units)",             "HDR and effects", Float, 2, 20, 0.5f, 8, "RANDYVK_MOTION_BLUR_NEAR", 0},
+    {"RVK_Saturation", "Saturation",                                                      "Colour grading", Float, 0, 2, 0.05f, 1, nullptr, 0},
+    {"RVK_Contrast",   "Contrast",                                                        "Colour grading", Float, 0.5f, 1.5f, 0.05f, 1, nullptr, 0},
+    {"RVK_Warmth",     "Warmth (- cooler, + warmer)",                                     "Colour grading", Float, -1, 1, 0.05f, 0, nullptr, 0},
+    {"RVK_NightTint",  "Night: cooler, paler colours",                                    "Colour grading", Float, 0, 1, 0.05f, 0.3f, nullptr, 0},
+    {"RVK_Vignette",   "Vignette (darker corners)",                                       "Colour grading", Float, 0, 1, 0.05f, 0, nullptr, 0},
+    {"RVK_LutAmount",  "Look-up tables randy-vk-day/night.cube (Ctrl+Shift+L reloads)",   "Colour grading", Float, 0, 1, 0.05f, 1, nullptr, 0},
     {"RVK_Dof",        "Depth of field",                                                   "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_DofBokeh",   "Bokeh (hexagonal highlights; off = smooth blur)",                 "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_DofNear",    "Blur in front of the focus",                                      "Depth of field", Bool, 0, 1, 1, 1, nullptr, 0},
@@ -160,6 +169,11 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_Bloom") || is("RVK_BloomThr")) d->SetBloom(V("RVK_Bloom"), V("RVK_BloomThr"));
     else if (is("RVK_BloomFx")) d->SetEffectGlow(s.value);
     else if (is("RVK_BloomOcc")) d->SetBloomOverNearer(s.value);
+    else if (is("RVK_Sway")) d->SetSway(s.value);
+    else if (is("RVK_Saturation") || is("RVK_Contrast") || is("RVK_Warmth") || is("RVK_NightTint") ||
+             is("RVK_Vignette") || is("RVK_LutAmount"))
+        d->SetGrading(V("RVK_Saturation"), V("RVK_Contrast"), V("RVK_Warmth"), V("RVK_LutAmount"), V("RVK_NightTint"),
+                      V("RVK_Vignette"));
     else if (is("RVK_SunSoft")) d->SetSunSoftness(s.value);
     else if (is("RVK_LeafLight")) d->SetLeafLight(s.value);
     else if (is("RVK_NightGlow")) d->SetNightGlow(s.value);
@@ -247,6 +261,59 @@ void ApplyAll(rvk::ThreadedDevice* device)
     Load();
     for (const Setting& s : g_settings)
         Apply(s, device);
+    LoadLuts(device);
+}
+
+// A .cube lookup table (Adobe / Resolve: LUT_3D_SIZE n, then n^3 lines of r g b in 0..1, red fastest) as RGBA8.
+// False: missing or unreadable.
+static bool ReadCube(const char* path, uint32_t* size, std::vector<uint8_t>* rgba)
+{
+    FILE* f = std::fopen(path, "r");
+    if (!f) return false;
+    char line[256];
+    uint32_t n = 0;
+    size_t count = 0;
+    while (std::fgets(line, sizeof(line), f)) {
+        if (std::strncmp(line, "LUT_3D_SIZE", 11) == 0) {
+            n = uint32_t(std::atoi(line + 11));
+            if (n < 2 || n > 64) break;
+            rgba->assign(size_t(n) * n * n * 4, 255);
+            continue;
+        }
+        float r, g, b;
+        if (!n || line[0] == '#' || std::sscanf(line, "%f %f %f", &r, &g, &b) != 3) continue;
+        if (count >= size_t(n) * n * n) break;
+        uint8_t* p = &(*rgba)[count++ * 4];
+        p[0] = uint8_t(std::clamp(r, 0.0f, 1.0f) * 255.0f + 0.5f);
+        p[1] = uint8_t(std::clamp(g, 0.0f, 1.0f) * 255.0f + 0.5f);
+        p[2] = uint8_t(std::clamp(b, 0.0f, 1.0f) * 255.0f + 0.5f);
+    }
+    std::fclose(f);
+    if (!n || count != size_t(n) * n * n) {
+        RvkLog("colour lookup table %s: not a complete 3D .cube table", path);
+        return false;
+    }
+    *size = n;
+    return true;
+}
+
+void LoadLuts(rvk::ThreadedDevice* device)
+{
+    if (!device) return;
+    Load();
+    // randy-vk-day.cube and randy-vk-night.cube next to randy-vk.ini; the day table also serves the night if alone.
+    std::string dir(g_iniPath);
+    size_t slash = dir.find_last_of('\\');
+    dir = slash == std::string::npos ? std::string() : dir.substr(0, slash + 1);
+    uint32_t size[2] = {};
+    std::vector<uint8_t> data[2];
+    const char* names[2] = {"randy-vk-day.cube", "randy-vk-night.cube"};
+    for (int i = 0; i < 2; ++i)
+        if (ReadCube((dir + names[i]).c_str(), &size[i], &data[i]))
+            RvkLog("colour lookup table %s: %u^3", names[i], size[i]);
+    if (!size[1] && size[0]) { size[1] = size[0]; data[1] = data[0]; }
+    for (uint32_t i = 0; i < 2; ++i)
+        device->SetColorLut(i, size[i], size[i] ? data[i].data() : nullptr);
 }
 
 const char* IniPath()

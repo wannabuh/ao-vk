@@ -941,6 +941,9 @@ void Device::FinishShadowFrame()
     m_casters.clear();
     m_shadowItems.clear();
     UpdateCasterCache();
+    if ((m_frameNumber & 63) == 0)               // plants' static check: forget meshes not drawn lately
+        for (auto it = m_swayStatic.begin(); it != m_swayStatic.end();)
+            it = it->second.frame + 2 < m_frameNumber ? m_swayStatic.erase(it) : std::next(it);
 }
 
 }  // namespace rvk
