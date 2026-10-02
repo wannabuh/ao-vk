@@ -112,7 +112,7 @@ static void ProfileSweep(bool start)
         {"baseline", nullptr, 0}, {"soft shadows off", "RVK_SunSoft", 0}, {"point shadows off", "RVK_PtShadows", 0},
         {"sun shadows off", "RVK_SunShadow", 0}, {"contact shadows off", "RVK_Contact", 0},
         {"leaf light off", "RVK_LeafLight", 0}, {"relief (bump) off", "RVK_Bump", 0}, {"light override off", "RVK_LightOver", 0},
-        {"per-pixel lighting off", "RVK_PixelLight", 0}, {"night glow off", "RVK_NightGlow", 0}, {"sway off", "RVK_Sway", 0}, {"grass push off", "RVK_GrassPush", 0},
+        {"per-pixel lighting off", "RVK_PixelLight", 0}, {"night glow off", "RVK_NightGlow", 0}, {"sway off", "RVK_Sway", 0}, {"grass push off", "RVK_GrassPush", 0}, {"plant detail off", "RVK_PlantDetail", 0},
         {"gi off", "RVK_Gi", 0}, {"ao off", "RVK_Ao", 0}, {"volumetric off", "RVK_Volume", 0}, {"reflections off", "RVK_Ssr", 0},
         {"dof off", "RVK_Dof", 0}, {"motion blur off", "RVK_MBlur", 0}, {"taa off", "RVK_Taa", 0}, {"bloom off", "RVK_Bloom", 0},
         {"particles off", "RVK_Particles", 0}, {"hdr off", "RVK_Hdr", 0}, {"baseline again", nullptr, 0},

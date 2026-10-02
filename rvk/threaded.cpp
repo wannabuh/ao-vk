@@ -480,6 +480,11 @@ void ThreadedDevice::SetGrassPush(float strength)
     Enqueue([this, strength](const uint8_t*) { m_device.SetGrassPush(strength); });
 }
 
+void ThreadedDevice::SetPlantDetail(float detail)
+{
+    Enqueue([this, detail](const uint8_t*) { m_device.SetPlantDetail(detail); });
+}
+
 void ThreadedDevice::SetBloomOverNearer(float keep)
 {
     Enqueue([this, keep](const uint8_t*) { m_device.SetBloomOverNearer(keep); });

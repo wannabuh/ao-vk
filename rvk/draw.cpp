@@ -511,6 +511,118 @@ void Device::FillPushers(detail::FrameLights* fl, const float eye[3])
     fl->info[1] = used;
 }
 
+// Splits a plant's triangles evenly (each into n x n, all its vertex data interpolated) so that the pieces are about
+// kPlantCell / RVK_PlantDetail world units across: the wind and the push move vertices, and a big quad with only its
+// four corners could only tilt and shear as a whole. One n for the whole mesh - shared edges split alike, no cracks.
+// The result (a triangle list) is cached by the mesh and n; the draw continues with it.
+void Device::SubdividePlant(uint32_t& primitive, uint32_t fvf, const FvfLayout& layout, const void*& vertices,
+                            uint32_t& vertexCount, const uint16_t*& indices, uint32_t& indexCount)
+{
+    constexpr float kPlantCell = 0.3f;
+    constexpr uint32_t kMaxSplit = 8, kMaxVertices = 30000;
+    if (m_plantDetail <= 0.0f || !m_drawMesh || primitive < d3d::TriangleList || primitive > d3d::TriangleFan)
+        return;
+    // The mesh's triangles as index triples (the game's list, strip or fan).
+    uint32_t count = indices ? indexCount : vertexCount;
+    auto at = [&](uint32_t i) -> uint32_t { return indices ? indices[i] : i; };
+    auto forEachTriangle = [&](auto&& fn) {
+        if (primitive == d3d::TriangleList)
+            for (uint32_t i = 0; i + 2 < count; i += 3) fn(at(i), at(i + 1), at(i + 2));
+        else if (primitive == d3d::TriangleStrip)
+            for (uint32_t i = 0; i + 2 < count; ++i)
+                (i & 1) ? fn(at(i + 1), at(i), at(i + 2)) : fn(at(i), at(i + 1), at(i + 2));
+        else
+            for (uint32_t i = 1; i + 1 < count; ++i) fn(at(0), at(i), at(i + 1));
+    };
+    const uint8_t* src = static_cast<const uint8_t*>(vertices);
+    auto pos = [&](uint32_t v, float out[3]) { std::memcpy(out, src + size_t(v) * layout.stride, 12); };
+    // The longest edge (model units), once per mesh.
+    auto edge = m_plantMaxEdge.find(m_drawMeshKey);
+    if (edge == m_plantMaxEdge.end()) {
+        float longest = 0.0f;
+        forEachTriangle([&](uint32_t a, uint32_t b, uint32_t c) {
+            if (a >= vertexCount || b >= vertexCount || c >= vertexCount) return;
+            float p[3][3];
+            pos(a, p[0]); pos(b, p[1]); pos(c, p[2]);
+            for (int e = 0; e < 3; ++e) {
+                const float* u = p[e];
+                const float* w = p[(e + 1) % 3];
+                float dx = u[0] - w[0], dy = u[1] - w[1], dz = u[2] - w[2];
+                longest = std::max(longest, dx * dx + dy * dy + dz * dz);
+            }
+        });
+        edge = m_plantMaxEdge.emplace(m_drawMeshKey, std::sqrt(longest)).first;
+    }
+    const auto& w = m_world.m;
+    float scale = 0.0f;
+    for (int i = 0; i < 3; ++i) scale = std::max(scale, std::sqrt(w[i][0] * w[i][0] + w[i][1] * w[i][1] + w[i][2] * w[i][2]));
+    uint32_t triangles = primitive == d3d::TriangleList ? count / 3 : count >= 3 ? count - 2 : 0;
+    uint32_t n = uint32_t(std::ceil(edge->second * scale * m_plantDetail / kPlantCell));
+    n = std::min(n, kMaxSplit);
+    while (n > 1 && size_t(triangles) * (n + 1) * (n + 2) / 2 > kMaxVertices)
+        --n;
+    if (n <= 1)
+        return;
+    uint64_t key = m_drawMeshKey ^ (uint64_t(n) * 0x9E3779B97F4A7C15ull);
+    auto it = m_plantMeshes.find(key);
+    if (it == m_plantMeshes.end()) {
+        PlantMesh mesh;
+        const uint32_t stride = layout.stride, words = stride / 4;
+        // Colours (4 bytes each) interpolate per byte; everything else is 32-bit floats.
+        std::vector<bool> isColour(words, false);
+        for (int a : {2, 3})
+            if (layout.offset[a] >= 0 && uint32_t(layout.offset[a]) / 4 < words) isColour[layout.offset[a] / 4] = true;
+        mesh.vertices.reserve(size_t(triangles) * (n + 1) * (n + 2) / 2 * stride);
+        forEachTriangle([&](uint32_t a, uint32_t b, uint32_t c) {
+            if (a >= vertexCount || b >= vertexCount || c >= vertexCount || a == b || b == c || a == c) return;
+            const uint8_t* va = src + size_t(a) * stride;
+            const uint8_t* vb = src + size_t(b) * stride;
+            const uint8_t* vc = src + size_t(c) * stride;
+            uint32_t base = uint32_t(mesh.vertices.size() / stride);
+            // Vertex (i, j): a + (b - a) i/n + (c - a) j/n, row by row.
+            for (uint32_t j = 0; j <= n; ++j)
+                for (uint32_t i = 0; i + j <= n; ++i) {
+                    float wb = float(i) / float(n), wc = float(j) / float(n), wa = 1.0f - wb - wc;
+                    size_t o = mesh.vertices.size();
+                    mesh.vertices.resize(o + stride);
+                    uint8_t* out = &mesh.vertices[o];
+                    for (uint32_t k = 0; k < words; ++k) {
+                        if (isColour[k]) {
+                            for (uint32_t ch = 0; ch < 4; ++ch)
+                                out[k * 4 + ch] = uint8_t(std::lround(va[k * 4 + ch] * wa + vb[k * 4 + ch] * wb +
+                                                                      vc[k * 4 + ch] * wc));
+                        } else {
+                            float fa, fb, fc;
+                            std::memcpy(&fa, va + k * 4, 4); std::memcpy(&fb, vb + k * 4, 4); std::memcpy(&fc, vc + k * 4, 4);
+                            float v = (i == 0 && j == 0) ? fa : (i == n) ? fb : (j == n) ? fc : fa * wa + fb * wb + fc * wc;
+                            std::memcpy(out + k * 4, &v, 4);
+                        }
+                    }
+                }
+            auto index = [&](uint32_t i, uint32_t j) {
+                // Rows shrink by one: row j starts after sum over rows < j of (n + 1 - r).
+                return uint16_t(base + j * (n + 1) - j * (j - 1) / 2 + i);
+            };
+            for (uint32_t j = 0; j < n; ++j)
+                for (uint32_t i = 0; i + j < n; ++i) {
+                    mesh.indices.insert(mesh.indices.end(), {index(i, j), index(i + 1, j), index(i, j + 1)});
+                    if (i + j + 1 < n)
+                        mesh.indices.insert(mesh.indices.end(), {index(i + 1, j), index(i + 1, j + 1), index(i, j + 1)});
+                }
+        });
+        if (mesh.indices.empty())
+            return;
+        it = m_plantMeshes.emplace(key, std::move(mesh)).first;
+    }
+    it->second.lastFrame = m_frameNumber;
+    primitive = d3d::TriangleList;
+    vertices = it->second.vertices.data();
+    vertexCount = uint32_t(it->second.vertices.size() / layout.stride);
+    indices = it->second.indices.data();
+    indexCount = uint32_t(it->second.indices.size());
+    (void)fvf;
+}
+
 // The water doesn't write depth; the reflections need its surface (the depth buffer gives their position and
 // normal), as do the ambient occlusion and the volumetric light, which then end at the water. Floating text (the
 // "Entering ..." messages) comes out of ProcessVertices in the same format: drawn over everything (depth test ALWAYS),
@@ -1055,6 +1167,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     double since = (m_frameNumber & 15) == 0 ? ProfileCpu() : 0.0;   // per-draw CPU sections (profiling)
     DrawMeshInfo(fvf, layout.stride, vertices, vertexCount, indices, indexCount);
     PushCandidateDraw(fvf);
+    // A swaying plant: its big quads split into small ones (cached), so they bend rather than tilt as a whole.
+    float sway[4] = {};
+    bool swaying = !m_external && SwayParams(fvf, layout.stride, vertices, vertexCount, sway);
+    if (swaying)
+        SubdividePlant(primitive, fvf, layout, vertices, vertexCount, indices, indexCount);
 
     // Render targets bound as textures must be readable; layout changes can't happen inside rendering.
     bool needTransition = false;
@@ -1097,8 +1214,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     drawTransform->prevWorld = m_world;
     drawTransform->motion[0] = motion ? 1.0f : 0.0f;
     drawTransform->motion[1] = drawTransform->motion[2] = drawTransform->motion[3] = 0.0f;
-    if (m_external || !SwayParams(fvf, layout.stride, vertices, vertexCount, drawTransform->sway))
-        drawTransform->sway[0] = drawTransform->sway[1] = drawTransform->sway[2] = drawTransform->sway[3] = 0.0f;
+    std::memcpy(drawTransform->sway, sway, sizeof(sway));
     std::memcpy(m_drawSway, drawTransform->sway, sizeof(m_drawSway));
     if (m_dumpFile && m_drawSway[3] > 0.5f) {    // frame dump: how the plant sways (after its D line)
         const auto& w = m_world.m;

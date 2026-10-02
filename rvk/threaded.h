@@ -79,6 +79,7 @@ public:
     void SetColorLut(uint32_t slot, uint32_t size, const uint8_t* rgba);   // copied
     void SetSway(float strength);
     void SetGrassPush(float strength);
+    void SetPlantDetail(float detail);
     void SetTaa(bool enable, float sharpen);
     void ProfileWindow(bool start, const std::string& label);
     void ProfileManualEnd();

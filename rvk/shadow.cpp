@@ -984,6 +984,12 @@ void Device::FinishShadowFrame()
     if ((m_frameNumber & 31) == 0 || m_meshInfo.size() > 60000)
         for (auto it = m_meshInfo.begin(); it != m_meshInfo.end();)
             it = it->second.lastFrame + 30 < m_frameNumber ? m_meshInfo.erase(it) : std::next(it);
+    if ((m_frameNumber & 31) == 0) {
+        for (auto it = m_plantMeshes.begin(); it != m_plantMeshes.end();)
+            it = it->second.lastFrame + 30 < m_frameNumber ? m_plantMeshes.erase(it) : std::next(it);
+        for (auto it = m_plantMaxEdge.begin(); it != m_plantMaxEdge.end();)
+            it = m_meshInfo.count(it->first) ? std::next(it) : m_plantMaxEdge.erase(it);
+    }
 }
 
 }  // namespace rvk

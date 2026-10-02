@@ -758,6 +758,7 @@ float g_movingCube = 0.0f; // --moving-cube: the shadow test's big right cube mo
 float g_deformCube = 0.0f; // --deform-cube: its top vertices move this far a frame along x (like CPU skinning)
 float g_grassWalk = -100.0f;  // --grass-walk X: a patch of grass and an animated "character" standing at x = X in it
 float g_grassWalkSpeed = 0.0f; // --grass-walk-speed: ... walking this far along x a frame
+float g_grassSize = 1.0f;      // --grass-size: the tufts' cards this many times bigger (big quads)
 bool g_grassFlip = false;      // --grass-flip: the tufts modelled upside down, turned up by their world matrix
 
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
@@ -951,11 +952,14 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
             dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
             for (int gz = 0; gz < 8; ++gz)
                 for (int gx = 0; gx < 13; ++gx) {
-                    float x = -3.0f + 0.5f * float(gx) + 0.11f * float(gz % 3), z = -5.0f + 0.4f * float(gz), s = 0.3f;
-                    VtxMesh t[8] = {{x - s, 0, z, 0, 0, -1, 0xFF60C060, 0, 1}, {x - s, 0.7f, z, 0, 0, -1, 0xFF60C060, 0, 0},
-                                    {x + s, 0.7f, z, 0, 0, -1, 0xFF60C060, 1, 0}, {x + s, 0, z, 0, 0, -1, 0xFF60C060, 1, 1},
-                                    {x, 0, z - s, -1, 0, 0, 0xFF60C060, 0, 1}, {x, 0.7f, z - s, -1, 0, 0, 0xFF60C060, 0, 0},
-                                    {x, 0.7f, z + s, -1, 0, 0, 0xFF60C060, 1, 0}, {x, 0, z + s, -1, 0, 0, 0xFF60C060, 1, 1}};
+                    if (g_grassSize > 1.5f && (gx % 4 != 1 || gz % 4 != 2))
+                        continue;                    // big cards: a few, apart
+                    float x = -3.0f + 0.5f * float(gx) + 0.11f * float(gz % 3), z = -5.0f + 0.4f * float(gz), s = 0.3f * g_grassSize,
+                          gh = 0.7f * g_grassSize;
+                    VtxMesh t[8] = {{x - s, 0, z, 0, 0, -1, 0xFF60C060, 0, 1}, {x - s, gh, z, 0, 0, -1, 0xFF60C060, 0, 0},
+                                    {x + s, gh, z, 0, 0, -1, 0xFF60C060, 1, 0}, {x + s, 0, z, 0, 0, -1, 0xFF60C060, 1, 1},
+                                    {x, 0, z - s, -1, 0, 0, 0xFF60C060, 0, 1}, {x, gh, z - s, -1, 0, 0, 0xFF60C060, 0, 0},
+                                    {x, gh, z + s, -1, 0, 0, 0xFF60C060, 1, 0}, {x, 0, z + s, -1, 0, 0, 0xFF60C060, 1, 1}};
                     uint16_t ti[12] = {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7};
                     dev.SetRenderState(RS_CULLMODE, CULL_NONE);
                     if (g_grassFlip) {               // model y down, around the tuft's origin
@@ -1486,7 +1490,7 @@ int main(int argc, char** argv)
     float headroom = 1.0f;
     double fadeIn = 0.0;
     bool hdr = false;
-    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, volShafts = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, sway = 0.0f, bump = 0.0f, grassPush = 1.0f;
+    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, volShafts = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, sway = 0.0f, bump = 0.0f, grassPush = 1.0f, plantDetail = 1.0f;
     float saturation = 1.0f, contrast = 1.0f, warmth = 0.0f, nightTint = 0.0f, vignette = 0.0f;
     bool lutSepia = false, taa = false;
     float sharpen = 0.4f;
@@ -1528,6 +1532,8 @@ int main(int argc, char** argv)
         else if (a == "--grass-walk" && i + 1 < argc) g_grassWalk = float(std::atof(argv[++i]));
         else if (a == "--grass-walk-speed" && i + 1 < argc) g_grassWalkSpeed = float(std::atof(argv[++i]));
         else if (a == "--grass-flip") g_grassFlip = true;
+        else if (a == "--grass-size" && i + 1 < argc) g_grassSize = float(std::atof(argv[++i]));
+        else if (a == "--plant-detail" && i + 1 < argc) plantDetail = float(std::atof(argv[++i]));
         else if (a == "--grass-push" && i + 1 < argc) grassPush = float(std::atof(argv[++i]));
         else if (a == "--deform-cube" && i + 1 < argc) g_deformCube = float(std::atof(argv[++i]));
         else if (a == "--moving-cube" && i + 1 < argc) g_movingCube = float(std::atof(argv[++i]));
@@ -1617,6 +1623,7 @@ int main(int argc, char** argv)
     dev.SetContactShadows(contact);
     dev.SetSway(sway);
     dev.SetGrassPush(grassPush);
+    dev.SetPlantDetail(plantDetail);
     dev.SetTaa(taa, sharpen);
     dev.SetGrading(saturation, contrast, warmth, 1.0f, nightTint, vignette);
     if (lutSepia) {                      // --lut-sepia: a 16^3 sepia lookup table in the day slot (the 3D LUT path)
