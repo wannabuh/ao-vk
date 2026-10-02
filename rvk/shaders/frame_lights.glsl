@@ -1,7 +1,7 @@
 // The per-frame light block (binding 4), shared by the scene shaders (constants.glsl) and the volumetric light.
 // Must match FrameLights in rvk/internal.h (std140).
 struct Light {
-    vec4 diffuse, specular, ambient;    // frame lights: ambient.w = 1 for a light a character carries
+    vec4 diffuse, specular, ambient;
     vec4 position;      // xyz world space, w = D3DLIGHTTYPE
     vec4 direction;     // xyz world space, w = range
     vec4 atten;         // attenuation0, attenuation1, attenuation2, falloff

@@ -61,11 +61,10 @@ void main()
     }
 
     // Lamps: their light scattered along the ray within their range, falling off with the square of the distance;
-    // the integral of 1 / (h^2 + t^2) is atan(t / h) / h. Not the lights characters carry: a haze over every head.
+    // the integral of 1 / (h^2 + t^2) is atan(t / h) / h.
     if (P.params.z > 0.0) {
         for (uint i = 0u; i < FL.info.x; ++i) {
             Light l = FL.lights[i];
-            if (l.ambient.w > 0.5) continue;
             float range = l.direction.w;
             vec3 oc = l.position.xyz - P.eye.xyz;
             float t0 = dot(oc, dir);
