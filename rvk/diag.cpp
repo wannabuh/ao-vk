@@ -119,7 +119,23 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
                       uint32_t indexCount)
 {
     uint32_t n = m_dumpDraw++;
-    if ((fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW) return;     // 2D
+    if ((fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW) {
+        // 2D - but ProcessVertices output (water, floating text) is drawn in the scene: listed with its state.
+        if (IsWater(fvf)) {
+            const Texture* t = m_textures[0];
+            float z0 = 0.0f, rhw0 = 0.0f;
+            if (vertexCount) { std::memcpy(&z0, static_cast<const uint8_t*>(vertices) + 8, 4);
+                               std::memcpy(&rhw0, static_cast<const uint8_t*>(vertices) + 12, 4); }
+            std::fprintf(m_dumpFile, "P %u: pre-transformed in scene, prim %u fvf 0x%x v %u i %u | tex0 %ux%u fmt %u | "
+                         "blend %u %u/%u | alphatest %u | z %u/%u/%u | first vertex z %.4f rhw %.4f | depth %s\n",
+                         n, primitive, fvf, vertexCount, indexCount, t ? t->Width() : 0, t ? t->Height() : 0,
+                         t ? uint32_t(t->GetFormat()) : 0, m_rs[d3d::RS_ALPHABLENDENABLE], m_rs[d3d::RS_SRCBLEND],
+                         m_rs[d3d::RS_DESTBLEND], m_rs[d3d::RS_ALPHATESTENABLE], m_rs[d3d::RS_ZENABLE],
+                         m_rs[d3d::RS_ZWRITEENABLE], m_rs[d3d::RS_ZFUNC], z0, rhw0,
+                         WaterWritesDepth(fvf) ? "forced (water)" : "as the game sets it");
+        }
+        return;
+    }
     if (IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount)) {
         std::fprintf(m_dumpFile, "D %u: blob shadow (hidden), prim %u v %u i %u\n", n, primitive, vertexCount, indexCount);
         return;

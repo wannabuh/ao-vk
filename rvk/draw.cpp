@@ -399,6 +399,16 @@ bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uin
     return true;
 }
 
+// The water doesn't write depth; the reflections need its surface (the depth buffer gives their position and
+// normal), as do the ambient occlusion and the volumetric light, which then end at the water. Floating text (the
+// "Entering ..." messages) comes out of ProcessVertices in the same format: drawn over everything (depth test ALWAYS),
+// it must not write depth - the depth of field's focus would land on it.
+bool Device::WaterWritesDepth(uint32_t fvf) const
+{
+    return IsWater(fvf) && m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZFUNC] != d3d::CMP_ALWAYS && m_target == m_scene &&
+           m_ssr > 0.0f;
+}
+
 bool Device::IsWater(uint32_t fvf)
 {
     return fvf == (d3d::FVF_XYZRHW | d3d::FVF_DIFFUSE | d3d::FVF_SPECULAR | (1u << d3d::FVF_TEXCOUNT_SHIFT));
@@ -627,9 +637,7 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     // back-to-front sorted list, so nothing drawn after them needs their depth.
     if (m_drawIsLabel && m_target == m_scene && m_aoStrength > 0.0f)
         zWrite = 0;
-    // The water doesn't write depth; the reflections need its surface (the depth buffer gives their position and
-    // normal), as do the ambient occlusion and the volumetric light, which then end at the water.
-    if (zEnable && m_target == m_scene && m_ssr > 0.0f && IsWater(fvf))
+    if (WaterWritesDepth(fvf))
         zWrite = 1;
     uint32_t zFunc = m_rs[d3d::RS_ZFUNC];
     if (c.depthTest != zEnable) { vkCmdSetDepthTestEnable(cmd, zEnable); c.depthTest = zEnable; }
@@ -949,7 +957,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     float reflectivity = 0.0f, wet = 0.0f;
     if (m_ssr > 0.0f) {
         if (IsWater(fvf)) {
-            reflectivity = m_ssrWater;
+            // Floating text comes in the water's format, drawn over everything: not reflective.
+            if (m_rs[d3d::RS_ZFUNC] != d3d::CMP_ALWAYS) reflectivity = m_ssrWater;
         } else if ((fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) {
             if (m_rs[d3d::RS_SPECULARENABLE] && m_material.power > 0.0f) reflectivity = m_ssrGloss;
             wet = m_ssrWet;
