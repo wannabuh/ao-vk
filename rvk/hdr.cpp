@@ -677,20 +677,22 @@ bool Device::RenderVolume(VkCommandBuffer cmd)
 
     struct {
         d3d::Matrix invViewProj;
-        float eye[4], params[4], size[4];
+        float eye[4], params[4], size[4], shafts[4];
     } push;
     push.invViewProj = inverse;
     const auto& v = m_aoView.m;
     for (int i = 0; i < 3; ++i) push.eye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
-    push.eye[3] = 250.0f;                                         // longest ray
-    push.params[0] = 0.0015f * m_volumeHaze;                      // scattering per world unit
+    push.eye[3] = 120.0f;                                         // longest ray
+    push.params[0] = 0.006f * m_volumeHaze;                       // scattering per world unit (at the ground)
     push.params[1] = m_volume;
-    push.params[2] = 0.0f;
+    push.params[2] = float(m_frameNumber % 64) * 0.618034f;       // the march's offsets move on every frame
     push.params[3] = m_aoProj.m[2][2];
     push.size[0] = float(m_scene->m_width);
     push.size[1] = float(m_scene->m_height);
     push.size[2] = 32.0f;                                         // sun steps
     push.size[3] = m_aoProj.m[3][2];
+    push.shafts[0] = 2.0f * m_volumeShafts;
+    push.shafts[1] = push.shafts[2] = push.shafts[3] = 0.0f;
     static_assert(sizeof(push) <= 128, "push constant range");
 
     Texture* dst = m_volumeTex[0];

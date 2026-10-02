@@ -753,6 +753,7 @@ void RunDemo(D& dev, bool windowed, bool stress, int frames, const std::string& 
 }
 
 float g_cameraYaw = 0.0f;  // --camera-yaw: the shadow test's camera turns this much a frame (motion blur)
+bool g_sunView = false;    // --sun-view: the shadow test's camera low, looking into the sun
 float g_movingCube = 0.0f; // --moving-cube: the shadow test's big right cube moves this far a frame along x
 float g_deformCube = 0.0f; // --deform-cube: its top vertices move this far a frame along x (like CPU skinning)
 
@@ -802,6 +803,9 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
         if (topDown) {
             dev.SetTransform(View, LookAtLH({7.5f, 4, 6.5f}, {7.5f, 0, 6.5f}, {0, 0, 1}));
             dev.SetTransform(Projection, PerspectiveLH(kPi / 4.5f, float(kWidth) / kHeight, 0.5f, 200.0f));
+        } else if (g_sunView) {
+            // --sun-view: low, looking towards the sun past the cubes (volumetric light shafts).
+            dev.SetTransform(View, LookAtLH({11.0f, 1.5f, 11.0f}, {2.0f, 5.0f, 3.5f}, {0, 1, 0}));
         } else if (g_cameraYaw != 0.0f) {
             // --camera-yaw r: the camera turns r radians a frame around the scene (motion blur test).
             float a = g_cameraYaw * float(frame), ex = 16.6f * std::sin(a), ez = 2.0f - 16.6f * std::cos(a);
@@ -892,6 +896,15 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
         dev.SetTexture(0, nullptr);
         dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
         const float cubes[4][4] = {{-5, 1, 2, 1}, {-2, 2, 6, 2}, {4, 1.5f, 3, 1.5f}, {7, 0.5f, -2, 0.5f}};
+        if (g_sunView) {                             // --sun-view: tall pillars between the camera and the sun
+            const float pillars[3][2] = {{1.0f, 1.0f}, {-1.5f, 4.0f}, {3.5f, -1.5f}};
+            for (const auto& pl : pillars) {
+                std::vector<VtxMesh> v;
+                std::vector<uint16_t> idx;
+                for (int y = 0; y < 6; ++y) AddCube(v, idx, pl[0], 0.7f + 1.4f * float(y), pl[1], 0.7f);
+                dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, v.data(), uint32_t(v.size()), idx.data(), uint32_t(idx.size()));
+            }
+        }
         for (int k = 0; k < 4; ++k) {                // one draw per object, like the game
             if (k == 2 && topDown)
                 continue;
@@ -1417,7 +1430,7 @@ int main(int argc, char** argv)
     float headroom = 1.0f;
     double fadeIn = 0.0;
     bool hdr = false;
-    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, sway = 0.0f, bump = 0.0f;
+    float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, volShafts = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, sway = 0.0f, bump = 0.0f;
     float saturation = 1.0f, contrast = 1.0f, warmth = 0.0f, nightTint = 0.0f, vignette = 0.0f;
     bool lutSepia = false, taa = false;
     float sharpen = 0.4f;
@@ -1467,6 +1480,7 @@ int main(int argc, char** argv)
         else if (a == "--gi-radius" && i + 1 < argc) giRadius = float(std::atof(argv[++i]));
         else if (a == "--volume" && i + 1 < argc) { volume = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--vol-haze" && i + 1 < argc) volHaze = float(std::atof(argv[++i]));
+        else if (a == "--vol-shafts" && i + 1 < argc) volShafts = float(std::atof(argv[++i]));
         else if (a == "--ssr" && i + 1 < argc) { ssr = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--ssr-wet" && i + 1 < argc) ssrWet = float(std::atof(argv[++i]));
         else if (a == "--bloom-occ" && i + 1 < argc) bloomOcc = float(std::atof(argv[++i]));
@@ -1477,6 +1491,7 @@ int main(int argc, char** argv)
         else if (a == "--sway" && i + 1 < argc) sway = float(std::atof(argv[++i]));
         else if (a == "--lut-sepia") lutSepia = true;
         else if (a == "--taa") taa = true;
+        else if (a == "--sun-view") g_sunView = true;
         else if (a == "--sharpen" && i + 1 < argc) sharpen = float(std::atof(argv[++i]));
         else if (a == "--grade" && i + 5 < argc) {   // saturation contrast warmth night-tint vignette
             saturation = float(std::atof(argv[++i])); contrast = float(std::atof(argv[++i]));
@@ -1556,7 +1571,7 @@ int main(int argc, char** argv)
     }
     dev.SetAo(ao, aoRadius);
     dev.SetGi(gi, giRadius);
-    dev.SetVolume(volume, volHaze);
+    dev.SetVolume(volume, volHaze, volShafts);
     dev.SetSsr(ssr, 1.0f, 0.3f, ssrWet);
     dev.SetBump(bump);
     dev.SetAnisotropy(anisotropy);

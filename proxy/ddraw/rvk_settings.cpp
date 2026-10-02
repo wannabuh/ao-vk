@@ -64,6 +64,7 @@ Setting g_settings[] = {
     {"RVK_GiRadius",   "Indirect light reach (world units)",                              "HDR and effects", Float, 1, 12, 0.5f, 4, nullptr, 0},
     {"RVK_Volume",     "Volumetric light: sun shafts (0 = off)",                          "HDR and effects", Float, 0, 4, 0.25f, 1, nullptr, 0},
     {"RVK_VolHaze",    "Volumetric light: how hazy the air is",                           "HDR and effects", Float, 0.25f, 4, 0.25f, 1, nullptr, 0},
+    {"RVK_VolShafts",  "Volumetric light: shaft contrast (0 = physical)",                 "HDR and effects", Float, 0, 3, 0.25f, 1, nullptr, 0},
     {"RVK_Ssr",        "Reflections (screen-space; 0 = off)",                            "HDR and effects", Float, 0, 2, 0.25f, 1, nullptr, 0},
     {"RVK_SsrWater",   "Reflections: water",                                              "HDR and effects", Float, 0, 1, 0.05f, 1, nullptr, 0},
     {"RVK_SsrGloss",   "Reflections: glossy surfaces",                                    "HDR and effects", Float, 0, 1, 0.05f, 0.3f, nullptr, 0},
@@ -185,7 +186,7 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_Gi") || is("RVK_GiRadius")) d->SetGi(V("RVK_Gi"), V("RVK_GiRadius"));
     else if (std::strncmp(n, "RVK_Ssr", 7) == 0)
         d->SetSsr(V("RVK_Ssr"), V("RVK_SsrWater"), V("RVK_SsrGloss"), V("RVK_SsrWet"));
-    else if (std::strncmp(n, "RVK_Vol", 7) == 0) d->SetVolume(V("RVK_Volume"), V("RVK_VolHaze"));
+    else if (std::strncmp(n, "RVK_Vol", 7) == 0) d->SetVolume(V("RVK_Volume"), V("RVK_VolHaze"), V("RVK_VolShafts"));
     else if (is("RVK_MBlur") || is("RVK_MBlurNear")) d->SetMotionBlur(V("RVK_MBlur"), V("RVK_MBlurNear"));
     else if (is("RVK_MBlurObj")) d->SetMotionBlurMode(s.value != 0.0f ? 1u : 0u);
     else if (std::strncmp(n, "RVK_Part", 8) == 0 && !is("RVK_PartCore")) {

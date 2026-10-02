@@ -85,7 +85,7 @@ public:
     void SetContactShadows(float s);
     void SetAo(float strength, float radius);
     void SetGi(float strength, float radius);
-    void SetVolume(float strength, float haze);
+    void SetVolume(float strength, float haze, float shafts);
     void SetSsr(float strength, float water, float gloss, float wet);
     void SetBump(float strength);
     void SetAnisotropy(uint32_t level);
