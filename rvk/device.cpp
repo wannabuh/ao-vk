@@ -323,10 +323,18 @@ bool Device::CreateLogicalDevice(std::string* error)
     v13.pNext = &eds3;
     eds3.pNext = &vertexInput;
     vkGetPhysicalDeviceFeatures2(m_physical, &features);
-    if (!v13.dynamicRendering || !v13.synchronization2 || !eds3.extendedDynamicState3ColorBlendEnable ||
+    // Quad operations in fragment shaders (ffp_main.glsl: a 2x2 block of cut-out pixels stops before the lighting).
+    VkPhysicalDeviceVulkan11Properties p11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES};
+    VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+    props2.pNext = &p11;
+    vkGetPhysicalDeviceProperties2(m_physical, &props2);
+    bool quad = (p11.subgroupSupportedStages & VK_SHADER_STAGE_FRAGMENT_BIT) &&
+                (p11.subgroupSupportedOperations & VK_SUBGROUP_FEATURE_QUAD_BIT);
+    if (!quad || !v13.dynamicRendering || !v13.synchronization2 || !eds3.extendedDynamicState3ColorBlendEnable ||
         !eds3.extendedDynamicState3ColorBlendEquation || !vertexInput.vertexInputDynamicState ||
         !v13.shaderDemoteToHelperInvocation || !features.features.imageCubeArray) {
-        if (error) *error = "required Vulkan features missing (dynamic rendering, sync2, dynamic blend/vertex input)";
+        if (error) *error = "required Vulkan features missing (dynamic rendering, sync2, dynamic blend/vertex input, "
+                          "fragment quad operations)";
         return false;
     }
     // Enable only what is used.

@@ -1,4 +1,5 @@
 // Direct3D 7 fixed-function pixel processing: two texture stages, specular add, fog, alpha test.
+#extension GL_KHR_shader_subgroup_quad : require
 #include "constants.glsl"
 
 layout(set = 0, binding = 1) uniform sampler2D tex0;
@@ -148,6 +149,14 @@ float CascadeVisibility(int c, vec3 posW, vec3 n, float nl, out float edge)
     }
     float texel = FL.cascadeTexel[c];
     float rotation = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + FL.taa.z);
+    // Far cascades (distance level of detail): a texel there is wider than most penumbrae, so a small fixed filter
+    // instead of the blocker search and the wide one - a quarter of the taps.
+    if (c >= 2) {
+        float sum = 0.0;
+        for (int i = 0; i < 4; ++i)
+            sum += texture(shadowMap, vec4(uv + Vogel(i, 4, rotation) * 1.5 * ts, float(c), ndc.z));
+        return sum / 4.0;
+    }
     float k = 0.02 * soft;                       // penumbra width per world unit from blocker to receiver
     // Blockers: depths in front of the receiver within the widest penumbra (blockers up to ~30 units away). None:
     // lit; all: deep in the shadow (the filter wouldn't reach out of it) - both without the filter.
@@ -266,6 +275,9 @@ vec3 BumpNormal(sampler2D tex, vec3 n, vec3 posW, vec2 uv)
     return normalize(abs(det) * nu - grad) * length(n);
 }
 
+float gSunVisibility = 1.0;          // SunVisibility(vPosW, vNormalW) when computed (main)
+bool gSunVisibilityValid = false;
+
 bool AlphaPass(float a)
 {
     float a8 = floor(a * 255.0 + 0.5), ref = C.misc.y;
@@ -285,10 +297,28 @@ void main()
 {
     gDiffuse = vDiffuse;
     gSpecular = vSpecular;
+    // Cut-out pixels (alpha test, F_CUTOUT) dropped before the lighting and shadows, not after: most of a plant's quad
+    // is see-through. The alpha doesn't depend on the lighting (the lit diffuse keeps the vertex alpha). A dropped
+    // pixel is demoted (a helper: its neighbours' derivatives still need it); a 2x2 block all dropped stops here.
+    bool drop = false;
+    if ((C.flags.x & (F_ALPHATEST | F_CUTOUT)) != 0u) {
+        vec4 e0 = Sample(0u), e1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
+        float a = Cascade(e0, e1, 1.0).a;
+        drop = ((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(a)) || ((C.flags.x & F_CUTOUT) != 0u && a < vCutout);
+    }
+    bool q0 = subgroupQuadBroadcast(drop, 0u), q1 = subgroupQuadBroadcast(drop, 1u);
+    bool q2 = subgroupQuadBroadcast(drop, 2u), q3 = subgroupQuadBroadcast(drop, 3u);
+    if (drop) {
+        discard;                                          // demote (Device: shaderDemoteToHelperInvocation)
+        if (q0 && q1 && q2 && q3) return;
+    }
     // Shadow: lit draws scale the sunlight (per-pixel lighting), others darken their final colour.
     float shade = 1.0, localScale = 1.0, texShade = 1.0;
-    if ((C.flags.x & (F_SHADOW | F_SHADOWCOMP | F_SHADOWTEX)) != 0u)
-        shade = 1.0 - (1.0 - SunVisibility(vPosW, vNormalW.xyz)) * FL.shadowParams.y;
+    if ((C.flags.x & (F_SHADOW | F_SHADOWCOMP | F_SHADOWTEX)) != 0u) {
+        gSunVisibility = SunVisibility(vPosW, vNormalW.xyz);
+        gSunVisibilityValid = true;
+        shade = 1.0 - (1.0 - gSunVisibility) * FL.shadowParams.y;
+    }
     if ((C.flags.x & F_SHADOWCOMP) != 0u) {
         localScale = 1.0 / max(shade, 0.05);
         shade = 1.0;
@@ -400,7 +430,10 @@ void main()
             if (dot(nf, toEye) < 0.0) nf = -nf;                  // the side the camera sees
             float through = max(-dot(nf, L), 0.0), glare = pow(max(dot(-toEye, L), 0.0), 4.0);
             if (through + glare > 0.0) {
-                float visible = FL.shadowParams.x > 0.5 ? SunVisibility(vPosW, -nf) : 1.0;
+                // The sun's visibility on the lit side: the main shadow's when that is the same side (one search).
+                float visible = FL.shadowParams.x <= 0.5 ? 1.0
+                              : gSunVisibilityValid && dot(-nf, vNormalW.xyz) > 0.0 ? gSunVisibility
+                              : SunVisibility(vPosW, -nf);
                 current.rgb += t0.rgb * FL.sunColor.rgb * ((0.5 * through + 0.7 * glare) * visible * holes * FL.effects.x);
             }
         }
