@@ -937,6 +937,14 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
             bool last = c == count - 1;
             if ((item.cached || !last) && BoxInClip(item.boundsMin, item.boundsMax, lightViewProj, false) == -1)
                 continue;
+            // Beyond the nearest cascade, casters a few texels across leave no shadow worth drawing (they still
+            // cast in the sharper cascades nearer the camera).
+            if (c > 0) {
+                float extent = std::max({item.boundsMax[0] - item.boundsMin[0], item.boundsMax[1] - item.boundsMin[1],
+                                         item.boundsMax[2] - item.boundsMin[2]});
+                if (extent < 4.0f * texel)
+                    continue;
+            }
             if (item.cached) ++m_cachedCastersDrawn;
             DrawShadowItem(cmd, bind, item, lightViewProj);
         }

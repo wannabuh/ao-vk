@@ -385,6 +385,18 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
     for (uint32_t k = 0; k < count; ++k) {
         const d3d::Light& l = m_lightsCur[candidates[k].index].light;
         float pos[3] = {l.position.x, l.position.y, l.position.z};
+        PointShadowLight& s = m_pointShadowLights[k];
+        float fade = m_pointShadowFadeIn <= 0.0 ? 1.0f : candidates[k].fade < 0.0f ? 0.0f : std::min(1.0f, candidates[k].fade + fadeStep);
+        // A cube still holding the same light where it was keeps last frame's map every other frame (half the cubes
+        // each frame): a frame's lag of a character's shadow under a lamp doesn't show. Moving lights (carried)
+        // render every frame.
+        if (k < previousCount && previous[k].range == l.range && ((k + m_frameNumber) & 1)) {
+            float dx = previous[k].position[0] - pos[0], dy = previous[k].position[1] - pos[1], dz = previous[k].position[2] - pos[2];
+            if (dx * dx + dy * dy + dz * dz < 1e-4f) {
+                s.fade = fade;
+                continue;
+            }
+        }
         inRange.clear();
         for (uint32_t i = 0; i < m_shadowItems.size(); ++i) {
             const ShadowItem& it = m_shadowItems[i];
@@ -431,11 +443,9 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             }
             vkCmdEndRendering(cmd);
         }
-        PointShadowLight& s = m_pointShadowLights[k];
         std::memcpy(s.position, pos, sizeof(pos));
         s.range = l.range;
-        // Newly shadowed lights fade their shadow in instead of popping it in.
-        s.fade = m_pointShadowFadeIn <= 0.0 ? 1.0f : candidates[k].fade < 0.0f ? 0.0f : std::min(1.0f, candidates[k].fade + fadeStep);
+        s.fade = fade;                           // newly shadowed lights fade their shadow in instead of popping in
     }
     m_pointShadowCount = count;
 
