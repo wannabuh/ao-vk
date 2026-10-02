@@ -885,7 +885,7 @@ private:
     uint32_t m_churnIn = 0, m_churnOut = 0, m_churnBack = 0;
     double m_churnTime = 0.0;
     void PointShadowChurn(const PointShadowLight* previous, uint32_t previousCount, size_t candidates,
-                          const std::function<const d3d::Light&(uint32_t)>& chosen, uint32_t count);
+                          const std::vector<const d3d::Light*>& chosen);
     uint64_t m_ringGeneration = 0, m_constantsGeneration = ~0ull;
     VkDeviceSize m_constantsOffset = 0;
     uint32_t m_constantsFvf = ~0u;

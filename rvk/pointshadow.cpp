@@ -334,14 +334,15 @@ void Device::FindCarriers()
 // Diagnostics (log, once a second): how often the shadowed lights change - lights getting a cube, losing it, and
 // losing it only to get it back within 3 frames (a shadow vanishing for a frame).
 void Device::PointShadowChurn(const PointShadowLight* previous, uint32_t previousCount, size_t candidates,
-                              const std::function<const d3d::Light&(uint32_t)>& chosen, uint32_t count)
+                              const std::vector<const d3d::Light*>& chosen)
 {
+    uint32_t count = uint32_t(chosen.size());
     auto same = [](const float p[3], float range, const d3d::Light& l) {
         float dx = p[0] - l.position.x, dy = p[1] - l.position.y, dz = p[2] - l.position.z;
         return range == l.range && dx * dx + dy * dy + dz * dz < 0.5f * 0.5f;
     };
     for (uint32_t k = 0; k < count; ++k) {
-        const d3d::Light& l = chosen(k);
+        const d3d::Light& l = *chosen[k];
         bool was = false;
         for (uint32_t p = 0; p < previousCount && !was; ++p) was = same(previous[p].position, previous[p].range, l);
         if (was) continue;
@@ -350,8 +351,9 @@ void Device::PointShadowChurn(const PointShadowLight* previous, uint32_t previou
             if (g.frame + 3 >= m_frameNumber && same(g.position, g.range, l)) { ++m_churnBack; break; }
     }
     for (uint32_t p = 0; p < previousCount; ++p) {
+        if (previous[p].range <= 0.0f) continue;     // a free cube
         bool still = false;
-        for (uint32_t k = 0; k < count && !still; ++k) still = same(previous[p].position, previous[p].range, chosen(k));
+        for (uint32_t k = 0; k < count && !still; ++k) still = same(previous[p].position, previous[p].range, *chosen[k]);
         if (still) continue;
         ++m_churnOut;
         m_churnLeft.push_back({{previous[p].position[0], previous[p].position[1], previous[p].position[2]},
@@ -402,7 +404,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
     // floodlights far away, whose shadows are coarse and faint here, took the slots of the lights around the
     // player depending on the camera angle.) A light shadowed last frame keeps its slot unless another is clearly
     // nearer, so lights at similar distances don't swap cubes back and forth.
-    struct Candidate { float key; uint32_t index; float fade; };
+    struct Candidate { float key; uint32_t index; float fade; int slot; };
     std::vector<Candidate> candidates;
     for (uint32_t i = 0; i < m_lightsCur.size(); ++i) {
         const d3d::Light& l = m_lightsCur[i].light;
@@ -415,25 +417,55 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             continue;
         float dx = l.position.x - m_frameEye[0], dy = l.position.y - m_frameEye[1], dz = l.position.z - m_frameEye[2];
         float key = std::sqrt(dx * dx + dy * dy + dz * dz), fade = -1.0f;
+        int slot = -1;
         for (uint32_t p = 0; p < previousCount; ++p) {
             const PointShadowLight& q = previous[p];
             float px = q.position[0] - l.position.x, py = q.position[1] - l.position.y, pz = q.position[2] - l.position.z;
-            if (q.range == l.range && px * px + py * py + pz * pz < 0.5f * 0.5f) {   // same light (may have moved)
-                key *= 0.85f;
+            if (q.range > 0.0f && q.range == l.range && px * px + py * py + pz * pz < 0.5f * 0.5f) {   // same light
+                key *= 0.8f;
                 fade = q.fade;
+                slot = int(p);
                 break;
             }
         }
-        candidates.push_back({key, i, fade});
+        candidates.push_back({key, i, fade, slot});
     }
-    uint32_t count = std::min<uint32_t>(uint32_t(candidates.size()), m_pointShadows);
+    // The cubes' lights: the nearest m_pointShadows candidates are wanted. A light keeps its cube (slot) while it has
+    // one; one no longer wanted fades its shadow out (still rendered) before giving the cube up, and a newly wanted
+    // light takes a free cube and fades in - a shadow never disappears from one frame to the next, as it did when
+    // lights at similar distances swapped places (crowds: every character carries a light) while moving.
+    uint32_t limit = std::min<uint32_t>(m_pointShadows, kMaxPointShadows);
+    uint32_t wanted = std::min<uint32_t>(uint32_t(candidates.size()), limit);
+    std::partial_sort(candidates.begin(), candidates.begin() + wanted, candidates.end(),
+                      [](const Candidate& a, const Candidate& b) { return a.key < b.key; });
+    struct Slot { int candidate = -1; float fade = 0.0f; };
+    Slot slots[kMaxPointShadows];
+    for (uint32_t c = 0; c < candidates.size(); ++c) {
+        const Candidate& cand = candidates[c];
+        if (cand.slot < 0 || uint32_t(cand.slot) >= limit) continue;
+        float fade = c < wanted ? std::min(1.0f, std::max(cand.fade, 0.0f) + fadeStep)
+                                : (m_pointShadowFadeIn <= 0.0 ? 0.0f : cand.fade - fadeStep);
+        if (fade > 0.0f || c < wanted)
+            slots[cand.slot] = {int(c), fade};
+    }
+    for (uint32_t c = 0; c < wanted; ++c) {
+        if (candidates[c].slot >= 0 && uint32_t(candidates[c].slot) < limit) continue;
+        for (uint32_t k = 0; k < limit; ++k)
+            if (slots[k].candidate < 0) {
+                slots[k] = {int(c), m_pointShadowFadeIn <= 0.0 ? 1.0f : 0.0f};
+                break;
+            }
+    }
+    uint32_t count = 0;
+    std::vector<const d3d::Light*> chosen;
+    for (uint32_t k = 0; k < limit; ++k)
+        if (slots[k].candidate >= 0) {
+            count = k + 1;
+            chosen.push_back(&m_lightsCur[candidates[slots[k].candidate].index].light);
+        }
+    PointShadowChurn(previous, previousCount, candidates.size(), chosen);
     if (count == 0)
         return;
-    std::partial_sort(candidates.begin(), candidates.begin() + count, candidates.end(),
-                      [](const Candidate& a, const Candidate& b) { return a.key < b.key; });
-    PointShadowChurn(previous, previousCount, candidates.size(), [&](uint32_t k) -> const d3d::Light& {
-        return m_lightsCur[candidates[k].index].light;
-    }, count);
 
     VkImageSubresourceRange all{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, kMaxPointShadows * 6};
     VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
@@ -454,10 +486,14 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
     ShadowBind bind;
     bool stateSet = false;                       // viewport, scissor and depth bias for the cube faces
     for (uint32_t k = 0; k < count; ++k) {
-        const d3d::Light& l = m_lightsCur[candidates[k].index].light;
-        float pos[3] = {l.position.x, l.position.y, l.position.z};
         PointShadowLight& s = m_pointShadowLights[k];
-        float fade = m_pointShadowFadeIn <= 0.0 ? 1.0f : candidates[k].fade < 0.0f ? 0.0f : std::min(1.0f, candidates[k].fade + fadeStep);
+        if (slots[k].candidate < 0) {            // a free cube between used ones
+            s = {};
+            continue;
+        }
+        const d3d::Light& l = m_lightsCur[candidates[slots[k].candidate].index].light;
+        float pos[3] = {l.position.x, l.position.y, l.position.z};
+        float fade = slots[k].fade;
         // A cube still holding the same light where it was keeps last frame's map every other frame (half the cubes
         // each frame): a frame's lag of a character's shadow under a lamp doesn't show. Moving lights (carried)
         // render every frame.
