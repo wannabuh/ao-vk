@@ -31,7 +31,8 @@ int RvkSettings_Set(const char* name, float value);
 namespace rvk_settings {
 
 void Load();                                        // once: randy-vk.ini (legacy RANDYVK_* env vars where absent)
-float Get(const char* name);
+float Get(const char* name);                        // as set (hotkeys, the settings window)
+float GetEffective(const char* name);               // as in effect (RVK_Enhance off: the game's own look)
 void Set(const char* name, float value);            // clamped, applied to the device if there is one, saved
 void ApplyAll(rvk::ThreadedDevice* device);         // a new device gets every setting (and the colour tables)
 void LoadLuts(rvk::ThreadedDevice* device);         // randy-vk-day/night.cube next to the ini (Ctrl+Shift+L)

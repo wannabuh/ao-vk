@@ -32,6 +32,7 @@ struct Setting {
 // Every renderer option. Order = display order within each section.
 Setting g_settings[] = {
     // name               label                                                             section          type   min   max   step  default env
+    {"RVK_Enhance",    "All renderer enhancements (off = the game's own look; Ctrl+Shift+E)", "General", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_PixelLight", "Per-pixel lighting",                                              "Lighting",       Bool,  0, 1, 1, 1, "RANDYVK_PIXEL_LIGHTING", 0},
     {"RVK_LightOver",  "All nearby lights light every surface (light override)",          "Lighting",       Bool,  0, 1, 1, 1, "RANDYVK_LIGHT_OVERRIDE", 0},
     {"RVK_OwnLight",   "A character's own light lights the character",                    "Lighting",       Bool,  0, 1, 1, 1, nullptr, 0},
@@ -120,7 +121,30 @@ Setting* Find(const char* name)
     return nullptr;
 }
 
-float V(const char* name) { Setting* s = Find(name); return s ? s->value : 0.0f; }
+// With RVK_Enhance off, every enhancement takes the value that leaves the game's own look (the stored settings stay,
+// so switching it back on restores them). Settings not listed here only tune something these switch off.
+struct Vanilla { const char* name; float value; };
+const Vanilla kVanilla[] = {
+    {"RVK_PixelLight", 0}, {"RVK_LightOver", 0}, {"RVK_Bump", 0}, {"RVK_LeafLight", 0}, {"RVK_Headroom", 1},
+    {"RVK_Sway", 0}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
+    {"RVK_Hdr", 0}, {"RVK_Bloom", 0}, {"RVK_BloomFx", 0}, {"RVK_NightGlow", 0}, {"RVK_Ao", 0}, {"RVK_Gi", 0},
+    {"RVK_Volume", 0}, {"RVK_Ssr", 0}, {"RVK_MBlur", 0}, {"RVK_Taa", 0}, {"RVK_Saturation", 1}, {"RVK_Contrast", 1},
+    {"RVK_Warmth", 0}, {"RVK_NightTint", 0}, {"RVK_Vignette", 0}, {"RVK_LutAmount", 0}, {"RVK_Dof", 0},
+    {"RVK_Particles", 0}, {"RVK_PartCore", 1},
+};
+
+float Stored(const char* name) { Setting* s = Find(name); return s ? s->value : 0.0f; }
+
+// The value a setting takes effect with.
+float V(const char* name)
+{
+    Setting* s = Find(name);
+    if (!s) return 0.0f;
+    if (Stored("RVK_Enhance") == 0.0f)
+        for (const Vanilla& v : kVanilla)
+            if (std::strcmp(v.name, name) == 0) return v.value;
+    return s->value;
+}
 
 float Clamp(const Setting& s, float v)
 {
@@ -155,40 +179,44 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     if (!d) return;
     const char* n = s.name;
     auto is = [n](const char* a) { return std::strcmp(n, a) == 0; };
-    if (is("RVK_PixelLight")) d->SetPixelLighting(s.value != 0.0f);
-    else if (is("RVK_LightOver")) d->SetLightOverride(s.value != 0.0f);
-    else if (is("RVK_OwnLight")) d->SetCarrierLit(s.value != 0.0f);
-    else if (is("RVK_Bump")) d->SetBump(s.value);
-    else if (is("RVK_Headroom")) d->SetLightHeadroom(s.value);
-    else if (is("RVK_Aniso")) d->SetAnisotropy(uint32_t(s.value));
-    else if (is("RVK_SunShadow")) d->SetShadows(s.value != 0.0f);
+    if (is("RVK_Enhance")) {                     // every enhancement at its own value or the game's
+        for (const Setting& other : g_settings)
+            if (&other != &s) Apply(other, d);
+    }
+    else if (is("RVK_PixelLight")) d->SetPixelLighting(V(n) != 0.0f);
+    else if (is("RVK_LightOver")) d->SetLightOverride(V(n) != 0.0f);
+    else if (is("RVK_OwnLight")) d->SetCarrierLit(V(n) != 0.0f);
+    else if (is("RVK_Bump")) d->SetBump(V(n));
+    else if (is("RVK_Headroom")) d->SetLightHeadroom(V(n));
+    else if (is("RVK_Aniso")) d->SetAnisotropy(uint32_t(V(n)));
+    else if (is("RVK_SunShadow")) d->SetShadows(V(n) != 0.0f);
     else if (is("RVK_SunStrength") || is("RVK_SunDist") || is("RVK_SunCascade"))
         d->SetShadowParams(V("RVK_SunStrength"), V("RVK_SunDist"), uint32_t(V("RVK_SunCascade")));
-    else if (is("RVK_PtShadows")) d->SetPointShadows(uint32_t(s.value));
+    else if (is("RVK_PtShadows")) d->SetPointShadows(uint32_t(V(n)));
     else if (is("RVK_PtStrength") || is("RVK_PtDay")) d->SetPointShadowStrength(V("RVK_PtStrength"), V("RVK_PtDay"));
-    else if (is("RVK_Hdr")) d->SetHdr(s.value != 0.0f);
+    else if (is("RVK_Hdr")) d->SetHdr(V(n) != 0.0f);
     else if (is("RVK_Exposure") || is("RVK_Knee")) d->SetTonemap(V("RVK_Knee"), V("RVK_Exposure"));
-    else if (is("RVK_HdrRoom")) d->SetHdrHeadroom(s.value);
+    else if (is("RVK_HdrRoom")) d->SetHdrHeadroom(V(n));
     else if (is("RVK_Bloom") || is("RVK_BloomThr")) d->SetBloom(V("RVK_Bloom"), V("RVK_BloomThr"));
-    else if (is("RVK_BloomFx")) d->SetEffectGlow(s.value);
-    else if (is("RVK_BloomOcc")) d->SetBloomOverNearer(s.value);
-    else if (is("RVK_Sway")) d->SetSway(s.value);
+    else if (is("RVK_BloomFx")) d->SetEffectGlow(V(n));
+    else if (is("RVK_BloomOcc")) d->SetBloomOverNearer(V(n));
+    else if (is("RVK_Sway")) d->SetSway(V(n));
     else if (is("RVK_Taa") || is("RVK_Sharpen")) d->SetTaa(V("RVK_Taa") != 0.0f, V("RVK_Sharpen"));
     else if (is("RVK_Saturation") || is("RVK_Contrast") || is("RVK_Warmth") || is("RVK_NightTint") ||
              is("RVK_Vignette") || is("RVK_LutAmount"))
         d->SetGrading(V("RVK_Saturation"), V("RVK_Contrast"), V("RVK_Warmth"), V("RVK_LutAmount"), V("RVK_NightTint"),
                       V("RVK_Vignette"));
-    else if (is("RVK_SunSoft")) d->SetSunSoftness(s.value);
-    else if (is("RVK_LeafLight")) d->SetLeafLight(s.value);
-    else if (is("RVK_NightGlow")) d->SetNightGlow(s.value);
-    else if (is("RVK_Contact")) d->SetContactShadows(s.value);
+    else if (is("RVK_SunSoft")) d->SetSunSoftness(V(n));
+    else if (is("RVK_LeafLight")) d->SetLeafLight(V(n));
+    else if (is("RVK_NightGlow")) d->SetNightGlow(V(n));
+    else if (is("RVK_Contact")) d->SetContactShadows(V(n));
     else if (is("RVK_Ao") || is("RVK_AoRadius")) d->SetAo(V("RVK_Ao"), V("RVK_AoRadius"));
     else if (is("RVK_Gi") || is("RVK_GiRadius")) d->SetGi(V("RVK_Gi"), V("RVK_GiRadius"));
     else if (std::strncmp(n, "RVK_Ssr", 7) == 0)
         d->SetSsr(V("RVK_Ssr"), V("RVK_SsrWater"), V("RVK_SsrGloss"), V("RVK_SsrWet"));
     else if (std::strncmp(n, "RVK_Vol", 7) == 0) d->SetVolume(V("RVK_Volume"), V("RVK_VolHaze"), V("RVK_VolShafts"));
     else if (is("RVK_MBlur") || is("RVK_MBlurNear")) d->SetMotionBlur(V("RVK_MBlur"), V("RVK_MBlurNear"));
-    else if (is("RVK_MBlurObj")) d->SetMotionBlurMode(s.value != 0.0f ? 1u : 0u);
+    else if (is("RVK_MBlurObj")) d->SetMotionBlurMode(V(n) != 0.0f ? 1u : 0u);
     else if (std::strncmp(n, "RVK_Part", 8) == 0 && !is("RVK_PartCore")) {
         rvk::Device::ParticleParams p;
         p.enable = V("RVK_Particles") != 0.0f;
@@ -242,6 +270,12 @@ void Load()
 }
 
 float Get(const char* name)
+{
+    Load();
+    return Stored(name);
+}
+
+float GetEffective(const char* name)
 {
     Load();
     return V(name);

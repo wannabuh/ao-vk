@@ -129,6 +129,7 @@ void RvkState::Present()
     static const Toggle kToggles[] = {
         {VK_F10, "RVK_PixelLight"}, {VK_F7, "RVK_SunShadow"}, {VK_F5, "RVK_Hdr"}, {VK_F8, "RVK_LightOver"},
         {'N', "RVK_MBlurObj"}, {'D', "RVK_Dof"}, {'P', "RVK_Particles"}, {'T', "RVK_Taa"},
+        {'E', "RVK_Enhance"},
     };
     for (const Toggle& t : kToggles)
         if (pressed(t.key))

@@ -182,7 +182,7 @@ uint32_t __fastcall DiaBillRender(void* self, void* /*edx*/, void* viewport)
 
     // The game's own sprites, dimmed while it draws them. (Once none are alive the game draws nothing; rvk then draws
     // the remaining particles itself until they have died out.)
-    float core = rvk_settings::Get("RVK_PartCore");
+    float core = rvk_settings::GetEffective("RVK_PartCore");
     uint32_t savedColor[rvk::Device::kParticleSlots];
     for (uint32_t i = 0; i < count; ++i) {
         savedColor[i] = sprites[i].color;
