@@ -38,8 +38,11 @@ static_assert(sizeof(ShadowPush) <= 128, "push constant range");
 
 d3d::Matrix Mul(const d3d::Matrix& a, const d3d::Matrix& b) { return MulMatrix(a, b); }
 
+
+}  // namespace
+
 // Fast 64-bit hash of a byte range (identity of a caster's geometry).
-uint64_t HashBytes(const void* data, size_t size, uint64_t h)
+uint64_t detail::HashBytes(const void* data, size_t size, uint64_t h)
 {
     const uint8_t* p = static_cast<const uint8_t*>(data);
     auto mix = [&](uint64_t w) { h ^= w; h *= 0x9E3779B97F4A7C15ull; h ^= h >> 29; };
@@ -49,8 +52,6 @@ uint64_t HashBytes(const void* data, size_t size, uint64_t h)
     mix(tail ^ (uint64_t(size) << 56));
     return h;
 }
-
-}  // namespace
 
 int detail::BoxInClip(const float mn[3], const float mx[3], const d3d::Matrix& vp, bool depth)
 {
@@ -440,14 +441,20 @@ uint64_t Device::CasterKey(uint32_t primitive, uint32_t fvf, uint32_t stride, co
     int texOffset;
     float alphaRef;
     ShadowCutout(fvf, &texture, &texOffset, &alphaRef);
-    for (int j = 0; j < 3; ++j) { boundsMin[j] = 1e30f; boundsMax[j] = -1e30f; }
-    const uint8_t* v = static_cast<const uint8_t*>(vertices);
-    for (uint32_t i = 0; i < vertexCount; ++i) {
-        float p[3];
-        std::memcpy(p, v + size_t(i) * stride, sizeof(p));
-        for (int j = 0; j < 3; ++j) {
-            boundsMin[j] = std::min(boundsMin[j], p[j]);
-            boundsMax[j] = std::max(boundsMax[j], p[j]);
+    // The box (and the indices' hash) from the mesh cache when the draw has it; else a pass over the vertices.
+    if (m_drawMesh) {
+        std::memcpy(boundsMin, m_drawMesh->boundsMin, 12);
+        std::memcpy(boundsMax, m_drawMesh->boundsMax, 12);
+    } else {
+        for (int j = 0; j < 3; ++j) { boundsMin[j] = 1e30f; boundsMax[j] = -1e30f; }
+        const uint8_t* v = static_cast<const uint8_t*>(vertices);
+        for (uint32_t i = 0; i < vertexCount; ++i) {
+            float p[3];
+            std::memcpy(p, v + size_t(i) * stride, sizeof(p));
+            for (int j = 0; j < 3; ++j) {
+                boundsMin[j] = std::min(boundsMin[j], p[j]);
+                boundsMax[j] = std::max(boundsMax[j], p[j]);
+            }
         }
     }
     int32_t bounds[6];
@@ -458,7 +465,7 @@ uint64_t Device::CasterKey(uint32_t primitive, uint32_t fvf, uint32_t stride, co
     uint64_t key = 0x5EEDull ^ (uint64_t(fvf) << 32) ^ (uint64_t(primitive) << 24) ^ vertexCount;
     key = HashBytes(bounds, sizeof(bounds), key);
     if (indexCount)
-        key = HashBytes(indices, size_t(indexCount) * 2, key ^ indexCount);
+        key = m_drawMesh ? (key ^ m_drawMesh->indexHash) * 1099511628211ull : HashBytes(indices, size_t(indexCount) * 2, key ^ indexCount);
     // Placement: where it stands (translation, to a quarter unit), not the exact matrix - plants sway by tilting
     // their world matrix a little every frame.
     int32_t at[3] = {int32_t(std::floor(m_world.m[3][0] * 4.0f)), int32_t(std::floor(m_world.m[3][1] * 4.0f)),
@@ -973,9 +980,10 @@ void Device::FinishShadowFrame()
     m_casters.clear();
     m_shadowItems.clear();
     UpdateCasterCache();
-    if ((m_frameNumber & 63) == 0)               // plants' static check: forget meshes not drawn lately
-        for (auto it = m_swayStatic.begin(); it != m_swayStatic.end();)
-            it = it->second.frame + 2 < m_frameNumber ? m_swayStatic.erase(it) : std::next(it);
+    // The mesh cache: forget meshes not drawn for a while (animated ones leave a fingerprint per frame).
+    if ((m_frameNumber & 31) == 0 || m_meshInfo.size() > 60000)
+        for (auto it = m_meshInfo.begin(); it != m_meshInfo.end();)
+            it = it->second.lastFrame + 30 < m_frameNumber ? m_meshInfo.erase(it) : std::next(it);
 }
 
 }  // namespace rvk

@@ -585,9 +585,16 @@ private:
     Texture* CreateLut(uint32_t size, const uint8_t* rgba);
     void GradingParams(float out[8]) const;
     float m_sway = 1.0f;
-    // Plants sway only while their vertices stay put (characters' CPU-skinned meshes change every frame).
-    struct SwayEntry { uint64_t positions; uint64_t frame; uint32_t stable; };
-    std::unordered_map<uint64_t, SwayEntry> m_swayStatic;
+    // What the draw path needs to know of a mesh's vertices (draw.cpp DrawMeshInfo): its model-space box and its
+    // indices' hash, remembered by a fingerprint of the mesh (sizes and 16 sampled vertices and indices) - a static
+    // mesh drawn again (most of them) needs no pass over its vertices; an animated one (CPU-skinned) changes its
+    // fingerprint every frame and gets one pass, shared by its users.
+    struct MeshInfo { float boundsMin[3], boundsMax[3]; uint64_t indexHash; uint64_t firstFrame, lastFrame; };
+    std::unordered_map<uint64_t, MeshInfo> m_meshInfo;
+    const MeshInfo* m_drawMesh = nullptr;        // the current draw's (null: external geometry, pre-transformed)
+    bool m_drawMeshStatic = false;               // ... seen in an earlier frame with the same vertices
+    void DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, const uint16_t* indices,
+                      uint32_t indexCount);
     bool SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, float out[4]);
     float m_drawSway[4] = {};                    // the current draw's sway (for its shadow caster)
     bool m_dynamicWriteMask = false;             // per-draw colour write masks (extended dynamic state 3)

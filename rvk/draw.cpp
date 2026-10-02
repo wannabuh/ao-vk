@@ -364,33 +364,17 @@ bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uin
 {
     if (m_sway <= 0.0f || m_target != m_scene || !m_textures[0] || !m_rs[d3d::RS_LIGHTING] || m_drawIsLabel ||
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || IsTerrain(fvf) || !m_rs[d3d::RS_ZWRITEENABLE] ||
-        !(m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) || vertexCount < 3 || vertexCount > 4096)
+        !(m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) || vertexCount < 3 || vertexCount > 4096 ||
+        !m_drawMesh)
         return false;
-    const uint8_t* v = static_cast<const uint8_t*>(vertices);
-    float minY = 1e30f, maxY = -1e30f;
-    uint64_t h = 1469598103934665603ull;
-    uint32_t sampleStep = vertexCount > 16 ? vertexCount / 16 : 1;
-    for (uint32_t i = 0; i < vertexCount; ++i) {
-        float y;
-        std::memcpy(&y, v + size_t(i) * stride + 4, 4);
-        minY = std::min(minY, y);
-        maxY = std::max(maxY, y);
-        if (i % sampleStep == 0)
-            for (uint32_t b = 0; b < 12; ++b) h = (h ^ v[size_t(i) * stride + b]) * 1099511628211ull;
-    }
+    // Static: the same vertices for the last two frames at least (the mesh cache's fingerprint).
+    if (!m_drawMeshStatic || m_drawMesh->firstFrame + 2 > m_frameNumber)
+        return false;
+    float minY = m_drawMesh->boundsMin[1], maxY = m_drawMesh->boundsMax[1];
     const auto& w = m_world.m;
     float scaleY = std::sqrt(w[1][0] * w[1][0] + w[1][1] * w[1][1] + w[1][2] * w[1][2]);
     float height = (maxY - minY) * scaleY;
     if (height < 0.2f || height > 3.0f)
-        return false;
-    // Same mesh in the same place last frame: identity from its size, texture and position (rounded).
-    uint64_t key = (uint64_t(vertexCount) << 40) ^ uint64_t(reinterpret_cast<uintptr_t>(m_textures[0]));
-    for (int j = 0; j < 3; ++j) key = (key ^ uint64_t(int64_t(std::floor(w[3][j] * 4.0f)))) * 1099511628211ull;
-    SwayEntry& e = m_swayStatic[key];
-    e.stable = e.frame + 1 == m_frameNumber && e.positions == h ? e.stable + 1 : (e.frame == m_frameNumber ? e.stable : 0);
-    e.positions = h;
-    e.frame = m_frameNumber;
-    if (e.stable < 2)
         return false;
     out[0] = minY;
     out[1] = 1.0f / (maxY - minY);
@@ -435,11 +419,16 @@ void Device::FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices,
         return;
     }
     float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
-    const uint8_t* v = static_cast<const uint8_t*>(vertices);
-    for (uint32_t i = 0; i < vertexCount; ++i) {
-        float p[3];
-        std::memcpy(p, v + size_t(i) * stride, 12);
-        for (int j = 0; j < 3; ++j) { mn[j] = std::min(mn[j], p[j]); mx[j] = std::max(mx[j], p[j]); }
+    if (m_drawMesh) {
+        std::memcpy(mn, m_drawMesh->boundsMin, sizeof(mn));
+        std::memcpy(mx, m_drawMesh->boundsMax, sizeof(mx));
+    } else {
+        const uint8_t* v = static_cast<const uint8_t*>(vertices);
+        for (uint32_t i = 0; i < vertexCount; ++i) {
+            float p[3];
+            std::memcpy(p, v + size_t(i) * stride, 12);
+            for (int j = 0; j < 3; ++j) { mn[j] = std::min(mn[j], p[j]); mx[j] = std::max(mx[j], p[j]); }
+        }
     }
     // The model box through the world matrix (centre and half extents).
     float wmn[3], wmx[3];
@@ -463,6 +452,49 @@ void Device::FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices,
         if (d2 <= l.range * l.range)
             out[k >> 5] |= 1u << (k & 31);
     }
+}
+
+// The current draw's mesh info (m_drawMesh): from the cache when its fingerprint was seen before, else one pass over
+// its vertices (box) and indices (hash). World-space meshes (XYZ) only; others get none.
+void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, const uint16_t* indices,
+                          uint32_t indexCount)
+{
+    m_drawMesh = nullptr;
+    m_drawMeshStatic = false;
+    if (m_external || !vertices || !vertexCount || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ)
+        return;
+    const uint8_t* v = static_cast<const uint8_t*>(vertices);
+    uint64_t key = 1469598103934665603ull ^ (uint64_t(fvf) << 40) ^ (uint64_t(stride) << 32) ^ vertexCount;
+    key = HashBytes(&indexCount, 4, key);
+    uint32_t step = vertexCount > 16 ? vertexCount / 16 : 1;
+    for (uint32_t i = 0; i < vertexCount; i += step)
+        key = HashBytes(v + size_t(i) * stride, 12, key);
+    key = HashBytes(v + size_t(vertexCount - 1) * stride, 12, key);
+    if (indices && indexCount) {
+        uint32_t istep = indexCount > 16 ? indexCount / 16 : 1;
+        for (uint32_t i = 0; i < indexCount; i += istep)
+            key = HashBytes(&indices[i], 2, key);
+    }
+    auto it = m_meshInfo.find(key);
+    if (it != m_meshInfo.end()) {
+        m_drawMeshStatic = it->second.firstFrame < m_frameNumber;
+        it->second.lastFrame = m_frameNumber;
+        m_drawMesh = &it->second;
+        return;
+    }
+    MeshInfo info{};
+    for (int j = 0; j < 3; ++j) { info.boundsMin[j] = 1e30f; info.boundsMax[j] = -1e30f; }
+    for (uint32_t i = 0; i < vertexCount; ++i) {
+        float p[3];
+        std::memcpy(p, v + size_t(i) * stride, 12);
+        for (int j = 0; j < 3; ++j) {
+            info.boundsMin[j] = std::min(info.boundsMin[j], p[j]);
+            info.boundsMax[j] = std::max(info.boundsMax[j], p[j]);
+        }
+    }
+    info.indexHash = indices && indexCount ? HashBytes(indices, size_t(indexCount) * 2, indexCount) : 0;
+    info.firstFrame = info.lastFrame = m_frameNumber;
+    m_drawMesh = &m_meshInfo.emplace(key, info).first->second;
 }
 
 bool Device::IsWater(uint32_t fvf)
@@ -883,6 +915,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     VkCommandBuffer cmd = f.main;
     FvfLayout layout = DecodeFvf(fvf);
     double since = (m_frameNumber & 15) == 0 ? ProfileCpu() : 0.0;   // per-draw CPU sections (profiling)
+    DrawMeshInfo(fvf, layout.stride, vertices, vertexCount, indices, indexCount);
 
     // Render targets bound as textures must be readable; layout changes can't happen inside rendering.
     bool needTransition = false;
@@ -936,8 +969,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         // found (new, or a different level of detail): its current matrix, i.e. it moved with the world.
         uint64_t key = MotionKey(primitive, fvf, vertexCount, indices, indexCount);
         // This frame's positions (for next frame's match) of a mesh small enough to be a character's part.
+        // Static meshes (the mesh cache: same vertices as before) need none - only animated ones are compared.
         std::vector<float> positions;
-        if (vertexCount <= kMotionMaxVertices) {
+        if (vertexCount <= kMotionMaxVertices && !m_drawMeshStatic) {
             positions.resize(size_t(vertexCount) * 3);
             const uint8_t* v = static_cast<const uint8_t*>(vertices);
             for (uint32_t i = 0; i < vertexCount; ++i)

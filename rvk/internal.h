@@ -85,6 +85,7 @@ struct FormatInfo {
 const FormatInfo& GetFormatInfo(Format format);
 
 bool Check(VkResult r, const char* what, std::string* error);
+uint64_t HashBytes(const void* data, size_t size, uint64_t h);   // fast 64-bit hash of a byte range
 void ImageBarrier(VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to,
                   VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
                   VkAccessFlags2 dstAccess);
