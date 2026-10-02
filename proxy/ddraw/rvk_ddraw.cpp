@@ -44,6 +44,17 @@ void RvkLog(const char* fmt, ...)
 {
     char path[MAX_PATH] = "randy-vk.log";
     GetEnvironmentVariableA("RANDYVK_LOG", path, sizeof(path));
+    static bool started = false;
+    if (!started) {                              // a session's first line: an old log over 8 MB moves aside
+        started = true;
+        WIN32_FILE_ATTRIBUTE_DATA a;
+        if (GetFileAttributesExA(path, GetFileExInfoStandard, &a) && (a.nFileSizeHigh || a.nFileSizeLow > (8u << 20))) {
+            std::string old(path);
+            size_t dot = old.find_last_of('.');
+            old = (dot == std::string::npos ? old : old.substr(0, dot)) + ".old.log";
+            MoveFileExA(path, old.c_str(), MOVEFILE_REPLACE_EXISTING);
+        }
+    }
     if (FILE* f = std::fopen(path, "a")) {
         std::fputs("randy-vk rvk: ", f);
         va_list args;

@@ -301,7 +301,9 @@ bool ComTraceActive() { return g_active; }
 
 bool InstallDDrawHooks(HMODULE randyOrig)
 {
-    char mode[32] = "";
+    // RANDYVK_DDRAW: rvk (the default) renders with randy-vk's Vulkan renderer; trace keeps the game's DirectDraw and
+    // counts its calls; off keeps the game's DirectDraw untouched (the stock renderer).
+    char mode[32] = "rvk";
     GetEnvironmentVariableA("RANDYVK_DDRAW", mode, sizeof(mode));
     bool rvkMode = _stricmp(mode, "rvk") == 0;
     if (_stricmp(mode, "trace") != 0 && !rvkMode)
