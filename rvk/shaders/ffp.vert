@@ -46,17 +46,19 @@ float PushSpring(float age)
     return exp(-6.0 * t) * cos(7.0 * t);         // overshoot ~7%
 }
 
-vec3 PushOffset(vec3 posW, vec3 modelPos, vec4 sway, float plantHeight, vec2 originXZ)
+vec3 PushOffset(vec3 posW, vec3 modelPos, vec4 sway, float plantHeight, vec2 originXZ, float holes)
 {
-    uint n = min(FL.info.y, 16u);
+    uint mask = D.lightMask.z & ((1u << min(FL.info.y, 16u)) - 1u);   // the pushers near this draw (CPU)
     float amount = FL.effects.w;
-    if (n == 0u || amount <= 0.0) return vec3(0.0);
+    if (mask == 0u || amount <= 0.0 || holes <= 0.0) return vec3(0.0);
     float h = SwayHeight(modelPos, sway);
     if (h <= 0.0) return vec3(0.0);
     float reach = 1.4 * sqrt(amount);
     float phase = dot(originXZ, vec2(3.1, 2.3));
     vec2 push = vec2(0.0), rustle = vec2(0.0);
-    for (uint i = 0u; i < n; ++i) {
+    while (mask != 0u) {
+        uint i = uint(findLSB(mask));
+        mask &= mask - 1u;
         vec4 p = FL.pushers[i];
         float dy = posW.y - p.y;
         if (dy < -1.0 || dy > 3.0) continue;     // a plant on another floor, or a character standing on a roof
@@ -74,7 +76,6 @@ vec3 PushOffset(vec3 posW, vec3 modelPos, vec4 sway, float plantHeight, vec2 ori
     float len = length(v);
     if (len <= 1e-4) return vec3(0.0);
     vec2 dir = v / len;
-    float holes = smoothstep(0.92, 0.7, SwayMeanAlpha());
     float above = h * plantHeight;               // the vertex's height above the base
     float most = min(0.45 * amount, 0.7 * plantHeight);   // the top's furthest lean
     float lean = most * min(len, 1.0) * holes * h * sqrt(h);   // bends most up top
@@ -159,15 +160,16 @@ void main()
         vec3 swayPrev = vec3(0.0);               // the sway last frame (motion vectors)
         if (D.sway.w > 0.5) {
             int axis = clamp(int(D.sway.w + 0.5) - 1, 0, 2);
+            float meanAlpha = SwayMeanAlpha(), holes = smoothstep(0.92, 0.7, meanAlpha);   // once a vertex
             vec3 push = PushOffset(posW.xyz, inPos.xyz, D.sway, length(D.world[axis].xyz) / abs(D.sway.y),
-                                   D.world[3].xz);
-            posW.xz += FL.wind.xy * SwayDistance(inPos.xyz, D.sway, D.world[3].xz, FL.wind.z);
+                                   D.world[3].xz, holes);
+            posW.xz += FL.wind.xy * SwayDistanceHoles(inPos.xyz, D.sway, D.world[3].xz, FL.wind.z, holes);
             posW.xyz += push;
             swayPrev = push;
-            swayPrev.xz += FL.wind.xy * SwayDistance(inPos.xyz, D.sway, D.prevWorld[3].xz, FL.taa.w);
+            swayPrev.xz += FL.wind.xy * SwayDistanceHoles(inPos.xyz, D.sway, D.prevWorld[3].xz, FL.taa.w, holes);
             // A plant (its texture has holes) blended with depth writes is cut out like its shadow: no depth or
             // motion where it is see-through (the ambient occlusion, motion blur and TAA read those).
-            if (SwayMeanAlpha() < 0.92) vCutout = 0.35;
+            if (meanAlpha < 0.92) vCutout = 0.35;
         }
         vec4 pv = C.view * posW;
         gl_Position = C.proj * pv;

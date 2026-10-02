@@ -759,7 +759,8 @@ float g_deformCube = 0.0f; // --deform-cube: its top vertices move this far a fr
 float g_grassWalk = -100.0f;  // --grass-walk X: a patch of grass and an animated "character" standing at x = X in it
 float g_grassWalkSpeed = 0.0f; // --grass-walk-speed: ... walking this far along x a frame
 float g_grassSize = 1.0f;      // --grass-size: the tufts' cards this many times bigger (big quads)
-bool g_grassFlip = false;      // --grass-flip: the tufts modelled upside down, turned up by their world matrix
+bool g_grassFlip = false;
+int g_grassDense = 1;          // --grass-dense K: K x K as many tufts, K times closer (a field, for profiling)      // --grass-flip: the tufts modelled upside down, turned up by their world matrix
 
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
 // (left) and unlit like Anarchy Online's ground base pass (right) - from a camera above and behind.
@@ -950,11 +951,12 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
             dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
             dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
             dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
-            for (int gz = 0; gz < 8; ++gz)
-                for (int gx = 0; gx < 13; ++gx) {
+            for (int gz = 0; gz < 8 * g_grassDense; ++gz)
+                for (int gx = 0; gx < 13 * g_grassDense; ++gx) {
                     if (g_grassSize > 1.5f && (gx % 4 != 1 || gz % 4 != 2))
                         continue;                    // big cards: a few, apart
-                    float x = -3.0f + 0.5f * float(gx) + 0.11f * float(gz % 3), z = -5.0f + 0.4f * float(gz), s = 0.3f * g_grassSize,
+                    float x = -3.0f + (0.5f * float(gx) + 0.11f * float(gz % 3)) / float(g_grassDense),
+                          z = -5.0f + 0.4f * float(gz) / float(g_grassDense), s = 0.3f * g_grassSize,
                           gh = 0.7f * g_grassSize;
                     VtxMesh t[8] = {{x - s, 0, z, 0, 0, -1, 0xFF60C060, 0, 1}, {x - s, gh, z, 0, 0, -1, 0xFF60C060, 0, 0},
                                     {x + s, gh, z, 0, 0, -1, 0xFF60C060, 1, 0}, {x + s, 0, z, 0, 0, -1, 0xFF60C060, 1, 1},
@@ -1532,6 +1534,7 @@ int main(int argc, char** argv)
         else if (a == "--grass-walk" && i + 1 < argc) g_grassWalk = float(std::atof(argv[++i]));
         else if (a == "--grass-walk-speed" && i + 1 < argc) g_grassWalkSpeed = float(std::atof(argv[++i]));
         else if (a == "--grass-flip") g_grassFlip = true;
+        else if (a == "--grass-dense" && i + 1 < argc) g_grassDense = std::atoi(argv[++i]);
         else if (a == "--grass-size" && i + 1 < argc) g_grassSize = float(std::atof(argv[++i]));
         else if (a == "--plant-detail" && i + 1 < argc) plantDetail = float(std::atof(argv[++i]));
         else if (a == "--grass-push" && i + 1 < argc) grassPush = float(std::atof(argv[++i]));

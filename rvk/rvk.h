@@ -605,6 +605,10 @@ private:
     void PushCandidateDraw(uint32_t fvf);
     void UpdatePushTrail();                      // at the start of a frame
     void FillPushers(detail::FrameLights* fl, const float eye[3]);
+    struct FramePusher { float p[3]; };
+    std::vector<FramePusher> m_framePushers;     // the pushers FillPushers last wrote, in FrameLights order
+    void DrawWorldBox(float c[3], float e[3]) const;
+    uint32_t PusherMask(float margin) const;     // bits of m_framePushers near the current draw
     // What the draw path needs to know of a mesh's vertices (draw.cpp DrawMeshInfo): its model-space box and its
     // indices' hash, remembered by a fingerprint of the mesh (sizes and 16 sampled vertices and indices) - a static
     // mesh drawn again (most of them) needs no pass over its vertices; an animated one (CPU-skinned) changes its

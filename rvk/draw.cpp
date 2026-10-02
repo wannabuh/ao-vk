@@ -399,14 +399,12 @@ bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uin
 // Plants pushed aside by characters. A character is drawn as CPU-skinned parts: lit world meshes, depth-writing,
 // whose vertices are new this frame. A static mesh is new on the frame it first appears too, so a candidate counts
 // only if its fingerprint isn't drawn again the next frame (UpdatePushTrail) - the feet lag two frames.
-void Device::PushCandidateDraw(uint32_t fvf)
+// The current draw's mesh box in the world: centre and half extents (the model box's centre moved, its half extents
+// through the matrix's magnitudes).
+void Device::DrawWorldBox(float c[3], float e[3]) const
 {
-    if (m_grassPush <= 0.0f || !m_drawMesh || m_drawMeshStatic || m_target != m_scene || m_drawIsLabel ||
-        !m_rs[d3d::RS_LIGHTING] || !m_rs[d3d::RS_ZWRITEENABLE] || IsTerrain(fvf) || m_pushNew.size() >= 4096)
-        return;
-    // The part's box in the world (the model box's centre moved, its half extents through the matrix's magnitudes).
     const auto& w = m_world.m;
-    float c[3], e[3], mc[3], me[3];
+    float mc[3], me[3];
     for (int i = 0; i < 3; ++i) {
         mc[i] = 0.5f * (m_drawMesh->boundsMin[i] + m_drawMesh->boundsMax[i]);
         me[i] = 0.5f * (m_drawMesh->boundsMax[i] - m_drawMesh->boundsMin[i]);
@@ -415,6 +413,34 @@ void Device::PushCandidateDraw(uint32_t fvf)
         c[j] = mc[0] * w[0][j] + mc[1] * w[1][j] + mc[2] * w[2][j] + w[3][j];
         e[j] = me[0] * std::fabs(w[0][j]) + me[1] * std::fabs(w[1][j]) + me[2] * std::fabs(w[2][j]);
     }
+}
+
+// The frame's pushers (FrameLights order) within `margin` of the current draw's box, as a bit mask - a plant far from
+// every character skips the push entirely (ffp.vert), and needs no splitting (SubdividePlant).
+uint32_t Device::PusherMask(float margin) const
+{
+    if (!m_drawMesh || m_framePushers.empty())
+        return 0;
+    float c[3], e[3];
+    DrawWorldBox(c, e);
+    uint32_t mask = 0;
+    for (size_t i = 0; i < m_framePushers.size(); ++i) {
+        const float* p = m_framePushers[i].p;
+        float dx = std::max(std::fabs(p[0] - c[0]) - e[0], 0.0f), dz = std::max(std::fabs(p[2] - c[2]) - e[2], 0.0f);
+        float dy = p[1] - c[1];
+        if (dx * dx + dz * dz < margin * margin && dy > -e[1] - 3.0f && dy < e[1] + 1.0f)
+            mask |= 1u << i;
+    }
+    return mask;
+}
+
+void Device::PushCandidateDraw(uint32_t fvf)
+{
+    if (m_grassPush <= 0.0f || !m_drawMesh || m_drawMeshStatic || m_target != m_scene || m_drawIsLabel ||
+        !m_rs[d3d::RS_LIGHTING] || !m_rs[d3d::RS_ZWRITEENABLE] || IsTerrain(fvf) || m_pushNew.size() >= 4096)
+        return;
+    float c[3], e[3];
+    DrawWorldBox(c, e);
     // Character-sized: not a whole animated scene (a flag, water), not a speck.
     if (e[1] > 2.5f || e[0] > 2.0f || e[2] > 2.0f || e[0] + e[1] + e[2] < 0.05f)
         return;
@@ -488,6 +514,7 @@ void Device::UpdatePushTrail()
 void Device::FillPushers(detail::FrameLights* fl, const float eye[3])
 {
     fl->info[1] = 0;
+    m_framePushers.clear();
     if (m_grassPush <= 0.0f || m_pushTrail.empty())
         return;
     double now = SwayClock();
@@ -507,6 +534,7 @@ void Device::FillPushers(detail::FrameLights* fl, const float eye[3])
         fl->pushers[i][2] = items[i].p->z;
         fl->pushers[i][3] = float(now - items[i].p->time);
         fl->pusherBorn[i] = float(now - items[i].p->born);
+        m_framePushers.push_back({{items[i].p->x, items[i].p->y, items[i].p->z}});
     }
     fl->info[1] = used;
 }
@@ -521,6 +549,9 @@ void Device::SubdividePlant(uint32_t& primitive, uint32_t fvf, const FvfLayout& 
     constexpr float kPlantCell = 0.3f;
     constexpr uint32_t kMaxSplit = 8, kMaxVertices = 30000;
     if (m_plantDetail <= 0.0f || !m_drawMesh || primitive < d3d::TriangleList || primitive > d3d::TriangleFan)
+        return;
+    // Only plants a character is near (the push's reach and then some): the wind alone bends a plant evenly enough.
+    if (!PusherMask(1.4f * std::sqrt(std::max(m_grassPush, 0.0f)) + 1.0f))
         return;
     // The mesh's triangles as index triples (the game's list, strip or fan).
     uint32_t count = indices ? indexCount : vertexCount;
@@ -1227,6 +1258,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     }
     ProfileDrawSection("draw: sway", since);
     FrameLightMask(fvf, layout.stride, vertices, vertexCount, drawTransform->lightMask);
+    drawTransform->lightMask[2] = swaying && m_grassPush > 0.0f ? PusherMask(1.4f * std::sqrt(m_grassPush) + 0.1f) : 0u;
     ProfileDrawSection("draw: light mask", since);
     if (motion) {
         // Motion vectors: the same object last frame - same mesh, nearest to where this one is (within 3 units). Not

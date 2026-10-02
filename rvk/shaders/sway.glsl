@@ -25,14 +25,19 @@ float SwayHeight(vec3 modelPos, vec4 sway)
 // - two waves and a slow gust, their phase travelling across the world (from the object's position and the vertex's)
 // so neighbouring plants move a little apart. sway: model base along the up axis, 1 / model height (signed), tip
 // sway, 1 + up axis (0 = off).
-float SwayDistance(vec3 modelPos, vec4 sway, vec2 originXZ, float time)
+// ... with the texture's holes factor already known (smoothstep(0.92, 0.7, SwayMeanAlpha())).
+float SwayDistanceHoles(vec3 modelPos, vec4 sway, vec2 originXZ, float time, float holes)
 {
     float h = SwayHeight(modelPos, sway);
-    if (h <= 0.0) return 0.0;
-    float holes = smoothstep(0.92, 0.7, SwayMeanAlpha());
-    if (holes <= 0.0) return 0.0;
+    if (h <= 0.0 || holes <= 0.0) return 0.0;
     float phase = dot(originXZ + modelPos.xz, vec2(0.31, 0.23));
     float wave = 0.6 * sin(time * 1.9 + phase) + 0.25 * sin(time * 3.7 + phase * 1.7) +
                  0.35 * (0.5 + 0.5 * sin(time * 0.37 + phase * 0.1));
     return wave * sway.z * h * h * holes;
+}
+
+float SwayDistance(vec3 modelPos, vec4 sway, vec2 originXZ, float time)
+{
+    return SwayHeight(modelPos, sway) > 0.0
+               ? SwayDistanceHoles(modelPos, sway, originXZ, time, smoothstep(0.92, 0.7, SwayMeanAlpha())) : 0.0;
 }
