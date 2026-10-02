@@ -2,6 +2,7 @@
 #include "internal.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -990,6 +991,10 @@ void Device::BeginFrame()
     ++m_frameNumber;
     ProfileBeginFrame(f.main);
     UpdatePushTrail();
+    m_windTimePrev = m_windTime;
+    m_windTime = std::fmod(SwayClock(), 3600.0);
+    if (m_windTimePrev > m_windTime || m_windTime - m_windTimePrev > 0.25)
+        m_windTimePrev = m_windTime;             // wrapped, or the first frame after a pause
     m_lightsPrev.swap(m_lightsCur);              // last frame's complete light set lights this frame
     m_lightsCur.clear();
     m_sunLuminance = 0.0f;

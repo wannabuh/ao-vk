@@ -615,6 +615,7 @@ private:
     struct LightSphere { float x, y, z, r2; };
     std::vector<LightSphere> m_frameLightSpheres;  // the frame lights' spheres in FrameLights order (light masks)
     void Wind(float out[4]) const;               // direction x, z, time, strength
+    double m_windTime = 0.0, m_windTimePrev = 0.0;   // this frame's and last frame's (set at the frame's start)
     bool m_taa = true;
     float m_sharpen = 0.4f;
     float m_taaJitter[2] = {};                   // this frame's jitter, clip units (FrameLights taa)

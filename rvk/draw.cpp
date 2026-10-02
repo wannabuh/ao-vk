@@ -276,7 +276,7 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->taa[0] = TaaActive() ? m_taaJitter[0] : 0.0f;
     fl->taa[1] = TaaActive() ? m_taaJitter[1] : 0.0f;
     fl->taa[2] = FrameNoise();                   // noise patterns move on each frame (averaged by the TAA)
-    fl->taa[3] = 0.0f;
+    fl->taa[3] = float(m_windTimePrev);         // the wind's time last frame (plants' motion vectors)
     fl->shadowParams[0] = m_shadowValid ? 1.0f : 0.0f;
     fl->shadowParams[1] = m_shadowStrength;
     fl->shadowParams[2] = float(m_cascadeCount);
@@ -373,16 +373,26 @@ bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uin
     // Static: the same vertices for the last two frames at least (the mesh cache's fingerprint).
     if (!m_drawMeshStatic || m_drawMesh->firstFrame + 2 > m_frameNumber)
         return false;
-    float minY = m_drawMesh->boundsMin[1], maxY = m_drawMesh->boundsMax[1];
+    // The model axis that points most nearly up in the world (not always y), and which way.
     const auto& w = m_world.m;
-    float scaleY = std::sqrt(w[1][0] * w[1][0] + w[1][1] * w[1][1] + w[1][2] * w[1][2]);
-    float height = (maxY - minY) * scaleY;
+    int axis = 0;
+    float best = -1.0f, scale = 0.0f;
+    for (int i = 0; i < 3; ++i) {
+        float len = std::sqrt(w[i][0] * w[i][0] + w[i][1] * w[i][1] + w[i][2] * w[i][2]);
+        float up = len > 0.0f ? std::fabs(w[i][1]) / len : 0.0f;
+        if (up > best) { best = up; axis = i; scale = len; }
+    }
+    if (best < 0.7f)
+        return false;                            // lying on its side
+    float lo = m_drawMesh->boundsMin[axis], hi = m_drawMesh->boundsMax[axis];
+    float height = (hi - lo) * scale;
     if (height < 0.2f || height > 3.0f)
         return false;
-    out[0] = minY;
-    out[1] = 1.0f / (maxY - minY);
+    bool down = w[axis][1] < 0.0f;
+    out[0] = down ? hi : lo;
+    out[1] = (down ? -1.0f : 1.0f) / (hi - lo);
     out[2] = 0.06f * m_sway * height;
-    out[3] = 1.0f;
+    out[3] = 1.0f + float(axis);
     return true;
 }
 
@@ -502,7 +512,7 @@ bool Device::WaterWritesDepth(uint32_t fvf) const
 // Wind: a slowly turning direction; the vertex shaders add waves and gusts (sway.glsl).
 void Device::Wind(float out[4]) const
 {
-    double t = std::fmod(SwayClock(), 3600.0);
+    double t = m_windTime;
     float angle = 0.6f + 0.4f * float(std::sin(t * 0.013));
     out[0] = std::cos(angle);
     out[1] = std::sin(angle);
@@ -1078,6 +1088,15 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_external || !SwayParams(fvf, layout.stride, vertices, vertexCount, drawTransform->sway))
         drawTransform->sway[0] = drawTransform->sway[1] = drawTransform->sway[2] = drawTransform->sway[3] = 0.0f;
     std::memcpy(m_drawSway, drawTransform->sway, sizeof(m_drawSway));
+    if (m_dumpFile && m_drawSway[3] > 0.5f) {    // frame dump: how the plant sways (after its D line)
+        const auto& w = m_world.m;
+        std::fprintf(m_dumpFile, "  sway: axis %d base %.3f 1/h %.3f tip %.3f | model box (%.2f %.2f %.2f)-(%.2f %.2f %.2f)"
+                     " | world rows (%.2f %.2f %.2f) (%.2f %.2f %.2f) (%.2f %.2f %.2f)\n",
+                     int(m_drawSway[3] + 0.5f) - 1, m_drawSway[0], m_drawSway[1], m_drawSway[2],
+                     m_drawMesh->boundsMin[0], m_drawMesh->boundsMin[1], m_drawMesh->boundsMin[2],
+                     m_drawMesh->boundsMax[0], m_drawMesh->boundsMax[1], m_drawMesh->boundsMax[2], w[0][0], w[0][1],
+                     w[0][2], w[1][0], w[1][1], w[1][2], w[2][0], w[2][1], w[2][2]);
+    }
     ProfileDrawSection("draw: sway", since);
     FrameLightMask(fvf, layout.stride, vertices, vertexCount, drawTransform->lightMask);
     ProfileDrawSection("draw: light mask", since);
@@ -1239,6 +1258,12 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_leafLight > 0.0f && solid3d && (flags & F_LIGHTING) &&
         (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
         flags |= F_FOLIAGE;
+    // Blended (not additive) with depth writes, as the game draws most statics: the see-through parts must not write
+    // depth or motion - plants' quads would show in the ambient occlusion and smear in the motion blur. Fragments
+    // nearly invisible anyway are dropped; a plant's (ffp.vert vCutout) below half, like its shadow.
+    if (solid3d && m_rs[d3d::RS_ALPHABLENDENABLE] && !m_rs[d3d::RS_ALPHATESTENABLE] &&
+        m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA)
+        flags |= F_CUTOUT;
     // Night glow candidates: opaque 3D surfaces drawn unlit (self-lit, like windows and signs) or with an emissive
     // material - not effects, the sky, the ground or lighting passes.
     bool additive = m_rs[d3d::RS_ALPHABLENDENABLE] && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_ONE;

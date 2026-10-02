@@ -758,6 +758,7 @@ float g_movingCube = 0.0f; // --moving-cube: the shadow test's big right cube mo
 float g_deformCube = 0.0f; // --deform-cube: its top vertices move this far a frame along x (like CPU skinning)
 float g_grassWalk = -100.0f;  // --grass-walk X: a patch of grass and an animated "character" standing at x = X in it
 float g_grassWalkSpeed = 0.0f; // --grass-walk-speed: ... walking this far along x a frame
+bool g_grassFlip = false;      // --grass-flip: the tufts modelled upside down, turned up by their world matrix
 
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
 // (left) and unlit like Anarchy Online's ground base pass (right) - from a camera above and behind.
@@ -943,6 +944,11 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
                         {4, 3, 9, 0, 0, -1, 0xFFFFFFFF, 1, 0}, {4, 0, 9, 0, 0, -1, 0xFFFFFFFF, 1, 1}};
         dev.DrawPrimitive(TriangleFan, kFvfMesh, f, 4);
         if (g_grassWalk >= -10.0f) {                 // --grass-walk: tufts of crossed cut-out quads, one draw each
+            // Blended with depth writes and no alpha test, as the game draws its plants.
+            dev.SetRenderState(RS_ALPHATESTENABLE, 0);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+            dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+            dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
             for (int gz = 0; gz < 8; ++gz)
                 for (int gx = 0; gx < 13; ++gx) {
                     float x = -3.0f + 0.5f * float(gx) + 0.11f * float(gz % 3), z = -5.0f + 0.4f * float(gz), s = 0.3f;
@@ -952,9 +958,18 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
                                     {x, 0.7f, z + s, -1, 0, 0, 0xFF60C060, 1, 0}, {x, 0, z + s, -1, 0, 0, 0xFF60C060, 1, 1}};
                     uint16_t ti[12] = {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7};
                     dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+                    if (g_grassFlip) {               // model y down, around the tuft's origin
+                        Matrix flip = Identity();
+                        flip.m[1][1] = -1.0f;
+                        flip.m[3][0] = x; flip.m[3][2] = z;
+                        for (VtxMesh& m : t) { m.x -= x; m.z -= z; m.y = -m.y; }
+                        dev.SetTransform(World, flip);
+                    }
                     dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, t, 8, ti, 12);
+                    dev.SetTransform(World, Identity());
                 }
             dev.SetRenderState(RS_CULLMODE, CULL_CCW);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
         }
         dev.SetRenderState(RS_ALPHATESTENABLE, 0);
         if (g_grassWalk >= -10.0f) {                 // the "character": CPU-skinned (its vertices change every frame)
@@ -1512,6 +1527,7 @@ int main(int argc, char** argv)
         else if (a == "--motion-mode" && i + 1 < argc) motionMode = uint32_t(std::atoi(argv[++i]));
         else if (a == "--grass-walk" && i + 1 < argc) g_grassWalk = float(std::atof(argv[++i]));
         else if (a == "--grass-walk-speed" && i + 1 < argc) g_grassWalkSpeed = float(std::atof(argv[++i]));
+        else if (a == "--grass-flip") g_grassFlip = true;
         else if (a == "--grass-push" && i + 1 < argc) grassPush = float(std::atof(argv[++i]));
         else if (a == "--deform-cube" && i + 1 < argc) g_deformCube = float(std::atof(argv[++i]));
         else if (a == "--moving-cube" && i + 1 < argc) g_movingCube = float(std::atof(argv[++i]));

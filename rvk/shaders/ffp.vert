@@ -26,6 +26,7 @@ layout(location = 9) out vec4 vNormalW;      // xyz direction, w = length the ve
 layout(location = 10) out vec2 vSet0;        // texture coordinate set 0 as is (the ground's base texture, F_BUMPBASE)
 layout(location = 11) out vec4 vClip;        // motion vectors: clip position now
 layout(location = 12) out vec4 vPrevClip;    // ... and last frame (previous world matrix and camera)
+layout(location = 13) out float vCutout;     // F_CUTOUT: alpha below which the fragment is dropped
 // Last frame's vertex positions of an animated (CPU-skinned) mesh, model space, 3 floats a vertex (D.motion.y).
 layout(set = 0, binding = 8, std430) readonly buffer PrevPositions { float prevPos[]; } PP;
 layout(set = 0, binding = 1) uniform sampler2D swayTex;    // texture 0: plants' sway (how much of it is holes)
@@ -39,7 +40,7 @@ vec3 PushOffset(vec3 posW, vec3 modelPos, vec4 sway, float plantHeight)
     uint n = min(FL.info.y, 16u);
     float amount = FL.effects.w;
     if (n == 0u || amount <= 0.0) return vec3(0.0);
-    float h = clamp((modelPos.y - sway.x) * sway.y, 0.0, 1.0);
+    float h = SwayHeight(modelPos, sway);
     if (h <= 0.0) return vec3(0.0);
     float reach = 0.9 * sqrt(amount);
     vec2 push = vec2(0.0);
@@ -122,6 +123,7 @@ void main()
 
     vClip = vec4(0.0, 0.0, 0.0, 1.0);
     vPrevClip = vClip;
+    vCutout = 0.02;
     if (rhw) {
         // Screen-space vertex. The Vulkan viewport is the D3D one shifted by half a pixel (D3D pixel
         // centres are at integer coordinates), so position relative to it.
@@ -135,9 +137,17 @@ void main()
         vFogFactor = specular.a;          // pre-transformed vertices carry their fog factor in specular alpha
     } else {
         vec4 posW = D.world * vec4(inPos.xyz, 1.0);
+        vec3 swayPrev = vec3(0.0);               // the sway last frame (motion vectors)
         if (D.sway.w > 0.5) {
+            int axis = clamp(int(D.sway.w + 0.5) - 1, 0, 2);
+            vec3 push = PushOffset(posW.xyz, inPos.xyz, D.sway, length(D.world[axis].xyz) / abs(D.sway.y));
             posW.xz += FL.wind.xy * SwayDistance(inPos.xyz, D.sway, D.world[3].xz, FL.wind.z);
-            posW.xyz += PushOffset(posW.xyz, inPos.xyz, D.sway, length(D.world[1].xyz) / D.sway.y);
+            posW.xyz += push;
+            swayPrev = push;
+            swayPrev.xz += FL.wind.xy * SwayDistance(inPos.xyz, D.sway, D.prevWorld[3].xz, FL.taa.w);
+            // A plant (its texture has holes) blended with depth writes is cut out like its shadow: no depth or
+            // motion where it is see-through (the ambient occlusion, motion blur and TAA read those).
+            if (SwayMeanAlpha() < 0.92) vCutout = 0.35;
         }
         vec4 pv = C.view * posW;
         gl_Position = C.proj * pv;
@@ -149,7 +159,7 @@ void main()
             int i = (gl_VertexIndex - int(D.motion.z)) * 3;
             prevLocal = vec3(PP.prevPos[i], PP.prevPos[i + 1], PP.prevPos[i + 2]);
         }
-        vPrevClip = D.motion.x > 0.5 ? FL.prevViewProj * (D.prevWorld * vec4(prevLocal, 1.0)) : gl_Position;
+        vPrevClip = D.motion.x > 0.5 ? FL.prevViewProj * (D.prevWorld * vec4(prevLocal, 1.0) + vec4(swayPrev, 0.0)) : gl_Position;
         posV = pv.xyz;
         vec3 normalW = mat3(D.world) * (hasNormal ? inNormal : vec3(0.0));
         if ((C.flags.x & F_NORMALIZE) != 0u && dot(normalW, normalW) > 0.0)

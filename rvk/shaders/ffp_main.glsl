@@ -55,6 +55,7 @@ layout(location = 9) in vec4 vNormalW;
 layout(location = 10) in vec2 vSet0;
 layout(location = 11) in vec4 vClip;
 layout(location = 12) in vec4 vPrevClip;
+layout(location = 13) in float vCutout;
 
 // Lit vertex colours: the interpolated ones, or computed here for per-pixel lighting.
 vec4 gDiffuse, gSpecular;
@@ -455,6 +456,8 @@ void main()
         current.rgb = mix(current.rgb, tint, 0.45);
     }
     if ((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(current.a))
+        discard;
+    if ((C.flags.x & F_CUTOUT) != 0u && current.a < vCutout)
         discard;
     // An additive effect adds what it adds to the scene to the glow too, for the bloom.
 #ifdef RVK_GLOW

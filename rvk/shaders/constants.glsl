@@ -50,4 +50,5 @@ const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8
            F_BUMP = 2097152u,        // per-pixel lighting with a normal generated from texture 0 (C.misc.w = strength)
            F_BUMPBASE = 4194304u,    // ... from the ground's base texture (binding 7, coordinate set 0) instead
            F_FOLIAGE = 8388608u,     // lit with a cut-out texture: sunlight through it (FL.effects.x) if it has holes
-           F_EMISSIVE = 16777216u;   // unlit or self-lit 3D surface: its bright texels glow at night (FL.effects.y)
+           F_EMISSIVE = 16777216u,   // unlit or self-lit 3D surface: its bright texels glow at night (FL.effects.y)
+           F_CUTOUT = 33554432u;     // blended with depth writes: (nearly) see-through fragments dropped (vCutout)

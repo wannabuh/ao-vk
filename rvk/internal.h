@@ -49,7 +49,8 @@ enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE
                   F_SHADOW = 8192, F_SHADOWCOMP = 16384,
                   F_SHADOWTEX = 32768, F_OVERBRIGHT = 65536, F_OVERBRIGHT2X = 131072,
                   F_HDR = 262144, F_GLOW = 524288, F_GLOWALPHA = 1048576,
-                  F_BUMP = 2097152, F_BUMPBASE = 4194304, F_FOLIAGE = 8388608, F_EMISSIVE = 16777216 };
+                  F_BUMP = 2097152, F_BUMPBASE = 4194304, F_FOLIAGE = 8388608, F_EMISSIVE = 16777216,
+                  F_CUTOUT = 33554432 };
 
 constexpr uint32_t kFrameLights = 64;
 constexpr uint32_t kPushers = 16;            // info.y of them used
@@ -60,7 +61,7 @@ struct FrameLights {               // binding 4: per-frame data (constants.glsl 
     float cascadeDepth[4];         // world units per unit of each cascade's depth (soft shadows)
     float effects[4];              // light through leaves, night glow (x darkness), sun shadow softness, plant push
     float wind[4];                 // plants' sway: direction x, z, time (s), strength
-    float taa[4];                  // temporal anti-aliasing: this frame's jitter (clip x, y per w), unused
+    float taa[4];                  // temporal anti-aliasing: this frame's jitter (clip x, y per w), noise offset; wind time last frame
     float shadowParams[4];         // enabled, strength, cascade count, point light shadow strength
     float sunDir[4];               // w: light headroom (F_OVERBRIGHT)
     float sunColor[4];             // the shadow-casting sun's colour (0 = none)
