@@ -376,7 +376,8 @@ private:
         d3d::Light light;
         float cosHalfTheta, cosHalfPhi;
         bool hasCarrier = false;                 // a character carries it (FindCarriers): its origin
-        uint32_t carrierGroup = ~0u;             // and its ShadowItem group this frame (the point shadow pass)
+        uint32_t carrierGroup = ~0u;             // the ShadowItem group (run of draws) of that origin this frame
+        std::vector<uint32_t> carrierGroups;     // every group that is the carrier's (sorted): the point shadow pass
         float carrier[3] = {};
     };
     // End of frame: for each light, the character carrying it - the body origin nearest under it. The game places a

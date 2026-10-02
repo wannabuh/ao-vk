@@ -9,6 +9,7 @@
 #include "internal.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 
@@ -177,20 +178,37 @@ bool Device::IsCarrierPart(const CapturedLight& c, const d3d::Matrix& world, con
     return cx * cx + cz * cz < 1.0f && cy > -2.6f && cy < 0.5f;
 }
 
-// Drawn this frame: the carrier's own run of draws (GroupShadowItems), so a character walking through the carrier
+// Drawn this frame: one of the carrier's runs of draws (FindCarriers), so a character walking through the carrier
 // keeps casting. Remembered copies have no run; near the carrier they're copies of it from where it stood.
 bool Device::IsCarrierItem(const CapturedLight& c, const ShadowItem& item)
 {
     if (!item.cached)
-        return c.hasCarrier && item.group == c.carrierGroup;
+        return c.hasCarrier && std::binary_search(c.carrierGroups.begin(), c.carrierGroups.end(), item.group);
     return IsCarrierPart(c, item.world, item.boundsMin, item.boundsMax);
 }
 
 void Device::FindCarriers()
 {
+    // Each run's box (union of its casters') and lowest origin, for the held-item test below.
+    uint32_t groups = 0;
+    for (const ShadowItem& it : m_shadowItems)
+        if (!it.cached) groups = std::max(groups, it.group + 1);
+    std::vector<std::array<float, 6>> groupBox(groups, {1e30f, 1e30f, 1e30f, -1e30f, -1e30f, -1e30f});
+    std::vector<float> groupLowestOrigin(groups, 1e30f);
+    for (const ShadowItem& it : m_shadowItems) {
+        if (it.cached) continue;
+        auto& b = groupBox[it.group];
+        for (int j = 0; j < 3; ++j) {
+            b[j] = std::min(b[j], it.boundsMin[j]);
+            b[3 + j] = std::max(b[3 + j], it.boundsMax[j]);
+        }
+        groupLowestOrigin[it.group] = std::min(groupLowestOrigin[it.group], it.world.m[3][1]);
+    }
+
     for (CapturedLight& c : m_lightsCur) {
         c.hasCarrier = false;
         c.carrierGroup = ~0u;
+        c.carrierGroups.clear();
         if (c.light.range < 1.0f)
             continue;
         const d3d::Vector& p = c.light.position;
@@ -242,6 +260,46 @@ void Device::FindCarriers()
             c.carrier[2] = it.world.m[3][2];
             c.carrierGroup = it.group;
         }
+        if (!c.hasCarrier)
+            continue;
+
+        // The game doesn't draw a character in one go: its head, body and weapon pieces can each be a run of their
+        // own, with other characters' pieces in between (dumps: player head, NPC body, player body). A run is the
+        // carrier's if one of its pieces stands on the carrier's spot - a character's pieces share its origin to
+        // within ~0.1 sideways, another character's body only gets that close walking right through it - or if
+        // it's small and held (a weapon: its pieces sit at the hand, which swings up to ~0.8 out while walking,
+        // 0.6 above the body's origin; a character's body pieces have theirs at its feet, like the carrier's).
+        std::vector<uint8_t> linked(groups, 0);
+        linked[c.carrierGroup] = 1;
+        for (const ShadowItem& it : m_shadowItems) {
+            if (it.cached || linked[it.group]) continue;
+            float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
+                                     it.boundsMax[2] - it.boundsMin[2]});
+            if (extent >= 3.0f) continue;        // a floor or building whose origin happens to be there
+            float dx = it.world.m[3][0] - c.carrier[0], dz = it.world.m[3][2] - c.carrier[2];
+            float dy = it.world.m[3][1] - p.y;
+            if (dx * dx + dz * dz < 0.25f * 0.25f && dy > -2.6f && dy < 0.3f)
+                linked[it.group] = 1;
+        }
+        // The carrier's origin may be a head piece (sitting: right under the light); its feet are the lowest origin.
+        for (const ShadowItem& it : m_shadowItems) {
+            if (it.cached || !linked[it.group]) continue;
+            float dx = it.world.m[3][0] - c.carrier[0], dz = it.world.m[3][2] - c.carrier[2];
+            if (dx * dx + dz * dz < 0.25f * 0.25f)
+                c.carrier[1] = std::min(c.carrier[1], it.world.m[3][1]);
+        }
+        for (uint32_t g = 0; g < groups; ++g) {
+            const auto& b = groupBox[g];
+            if (linked[g] || b[0] > b[3]) continue;
+            float extent = std::max({b[3] - b[0], b[4] - b[1], b[5] - b[2]});
+            float cx = 0.5f * (b[0] + b[3]) - c.carrier[0], cz = 0.5f * (b[2] + b[5]) - c.carrier[2];
+            float cy = 0.5f * (b[1] + b[4]) - p.y;
+            if (extent < 1.6f && cx * cx + cz * cz < 1.0f && cy > -2.6f && cy < 0.5f &&
+                groupLowestOrigin[g] > c.carrier[1] + 0.3f)
+                linked[g] = 1;
+        }
+        for (uint32_t g = 0; g < groups; ++g)
+            if (linked[g]) c.carrierGroups.push_back(g);
     }
 }
 
