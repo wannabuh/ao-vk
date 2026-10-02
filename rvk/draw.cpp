@@ -27,11 +27,17 @@ void Copy4(float out[4], const d3d::Color& c)
     out[0] = c.r; out[1] = c.g; out[2] = c.b; out[3] = c.a;
 }
 
-void FillGpuLight(const d3d::Light& l, float cosHalfTheta, float cosHalfPhi, GpuLight& g)
+// scale: the light's intensity (RVK_PtLight / RVK_CharLight for point and spot lights).
+void FillGpuLight(const d3d::Light& l, float cosHalfTheta, float cosHalfPhi, GpuLight& g, float scale = 1.0f)
 {
     Copy4(g.diffuse, l.diffuse);
     Copy4(g.specular, l.specular);
     Copy4(g.ambient, l.ambient);
+    for (int i = 0; i < 3; ++i) {
+        g.diffuse[i] *= scale;
+        g.specular[i] *= scale;
+        g.ambient[i] *= scale;
+    }
     g.position[0] = l.position.x; g.position[1] = l.position.y; g.position[2] = l.position.z;
     g.position[3] = float(l.type);
     g.direction[0] = l.direction.x; g.direction[1] = l.direction.y; g.direction[2] = l.direction.z;
@@ -294,7 +300,7 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
         const CapturedLight& c = m_lightsPrev[candidates[k].index];
         m_frameLightIndices.push_back(candidates[k].index);
         m_frameLightSpheres.push_back({c.light.position.x, c.light.position.y, c.light.position.z, c.light.range * c.light.range});
-        FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k]);
+        FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k], c.hasCarrier ? m_charLightScale : m_pointLightScale);
         uint32_t cube = PointShadowLayer(c.light);
         fl->lights[k].spot[2] = float(cube);                        // its cube shadow map + 1, 0 = none
         fl->lights[k].spot[3] = cube ? m_pointShadowLights[cube - 1].fade : 0.0f;   // how far its shadow faded in
@@ -399,6 +405,22 @@ bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uin
 // Plants pushed aside by characters. A character is drawn as CPU-skinned parts: lit world meshes, depth-writing,
 // whose vertices are new this frame. A static mesh is new on the frame it first appears too, so a candidate counts
 // only if its fingerprint isn't drawn again the next frame (UpdatePushTrail) - the feet lag two frames.
+// A game light's intensity setting: directional ones as they are; a point / spot light carried by a character
+// (the captured lights' carriers, matched by position and range) at m_charLightScale, others at m_pointLightScale.
+float Device::LightScale(const d3d::Light& l) const
+{
+    if (l.type == d3d::LIGHT_DIRECTIONAL)
+        return 1.0f;
+    if (m_charLightScale != m_pointLightScale)
+        for (const CapturedLight& c : m_lightsPrev) {
+            if (!c.hasCarrier || c.light.range != l.range) continue;
+            float dx = c.light.position.x - l.position.x, dy = c.light.position.y - l.position.y,
+                  dz = c.light.position.z - l.position.z;
+            if (dx * dx + dy * dy + dz * dz < 1.0f) return m_charLightScale;
+        }
+    return m_pointLightScale;
+}
+
 // The current draw is further from the camera than the foliage level of detail's distance (its box's nearest point).
 bool Device::FoliageFar() const
 {
@@ -1490,7 +1512,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             // saturates the ground's lighting pass and local lights (the player's) vanish on it.
             if (override && terrain && slot.light.type == d3d::LIGHT_DIRECTIONAL)
                 continue;
-            FillGpuLight(slot.light, slot.cosHalfTheta, slot.cosHalfPhi, c->lights[lightCount++]);
+            FillGpuLight(slot.light, slot.cosHalfTheta, slot.cosHalfPhi, c->lights[lightCount++], LightScale(slot.light));
             if (slot.light.type != d3d::LIGHT_DIRECTIONAL) ++localLights;
         }
     c->lightInfo[0] = lightCount;

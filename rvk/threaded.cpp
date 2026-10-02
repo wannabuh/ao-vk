@@ -495,6 +495,11 @@ void ThreadedDevice::SetShadowResolution(uint32_t sun, uint32_t point)
     Enqueue([this, sun, point](const uint8_t*) { m_device.SetShadowResolution(sun, point); });
 }
 
+void ThreadedDevice::SetPointLightIntensity(float lights, float characters)
+{
+    Enqueue([this, lights, characters](const uint8_t*) { m_device.SetPointLightIntensity(lights, characters); });
+}
+
 void ThreadedDevice::SetBloomOverNearer(float keep)
 {
     Enqueue([this, keep](const uint8_t*) { m_device.SetBloomOverNearer(keep); });

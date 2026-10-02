@@ -220,6 +220,14 @@ public:
     }
     // Foliage beyond this distance (world units) is shaded more cheaply (0 = off).
     void SetFoliageLod(float distance) { m_foliageLod = distance; }
+    // Intensity of point / spot lights: lamps and other lights, and lights characters carry (yours included).
+    void SetPointLightIntensity(float lights, float characters)
+    {
+        m_pointLightScale = lights;
+        m_charLightScale = characters;
+        m_frameLightsDirty = true;
+        m_constantsDirty = true;
+    }
     // With HDR: temporal anti-aliasing (jittered scene, resolved against the last frame) and sharpening after it.
     void SetTaa(bool enable, float sharpen) { m_taa = enable; m_sharpen = sharpen; m_frameLightsDirty = true; }
     // Sun shadow penumbra growth with blocker distance (0 = hard), sunlight through leaves, night glow of bright
@@ -643,6 +651,8 @@ private:
     std::unordered_map<uint64_t, float> m_plantMaxEdge;   // a plant mesh's longest edge (model units)
     float m_plantDetail = 1.0f;
     float m_foliageLod = 35.0f;                  // RVK_FoliageLod (draw.cpp FoliageFar)
+    float m_pointLightScale = 1.0f, m_charLightScale = 1.0f;   // SetPointLightIntensity
+    float LightScale(const d3d::Light& l) const;
     bool FoliageFar() const;                  // pieces per 0.3 world units (0 = plants drawn as the game gives them)
     void SubdividePlant(uint32_t& primitive, uint32_t fvf, const detail::FvfLayout& layout, const void*& vertices,
                         uint32_t& vertexCount, const uint16_t*& indices, uint32_t& indexCount);
