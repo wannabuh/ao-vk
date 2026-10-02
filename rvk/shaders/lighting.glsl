@@ -49,8 +49,16 @@ void AccumulateLights(vec3 posW, vec3 normalW, float sunScale, float localScale,
     vec3 toEye = (C.flags.x & F_LOCALVIEWER) != 0u ? normalize(C.eyePos.xyz - posW) : -C.eyeDir.xyz;
     for (uint i = 0u; i < C.lightInfo.x; ++i)
         AccumulateLight(C.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diff, spec);
+    // Only the frame lights whose range reaches the draw's bounding box (the CPU's mask): most draws have none or a
+    // few of the 64.
     if ((C.flags.x & F_LIGHTOVERRIDE) != 0u)
-        for (uint i = 0u; i < FL.info.x; ++i)
-            if (i + 1u != C.lightInfo.z)         // a character's own light doesn't light the character
-                AccumulateLight(FL.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diffLocal, specLocal);
+        for (uint word = 0u; word < 2u; ++word) {
+            uint mask = D.lightMask[word];
+            while (mask != 0u) {
+                uint i = word * 32u + uint(findLSB(mask));
+                mask &= mask - 1u;
+                if (i + 1u != C.lightInfo.z)     // a character's own light doesn't light the character
+                    AccumulateLight(FL.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diffLocal, specLocal);
+            }
+        }
 }

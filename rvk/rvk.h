@@ -588,6 +588,7 @@ private:
     std::unordered_map<uint64_t, SwayEntry> m_swayStatic;
     bool SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, float out[4]);
     float m_drawSway[4] = {};                    // the current draw's sway (for its shadow caster)
+    void FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, uint32_t out[4]);
     void Wind(float out[4]) const;               // direction x, z, time, strength
     bool m_taa = true;
     float m_sharpen = 0.4f;

@@ -420,6 +420,51 @@ void Device::Wind(float out[4]) const
     out[3] = m_sway;
 }
 
+// The frame lights (light override) whose sphere reaches the draw's world bounding box, as a 64-bit mask for the
+// shader - instead of every pixel trying all of them. All set when the box is unknown (external geometry).
+void Device::FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, uint32_t out[4])
+{
+    out[0] = out[1] = out[2] = out[3] = 0;
+    if (!m_lightOverride || !m_pixelLighting || !m_rs[d3d::RS_LIGHTING] ||
+        (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW || m_frameLightIndices.empty())
+        return;
+    uint32_t count = std::min<uint32_t>(uint32_t(m_frameLightIndices.size()), 64);
+    if (m_external || !vertices || !vertexCount) {
+        out[0] = count >= 32 ? ~0u : (1u << count) - 1u;
+        out[1] = count > 32 ? (count >= 64 ? ~0u : (1u << (count - 32)) - 1u) : 0u;
+        return;
+    }
+    float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
+    const uint8_t* v = static_cast<const uint8_t*>(vertices);
+    for (uint32_t i = 0; i < vertexCount; ++i) {
+        float p[3];
+        std::memcpy(p, v + size_t(i) * stride, 12);
+        for (int j = 0; j < 3; ++j) { mn[j] = std::min(mn[j], p[j]); mx[j] = std::max(mx[j], p[j]); }
+    }
+    // The model box through the world matrix (centre and half extents).
+    float wmn[3], wmx[3];
+    const auto& m = m_world.m;
+    for (int j = 0; j < 3; ++j) {
+        float c = m[3][j], e = 0.0f;
+        for (int i = 0; i < 3; ++i) {
+            c += 0.5f * (mn[i] + mx[i]) * m[i][j];
+            e += 0.5f * (mx[i] - mn[i]) * std::fabs(m[i][j]);
+        }
+        wmn[j] = c - e;
+        wmx[j] = c + e;
+    }
+    for (uint32_t k = 0; k < count; ++k) {
+        const d3d::Light& l = m_lightsPrev[m_frameLightIndices[k]].light;
+        float p[3] = {l.position.x, l.position.y, l.position.z}, d2 = 0.0f;
+        for (int j = 0; j < 3; ++j) {
+            float d = std::max({wmn[j] - p[j], 0.0f, p[j] - wmx[j]});
+            d2 += d * d;
+        }
+        if (d2 <= l.range * l.range)
+            out[k >> 5] |= 1u << (k & 31);
+    }
+}
+
 bool Device::IsWater(uint32_t fvf)
 {
     return fvf == (d3d::FVF_XYZRHW | d3d::FVF_DIFFUSE | d3d::FVF_SPECULAR | (1u << d3d::FVF_TEXCOUNT_SHIFT));
@@ -860,6 +905,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_external || !SwayParams(fvf, layout.stride, vertices, vertexCount, drawTransform->sway))
         drawTransform->sway[0] = drawTransform->sway[1] = drawTransform->sway[2] = drawTransform->sway[3] = 0.0f;
     std::memcpy(m_drawSway, drawTransform->sway, sizeof(m_drawSway));
+    FrameLightMask(fvf, layout.stride, vertices, vertexCount, drawTransform->lightMask);
     if (motion) {
         // Motion vectors: the same object last frame - same mesh, nearest to where this one is (within 3 units). Not
         // found (new, or a different level of detail): its current matrix, i.e. it moved with the world.

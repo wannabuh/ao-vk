@@ -110,8 +110,8 @@ void Device::ProfileManualEnd() { m_profileManual = false; }
 void Device::ProfileLog(const char* label)
 {
     if (!m_profileFrames) return;
-    auto line = [&](const char* label, std::vector<std::pair<const char*, double>>& sums) {
-        std::string out = label;
+    auto line = [&](const char* what, std::vector<std::pair<const char*, double>>& sums) {
+        std::string out = what;
         char buf[64];
         for (auto& s : sums) {
             std::snprintf(buf, sizeof(buf), " %s %.2f |", s.first, s.second / double(m_profileFrames));
