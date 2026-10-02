@@ -74,6 +74,7 @@ public:
     void SetHdrHeadroom(float headroom);
     void SetBloom(float strength, float threshold);
     void SetEffectGlow(float gain);
+    void SetBloomOverNearer(float keep);
     void SetAo(float strength, float radius);
     void SetGi(float strength, float radius);
     void SetVolume(float strength, float haze);

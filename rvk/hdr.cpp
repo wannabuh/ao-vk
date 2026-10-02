@@ -320,14 +320,15 @@ void Device::EndScene()
     bool ssr = RenderSsr(cmd);
     Transition(cmd, m_albedo, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     // The upsampled bloom chain sums every level's light: averaged here.
+    // params[3]: how much bloom reaches objects nearer than its light (-1: the bloom carries no depth).
     float params[8] = {m_tonemapKnee, m_exposure, bloom ? m_bloomStrength / float(m_bloomLevels.size()) : 0.0f,
-                       ao ? 1.0f : 0.0f, m_aoProj.m[2][2], m_aoProj.m[3][2], gi ? m_giStrength : 0.0f,
-                       float((volume ? 1 : 0) | (ssr ? 2 : 0))};
+                       m_bloomDepth ? m_bloomOverNearer : -1.0f, m_aoProj.m[2][2], m_aoProj.m[3][2],
+                       gi ? m_giStrength : 0.0f, float((volume ? 1 : 0) | (ssr ? 2 : 0) | (ao ? 4 : 0))};
     // Depth of field blurs the scene with its ambient occlusion, indirect and volumetric light applied; the tone
     // mapping then leaves them out.
     bool dof = RenderDof(cmd, bloom, ao, gi, volume, params);
     Texture* scene = dof ? m_dofOut : m_scene;
-    if (dof) params[3] = params[6] = params[7] = 0.0f;
+    if (dof) params[6] = params[7] = 0.0f;
     // With motion blur the tone mapping goes to an intermediate image, which the blur reads into the main target.
     float motion[24];
     bool blur = MotionBlurParams(motion);
@@ -395,7 +396,7 @@ void Device::TonemapInputsPass(VkCommandBuffer cmd, Texture* dst, VkPipeline pip
     Texture* occlusion = ao ? m_aoTex[1] : m_scene;               // unread when off
     Texture* indirect = gi ? m_giTex[1] : m_scene;                // unread when off
     Texture* scattered = volume ? m_volumeTex[1] : m_scene;       // unread when off
-    Texture* reflections = m_ssrTex && params[7] >= 2.0f ? m_ssrTex : m_scene;   // unread when off
+    Texture* reflections = m_ssrTex && (int(params[7]) & 2) ? m_ssrTex : m_scene;   // unread when off
     // The depth buffer is readable after the AO pass; without AO, any readable image stands in (unread).
     VkImageView depthView = m_depthLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ? m_depthView : m_scene->m_view;
     VkDescriptorImageInfo images[] = {{m_pointSampler, scene->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
@@ -727,14 +728,21 @@ void Device::RenderBloom(VkCommandBuffer cmd)
         if (m_bloomLevels.empty())
             return;
     }
+    // The levels carry, in alpha, their light's brightness x 1 / view depth: divided by the brightness, how far away
+    // the light is - so the tone mapping can keep the bloom off objects in front of it (foliage before a lamp).
+    m_bloomDepth = m_aoProjValid && m_aoProj.m[2][3] == 1.0f && m_aoProj.m[3][3] == 0.0f && m_depth;
+    if (m_bloomDepth)
+        MakeDepthReadable(cmd);
     Texture* src = m_scene;
     for (size_t i = 0; i < m_bloomLevels.size(); ++i) {
-        float params[4] = {1.0f / float(src->m_width), 1.0f / float(src->m_height), m_bloomThreshold, i == 0 ? 1.0f : 0.0f};
+        float params[8] = {1.0f / float(src->m_width), 1.0f / float(src->m_height), m_bloomThreshold, i == 0 ? 1.0f : 0.0f,
+                           m_aoProj.m[2][2], m_aoProj.m[3][2], m_bloomDepth ? 1.0f : 0.0f, 0.0f};
         // The first pass adds the glow (additive effects) to the scene's light above the threshold.
         Texture* src2 = i == 0 ? m_glow : src;
         Transition(cmd, src, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         Transition(cmd, src2, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        FullscreenPass(cmd, m_bloomLevels[i], m_bloomDown, src->m_view, src2->m_view, m_linearSampler, params, 16, false);
+        FullscreenPass(cmd, m_bloomLevels[i], m_bloomDown, src->m_view, src2->m_view, m_linearSampler, params, 32, false,
+                       m_bloomDepth ? m_depthView : VK_NULL_HANDLE);
         src = m_bloomLevels[i];
     }
     for (size_t i = m_bloomLevels.size() - 1; i-- > 0;) {

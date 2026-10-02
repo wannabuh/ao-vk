@@ -413,6 +413,11 @@ void ThreadedDevice::SetSsr(float strength, float water, float gloss, float wet)
     Enqueue([this, strength, water, gloss, wet](const uint8_t*) { m_device.SetSsr(strength, water, gloss, wet); });
 }
 
+void ThreadedDevice::SetBloomOverNearer(float keep)
+{
+    Enqueue([this, keep](const uint8_t*) { m_device.SetBloomOverNearer(keep); });
+}
+
 void ThreadedDevice::SetEffectGlow(float gain)
 {
     m_effectGlow = gain < 0.0f ? 0.0f : gain;

@@ -381,7 +381,7 @@ bool Device::CreateMainTargets(std::string* error)
 {
     m_ldrMain = CreateImage(m_width, m_height, Format::A8R8G8B8, 1, true);
     m_scene = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);
-    m_glow = CreateImage(m_width, m_height, Format::RG11B10F, 1, true);
+    m_glow = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);
     m_localFraction = CreateImage(m_width, m_height, Format::RG8, 1, true);
     m_motionVectors = CreateImage(m_width, m_height, Format::RG16F, 1, true);
     m_albedo = CreateImage(m_width, m_height, Format::A8R8G8B8, 1, true);
@@ -637,7 +637,7 @@ bool Device::CreatePipelines(std::string* error)
     cb.pAttachments = att;
     // 8-bit targets: one colour attachment. HDR scene: the float scene, the glow (additive effects, for the bloom) and
     // the local-light fraction (for the ambient occlusion), the motion vectors and the surface colour (indirect light).
-    VkFormat colorFormats[5] = {kColorFormat, GetFormatInfo(Format::RG11B10F).vk, GetFormatInfo(Format::RG8).vk,
+    VkFormat colorFormats[5] = {kColorFormat, GetFormatInfo(Format::RGBA16F).vk, GetFormatInfo(Format::RG8).vk,
                                 GetFormatInfo(Format::RG16F).vk, GetFormatInfo(Format::A8R8G8B8).vk};
     VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     rendering.colorAttachmentCount = 1;

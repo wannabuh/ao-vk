@@ -379,7 +379,8 @@ void main()
     vec3 glow = vec3(0.0);
     if ((C.flags.x & F_GLOW) != 0u)
         glow = current.rgb * ((C.flags.x & F_GLOWALPHA) != 0u ? clamp(current.a, 0.0, 1.0) : 1.0) * C.misc.z;
-    outGlow = vec4(glow, 0.0);
+    // Alpha: its brightness over its view depth (1 / w), summed like the colour - the bloom's light's distance.
+    outGlow = vec4(glow, dot(glow, vec3(0.3, 0.59, 0.11)) * gl_FragCoord.w);
     // Blended with this fragment's alpha like the colour (attachment 2's blend state follows the colour's).
     outLocal = vec4(gLocalFraction, clamp(reflectivity, 0.0, 1.0), 0.0, current.a);
     // Motion vectors (written by depth-writing draws only, see the blend state): where this point was last frame.

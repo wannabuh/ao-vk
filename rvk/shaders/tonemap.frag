@@ -8,7 +8,7 @@ layout(location = 0) out vec4 outColor;
 void main()
 {
     vec4 s = texelFetch(scene, ivec2(gl_FragCoord.xy), 0);
-    vec3 glow = P.params.z > 0.0 ? texture(bloom, gl_FragCoord.xy / vec2(textureSize(scene, 0))).rgb * P.params.z : vec3(0.0);
+    vec3 glow = P.params.z > 0.0 ? Bloom() * P.params.z : vec3(0.0);
     vec3 c = max((Reflected(s.rgb * AmbientFactor() + Indirect()) + Volumetric() + glow) * P.params.y, vec3(0.0));
     float m = max(c.r, max(c.g, c.b)), k = P.params.x;
     if (m > k) {

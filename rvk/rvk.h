@@ -196,6 +196,7 @@ public:
     // With HDR: screen-space reflections - strength (0 = off), reflectivity of water, glossy surfaces, wet ground.
     void SetSsr(float strength, float water, float gloss, float wet)
     { m_ssr = strength; m_ssrWater = water; m_ssrGloss = gloss; m_ssrWet = wet; m_constantsDirty = true; }
+    void SetBloomOverNearer(float keep) { m_bloomOverNearer = keep; }
     void SetEffectGlow(float gain) { if (m_effectGlow != gain) { m_effectGlow = gain; m_constantsDirty = true; } }
     float EffectGlow() const { return m_effectGlow; }
     float BloomStrength() const { return m_bloomStrength; }
@@ -551,9 +552,12 @@ private:
     VkPipeline m_tonemapPipeline = VK_NULL_HANDLE;
     VkSampler m_pointSampler = VK_NULL_HANDLE, m_linearSampler = VK_NULL_HANDLE;
     float m_bloomStrength = 1.5f, m_bloomThreshold = 1.0f;
+    float m_bloomOverNearer = 0.15f;             // bloom left on objects in front of its light (1 = all)
+    bool m_bloomDepth = false;                   // this frame's bloom carries its light's depth
     std::vector<Texture*> m_bloomLevels;         // half resolution and down, float
     float m_effectGlow = 1.0f;
-    Texture* m_glow = nullptr;                   // second scene attachment: what additive effects add (F_GLOW)
+    Texture* m_glow = nullptr;                   // second scene attachment: what additive effects add (F_GLOW);
+                                                 // alpha: its brightness / view depth (the bloom's depth)
     Texture* m_localFraction = nullptr;          // third: how much of each pixel's colour local lights gave it; G: reflectivity
     bool m_glowCleared = false;                  // this frame
     uint32_t m_glowDraws = 0;                    // this frame's draws feeding the glow (frame dumps)

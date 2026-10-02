@@ -50,6 +50,7 @@ Setting g_settings[] = {
     {"RVK_Bloom",      "Bloom strength (0 = off)",                                        "HDR and effects", Float, 0, 5, 0.25f, 1.5f, "RANDYVK_BLOOM", 0},
     {"RVK_BloomFx",    "Glow of effects (spells, fire, light halos)",                     "HDR and effects", Float, 0, 4, 0.25f, 1, "RANDYVK_BLOOM_EFFECTS", 0},
     {"RVK_BloomThr",   "Bloom threshold (1 = above white)",                               "HDR and effects", Float, 0.5f, 2, 0.05f, 1, "RANDYVK_BLOOM_THRESHOLD", 0},
+    {"RVK_BloomOcc",   "Bloom over objects in front of its light (1 = unchanged)",        "HDR and effects", Float, 0, 1, 0.05f, 0.15f, nullptr, 0},
     {"RVK_Ao",         "Ambient occlusion strength (0 = off)",                            "HDR and effects", Float, 0, 3, 0.25f, 1, "RANDYVK_AO", 0},
     {"RVK_AoRadius",   "Ambient occlusion radius (world units)",                          "HDR and effects", Float, 0.25f, 4, 0.25f, 1.5f, "RANDYVK_AO_RADIUS", 0},
     {"RVK_Gi",         "Indirect light: bounce light from the lit scene (0 = off)",       "HDR and effects", Float, 0, 3, 0.25f, 1, nullptr, 0},
@@ -154,6 +155,7 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_HdrRoom")) d->SetHdrHeadroom(s.value);
     else if (is("RVK_Bloom") || is("RVK_BloomThr")) d->SetBloom(V("RVK_Bloom"), V("RVK_BloomThr"));
     else if (is("RVK_BloomFx")) d->SetEffectGlow(s.value);
+    else if (is("RVK_BloomOcc")) d->SetBloomOverNearer(s.value);
     else if (is("RVK_Ao") || is("RVK_AoRadius")) d->SetAo(V("RVK_Ao"), V("RVK_AoRadius"));
     else if (is("RVK_Gi") || is("RVK_GiRadius")) d->SetGi(V("RVK_Gi"), V("RVK_GiRadius"));
     else if (std::strncmp(n, "RVK_Ssr", 7) == 0)
