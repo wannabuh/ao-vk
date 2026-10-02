@@ -156,15 +156,25 @@ float Device::PointShadowStrength() const
     return m_pointShadowStrength * (1.0f + (m_pointShadowDay - 1.0f) * t);
 }
 
-bool Device::IsCarrierPart(const CapturedLight& c, const d3d::Matrix& world, float extent)
+bool Device::IsCarrierPart(const CapturedLight& c, const d3d::Matrix& world, const float boundsMin[3],
+                           const float boundsMax[3])
 {
+    float extent = std::max({boundsMax[0] - boundsMin[0], boundsMax[1] - boundsMin[1], boundsMax[2] - boundsMin[2]});
     if (!c.hasCarrier || extent >= 3.0f)
         return false;
     // The carrier's parts: the body (origin 2.1-2.2 under the light in the dumps) and its attachments (0.5-1.3 under,
     // within ~0.3 of the body sideways).
     float dx = world.m[3][0] - c.carrier[0], dz = world.m[3][2] - c.carrier[2];
     float dy = world.m[3][1] - c.light.position.y;
-    return dx * dx + dz * dz < 0.5f * 0.5f && dy > -2.6f && dy < 0.3f;
+    if (dx * dx + dz * dz < 0.5f * 0.5f && dy > -2.6f && dy < 0.3f)
+        return true;
+    // Held items (weapons): their origin is the hand, which swings further out while walking. Only small things, by
+    // where they are rather than their origin, so a character standing next to the carrier still casts.
+    if (extent >= 1.6f)
+        return false;
+    float cx = 0.5f * (boundsMin[0] + boundsMax[0]) - c.carrier[0], cz = 0.5f * (boundsMin[2] + boundsMax[2]) - c.carrier[2];
+    float cy = 0.5f * (boundsMin[1] + boundsMax[1]) - c.light.position.y;
+    return cx * cx + cz * cz < 1.0f && cy > -2.6f && cy < 0.5f;
 }
 
 void Device::FindCarriers()
@@ -319,7 +329,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
                                      it.boundsMax[2] - it.boundsMin[2]});
             bool housing = d2 == 0.0f && extent < 1.5f;              // smaller than a character
-            if (housing || IsCarrierPart(m_lightsCur[candidates[k].index], it.world, extent))
+            if (housing || IsCarrierPart(m_lightsCur[candidates[k].index], it.world, it.boundsMin, it.boundsMax))
                 continue;
             inRange.push_back(i);
         }

@@ -352,32 +352,33 @@ bool Device::Overbright2x(uint32_t fvf) const
 }
 
 // A character with its own light (at head height): unless m_carrierLit, the light stays off the character itself,
-// which it would otherwise light from the inside out. Its parts are those of the carrier found last frame (FindCarriers), as for
-// the point shadows. Returns frame light index + 1.
+// which it would otherwise light from the inside out. Its parts are those of the carrier found last frame
+// (FindCarriers), as for the point shadows. Returns frame light index + 1.
 uint32_t Device::CarriedLight(uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t stride) const
 {
     if (m_carrierLit || !m_lightOverride || !m_pixelLighting || !m_rs[d3d::RS_LIGHTING] || m_target != m_main ||
         (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW || !WorldCamera())
         return 0;
+    bool anyCarrier = false;
+    for (uint32_t k = 0; k < m_frameLightIndices.size() && !anyCarrier; ++k)
+        anyCarrier = m_lightsPrev[m_frameLightIndices[k]].hasCarrier;
+    if (!anyCarrier)
+        return 0;
     const auto& w = m_world.m;
-    for (uint32_t k = 0; k < m_frameLightIndices.size(); ++k) {
-        const CapturedLight& c = m_lightsPrev[m_frameLightIndices[k]];
-        if (!IsCarrierPart(c, m_world, 0.0f))  // position only; the size is checked below
-            continue;
-        // Small: a character part, not a floor or building whose origin happens to lie under the light.
-        float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
-        const uint8_t* v = static_cast<const uint8_t*>(vertices);
-        for (uint32_t i = 0; i < vertexCount; ++i) {
-            float q[3];
-            std::memcpy(q, v + size_t(i) * stride, sizeof(q));
-            for (int j = 0; j < 3; ++j) {
-                float wq = q[0] * w[0][j] + q[1] * w[1][j] + q[2] * w[2][j] + w[3][j];
-                mn[j] = std::min(mn[j], wq);
-                mx[j] = std::max(mx[j], wq);
-            }
+    float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
+    const uint8_t* v = static_cast<const uint8_t*>(vertices);
+    for (uint32_t i = 0; i < vertexCount; ++i) {
+        float q[3];
+        std::memcpy(q, v + size_t(i) * stride, sizeof(q));
+        for (int j = 0; j < 3; ++j) {
+            float wq = q[0] * w[0][j] + q[1] * w[1][j] + q[2] * w[2][j] + w[3][j];
+            mn[j] = std::min(mn[j], wq);
+            mx[j] = std::max(mx[j], wq);
         }
-        return IsCarrierPart(c, m_world, std::max({mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]})) ? k + 1 : 0;
     }
+    for (uint32_t k = 0; k < m_frameLightIndices.size(); ++k)
+        if (IsCarrierPart(m_lightsPrev[m_frameLightIndices[k]], m_world, mn, mx))
+            return k + 1;
     return 0;
 }
 

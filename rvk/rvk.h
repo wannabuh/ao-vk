@@ -382,7 +382,8 @@ private:
     // character's light up to ~0.4 sideways off the body while it moves, so a fixed radius around the light either
     // misses the carrier or catches characters next to it.
     void FindCarriers();
-    static bool IsCarrierPart(const CapturedLight& c, const d3d::Matrix& world, float extent);
+    static bool IsCarrierPart(const CapturedLight& c, const d3d::Matrix& world, const float boundsMin[3],
+                              const float boundsMax[3]);
     std::vector<CapturedLight> m_lightsCur, m_lightsPrev;   // point / spot lights used this / last frame
     void CaptureLight(LightSlot& slot);
 
