@@ -444,27 +444,43 @@ void Device::UpdatePushTrail()
     }
     m_pushOld.swap(m_pushNew);
     m_pushNew.clear();
-    // Each character refreshes its nearest trail point, or leaves a new one once it has moved on.
+    // Each character moves its head point (the nearest head within a step) to where it is now, every frame - the push
+    // follows it smoothly - and drops a trail point behind each time it has gone kSpacing further. No head near: a
+    // new one. A head left behind (its character gone) ages like a trail point.
+    constexpr float kFollow = 1.0f;              // furthest a character moves between two frames it is seen in
+    size_t heads = m_pushTrail.size();
+    std::vector<bool> claimed(heads, false);
     for (const Character& c : characters) {
         float x = c.x / c.parts, z = c.z / c.parts;
-        PushPoint* nearest = nullptr;
-        float best = kSpacing * kSpacing;
-        for (PushPoint& t : m_pushTrail) {
+        size_t nearest = heads;
+        float best = kFollow * kFollow;
+        for (size_t i = 0; i < heads; ++i) {
+            const PushPoint& t = m_pushTrail[i];
             float dx = t.x - x, dz = t.z - z, d = dx * dx + dz * dz;
-            if (d < best && std::fabs(t.y - c.y) < 1.0f) { best = d; nearest = &t; }
+            if (t.head && !claimed[i] && d < best && std::fabs(t.y - c.y) < 1.5f) { best = d; nearest = i; }
         }
-        if (nearest) {
-            nearest->time = now;
-            nearest->y = c.y;
-        } else {
-            m_pushTrail.push_back({x, c.y, z, now, now});
+        if (nearest == heads) {
+            m_pushTrail.push_back({x, c.y, z, now, now, x, z, true});
+            continue;
+        }
+        claimed[nearest] = true;
+        PushPoint& h = m_pushTrail[nearest];
+        if (std::sqrt(best) > 0.01f)
+            h.born = now;                        // moving: the plants it touches rustle
+        h.x = x; h.y = c.y; h.z = z; h.time = now;
+        float dx = x - h.dropX, dz = z - h.dropZ;
+        if (dx * dx + dz * dz >= kSpacing * kSpacing) {
+            m_pushTrail.push_back({x, c.y, z, now, now, x, z, false});
+            m_pushTrail[nearest].dropX = x;      // (push_back may have moved the head)
+            m_pushTrail[nearest].dropZ = z;
         }
     }
     m_pushTrail.erase(std::remove_if(m_pushTrail.begin(), m_pushTrail.end(),
                                      [&](const PushPoint& t) { return now - t.time > kRecover || now < t.time; }),
                       m_pushTrail.end());
-    if (m_pushTrail.size() > 512)
-        m_pushTrail.erase(m_pushTrail.begin(), m_pushTrail.end() - 512);
+    if (m_pushTrail.size() > 512)                // drop the oldest trail points, keep the heads
+        for (auto it = m_pushTrail.begin(); m_pushTrail.size() > 512 && it != m_pushTrail.end();)
+            it = it->head ? std::next(it) : m_pushTrail.erase(it);
 }
 
 // The trail points for this frame's plants: those nearest the camera, fresher ones first. The shader turns a point's
