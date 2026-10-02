@@ -436,6 +436,7 @@ private:
         uint32_t carrierGroup = ~0u;             // the ShadowItem group (run of draws) of that origin this frame
         std::vector<uint32_t> carrierGroups;     // every group that is the carrier's (sorted): the point shadow pass
         float carrier[3] = {};
+        float carried = 0.0f;                    // 0..1: counted as a character's light (smoothed over frames)
     };
     // End of frame: for each light, the character carrying it - the body origin nearest under it. The game places a
     // character's light up to ~0.4 sideways off the body while it moves, so a fixed radius around the light either

@@ -300,7 +300,8 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
         const CapturedLight& c = m_lightsPrev[candidates[k].index];
         m_frameLightIndices.push_back(candidates[k].index);
         m_frameLightSpheres.push_back({c.light.position.x, c.light.position.y, c.light.position.z, c.light.range * c.light.range});
-        FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k], c.hasCarrier ? m_charLightScale : m_pointLightScale);
+        FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k],
+                     m_pointLightScale + (m_charLightScale - m_pointLightScale) * c.carried);
         uint32_t cube = PointShadowLayer(c.light);
         fl->lights[k].spot[2] = float(cube);                        // its cube shadow map + 1, 0 = none
         fl->lights[k].spot[3] = cube ? m_pointShadowLights[cube - 1].fade : 0.0f;   // how far its shadow faded in
@@ -413,10 +414,11 @@ float Device::LightScale(const d3d::Light& l) const
         return 1.0f;
     if (m_charLightScale != m_pointLightScale)
         for (const CapturedLight& c : m_lightsPrev) {
-            if (!c.hasCarrier || c.light.range != l.range) continue;
+            if (c.carried <= 0.0f || c.light.range != l.range) continue;
             float dx = c.light.position.x - l.position.x, dy = c.light.position.y - l.position.y,
                   dz = c.light.position.z - l.position.z;
-            if (dx * dx + dy * dy + dz * dz < 1.0f) return m_charLightScale;
+            if (dx * dx + dy * dy + dz * dz < 1.0f)
+                return m_pointLightScale + (m_charLightScale - m_pointLightScale) * c.carried;
         }
     return m_pointLightScale;
 }

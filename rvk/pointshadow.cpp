@@ -314,6 +314,21 @@ void Device::FindCarriers()
         for (uint32_t g = 0; g < groups; ++g)
             if (linked[g]) c.carrierGroups.push_back(g);
     }
+    // How much each light counts as a character's (its intensity setting, LightScale): the carrier search can miss
+    // a frame in a crowd, and a light jumping between the two intensities for a frame flickers. It becomes a
+    // character's within a few frames and stops being one over ~20. The same light last frame: same range, nearest.
+    for (CapturedLight& c : m_lightsCur) {
+        const CapturedLight* prev = nullptr;
+        float prevBest = 1.0f;
+        for (const CapturedLight& q : m_lightsPrev) {
+            if (q.light.range != c.light.range || q.light.type != c.light.type) continue;
+            float dx = q.light.position.x - c.light.position.x, dy = q.light.position.y - c.light.position.y,
+                  dz = q.light.position.z - c.light.position.z, d = dx * dx + dy * dy + dz * dz;
+            if (d < prevBest) { prevBest = d; prev = &q; }
+        }
+        float before = prev ? prev->carried : (c.hasCarrier ? 1.0f : 0.0f);
+        c.carried = c.hasCarrier ? std::min(before + 0.34f, 1.0f) : std::max(before - 0.05f, 0.0f);
+    }
 }
 
 // Which cube (1-based; 0 = none) holds a frame light's shadow: lights are matched by their data, which the frame
