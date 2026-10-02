@@ -317,6 +317,11 @@ void ThreadedDevice::SetLightOverride(bool enable)
     Enqueue([this, enable](const uint8_t*) { m_device.SetLightOverride(enable); });
 }
 
+void ThreadedDevice::SetCarrierLit(bool enable)
+{
+    Enqueue([this, enable](const uint8_t*) { m_device.SetCarrierLit(enable); });
+}
+
 void ThreadedDevice::SetShadows(bool enable)
 {
     m_shadows = enable;

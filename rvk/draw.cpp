@@ -351,12 +351,12 @@ bool Device::Overbright2x(uint32_t fvf) const
            (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW && IsMultiplyPass();
 }
 
-// A character with its own light (at head height): the light stays off the character itself, which it would
-// otherwise light from the inside out. Its parts are those of the carrier found last frame (FindCarriers), as for
+// A character with its own light (at head height): unless m_carrierLit, the light stays off the character itself,
+// which it would otherwise light from the inside out. Its parts are those of the carrier found last frame (FindCarriers), as for
 // the point shadows. Returns frame light index + 1.
 uint32_t Device::CarriedLight(uint32_t fvf, const void* vertices, uint32_t vertexCount, uint32_t stride) const
 {
-    if (!m_lightOverride || !m_pixelLighting || !m_rs[d3d::RS_LIGHTING] || m_target != m_main ||
+    if (m_carrierLit || !m_lightOverride || !m_pixelLighting || !m_rs[d3d::RS_LIGHTING] || m_target != m_main ||
         (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW || !WorldCamera())
         return 0;
     const auto& w = m_world.m;

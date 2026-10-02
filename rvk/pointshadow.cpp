@@ -174,21 +174,48 @@ void Device::FindCarriers()
         if (c.light.range < 1.0f)
             continue;
         const d3d::Vector& p = c.light.position;
-        float best = 1.0f;                       // within 1 sideways
+        // The same light last frame (it moves with its character, a little per frame) and who carried it.
+        const CapturedLight* prev = nullptr;
+        float prevBest = 1.0f;
+        for (const CapturedLight& q : m_lightsPrev) {
+            if (!q.hasCarrier || q.light.range != c.light.range)
+                continue;
+            float dx = q.light.position.x - p.x, dy = q.light.position.y - p.y, dz = q.light.position.z - p.z;
+            float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (d < prevBest) {
+                prevBest = d;
+                prev = &q;
+            }
+        }
+        float best = 1e30f;
         for (const ShadowItem& it : m_shadowItems) {
             if (it.cached)                       // remembered copies may stand where the character was
                 continue;
             float dy = it.world.m[3][1] - p.y;
-            if (dy <= -2.6f || dy >= -1.5f)     // a body's origin, under a head-height light
-                continue;
-            float dx = it.world.m[3][0] - p.x, dz = it.world.m[3][2] - p.z, d2 = dx * dx + dz * dz;
-            if (d2 >= best * best)
+            if (dy <= -2.6f || dy >= 0.3f)       // where IsCarrierPart looks for the carrier's parts
                 continue;
             float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
                                      it.boundsMax[2] - it.boundsMin[2]});
             if (extent >= 3.0f)
                 continue;
-            best = std::sqrt(d2);
+            float dx = it.world.m[3][0] - p.x, dz = it.world.m[3][2] - p.z, d2 = dx * dx + dz * dz;
+            // Standing: the body origin 1.5-2.6 under the head-height light, up to ~0.4 sideways while moving.
+            // Sitting (and other low poses) bring the head, and the light, down: right under it, closer.
+            // Either way, the character that carried it last frame keeps it while its pose changes.
+            float key = 1e30f;
+            if (prev) {
+                float px = it.world.m[3][0] - prev->carrier[0], pz = it.world.m[3][2] - prev->carrier[2];
+                float p2 = px * px + pz * pz;
+                if (p2 < 0.3f * 0.3f)
+                    key = p2 - 100.0f;           // before any match by position alone
+            }
+            if (key > 0.0f && dy < -1.5f && d2 < 1.0f)
+                key = d2;
+            else if (key > 0.0f && dy < -0.5f && d2 < 0.3f * 0.3f)
+                key = d2;
+            if (key >= best)
+                continue;
+            best = key;
             c.hasCarrier = true;
             c.carrier[0] = it.world.m[3][0];
             c.carrier[1] = it.world.m[3][1];

@@ -132,6 +132,8 @@ public:
     // Enhancement, with per-pixel lighting: every lit draw gets the frame's active point / spot lights nearest
     // the camera instead of the (at most 8) the game enabled for it. Directional lights stay as the game set them.
     void SetLightOverride(bool enable) { if (m_lightOverride != enable) { m_lightOverride = enable; m_constantsDirty = true; } }
+    // A character's own light (at head height) lights the character too; it never shadows it either way.
+    void SetCarrierLit(bool enable) { if (m_carrierLit != enable) { m_carrierLit = enable; m_constantsDirty = true; } }
     bool LightOverride() const { return m_lightOverride; }
     // Enhancement: sun shadows (shadow.cpp). strength = how much of the light a shadow takes away (0..1);
     // range = half the width of the shadowed square around the camera, in world units.
@@ -343,6 +345,7 @@ private:
     // it lives in hasn't been restarted (m_ringGeneration counts restarts).
     bool m_constantsDirty = true;
     bool m_pixelLighting = false, m_lightingDebug = false, m_lightOverride = false;
+    bool m_carrierLit = true;
     float m_lightHeadroom = 1.0f;
     float m_bump = 0.0f;
     uint32_t m_anisotropy = 1;

@@ -59,6 +59,7 @@ public:
     void SetLightingDebug(bool enable);
     bool LightingDebug() const { return m_lightingDebug; }
     void SetLightOverride(bool enable);
+    void SetCarrierLit(bool enable);
     bool LightOverride() const { return m_lightOverride; }
     void SetShadows(bool enable);
     bool Shadows() const { return m_shadows; }

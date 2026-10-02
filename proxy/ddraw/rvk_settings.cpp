@@ -32,6 +32,7 @@ Setting g_settings[] = {
     // name               label                                                             section          type   min   max   step  default env
     {"RVK_PixelLight", "Per-pixel lighting",                                              "Lighting",       Bool,  0, 1, 1, 1, "RANDYVK_PIXEL_LIGHTING", 0},
     {"RVK_LightOver",  "All nearby lights light every surface (light override)",          "Lighting",       Bool,  0, 1, 1, 1, "RANDYVK_LIGHT_OVERRIDE", 0},
+    {"RVK_OwnLight",   "A character's own light lights the character",                    "Lighting",       Bool,  0, 1, 1, 1, nullptr, 0},
     {"RVK_Bump",       "Generated surface relief (normal maps from textures)",            "Lighting",       Float, 0, 4, 0.25f, 1.5f, "RANDYVK_BUMP", 0},
     {"RVK_Headroom",   "Light headroom without HDR",                                       "Lighting",       Float, 1, 2, 0.05f, 1.25f, "RANDYVK_LIGHT_HEADROOM", 0},
     {"RVK_Aniso",      "Anisotropic filtering (1 = off)",                                 "Lighting",       Int,   1, 16, 1, 16, "RANDYVK_ANISOTROPY", 0},
@@ -130,6 +131,7 @@ void Apply(const Setting& s, rvk::ThreadedDevice* d)
     auto is = [n](const char* a) { return std::strcmp(n, a) == 0; };
     if (is("RVK_PixelLight")) d->SetPixelLighting(s.value != 0.0f);
     else if (is("RVK_LightOver")) d->SetLightOverride(s.value != 0.0f);
+    else if (is("RVK_OwnLight")) d->SetCarrierLit(s.value != 0.0f);
     else if (is("RVK_Bump")) d->SetBump(s.value);
     else if (is("RVK_Headroom")) d->SetLightHeadroom(s.value);
     else if (is("RVK_Aniso")) d->SetAnisotropy(uint32_t(s.value));
