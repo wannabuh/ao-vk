@@ -1030,7 +1030,7 @@ void Device::FinishShadowFrame()
         for (auto it = m_plantMaxEdge.begin(); it != m_plantMaxEdge.end();)
             it = m_meshInfo.count(it->first) ? std::next(it) : m_plantMaxEdge.erase(it);
         for (auto it = m_tessTopologies.begin(); it != m_tessTopologies.end();)
-            it = it->second.last + 30 < m_frameNumber ? m_tessTopologies.erase(it) : std::next(it);
+            it = it->second.frames[0] + 30 < m_frameNumber ? m_tessTopologies.erase(it) : std::next(it);
     }
 }
 

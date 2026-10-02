@@ -29,7 +29,9 @@ void main()
     }
     vec3 posW = p + D.tess.y * pull;
     vec3 delta = posW - p;
-    vPosW = posW;
+    // vPosW (lighting, shadow lookups) stays on the flat triangles: the shadow maps hold the untessellated mesh, and a
+    // rounded point pulled inside it would find itself shadowed by its own body. The light barely differs.
+    vPosW = p;
     vec4 pv = C.view * vec4(posW, 1.0);
     gl_Position = C.proj * pv;
     vClip = gl_Position;                         // motion vectors: without the jitter

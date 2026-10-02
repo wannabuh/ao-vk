@@ -862,7 +862,8 @@ float g_grassWalk = -100.0f;  // --grass-walk X: a patch of grass and an animate
 float g_grassWalkSpeed = 0.0f; // --grass-walk-speed: ... walking this far along x a frame
 float g_grassSize = 1.0f;      // --grass-size: the tufts' cards this many times bigger (big quads)
 bool g_grassFlip = false;
-bool g_walkerRound = false;    // --walker-round: the "character" a low-polygon smooth-shaded 8-sided column
+bool g_walkerRound = false;
+int g_walkerSkip = 0;          // --walker-skip N: the "character" animates only every N-th frame (crowds: the game skips)    // --walker-round: the "character" a low-polygon smooth-shaded 8-sided column
 int g_grassDense = 1;          // --grass-dense K: K x K as many tufts, K times closer (a field, for profiling)      // --grass-flip: the tufts modelled upside down, turned up by their world matrix
 
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
@@ -1129,8 +1130,9 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
                         uint16_t q[6] = {a, c, b, b, c, d};
                         ci.insert(ci.end(), q, q + 6);
                     }
+                int animFrame = g_walkerSkip > 0 ? frame / g_walkerSkip * g_walkerSkip : frame;
                 for (VtxMesh& m : cv)
-                    if (m.y > 1.0f) m.x += 0.02f * std::sin(frame * 0.9f);
+                    if (m.y > 1.0f) m.x += 0.02f * std::sin(animFrame * 0.9f);
             } else {
                 AddCube(cv, ci, wx, 0.9f, -3.2f, 0.3f);
                 for (VtxMesh& m : cv) {
@@ -1691,6 +1693,7 @@ int main(int argc, char** argv)
         else if (a == "--grass-walk-speed" && i + 1 < argc) g_grassWalkSpeed = float(std::atof(argv[++i]));
         else if (a == "--grass-flip") g_grassFlip = true;
         else if (a == "--walker-round") g_walkerRound = true;
+        else if (a == "--walker-skip" && i + 1 < argc) g_walkerSkip = std::atoi(argv[++i]);
         else if (a == "--grass-dense" && i + 1 < argc) g_grassDense = std::atoi(argv[++i]);
         else if (a == "--grass-size" && i + 1 < argc) g_grassSize = float(std::atof(argv[++i]));
         else if (a == "--tess" && i + 1 < argc) tess = float(std::atof(argv[++i]));

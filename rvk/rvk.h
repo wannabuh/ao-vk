@@ -632,7 +632,7 @@ private:
     float m_tessDistance = 20.0f;                // world units: full level up close, none from here on
     uint32_t m_tessLevel = 4;
     bool m_drawTess = false;                     // the current draw is tessellated (ApplyDynamicState, the pipeline)
-    struct TessTopology { uint64_t last = 0, before = 0; };   // frames a topology was drawn animated (not static)
+    struct TessTopology { uint64_t frames[3] = {}; };   // the last 3 frames a topology was drawn animated, newest first
     std::unordered_map<uint64_t, TessTopology> m_tessTopologies;
     float TessellateDraw(uint32_t primitive, uint32_t fvf, uint32_t vertexCount);   // the level (0 = none)
     struct TessCharacter { float x, z, minY, maxY; };
