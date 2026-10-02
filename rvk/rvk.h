@@ -226,6 +226,13 @@ public:
     }
     // Foliage beyond this distance (world units) is shaded more cheaply (0 = off).
     void SetFoliageLod(float distance) { m_foliageLod = distance; }
+    // Phong tessellation of characters: shape (0 = off, 1 = fully round), distance, the level up close.
+    void SetTessellation(float shape, float distance, uint32_t level)
+    {
+        m_tessShape = shape;
+        m_tessDistance = distance;
+        m_tessLevel = std::clamp<uint32_t>(level, 1, 16);
+    }
     // Intensity of point / spot lights: lamps and other lights, and lights characters carry (yours included).
     void SetPointLightIntensity(float lights, float characters)
     {
@@ -607,6 +614,19 @@ private:
     bool m_sceneSaw3D = false;
     uint32_t m_sceneEndDraw = 0, m_sceneEndFvf = 0;   // frame dumps: where the scene phase ended
     VkPipeline m_pipelinesHdr[3] = {};           // m_pipelines for the float target
+    VkPipeline m_tessPipelines[2] = {};          // characters' Phong tessellation: 8-bit target, float target
+    bool m_tessSupported = false;
+    // Phong tessellation of characters near the camera (draw.cpp TessellateDraw): RVK_Tess*.
+    float m_tessShape = 0.0f;                    // 0 = off; how far towards the smooth shape (Phong's alpha)
+    float m_tessDistance = 20.0f;                // world units: full level up close, none from here on
+    uint32_t m_tessLevel = 4;
+    bool m_drawTess = false;                     // the current draw is tessellated (ApplyDynamicState, the pipeline)
+    struct TessTopology { uint64_t last = 0, before = 0; };   // frames a topology was drawn animated (not static)
+    std::unordered_map<uint64_t, TessTopology> m_tessTopologies;
+    float TessellateDraw(uint32_t primitive, uint32_t fvf, uint32_t vertexCount);   // the level (0 = none)
+    bool SmoothNormals(const void* vertices, uint32_t vertexCount, const detail::FvfLayout& layout);
+    std::vector<float> m_smoothNormals;          // the draw's averaged normals (binding 10)
+    std::vector<int32_t> m_smoothTable;          // their position hash table
     VkDescriptorSetLayout m_tonemapSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_tonemapLayout = VK_NULL_HANDLE;
     VkPipeline m_tonemapPipeline = VK_NULL_HANDLE;

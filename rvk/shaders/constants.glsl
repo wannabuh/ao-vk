@@ -10,6 +10,7 @@ layout(set = 0, binding = 3, std140) uniform DrawTransform {
                                 // binding 8; z: the draw's base vertex (gl_VertexIndex - z = its vertex)
     vec4 sway;                  // plants: model y of the base, 1 / model height, tip sway (world units), 1 = on
     uvec4 lightMask;            // frame lights (bits 0-63 of x, y) that reach the draw's bounding box; z: pushers near it
+    vec4 tess;                  // characters' Phong tessellation: level (0 = off), shape (0..1), base vertex (binding 10)
 } D;
 
 layout(set = 0, binding = 0, std140) uniform DrawConstants {

@@ -423,6 +423,86 @@ float Device::LightScale(const d3d::Light& l) const
     return m_pointLightScale;
 }
 
+// Phong tessellation of characters (RVK_Tess): the level for this draw, 0 for none. Characters are drawn as
+// CPU-skinned meshes, new vertices every frame; a static mesh is new on the frame it appears too, so a mesh's topology
+// (its indices) must have been drawn animated the frame before as well - a building doesn't round for a frame. Indexed
+// or not, triangle lists only (3-point patches), lit and with normals (the shape follows them), near the camera.
+float Device::TessellateDraw(uint32_t primitive, uint32_t fvf, uint32_t vertexCount)
+{
+    if (m_tessShape <= 0.0f || !m_tessSupported || m_external || !m_drawMesh || m_drawMeshStatic)
+        return 0.0f;
+    uint64_t key = m_drawMesh->indexHash ^ (uint64_t(fvf) << 40) ^ (uint64_t(vertexCount) * 0x9E3779B97F4A7C15ull);
+    TessTopology& t = m_tessTopologies[key];
+    if (t.last != m_frameNumber) {
+        t.before = t.last;
+        t.last = m_frameNumber;
+    }
+    if (t.before + 1 != m_frameNumber || primitive != d3d::TriangleList || m_drawIsLabel || !m_rs[d3d::RS_LIGHTING] ||
+        !m_rs[d3d::RS_ZWRITEENABLE] || !(fvf & d3d::FVF_NORMAL) || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ ||
+        (m_target != m_scene && m_target != m_main) || vertexCount > 20000)
+        return 0.0f;
+    float c[3], e[3];
+    DrawWorldBox(c, e);
+    if (e[1] > 2.5f || e[0] > 2.0f || e[2] > 2.0f)        // character-sized (as the grass push's)
+        return 0.0f;
+    UpdateFrameEye();
+    float d2 = 0.0f;
+    for (int j = 0; j < 3; ++j) {
+        float d = std::max(std::fabs(m_frameEye[j] - c[j]) - e[j], 0.0f);
+        d2 += d * d;
+    }
+    float closeness = 1.0f - std::sqrt(d2) / std::max(m_tessDistance, 1.0f);
+    float level = 1.0f + float(m_tessLevel - 1) * closeness;
+    return level >= 1.5f ? level : 0.0f;
+}
+
+// The current draw's normals averaged over the vertices sharing a position (m_smoothNormals, model space): a hard
+// edge or a seam has a vertex per side with its own normal, and the Phong shape following those would tear the
+// surface open there. The average of unit normals is shorter the more they differ: its length says how smooth the
+// surface is meant to be there (the shader rounds only smooth corners - a box, a blade's edge stay sharp).
+// False without normals.
+bool Device::SmoothNormals(const void* vertices, uint32_t vertexCount, const FvfLayout& layout)
+{
+    if (layout.offset[1] < 0 || !vertexCount)
+        return false;
+    const uint8_t* v = static_cast<const uint8_t*>(vertices);
+    uint32_t size = 64;
+    while (size < vertexCount * 2) size *= 2;
+    m_smoothTable.assign(size, -1);
+    m_smoothNormals.assign(size_t(vertexCount) * 3, 0.0f);
+    std::vector<int32_t> owner(vertexCount);       // the first vertex at each one's position
+    std::vector<uint16_t> count(vertexCount, 0);
+    auto quant = [](float f) { return int32_t(std::lround(f * 2048.0f)); };   // positions within 1/2048 are one
+    for (uint32_t i = 0; i < vertexCount; ++i) {
+        float p[3], n[3];
+        std::memcpy(p, v + size_t(i) * layout.stride, 12);
+        std::memcpy(n, v + size_t(i) * layout.stride + layout.offset[1], 12);
+        int32_t q[3] = {quant(p[0]), quant(p[1]), quant(p[2])};
+        uint32_t h = (uint32_t(q[0]) * 73856093u) ^ (uint32_t(q[1]) * 19349663u) ^ (uint32_t(q[2]) * 83492791u);
+        int32_t found = -1;
+        for (uint32_t slot = h & (size - 1);; slot = (slot + 1) & (size - 1)) {
+            int32_t o = m_smoothTable[slot];
+            if (o < 0) { m_smoothTable[slot] = int32_t(i); break; }
+            float op[3];
+            std::memcpy(op, v + size_t(o) * layout.stride, 12);
+            if (quant(op[0]) == q[0] && quant(op[1]) == q[1] && quant(op[2]) == q[2]) { found = o; break; }
+        }
+        owner[i] = found < 0 ? int32_t(i) : found;
+        float len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+        if (len > 0.0f) {
+            for (int j = 0; j < 3; ++j) m_smoothNormals[size_t(owner[i]) * 3 + j] += n[j] / len;
+            ++count[owner[i]];
+        }
+    }
+    for (uint32_t i = 0; i < vertexCount; ++i)           // the owners' sums -> means (unit vectors averaged)
+        if (owner[i] == int32_t(i) && count[i] > 1)
+            for (int j = 0; j < 3; ++j) m_smoothNormals[size_t(i) * 3 + j] /= float(count[i]);
+    for (uint32_t i = 0; i < vertexCount; ++i)
+        if (owner[i] != int32_t(i))
+            for (int j = 0; j < 3; ++j) m_smoothNormals[size_t(i) * 3 + j] = m_smoothNormals[size_t(owner[i]) * 3 + j];
+    return true;
+}
+
 // The current draw is further from the camera than the foliage level of detail's distance (its box's nearest point).
 bool Device::FoliageFar() const
 {
@@ -996,15 +1076,20 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     VkCommandBuffer cmd = m_frames[m_frameIndex].main;
     StateCache& c = m_cache;
     uint32_t topoClass = TopologyClass(primitive);
-    uint32_t pipelineClass = topoClass + (m_target->m_format == Format::RGBA16F ? 3u : 0u);
+    bool hdrTarget = m_target->m_format == Format::RGBA16F;
+    // Pipeline classes: 0-2 points / lines / triangles, 3-5 the same for the float target, 6 / 7 tessellated.
+    uint32_t pipelineClass = m_drawTess ? 6u + (hdrTarget ? 1u : 0u) : topoClass + (hdrTarget ? 3u : 0u);
     if (c.topologyClass != pipelineClass) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          pipelineClass >= 3 ? m_pipelinesHdr[topoClass] : m_pipelines[topoClass]);
+                          m_drawTess ? m_tessPipelines[hdrTarget ? 1 : 0]
+                          : pipelineClass >= 3 ? m_pipelinesHdr[topoClass] : m_pipelines[topoClass]);
         c.topologyClass = pipelineClass;
     }
-    if (c.topology != primitive) {
-        vkCmdSetPrimitiveTopology(cmd, Topology(primitive));
-        c.topology = primitive;
+    constexpr uint32_t kPatchTopology = 0x100;   // c.topology while a tessellated draw's patch list is set
+    uint32_t topology = m_drawTess ? kPatchTopology : primitive;
+    if (c.topology != topology) {
+        vkCmdSetPrimitiveTopology(cmd, m_drawTess ? VK_PRIMITIVE_TOPOLOGY_PATCH_LIST : Topology(primitive));
+        c.topology = topology;
     }
     if (!c.valid) {
         // D3D front faces are clockwise on screen; D3DCULL_CCW culls the counter-clockwise (back) ones.
@@ -1051,7 +1136,7 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     if (c.depthWrite != zWrite) { vkCmdSetDepthWriteEnable(cmd, zWrite); c.depthWrite = zWrite; }
     if (c.depthOp != zFunc) { vkCmdSetDepthCompareOp(cmd, CompareOp(zFunc)); c.depthOp = zFunc; }
 
-    if (pipelineClass >= 3 && !c.glowBlendSet) {
+    if (hdrTarget && !c.glowBlendSet) {
         // The glow attachment always adds: what each additive effect contributes (others write 0).
         VkBool32 on = VK_TRUE;
         vkCmdSetColorBlendEnableEXT(cmd, 1, 1, &on);
@@ -1260,8 +1345,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     const VkDeviceSize uboAlign = m_props.limits.minUniformBufferOffsetAlignment;
     bool motion = !m_external && MotionVectorDraw(fvf);   // reads the last frame's camera from the frame block
     VkDeviceSize geometryBytes = m_external ? 0 : VkDeviceSize(layout.stride) * vertexCount + VkDeviceSize(indexCount) * 2;
+    float tessLevel = TessellateDraw(primitive, fvf, vertexCount);
     EnsureRingSpace(sizeof(DrawConstants) + sizeof(DrawTransform) + sizeof(FrameLights) + geometryBytes + 3 * uboAlign +
-                    layout.stride + 32 + (motion ? 12ull * vertexCount + 256 : 0));
+                    layout.stride + 32 + (motion ? 12ull * vertexCount + 256 : 0) +
+                    (tessLevel > 0.0f ? 12ull * vertexCount + 256 : 0));
 
     // The frame's light list (binding 4): rebuilt when lights changed; always bound, as layouts require.
     // Only lit draws read it; the others bind any in-range part of the ring.
@@ -1283,6 +1370,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     drawTransform->prevWorld = m_world;
     drawTransform->motion[0] = motion ? 1.0f : 0.0f;
     drawTransform->motion[1] = drawTransform->motion[2] = drawTransform->motion[3] = 0.0f;
+    drawTransform->tess[0] = drawTransform->tess[1] = drawTransform->tess[2] = drawTransform->tess[3] = 0.0f;
     std::memcpy(drawTransform->sway, sway, sizeof(sway));
     std::memcpy(m_drawSway, drawTransform->sway, sizeof(m_drawSway));
     if (m_dumpFile && m_drawSway[3] > 0.5f) {    // frame dump: how the plant sways (after its D line)
@@ -1539,6 +1627,19 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         RecordShadowCaster(primitive, fvf, layout.stride, vertices, vertexCount, vbOffset, indices,
                            indices ? indexCount : 0, ibOffset);
     }
+    // Phong tessellation: the averaged normals (binding 10) and the draw's level and shape.
+    VkDeviceSize smoothOffset = 0, smoothBytes = 0;
+    m_drawTess = false;
+    if (tessLevel > 0.0f && SmoothNormals(vertices, vertexCount, layout)) {
+        void* smoothCpu;
+        smoothBytes = m_smoothNormals.size() * 4;
+        smoothOffset = Allocate(smoothBytes, m_props.limits.minStorageBufferOffsetAlignment, &smoothCpu);
+        std::memcpy(smoothCpu, m_smoothNormals.data(), smoothBytes);
+        drawTransform->tess[0] = tessLevel;
+        drawTransform->tess[1] = m_tessShape;
+        drawTransform->tess[2] = float(vbOffset / layout.stride);
+        m_drawTess = true;
+    }
     ProfileDrawSection("draw: geometry + casters", since);
     m_drawOverbright2x = Overbright2x(fvf);
     if (GlowDraw(fvf)) ++m_glowDraws;
@@ -1560,8 +1661,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     VkDescriptorBufferInfo prevPositions{f.ring, prevPositionsOffset, prevPositionsBytes ? prevPositionsBytes : 16};
     // Binding 9: the sun shadow cascades' depths, read without comparison (soft shadows' blocker search).
     VkDescriptorImageInfo shadowDepths{m_shadowDepthSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet writes[10] = {};
-    for (int i = 0; i < 10; ++i) {
+    // Binding 10: a tessellated draw's averaged normals, else any small part of the ring (unread).
+    VkDescriptorBufferInfo smoothNormals{f.ring, smoothOffset, smoothBytes ? smoothBytes : 16};
+    VkWriteDescriptorSet writes[11] = {};
+    for (int i = 0; i < 11; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstBinding = uint32_t(i);
         writes[i].descriptorCount = 1;
@@ -1585,7 +1688,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[8].pBufferInfo = &prevPositions;
     writes[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[9].pImageInfo = &shadowDepths;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 10, writes);
+    writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[10].pBufferInfo = &smoothNormals;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 11, writes);
 
     if (m_external) {
         VkBuffer buffers[2] = {m_external->vertices, m_nullBuffer};

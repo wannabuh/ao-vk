@@ -42,6 +42,7 @@ struct DrawTransform {
     float sway[4];                 // plants: model y of the base, 1 / model height, tip sway (world units), 1 = on
     uint32_t lightMask[4];         // frame lights (bits 0-63 of x, y) that reach the draw's bounding box; z: pushers
                                    // (FrameLights.pushers) near it
+    float tess[4];                 // Phong tessellation (characters): level (0 = off), shape, base vertex of binding 10
 };
 
 enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE = 8, F_FOG = 16, F_RANGEFOG = 32,

@@ -40,6 +40,12 @@ namespace {
 const uint32_t kVertSpirv[] = {
 #include "ffp.vert.inc"
 };
+const uint32_t kTescSpirv[] = {                 // characters' Phong tessellation
+#include "ffp.tesc.inc"
+};
+const uint32_t kTeseSpirv[] = {
+#include "ffp.tese.inc"
+};
 const uint32_t kFragSpirv[] = {
 #include "ffp.frag.inc"
 };
@@ -173,6 +179,7 @@ Device::~Device()
     for (auto& [key, sampler] : m_samplers) vkDestroySampler(m_device, sampler, nullptr);
     for (VkPipeline p : m_pipelines) if (p) vkDestroyPipeline(m_device, p, nullptr);
     for (VkPipeline p : m_pipelinesHdr) if (p) vkDestroyPipeline(m_device, p, nullptr);
+    for (VkPipeline p : m_tessPipelines) if (p) vkDestroyPipeline(m_device, p, nullptr);
     DestroyShadowResources();
     DestroyPointShadowResources();
     DestroyHdrResources();
@@ -362,6 +369,8 @@ bool Device::CreateLogicalDevice(std::string* error)
     enabled.features.robustBufferAccess = features.features.robustBufferAccess;
     enabled.features.textureCompressionBC = features.features.textureCompressionBC;
     enabled.features.imageCubeArray = VK_TRUE;           // point light shadow maps
+    enabled.features.tessellationShader = features.features.tessellationShader;   // characters' Phong tessellation
+    m_tessSupported = features.features.tessellationShader;
 
     float priority = 1.0f;
     VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -590,21 +599,27 @@ void Device::DestroySwapchain()
 
 bool Device::CreatePipelines(std::string* error)
 {
-    VkDescriptorSetLayoutBinding bindings[10] = {
-        {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+    // Bindings 0, 3, 4 also for the tessellation stages (characters' Phong tessellation: camera, draw, frame).
+    const VkShaderStageFlags vsfs = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    const VkShaderStageFlags tess = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+    VkDescriptorSetLayoutBinding bindings[11] = {
+        {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, vsfs | tess, nullptr},
         {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        {4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, vsfs | tess, nullptr},
+        {4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, vsfs | tess, nullptr},
         {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
         {9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},   // shadow depths
+        {10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},     // tessellation's normals
     };
+    if (!m_tessSupported)
+        for (auto& b : bindings) b.stageFlags &= ~tess;
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 10;
+    sl.bindingCount = 11;
     sl.pBindings = bindings;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_setLayout), "vkCreateDescriptorSetLayout", error))
         return false;
@@ -688,6 +703,46 @@ bool Device::CreatePipelines(std::string* error)
         ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, set ? &m_pipelinesHdr[c] : &m_pipelines[c]),
                    "vkCreateGraphicsPipelines", error);
     }
+    // Characters' Phong tessellation: triangles as 3-point patches, through ffp.tesc / ffp.tese (both targets).
+    VkShaderModule tesc = VK_NULL_HANDLE, tese = VK_NULL_HANDLE;
+    if (ok && m_tessSupported && module(kTescSpirv, sizeof(kTescSpirv), &tesc) && module(kTeseSpirv, sizeof(kTeseSpirv), &tese)) {
+        VkPipelineShaderStageCreateInfo tstages[4] = {
+            stages[0],
+            {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, tesc, "main", nullptr},
+            {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, tese, "main", nullptr},
+            stages[1],
+        };
+        VkPipelineTessellationDomainOriginStateCreateInfo origin{
+            VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_DOMAIN_ORIGIN_STATE_CREATE_INFO};
+        origin.domainOrigin = VK_TESSELLATION_DOMAIN_ORIGIN_LOWER_LEFT;
+        VkPipelineTessellationStateCreateInfo ts{VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO};
+        ts.pNext = &origin;
+        ts.patchControlPoints = 3;
+        for (int set = 0; set < 2 && ok; ++set) {
+            colorFormats[0] = set ? GetFormatInfo(Format::RGBA16F).vk : kColorFormat;
+            rendering.colorAttachmentCount = cb.attachmentCount = set ? 5 : 1;
+            tstages[3].module = set ? fragGlow : frag;
+            VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+            ia.topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
+            VkGraphicsPipelineCreateInfo ci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+            ci.pNext = &rendering;
+            ci.stageCount = 4;
+            ci.pStages = tstages;
+            ci.pInputAssemblyState = &ia;
+            ci.pTessellationState = &ts;
+            ci.pViewportState = &vp;
+            ci.pRasterizationState = &rs;
+            ci.pMultisampleState = &ms;
+            ci.pDepthStencilState = &dss;
+            ci.pColorBlendState = &cb;
+            ci.pDynamicState = &ds;
+            ci.layout = m_pipelineLayout;
+            ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, &m_tessPipelines[set]),
+                       "tessellation pipeline", error);
+        }
+    }
+    if (tesc) vkDestroyShaderModule(m_device, tesc, nullptr);
+    if (tese) vkDestroyShaderModule(m_device, tese, nullptr);
     vkDestroyShaderModule(m_device, vert, nullptr);
     vkDestroyShaderModule(m_device, fragGlow, nullptr);
     vkDestroyShaderModule(m_device, frag, nullptr);

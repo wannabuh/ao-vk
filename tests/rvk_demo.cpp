@@ -760,6 +760,7 @@ float g_grassWalk = -100.0f;  // --grass-walk X: a patch of grass and an animate
 float g_grassWalkSpeed = 0.0f; // --grass-walk-speed: ... walking this far along x a frame
 float g_grassSize = 1.0f;      // --grass-size: the tufts' cards this many times bigger (big quads)
 bool g_grassFlip = false;
+bool g_walkerRound = false;    // --walker-round: the "character" a low-polygon smooth-shaded 8-sided column
 int g_grassDense = 1;          // --grass-dense K: K x K as many tufts, K times closer (a field, for profiling)      // --grass-flip: the tufts modelled upside down, turned up by their world matrix
 
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
@@ -981,10 +982,34 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
         if (g_grassWalk >= -10.0f) {                 // the "character": CPU-skinned (its vertices change every frame)
             std::vector<VtxMesh> cv;
             std::vector<uint16_t> ci;
-            AddCube(cv, ci, g_grassWalk + g_grassWalkSpeed * float(frame), 0.9f, -3.2f, 0.3f);
-            for (VtxMesh& m : cv) {
-                m.y = 0.9f + (m.y - 0.9f) * 3.0f;        // tall: 1.8 units, feet on the ground
-                if (m.y > 1.0f) m.x += 0.02f * std::sin(frame * 0.9f);
+            float wx = g_grassWalk + g_grassWalkSpeed * float(frame);
+            if (g_walkerRound) {                     // rings of 8 around, radius bulging in the middle; smooth normals
+                const int kSides = 8, kRings = 5;
+                for (int r = 0; r < kRings; ++r) {
+                    float y = 0.05f + 1.7f * float(r) / float(kRings - 1);
+                    float rad = 0.15f + 0.2f * std::sin(3.14159f * float(r) / float(kRings - 1));
+                    for (int s = 0; s < kSides; ++s) {
+                        float a = 6.28318f * float(s) / float(kSides);
+                        float nx = std::cos(a), nz = std::sin(a);
+                        cv.push_back({wx + rad * nx, y, -3.2f + rad * nz, nx, 0, nz, 0xFFFFFFFF,
+                                      float(s) / kSides, 1.0f - float(r) / (kRings - 1)});
+                    }
+                }
+                for (int r = 0; r + 1 < kRings; ++r)
+                    for (int s = 0; s < kSides; ++s) {
+                        uint16_t a = uint16_t(r * kSides + s), b = uint16_t(r * kSides + (s + 1) % kSides);
+                        uint16_t c = uint16_t(a + kSides), d = uint16_t(b + kSides);
+                        uint16_t q[6] = {a, c, b, b, c, d};
+                        ci.insert(ci.end(), q, q + 6);
+                    }
+                for (VtxMesh& m : cv)
+                    if (m.y > 1.0f) m.x += 0.02f * std::sin(frame * 0.9f);
+            } else {
+                AddCube(cv, ci, wx, 0.9f, -3.2f, 0.3f);
+                for (VtxMesh& m : cv) {
+                    m.y = 0.9f + (m.y - 0.9f) * 3.0f;        // tall: 1.8 units, feet on the ground
+                    if (m.y > 1.0f) m.x += 0.02f * std::sin(frame * 0.9f);
+                }
             }
             dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, cv.data(), uint32_t(cv.size()), ci.data(), uint32_t(ci.size()));
         }
@@ -1494,7 +1519,8 @@ int main(int argc, char** argv)
     bool hdr = false;
     float bloom = 0.0f, effectGlow = 1.0f, ao = 0.0f, aoRadius = 1.5f, gi = 0.0f, giRadius = 4.0f, volume = 0.0f, volHaze = 1.0f, volShafts = 1.0f, ssr = 0.0f, ssrWet = 0.0f, bloomOcc = 0.15f, sunSoft = 0.0f, leaf = 0.0f, nightGlow = 0.0f, contact = 0.0f, sway = 0.0f, bump = 0.0f, grassPush = 1.0f, plantDetail = 1.0f, foliageLod = 35.0f;
     int sunRes = 4096, ptRes = 1024;
-    float ptLight = 1.0f;
+    float ptLight = 1.0f, tess = 0.0f;
+    int tessLevel = 4;
     float saturation = 1.0f, contrast = 1.0f, warmth = 0.0f, nightTint = 0.0f, vignette = 0.0f;
     bool lutSepia = false, taa = false;
     float sharpen = 0.4f;
@@ -1536,8 +1562,11 @@ int main(int argc, char** argv)
         else if (a == "--grass-walk" && i + 1 < argc) g_grassWalk = float(std::atof(argv[++i]));
         else if (a == "--grass-walk-speed" && i + 1 < argc) g_grassWalkSpeed = float(std::atof(argv[++i]));
         else if (a == "--grass-flip") g_grassFlip = true;
+        else if (a == "--walker-round") g_walkerRound = true;
         else if (a == "--grass-dense" && i + 1 < argc) g_grassDense = std::atoi(argv[++i]);
         else if (a == "--grass-size" && i + 1 < argc) g_grassSize = float(std::atof(argv[++i]));
+        else if (a == "--tess" && i + 1 < argc) tess = float(std::atof(argv[++i]));
+        else if (a == "--tess-level" && i + 1 < argc) tessLevel = std::atoi(argv[++i]);
         else if (a == "--pt-light" && i + 1 < argc) ptLight = float(std::atof(argv[++i]));
         else if (a == "--sun-res" && i + 1 < argc) sunRes = std::atoi(argv[++i]);
         else if (a == "--pt-res" && i + 1 < argc) ptRes = std::atoi(argv[++i]);
@@ -1636,6 +1665,7 @@ int main(int argc, char** argv)
     dev.SetFoliageLod(foliageLod);
     dev.SetShadowResolution(uint32_t(sunRes), uint32_t(ptRes));
     dev.SetPointLightIntensity(ptLight, ptLight);
+    dev.SetTessellation(tess, 20.0f, uint32_t(tessLevel));
     dev.SetTaa(taa, sharpen);
     dev.SetGrading(saturation, contrast, warmth, 1.0f, nightTint, vignette);
     if (lutSepia) {                      // --lut-sepia: a 16^3 sepia lookup table in the day slot (the 3D LUT path)

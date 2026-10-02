@@ -27,6 +27,11 @@ layout(location = 10) out vec2 vSet0;        // texture coordinate set 0 as is (
 layout(location = 11) out vec4 vClip;        // motion vectors: clip position now
 layout(location = 12) out vec4 vPrevClip;    // ... and last frame (previous world matrix and camera)
 layout(location = 13) out float vCutout;     // F_CUTOUT: alpha below which the fragment is dropped
+layout(location = 14) out vec3 vSmoothN;     // tessellated draws (D.tess.x): the normal averaged over the vertices at
+                                             // this position (world), which the Phong shape follows - no cracks at
+                                             // hard edges, where a position has several normals
+// Tessellated draws: per vertex the averaged normal (model space, 3 floats), from the draw's base vertex D.tess.z.
+layout(set = 0, binding = 10, std430) readonly buffer SmoothNormals { float smoothN[]; } SN;
 // Last frame's vertex positions of an animated (CPU-skinned) mesh, model space, 3 floats a vertex (D.motion.y).
 layout(set = 0, binding = 8, std430) readonly buffer PrevPositions { float prevPos[]; } PP;
 layout(set = 0, binding = 1) uniform sampler2D swayTex;    // texture 0: plants' sway (how much of it is holes)
@@ -144,6 +149,7 @@ void main()
     vClip = vec4(0.0, 0.0, 0.0, 1.0);
     vPrevClip = vClip;
     vCutout = 0.02;
+    vSmoothN = vec3(0.0);
     if (rhw) {
         // Screen-space vertex. The Vulkan viewport is the D3D one shifted by half a pixel (D3D pixel
         // centres are at integer coordinates), so position relative to it.
@@ -190,6 +196,14 @@ void main()
 
         vPosW = posW.xyz;
         vNormalW = vec4(normalW, length(normalW));
+        if (D.tess.x > 0.5) {
+            // Direction: the averaged normal in the world; length: how smooth the surface is at this corner (the
+            // model-space mean of the unit normals here: 1 where they agree, ~0.58 at a box's corner) as a weight.
+            int i = (gl_VertexIndex - int(D.tess.z)) * 3;
+            vec3 m = vec3(SN.smoothN[i], SN.smoothN[i + 1], SN.smoothN[i + 2]);
+            vec3 s = mat3(D.world) * m;
+            vSmoothN = dot(s, s) > 0.0 ? normalize(s) * smoothstep(0.85, 0.97, length(m)) : vec3(0.0);
+        }
         if ((C.flags.x & F_LIGHTING) != 0u) {
             vec4 mDiffuse = MaterialColor(C.matSources.x, C.matDiffuse, diffuse, specular, hasDiffuse, hasSpecular);
             vec4 mAmbient = MaterialColor(C.matSources.y, C.matAmbient, diffuse, specular, hasDiffuse, hasSpecular);

@@ -48,6 +48,10 @@ Setting g_settings[] = {
     {"RVK_LeafLight",  "Strength",                                                 "Lighting",         Float, 0.25f, 2, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
     {"RVK_PtLight",    "Point light intensity (lamps, fires, other lights)",       "Lighting",         Float, 0.25f, 2, 0.05f, 1, nullptr, 0},
     {"RVK_CharLight",  "Character light intensity (lights characters carry, yours too)", "Lighting",  Float, 0.1f, 2, 0.05f, 1, nullptr, 0},
+    {"RVK_TessOn",     "Rounder characters (Phong tessellation)",                  "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_Tess",       "Roundness",                                                "Lighting",         Float, 0.25f, 1, 0.05f, 0.75f, nullptr, 0, "RVK_TessOn"},
+    {"RVK_TessLevel",  "Detail up close (pieces per triangle edge)",               "Lighting",         Int,   2, 8, 1, 4, nullptr, 0, "RVK_TessOn"},
+    {"RVK_TessDist",   "Up to this distance (world units)",                        "Lighting",         Int,   5, 60, 1, 20, nullptr, 0, "RVK_TessOn"},
     {"RVK_Aniso",      "Anisotropic filtering (1 = off)",                          "Lighting",         Choice, 1, 16, 1, 16, "RANDYVK_ANISOTROPY", 0, nullptr, "1 2 4 8 16"},
 
     {"RVK_SwayOn",     "Plants sway in the wind",                                  "Plants",           Bool,  0, 1, 1, 1, nullptr, 0},
@@ -162,7 +166,7 @@ Setting* Find(const char* name)
 struct Vanilla { const char* name; float value; };
 const Vanilla kVanilla[] = {
     {"RVK_PixelLight", 0}, {"RVK_LightOver", 0}, {"RVK_Bump", 0}, {"RVK_LeafLight", 0}, {"RVK_Headroom", 1},
-    {"RVK_Sway", 0}, {"RVK_GrassPush", 0}, {"RVK_PlantDetail", 0}, {"RVK_FoliageLod", 0}, {"RVK_PtLight", 1}, {"RVK_CharLight", 1}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
+    {"RVK_Sway", 0}, {"RVK_GrassPush", 0}, {"RVK_PlantDetail", 0}, {"RVK_FoliageLod", 0}, {"RVK_PtLight", 1}, {"RVK_CharLight", 1}, {"RVK_Tess", 0}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
     {"RVK_Hdr", 0}, {"RVK_Bloom", 0}, {"RVK_BloomFx", 0}, {"RVK_NightGlow", 0}, {"RVK_Ao", 0}, {"RVK_Gi", 0},
     {"RVK_Volume", 0}, {"RVK_Ssr", 0}, {"RVK_MBlur", 0}, {"RVK_Taa", 0}, {"RVK_Saturation", 1}, {"RVK_Contrast", 1},
     {"RVK_Warmth", 0}, {"RVK_NightTint", 0}, {"RVK_Vignette", 0}, {"RVK_LutAmount", 0}, {"RVK_Dof", 0},
@@ -253,6 +257,8 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_Bump")) d->SetBump(V(n));
     else if (is("RVK_Headroom")) d->SetLightHeadroom(V(n));
     else if (is("RVK_Aniso")) d->SetAnisotropy(uint32_t(V(n)));
+    else if (is("RVK_Tess") || is("RVK_TessLevel") || is("RVK_TessDist"))
+        d->SetTessellation(V("RVK_Tess"), V("RVK_TessDist"), uint32_t(V("RVK_TessLevel")));
     else if (is("RVK_PtLight") || is("RVK_CharLight")) d->SetPointLightIntensity(V("RVK_PtLight"), V("RVK_CharLight"));
     else if (is("RVK_SunShadow")) d->SetShadows(V(n) != 0.0f);
     else if (is("RVK_SunRes") || is("RVK_PtRes"))
