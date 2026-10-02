@@ -339,16 +339,24 @@ void Device::EndScene()
     VkCommandBuffer cmd = m_frames[m_frameIndex].main;
     bool wasMain = m_target == m_scene;
     EndRendering();
+    ProfileMark("scene");
+    double cpu = ProfileCpu();
     Transition(cmd, m_scene, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     bool bloom = m_bloomStrength > 0.0f;
     if (bloom)
         RenderBloom(cmd);
+    ProfileMark("bloom");
     bool ao = RenderAo(cmd);
+    ProfileMark("ao");
     bool gi = RenderGi(cmd);
+    ProfileMark("gi");
     bool volume = RenderVolume(cmd);
+    ProfileMark("volumetric");
     Transition(cmd, m_localFraction, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     bool ssr = RenderSsr(cmd);
+    ProfileMark("reflections");
     bool contact = RenderContactShadows(cmd);
+    ProfileMark("contact shadows");
     Transition(cmd, m_albedo, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     // The upsampled bloom chain sums every level's light: averaged here.
     // params[3]: how much bloom reaches objects nearer than its light (-1: the bloom carries no depth).
@@ -363,6 +371,7 @@ void Device::EndScene()
     // Depth of field blurs the scene with its ambient occlusion, indirect and volumetric light applied; the tone
     // mapping then leaves them out.
     bool dof = RenderDof(cmd, bloom, ao, gi, volume, params);
+    ProfileMark("dof");
     Texture* scene = dof ? m_dofOut : m_scene;
     if (dof) params[6] = params[7] = 0.0f;
     // With motion blur or anti-aliasing the tone mapping goes to an intermediate image: the anti-aliasing resolves
@@ -380,8 +389,10 @@ void Device::EndScene()
     }
     Texture* toned = blur || taa ? m_tonemapped : m_ldrMain;
     TonemapInputsPass(cmd, toned, m_tonemapPipeline, scene, bloom, ao, gi, volume, params);
+    ProfileMark("tonemap");
     if (taa)
         RenderTaa(cmd, blur ? m_tonemapped : m_ldrMain, taaParams);
+    ProfileMark("taa + sharpen");
     if (blur) {
         Transition(cmd, m_tonemapped, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         MakeDepthReadable(cmd);
@@ -391,6 +402,8 @@ void Device::EndScene()
             FullscreenPass(cmd, m_ldrMain, m_motionPipeline, m_tonemapped->m_view, m_depthView, m_pointSampler, motion,
                            sizeof(motion), false);
     }
+    ProfileMark("motion blur");
+    ProfileCpuAdd("post passes", cpu);
     m_cache = StateCache{};                      // pipeline, viewport and scissor changed
     m_main = m_ldrMain;
     if (wasMain)

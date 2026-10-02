@@ -77,6 +77,11 @@
     X(vkCmdBindVertexBuffers) \
     X(vkCmdBindIndexBuffer) \
     X(vkCmdPushDescriptorSetKHR) \
+    X(vkCreateQueryPool) \
+    X(vkDestroyQueryPool) \
+    X(vkGetQueryPoolResults) \
+    X(vkCmdResetQueryPool) \
+    X(vkCmdWriteTimestamp2) \
     X(vkCmdSetViewport) \
     X(vkCmdSetScissor) \
     X(vkCmdSetCullMode) \

@@ -863,6 +863,22 @@ private:
 
     VkCommandPool m_pool = VK_NULL_HANDLE;
     std::array<Frame, kFramesInFlight> m_frames;
+    // Profiling (profile.cpp): GPU timestamps per frame slot, CPU times of the frame's recording.
+    static constexpr uint32_t kProfileMarks = 48;
+    struct ProfileFrame { VkQueryPool pool = VK_NULL_HANDLE; uint32_t count = 0; const char* names[kProfileMarks] = {}; };
+    std::array<ProfileFrame, kFramesInFlight> m_profile;
+    float m_timestampPeriod = 1.0f;
+    uint32_t m_profileFrames = 0;
+    double m_profileCpuStart = 0.0;
+    std::vector<std::pair<const char*, double>> m_profileGpu, m_profileCpu;
+    bool CreateProfiler(std::string* error);
+    void DestroyProfiler();
+    void ProfileBeginFrame(VkCommandBuffer cmd);
+    void ProfileMark(const char* name);
+    double ProfileCpu() const;
+    void ProfileCpuAdd(const char* name, double since);
+    static void ProfileAdd(std::vector<std::pair<const char*, double>>& sums, const char* name, double ms);
+    void ProfileLog();
     uint32_t m_frameIndex = 0;
     bool m_inFrame = false;
     bool m_rendering = false;

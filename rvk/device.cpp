@@ -175,6 +175,7 @@ Device::~Device()
     DestroyShadowResources();
     DestroyPointShadowResources();
     DestroyHdrResources();
+    DestroyProfiler();
     DestroyParticleResources();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_setLayout) vkDestroyDescriptorSetLayout(m_device, m_setLayout, nullptr);
@@ -197,7 +198,7 @@ bool Device::Init(HWND window, uint32_t width, uint32_t height, std::string* err
     m_width = width;
     m_height = height;
     m_viewport = {0, 0, width, height, 0.0f, 1.0f};
-    if (!CreateInstance(error) || !PickDevice(error) || !CreateLogicalDevice(error) || !CreateFrames(error) ||
+    if (!CreateInstance(error) || !PickDevice(error) || !CreateLogicalDevice(error) || !CreateFrames(error) || !CreateProfiler(error) ||
         !CreateMainTargets(error) || (window && !CreateSwapchain(error)) || !CreatePipelines(error))
         return false;
     uint32_t black = 0xFF000000;
@@ -981,6 +982,7 @@ void Device::BeginFrame()
     vkBeginCommandBuffer(f.main, &b);
     m_cache = StateCache{};
     ++m_frameNumber;
+    ProfileBeginFrame(f.main);
     m_lightsPrev.swap(m_lightsCur);              // last frame's complete light set lights this frame
     m_lightsCur.clear();
     m_sunLuminance = 0.0f;
@@ -1000,6 +1002,7 @@ void Device::BeginFrame()
     m_particleOrphanTrigger = "none";
     m_particleSaw3D = false;
     SimulateParticles(f.main);                   // last frame's effects; reads last frame's world camera
+    ProfileMark("particle simulation");
     m_inFrame = true;
     BeginScene();
     PrepareShadowMap(f.main);
@@ -1018,10 +1021,17 @@ void Device::EndFrame()
     EndScene();                                  // if the interface didn't end it (no interface drawn)
     Frame& f = m_frames[m_frameIndex];
     EndRendering();
+    ProfileMark("interface");
+    double cpu = ProfileCpu();
     RenderShadowMap(f.main);
+    ProfileCpuAdd("sun shadows", cpu);
+    ProfileMark("sun shadows");
     FindCarriers();
     EndFrameDump();                              // after the carriers: it lists them
+    cpu = ProfileCpu();
     RenderPointShadowMaps(f.main);
+    ProfileCpuAdd("point shadows", cpu);
+    ProfileMark("point shadows");
     FinishShadowFrame();
     Transition(f.main, m_main, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
