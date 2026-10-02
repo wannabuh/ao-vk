@@ -1,5 +1,6 @@
 // Material maps for RDB textures, side-loaded from <client>\randy-vk\materials\:
-//   <type>_<id>_n.png    tangent-space normal map (OpenGL convention, as Blender bakes; any size)
+//   <type>_<id>_n.png    tangent-space normal map (OpenGL convention, as Blender bakes; any size); <type> is the
+//                        full-quality table (1010004 world, 1010006 ground), which also covers its lower levels
 //   <id>_n.png           the same, any type (fallback)
 // ao-assets writes these names (python -m aoassets material-template).
 //
@@ -107,11 +108,24 @@ void Scan()
     RvkLog("materials: %u files in %s", unsigned(g_files.size()), g_dir.c_str());
 }
 
+// The lower texture quality levels are other tables with the same ids: the ground's 1010021/22 for 1010006, the
+// world's 1010016/17 for 1010004. A map is named after the full-quality table and serves every level.
+uint32_t FullQualityType(uint32_t type)
+{
+    switch (type) {
+    case 1010021: case 1010022: return 1010006;
+    case 1010016: case 1010017: return 1010004;
+    default: return type;
+    }
+}
+
 std::string FindMap(uint32_t type, uint32_t id, const char* suffix)
 {
     Scan();
-    std::string a = std::to_string(type) + "_" + std::to_string(id) + suffix;
-    if (g_files.count(a)) return g_dir + a;
+    for (uint32_t t : {FullQualityType(type), type}) {
+        std::string a = std::to_string(t) + "_" + std::to_string(id) + suffix;
+        if (g_files.count(a)) return g_dir + a;
+    }
     std::string b = std::to_string(id) + suffix;
     if (g_files.count(b)) return g_dir + b;
     return {};

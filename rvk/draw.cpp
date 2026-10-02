@@ -790,19 +790,23 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (terrain && m_textures[0]) {
         if (!m_rs[d3d::RS_LIGHTING] && !m_rs[d3d::RS_ALPHABLENDENABLE]) {
             m_terrainBases[TerrainChunkKey(vertices, vertexCount, layout.stride, indexCount)] = m_textures[0];
-        } else if (m_rs[d3d::RS_LIGHTING] && m_bump > 0.0f && IsMultiplyPass()) {
+        } else if (m_rs[d3d::RS_LIGHTING] && IsMultiplyPass()) {
             auto it = m_terrainBases.find(TerrainChunkKey(vertices, vertexCount, layout.stride, indexCount));
-            if (it != m_terrainBases.end()) m_drawBumpBase = it->second;
+            if (it != m_terrainBases.end() &&
+                (m_bump > 0.0f || (m_normalMaps && m_pixelLighting && it->second->m_normalMap)))
+                m_drawBumpBase = it->second;
         }
     }
     uint32_t carrier = m_external ? 0 : CarriedLight(fvf, vertices, vertexCount, layout.stride);
     // The texture's own normal map (F_NORMALMAP), when it is the surface (stage 0, plain coordinates) of a per-pixel
-    // lit draw; the ground's lightmap pass is excluded like for the generated normals.
+    // lit draw; for the ground's lightmap pass, the normal map of its chunk's base texture (as the generated normals).
     Texture* normalMap = nullptr;
     if (m_normalMaps && m_pixelLighting && m_textures[0] && m_textures[0]->m_normalMap && !terrain &&
         m_rs[d3d::RS_LIGHTING] && m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
         !(m_tss[0][d3d::TSS_TEXTURETRANSFORMFLAGS] & 256u) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
         normalMap = m_textures[0]->m_normalMap;
+    else if (m_normalMaps && m_pixelLighting && m_drawBumpBase && m_drawBumpBase->m_normalMap)
+        normalMap = m_drawBumpBase->m_normalMap;
     bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
                    m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
                    m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
@@ -869,7 +873,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // Generated normals: per-pixel lit 3D drawn with a texture in stage 0 as its surface (not the ground's
     // lightmap pass, whose stage 0 is the lightmap), with plain coordinates.
     if ((flags & F_PERPIXEL) && normalMap)
-        flags |= F_NORMALMAP;
+        flags |= F_NORMALMAP | (m_drawBumpBase ? F_BUMPBASE : 0u);
     else if ((flags & F_PERPIXEL) && m_bump > 0.0f && m_textures[0] && !terrain && m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
         !(m_tss[0][d3d::TSS_TEXTURETRANSFORMFLAGS] & 256u) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
         flags |= F_BUMP;

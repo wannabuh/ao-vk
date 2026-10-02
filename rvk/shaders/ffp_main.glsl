@@ -253,15 +253,18 @@ void main()
         vec3 n = vNormalW.xyz;
         float len2 = dot(n, n);
         n = len2 > 0.0 ? n * (vNormalW.w * inversesqrt(len2)) : vec3(0.0);
-        // The ground's lighting pass draws the lightmap; its relief comes from the base pass's texture (F_BUMPBASE).
-        if ((C.flags.x & F_NORMALMAP) != 0u && len2 > 0.0)
-            n = NormalMapNormal(n, vPosW, vTex0.xy);
-        else if ((C.flags.x & F_BUMP) != 0u && len2 > 0.0) {
+        // The ground's lighting pass draws the lightmap; its relief comes from the base pass's texture (F_BUMPBASE):
+        // that texture's normal map, else its generated normals.
+        if ((C.flags.x & (F_NORMALMAP | F_BUMP)) != 0u && len2 > 0.0) {
             vec3 unbumped = n;
-            n = (C.flags.x & F_BUMPBASE) != 0u ? BumpNormal(bumpBase, n, vPosW, vSet0) : BumpNormal(tex0, n, vPosW, vTex0.xy);
+            bool base = (C.flags.x & F_BUMPBASE) != 0u;
+            if ((C.flags.x & F_NORMALMAP) != 0u)
+                n = NormalMapNormal(n, vPosW, base ? vSet0 : vTex0.xy);
+            else
+                n = base ? BumpNormal(bumpBase, n, vPosW, vSet0) : BumpNormal(tex0, n, vPosW, vTex0.xy);
             // The ground's sunlight is baked into its lightmap (the live sun is kept off it): the relief scales the
             // lightmap by how much more or less the bumped surface faces the sun than the flat one.
-            if ((C.flags.x & F_BUMPBASE) != 0u && dot(FL.sunDir.xyz, FL.sunDir.xyz) > 0.0) {
+            if (base && dot(FL.sunDir.xyz, FL.sunDir.xyz) > 0.0) {
                 vec3 L = -normalize(FL.sunDir.xyz);
                 float before = max(dot(normalize(unbumped), L), 0.0), after = max(dot(normalize(n), L), 0.0);
                 gLightmapRelief = clamp((after + 0.25) / (before + 0.25), 0.6, 1.4);
