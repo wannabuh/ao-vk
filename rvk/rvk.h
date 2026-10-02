@@ -637,6 +637,8 @@ private:
     struct TessTopology { uint64_t frames[3] = {}; };   // the last 3 frames a topology was drawn animated, newest first
     std::unordered_map<uint64_t, TessTopology> m_tessTopologies;
     float TessellateDraw(uint32_t primitive, uint32_t fvf, uint32_t vertexCount);   // the level (0 = none)
+    bool CharacterDraw(uint32_t fvf, uint32_t vertexCount);   // the current draw is a character's (body or part)
+    bool m_drawIsCharacter = false;
     struct TessCharacter { float x, z, minY, maxY; };
     std::vector<TessCharacter> m_tessChars, m_tessCharsPrev;   // animated characters' boxes: this / last frame
     bool SmoothNormals(const void* vertices, uint32_t vertexCount, const detail::FvfLayout& layout);
@@ -933,8 +935,7 @@ private:
     uint32_t m_constantsTexMask = ~0u;
     bool m_constantsTerrain = false, m_constantsLabel = false;
     uint32_t m_constantsFoliageLod = 0;          // FoliageFar: 0 near, 1 far foliage, 2 far plant
-    uint32_t m_constantsShadowCarrier = 0;       // CarriedShadowLight
-    uint32_t CarriedShadowLight(uint32_t fvf) const;
+    bool m_constantsCharacter = false;
     uint32_t m_constantsCarrier = 0;
     void BeginRenderingOn(Texture* target);
     void EndRendering();

@@ -59,10 +59,11 @@ void AccumulateLights(vec3 posW, vec3 normalW, float sunScale, float localScale,
                 mask &= mask - 1u;
                 if (i + 1u == C.lightInfo.z)     // a character's own light doesn't light the character
                     continue;
-                // ... nor shadow it (C.lightInfo.w): the cube trails the body by a frame, and that close to the light
-                // the body's own limbs and torso shadowed it in flickering patches.
+                // Characters aren't shadowed by the lights characters carry (ambient.w = 1): a crowd's lights sit at
+                // head height a unit or less from the next body, the cube trails it by a frame, and that close the
+                // body's own jaw, arms and wings threw sharp patches across it, jumping as everyone moved.
                 Light l = FL.lights[i];
-                if (i + 1u == C.lightInfo.w) l.spot.z = 0.0;
+                if ((C.flags.x & F_CHARACTER) != 0u && l.ambient.w > 0.5) l.spot.z = 0.0;
                 AccumulateLight(l, posW, normalW, toEye, sunScale, localScale, ambient, diffLocal, specLocal);
             }
         }

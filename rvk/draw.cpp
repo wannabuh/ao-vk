@@ -302,6 +302,7 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
         m_frameLightSpheres.push_back({c.light.position.x, c.light.position.y, c.light.position.z, c.light.range * c.light.range});
         FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k],
                      m_pointLightScale + (m_charLightScale - m_pointLightScale) * c.carried);
+        fl->lights[k].ambient[3] = c.carried > 0.5f ? 1.0f : 0.0f;   // carried by a character (F_CHARACTER draws)
         uint32_t cube = PointShadowLayer(c.light);
         fl->lights[k].spot[2] = float(cube);                        // its cube shadow map + 1, 0 = none
         fl->lights[k].spot[3] = cube ? m_pointShadowLights[cube - 1].fade : 0.0f;   // how far its shadow faded in
@@ -427,14 +428,19 @@ float Device::LightScale(const d3d::Light& l) const
 // CPU-skinned meshes, new vertices every frame; a static mesh is new on the frame it appears too, so a mesh's topology
 // (its indices) must have been drawn animated the frame before as well - a building doesn't round for a frame. Indexed
 // or not, triangle lists only (3-point patches), lit and with normals (the shape follows them), near the camera.
-float Device::TessellateDraw(uint32_t primitive, uint32_t fvf, uint32_t vertexCount)
+// Is the current draw a character's (m_drawIsCharacter)? Characters are drawn as CPU-skinned meshes, new vertices
+// every frame; a static mesh is new on the frame it appears too. A character's topology (its indices) is drawn
+// animated on most frames, but in crowds the game skips some characters' animation now and then (the same vertices
+// again: a static mesh for that frame). So a topology counts as a character's once it was animated on 3 frames within
+// the last 30, and stays one for 10 frames after its last: a building is only "new" the frame it appears. (Characters
+// sharing a model share this.) Lit world meshes, character-sized; plus a character's rigid parts - its head, hair, a
+// helmet: the game moves those whole by their world matrix (same vertices every frame) and draws them before the
+// body - small, in a body's column (last frame's characters) from its feet to a little above its top.
+bool Device::CharacterDraw(uint32_t fvf, uint32_t vertexCount)
 {
-    if (m_tessShape <= 0.0f || !m_tessSupported || m_external || !m_drawMesh)
-        return 0.0f;
-    // A character's topology (its indices) is drawn animated - new vertices - on most frames, but in crowds the game
-    // skips some characters' animation now and then (the same vertices again: a static mesh for that frame). So a
-    // topology counts as a character's once it was animated on 3 frames within the last 30, and stays one for 10
-    // frames after its last: a building is only "new" the frame it appears. (Characters sharing a model share this.)
+    if (m_external || !m_drawMesh || m_drawIsLabel || !m_rs[d3d::RS_LIGHTING] ||
+        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || (m_target != m_scene && m_target != m_main))
+        return false;
     uint64_t key = m_drawMesh->indexHash ^ (uint64_t(fvf) << 40) ^ (uint64_t(vertexCount) * 0x9E3779B97F4A7C15ull);
     auto found = m_tessTopologies.find(key);
     if (!m_drawMeshStatic) {
@@ -448,31 +454,35 @@ float Device::TessellateDraw(uint32_t primitive, uint32_t fvf, uint32_t vertexCo
     }
     bool animated = found != m_tessTopologies.end() && found->second.frames[2] != 0 &&
                     found->second.frames[2] + 30 >= m_frameNumber && found->second.frames[0] + 10 >= m_frameNumber;
-    if (primitive != d3d::TriangleList || m_drawIsLabel || !m_rs[d3d::RS_LIGHTING] || !m_rs[d3d::RS_ZWRITEENABLE] ||
-        !(fvf & d3d::FVF_NORMAL) || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ ||
-        (m_target != m_scene && m_target != m_main) || vertexCount > 20000)
-        return 0.0f;
     float c[3], e[3];
     DrawWorldBox(c, e);
     if (animated) {
         if (e[1] > 2.5f || e[0] > 2.0f || e[2] > 2.0f)    // character-sized (as the grass push's)
-            return 0.0f;
+            return false;
         if (m_tessChars.size() < 1024)                   // where characters are, for their rigid parts next frame
             m_tessChars.push_back({c[0], c[2], c[1] - e[1], c[1] + e[1]});
-    } else {
-        // A rigid part of a character - its head, hair, a helmet: the game moves those whole by their world matrix
-        // (same vertices every frame), and draws them before the body. Small, in a body's column (last frame's
-        // animated characters) from its feet to a little above its top.
-        if (e[0] > 0.5f || e[1] > 0.5f || e[2] > 0.5f)
-            return 0.0f;
-        bool part = false;
-        for (const TessCharacter& ch : m_tessCharsPrev) {
-            float dx = c[0] - ch.x, dz = c[2] - ch.z;
-            if (dx * dx + dz * dz < 0.6f * 0.6f && c[1] > ch.minY - 0.2f && c[1] < ch.maxY + 0.8f) { part = true; break; }
-        }
-        if (!part)
-            return 0.0f;
+        return true;
     }
+    if (e[0] > 0.5f || e[1] > 0.5f || e[2] > 0.5f)
+        return false;
+    for (const TessCharacter& ch : m_tessCharsPrev) {
+        float dx = c[0] - ch.x, dz = c[2] - ch.z;
+        if (dx * dx + dz * dz < 0.6f * 0.6f && c[1] > ch.minY - 0.2f && c[1] < ch.maxY + 0.8f)
+            return true;
+    }
+    return false;
+}
+
+// Phong tessellation of characters (RVK_Tess): the level for this draw, 0 for none. Characters (CharacterDraw) drawn
+// as triangle lists (3-point patches), indexed or not, depth-writing, with normals (the shape follows them), near the
+// camera.
+float Device::TessellateDraw(uint32_t primitive, uint32_t fvf, uint32_t vertexCount)
+{
+    if (m_tessShape <= 0.0f || !m_tessSupported || !m_drawIsCharacter || primitive != d3d::TriangleList ||
+        !m_rs[d3d::RS_ZWRITEENABLE] || !(fvf & d3d::FVF_NORMAL) || vertexCount > 20000)
+        return 0.0f;
+    float c[3], e[3];
+    DrawWorldBox(c, e);
     UpdateFrameEye();
     float d2 = 0.0f;
     for (int j = 0; j < 3; ++j) {
@@ -978,29 +988,6 @@ uint32_t Device::CarriedLight(uint32_t fvf, const void* vertices, uint32_t verte
     return 0;
 }
 
-// The frame light (index + 1; 0 = none) carried by the character the current draw is part of, if that light has a
-// shadow cube: the shader leaves the character out of its own light's shadow. By the mesh's box (cheap: every lit
-// draw asks), with the carrier test the point shadows use (FindCarriers, last frame) - but only the character's own
-// meshes: animated ones (its body), or static ones up by the light (its head, hair); the ground's grass and stones
-// at its feet stay in its shadow.
-uint32_t Device::CarriedShadowLight(uint32_t fvf) const
-{
-    if (!m_pointShadows || !m_lightOverride || !m_pixelLighting || !m_rs[d3d::RS_LIGHTING] || !m_drawMesh ||
-        (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW || (m_target != m_scene && m_target != m_main))
-        return 0;
-    float c[3], e[3];
-    DrawWorldBox(c, e);
-    float mn[3] = {c[0] - e[0], c[1] - e[1], c[2] - e[2]}, mx[3] = {c[0] + e[0], c[1] + e[1], c[2] + e[2]};
-    for (uint32_t k = 0; k < m_frameLightIndices.size(); ++k) {
-        const CapturedLight& l = m_lightsPrev[m_frameLightIndices[k]];
-        if (!l.hasCarrier || !PointShadowLayer(l.light) || !IsCarrierPart(l, m_world, mn, mx))
-            continue;
-        if (!m_drawMeshStatic || m_world.m[3][1] - l.light.position.y > -0.8f)
-            return k + 1;
-    }
-    return 0;
-}
-
 void Device::SetTexture(uint32_t stage, Texture* texture)
 {
     if (texture && !texture->m_view)            // failed creation: draw untextured
@@ -1396,6 +1383,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     const VkDeviceSize uboAlign = m_props.limits.minUniformBufferOffsetAlignment;
     bool motion = !m_external && MotionVectorDraw(fvf);   // reads the last frame's camera from the frame block
     VkDeviceSize geometryBytes = m_external ? 0 : VkDeviceSize(layout.stride) * vertexCount + VkDeviceSize(indexCount) * 2;
+    m_drawIsCharacter = CharacterDraw(fvf, vertexCount);
     float tessLevel = TessellateDraw(primitive, fvf, vertexCount);
     EnsureRingSpace(sizeof(DrawConstants) + sizeof(DrawTransform) + sizeof(FrameLights) + geometryBytes + 3 * uboAlign +
                     layout.stride + 32 + (motion ? 12ull * vertexCount + 256 : 0) +
@@ -1495,7 +1483,6 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         }
     }
     uint32_t carrier = m_external ? 0 : CarriedLight(fvf, vertices, vertexCount, layout.stride);
-    uint32_t shadowCarrier = m_external ? 0 : CarriedShadowLight(fvf);
     // The texture's own normal map (F_NORMALMAP), when it is the surface (stage 0, plain coordinates) of a per-pixel
     // lit draw; for the ground's lightmap pass, the normal map of its chunk's base texture (as the generated normals).
     Texture* normalMap = nullptr;
@@ -1512,7 +1499,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                    m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
                    m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
                    m_constantsFoliageLod != foliageLod || m_constantsNormalMap != normalMap ||
-                   m_constantsShadowCarrier != shadowCarrier;
+                   m_constantsCharacter != m_drawIsCharacter;
     VkDeviceSize uboOffset = m_constantsOffset;
     if (rewrite) {
     uboOffset = Allocate(sizeof(DrawConstants), uboAlign, &cpu);
@@ -1526,7 +1513,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsCarrier = carrier;
     m_constantsBumpBase = m_drawBumpBase;
     m_constantsFoliageLod = foliageLod;
-    m_constantsShadowCarrier = shadowCarrier;
+    m_constantsCharacter = m_drawIsCharacter;
     m_constantsNormalMap = normalMap;
     auto* c = static_cast<DrawConstants*>(cpu);
     c->view = m_view;
@@ -1640,6 +1627,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_nightGlow > 0.0f && hdrTarget && solid3d && !additive && !IsMultiplyPass() &&
         (!(flags & F_LIGHTING) || emissive > 0.05f))
         flags |= F_EMISSIVE;
+    // A character's body and parts: the lights characters carry don't shadow them (lighting.glsl).
+    if (m_drawIsCharacter) flags |= F_CHARACTER;
     c->flags[0] = flags;
     c->flags[1] = m_rs[d3d::RS_FOGVERTEXMODE];
     c->flags[2] = m_rs[d3d::RS_FOGTABLEMODE];
@@ -1677,7 +1666,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c->lightInfo[0] = lightCount;
     c->lightInfo[1] = localLights;
     c->lightInfo[2] = override ? carrier : 0;   // frame light (index + 1) this draw carries: it doesn't light it
-    c->lightInfo[3] = shadowCarrier;            // frame light (index + 1) this draw carries: it doesn't shadow it
+    c->lightInfo[3] = 0;
     }
 
     ProfileDrawSection("draw: constants", since);
