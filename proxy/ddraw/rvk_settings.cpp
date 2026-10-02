@@ -68,8 +68,8 @@ Setting g_settings[] = {
     {"RVK_ContactOn",  "Contact shadows (small sun shadows the map misses)",       "Shadows",          Bool,  0, 1, 1, 1, nullptr, 0},
     {"RVK_Contact",    "Strength",                                                 "Shadows",          Float, 0.05f, 1, 0.05f, 0.6f, nullptr, 0, "RVK_ContactOn"},
     {"RVK_PtOn",       "Point light shadows",                                      "Shadows",          Bool,  0, 1, 1, 1, nullptr, 0},
-    {"RVK_PtShadows",  "Lights with shadows",                                      "Shadows",          Int,   1, 8, 1, 8, "RANDYVK_POINT_SHADOWS", 0, "RVK_PtOn"},
-    {"RVK_PtRes",      "Resolution (pixels per cube face)",                        "Shadows",          Choice, 256, 2048, 1, 1024, nullptr, 0, "RVK_PtOn", "256 512 1024 2048"},
+    {"RVK_PtShadows",  "Lights with shadows",                                      "Shadows",          Int,   1, 16, 1, 8, "RANDYVK_POINT_SHADOWS", 0, "RVK_PtOn"},
+    {"RVK_PtRes",      "Resolution (per cube face; 16 lights at 1024 = 384 MB)",                 "Shadows",          Choice, 256, 2048, 1, 1024, nullptr, 0, "RVK_PtOn", "256 512 1024 2048"},
     {"RVK_PtStrength", "Strength",                                                 "Shadows",          Float, 0, 1, 0.05f, 0.9f, "RANDYVK_POINT_SHADOW_STRENGTH", 0, "RVK_PtOn"},
     {"RVK_PtDay",      "Strength in daylight (fraction)",                          "Shadows",          Float, 0, 1, 0.05f, 0.25f, "RANDYVK_POINT_SHADOW_DAY", 0, "RVK_PtOn"},
 

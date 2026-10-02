@@ -203,7 +203,8 @@ void Device::DestroyShadowMap()
 // used). The sun's shadow is invalid until drawn again; the point lights' cubes are all redrawn.
 void Device::ApplyShadowResolution()
 {
-    if (m_shadowSizeWanted == m_shadowSize && m_pointShadowSizeWanted == m_pointShadowSize)
+    if (m_shadowSizeWanted == m_shadowSize && m_pointShadowSizeWanted == m_pointShadowSize &&
+        m_cubeCountWanted == m_cubeCount)
         return;
     vkDeviceWaitIdle(m_device);
     std::string error;
@@ -214,15 +215,16 @@ void Device::ApplyShadowResolution()
             Log("rvk: sun shadow map %u: %s", m_shadowSize, error.c_str());
         m_shadowValid = false;
     }
-    if (m_pointShadowSizeWanted != m_pointShadowSize) {
+    if (m_pointShadowSizeWanted != m_pointShadowSize || m_cubeCountWanted != m_cubeCount) {
         DestroyPointShadowMaps();
         m_pointShadowSize = m_pointShadowSizeWanted;
+        m_cubeCount = m_cubeCountWanted;
         if (!CreatePointShadowMaps(&error))
             Log("rvk: point shadow maps %u: %s", m_pointShadowSize, error.c_str());
         for (PointShadowLight& l : m_pointShadowLights) l = {};
         m_pointShadowCount = 0;
     }
-    Log("rvk: shadow maps: sun %u, point lights %u", m_shadowSize, m_pointShadowSize);
+    Log("rvk: shadow maps: sun %u, point lights %u x %u cubes", m_shadowSize, m_pointShadowSize, m_cubeCount);
 }
 
 bool Device::CreateShadowResources(std::string* error)

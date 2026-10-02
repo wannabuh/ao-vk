@@ -149,13 +149,18 @@ public:
     { m_shadowStrength = strength; m_shadowRange = distance; m_shadowCascades = cascades < 1 ? 1 : cascades > kShadowCascades ? kShadowCascades : cascades; }
     // Enhancement, with the light override: shadows from up to `count` of the frame's point lights nearest the camera
     // (cube shadow maps, pointshadow.cpp; 0 = off). strength = how much of such a light a shadow takes away (0..1).
-    void SetPointShadows(uint32_t count) { m_pointShadows = count < kMaxPointShadows ? count : kMaxPointShadows; }
+    // Lights with cube shadow maps (0 = off); the cubes are reallocated for the count at the next frame.
+    void SetPointShadows(uint32_t count)
+    {
+        m_pointShadows = count < kMaxPointShadows ? count : kMaxPointShadows;
+        m_cubeCountWanted = std::max<uint32_t>(m_pointShadows, 1);
+    }
     uint32_t PointShadows() const { return m_pointShadows; }
     // dayFactor: the strength left in full daylight. Under a bright sun the scene is already at full brightness
     // around a light, so its shadows only show where the sun's are (they'd look cut off there); they fade instead.
     void SetPointShadowFadeIn(double seconds) { m_pointShadowFadeIn = seconds; }
     void SetPointShadowStrength(float strength, float dayFactor) { m_pointShadowStrength = strength; m_pointShadowDay = dayFactor; }
-    static constexpr uint32_t kMaxPointShadows = 8;
+    static constexpr uint32_t kMaxPointShadows = 16;
     // Enhancement: the 3D scene is drawn into a 16-bit float target (colours above 1 kept) and tone mapped into the
     // 8-bit main target when the interface starts drawing (hdr.cpp). knee: colours up to it are shown unchanged,
     // brighter ones roll off towards white (1 = only clip, keeping the hue). exposure scales the scene first.
@@ -865,6 +870,7 @@ private:
     VkImageView m_cubeArrayView = VK_NULL_HANDLE;
     VkSampler m_cubeSampler = VK_NULL_HANDLE;
     VkImageView m_cubeFaceViews[kMaxPointShadows * 6] = {};
+    uint32_t m_cubeCount = 8, m_cubeCountWanted = 8;   // cubes allocated (layers / 6), for SetPointShadows' count
     VkImageLayout m_cubeLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     struct PointShadowLight {
         float position[3], range;

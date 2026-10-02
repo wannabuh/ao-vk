@@ -63,7 +63,7 @@ float BoxDistance2(const float mn[3], const float mx[3], const float p[3])
 
 }  // namespace
 
-// The point lights' cube array: kMaxPointShadows cubes of m_pointShadowSize faces.
+// The point lights' cube array: m_cubeCount cubes of m_pointShadowSize faces.
 bool Device::CreatePointShadowMaps(std::string* error)
 {
     VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -72,7 +72,7 @@ bool Device::CreatePointShadowMaps(std::string* error)
     ci.format = kDepthFormat;
     ci.extent = {m_pointShadowSize, m_pointShadowSize, 1};
     ci.mipLevels = 1;
-    ci.arrayLayers = kMaxPointShadows * 6;
+    ci.arrayLayers = m_cubeCount * 6;
     ci.samples = VK_SAMPLE_COUNT_1_BIT;
     ci.tiling = VK_IMAGE_TILING_OPTIMAL;
     ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -85,12 +85,12 @@ bool Device::CreatePointShadowMaps(std::string* error)
     vi.image = m_cubeImage;
     vi.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
     vi.format = kDepthFormat;
-    vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, kMaxPointShadows * 6};
+    vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, m_cubeCount * 6};
     if (!Check(vkCreateImageView(m_device, &vi, nullptr, &m_cubeArrayView), "point shadow view", error))
         return false;
     vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
     vi.subresourceRange.layerCount = 1;
-    for (uint32_t layer = 0; layer < kMaxPointShadows * 6; ++layer) {
+    for (uint32_t layer = 0; layer < m_cubeCount * 6; ++layer) {
         vi.subresourceRange.baseArrayLayer = layer;
         if (!Check(vkCreateImageView(m_device, &vi, nullptr, &m_cubeFaceViews[layer]), "point shadow face view", error))
             return false;
@@ -136,7 +136,7 @@ void Device::PreparePointShadowMaps(VkCommandBuffer cmd)
 {
     if (m_cubeLayout != VK_IMAGE_LAYOUT_UNDEFINED)
         return;
-    VkImageSubresourceRange range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, kMaxPointShadows * 6};
+    VkImageSubresourceRange range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, m_cubeCount * 6};
     VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
     b.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
     b.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
@@ -434,7 +434,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
     // one; one no longer wanted fades its shadow out (still rendered) before giving the cube up, and a newly wanted
     // light takes a free cube and fades in - a shadow never disappears from one frame to the next, as it did when
     // lights at similar distances swapped places (crowds: every character carries a light) while moving.
-    uint32_t limit = std::min<uint32_t>(m_pointShadows, kMaxPointShadows);
+    uint32_t limit = std::min<uint32_t>(m_pointShadows, m_cubeCount);
     uint32_t wanted = std::min<uint32_t>(uint32_t(candidates.size()), limit);
     std::partial_sort(candidates.begin(), candidates.begin() + wanted, candidates.end(),
                       [](const Candidate& a, const Candidate& b) { return a.key < b.key; });
@@ -467,7 +467,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
     if (count == 0)
         return;
 
-    VkImageSubresourceRange all{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, kMaxPointShadows * 6};
+    VkImageSubresourceRange all{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, m_cubeCount * 6};
     VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
     b.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     b.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
