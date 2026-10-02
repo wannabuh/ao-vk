@@ -3,6 +3,7 @@
 layout(push_constant) uniform Push {
     mat4 worldLightViewProj;
     vec4 alpha;
+    vec4 sway, windModel, origin;   // shadow.vert
 } P;
 
 layout(set = 0, binding = 0) uniform sampler2D tex0;

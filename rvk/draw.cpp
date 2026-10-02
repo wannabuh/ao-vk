@@ -271,13 +271,7 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->effects[1] = m_hdr ? m_nightGlow * night : 0.0f;
     fl->effects[2] = m_sunSoftness;
     fl->effects[3] = 0.0f;
-    // Wind: a slowly turning direction; the vertex shader adds waves and gusts.
-    double t = std::fmod(SwayClock(), 3600.0);
-    float windAngle = 0.6f + 0.4f * float(std::sin(t * 0.013));
-    fl->wind[0] = std::cos(windAngle);
-    fl->wind[1] = std::sin(windAngle);
-    fl->wind[2] = float(t);
-    fl->wind[3] = m_sway;
+    Wind(fl->wind);
     fl->shadowParams[0] = m_shadowValid ? 1.0f : 0.0f;
     fl->shadowParams[1] = m_shadowStrength;
     fl->shadowParams[2] = float(m_cascadeCount);
@@ -407,6 +401,17 @@ bool Device::WaterWritesDepth(uint32_t fvf) const
 {
     return IsWater(fvf) && m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZFUNC] != d3d::CMP_ALWAYS && m_target == m_scene &&
            m_ssr > 0.0f;
+}
+
+// Wind: a slowly turning direction; the vertex shaders add waves and gusts (sway.glsl).
+void Device::Wind(float out[4]) const
+{
+    double t = std::fmod(SwayClock(), 3600.0);
+    float angle = 0.6f + 0.4f * float(std::sin(t * 0.013));
+    out[0] = std::cos(angle);
+    out[1] = std::sin(angle);
+    out[2] = float(t);
+    out[3] = m_sway;
 }
 
 bool Device::IsWater(uint32_t fvf)
@@ -847,6 +852,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     drawTransform->motion[1] = drawTransform->motion[2] = drawTransform->motion[3] = 0.0f;
     if (m_external || !SwayParams(fvf, layout.stride, vertices, vertexCount, drawTransform->sway))
         drawTransform->sway[0] = drawTransform->sway[1] = drawTransform->sway[2] = drawTransform->sway[3] = 0.0f;
+    std::memcpy(m_drawSway, drawTransform->sway, sizeof(m_drawSway));
     if (motion) {
         // Motion vectors: the same object last frame - same mesh, nearest to where this one is (within 3 units). Not
         // found (new, or a different level of detail): its current matrix, i.e. it moved with the world.

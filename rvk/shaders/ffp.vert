@@ -28,34 +28,8 @@ layout(location = 11) out vec4 vClip;        // motion vectors: clip position no
 layout(location = 12) out vec4 vPrevClip;    // ... and last frame (previous world matrix and camera)
 // Last frame's vertex positions of an animated (CPU-skinned) mesh, model space, 3 floats a vertex (D.motion.y).
 layout(set = 0, binding = 8, std430) readonly buffer PrevPositions { float prevPos[]; } PP;
-layout(set = 0, binding = 1) uniform sampler2D tex0;       // plants' sway: how much of the texture is holes
-
-// The texture's mean alpha: its smallest mip, or without mips a grid of taps. Low for leaves and grass, 1 for walls.
-float MeanAlpha()
-{
-    int levels = textureQueryLevels(tex0);
-    if (levels > 4) return textureLod(tex0, vec2(0.5), float(levels - 1)).a;
-    float sum = 0.0;
-    for (int y = 0; y < 4; ++y)
-        for (int x = 0; x < 4; ++x)
-            sum += textureLod(tex0, (vec2(x, y) + 0.5) / 4.0, 0.0).a;
-    return sum / 16.0;
-}
-
-// Wind: plants bend with the square of the height above their base - two waves and a slow gust, their phase
-// travelling across the world so neighbouring plants move a little apart.
-vec3 Sway(vec3 posW)
-{
-    float h = clamp((inPos.y - D.sway.x) * D.sway.y, 0.0, 1.0);
-    if (h <= 0.0) return posW;
-    float holes = smoothstep(0.92, 0.7, MeanAlpha());
-    if (holes <= 0.0) return posW;
-    float t = FL.wind.z, phase = dot(posW.xz, vec2(0.31, 0.23));
-    float wave = 0.6 * sin(t * 1.9 + phase) + 0.25 * sin(t * 3.7 + phase * 1.7) +
-                 0.35 * (0.5 + 0.5 * sin(t * 0.37 + phase * 0.1));
-    posW.xz += FL.wind.xy * (wave * D.sway.z * h * h * holes);
-    return posW;
-}
+layout(set = 0, binding = 1) uniform sampler2D swayTex;    // texture 0: plants' sway (how much of it is holes)
+#include "sway.glsl"
 
 float FogFactor(uint mode, float d)
 {
@@ -130,7 +104,7 @@ void main()
         vFogFactor = specular.a;          // pre-transformed vertices carry their fog factor in specular alpha
     } else {
         vec4 posW = D.world * vec4(inPos.xyz, 1.0);
-        if (D.sway.w > 0.5) posW.xyz = Sway(posW.xyz);
+        if (D.sway.w > 0.5) posW.xz += FL.wind.xy * SwayDistance(inPos.xyz, D.sway, D.world[3].xz, FL.wind.z);
         vec4 pv = C.view * posW;
         gl_Position = C.proj * pv;
         vClip = gl_Position;

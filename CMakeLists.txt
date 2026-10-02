@@ -36,6 +36,7 @@ foreach(shader ffp.vert ffp.frag ffp_glow.frag shadow.vert shadow.frag fullscree
                 "${CMAKE_CURRENT_SOURCE_DIR}/rvk/shaders/occlusion.glsl"
                 "${CMAKE_CURRENT_SOURCE_DIR}/rvk/shaders/dof_common.glsl"
                 "${CMAKE_CURRENT_SOURCE_DIR}/rvk/shaders/frame_lights.glsl"
+                "${CMAKE_CURRENT_SOURCE_DIR}/rvk/shaders/sway.glsl"
         COMMENT "glslc ${shader}")
     list(APPEND RVK_SHADER_INCS "${out}")
 endforeach()

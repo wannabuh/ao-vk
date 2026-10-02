@@ -30,7 +30,11 @@ const uint32_t kShadowFragSpirv[] = {
 struct ShadowPush {
     d3d::Matrix worldLightViewProj;
     float alpha[4];
+    float sway[4];                       // plants (shadow.vert, sway.glsl)
+    float windModel[4];                  // the wind in model space
+    float origin[4];                     // world x, z of the object; wind time
 };
+static_assert(sizeof(ShadowPush) <= 128, "push constant range");
 
 d3d::Matrix Mul(const d3d::Matrix& a, const d3d::Matrix& b) { return MulMatrix(a, b); }
 
@@ -197,7 +201,8 @@ bool Device::CreateShadowResources(std::string* error)
         return false;
 
     // Pass pipelines: depth only (opaque casters) and with an alpha-testing fragment shader.
-    VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                                         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
     sl.bindingCount = 1;
@@ -380,6 +385,7 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     ShadowCutout(fvf, &c.texture, &c.texOffset, &c.alphaRef);
     uint64_t key = CasterKey(primitive, fvf, stride, vertices, vertexCount, indices, indexCount, c.boundsMin, c.boundsMax);
     c.key = key;
+    std::memcpy(c.sway, m_drawSway, sizeof(c.sway));
     c.draw = m_frameDraw;
     m_casters.push_back(c);
     auto cached = m_casterCache.find(key);
@@ -474,6 +480,7 @@ void Device::CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertic
     e.texture = c.texture;
     e.texOffset = c.texOffset;
     e.alphaRef = c.alphaRef;
+    std::memcpy(e.plantSway, c.sway, sizeof(e.plantSway));
     e.lastSeen = m_frameNumber;
     e.lastSeenTime = SwayClock();
     e.lastSwaySample = -1.0;
@@ -698,6 +705,7 @@ void Device::CollectShadowItems()
         TransformBounds(c.boundsMin, c.boundsMax, c.world, it.boundsMin, it.boundsMax);
         it.cached = false;
         it.group = 0;
+        std::memcpy(it.sway, c.sway, sizeof(it.sway));
         m_shadowItems.push_back(it);
         drawOf.push_back(c.draw);
     }
@@ -721,6 +729,7 @@ void Device::CollectShadowItems()
         std::memcpy(it.boundsMax, e.boundsMax, sizeof(it.boundsMax));
         it.cached = true;
         it.group = ~0u;
+        std::memcpy(it.sway, e.plantSway, sizeof(it.sway));
         m_shadowItems.push_back(it);
     }
 }
@@ -775,15 +784,17 @@ void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowI
         bind.stride = item.stride;
         bind.texOffset = item.texOffset;
     }
-    if (item.texture && item.texture != bind.texture) {
-        VkDescriptorImageInfo image{SamplerFor(0), item.texture->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    // Every caster binds a texture: the vertex shader may read it (sway.glsl); casters without one get a stand-in.
+    Texture* texture = item.texture ? item.texture : m_blackTexture;
+    if (texture != bind.texture) {
+        VkDescriptorImageInfo image{SamplerFor(0), texture->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
         w.dstBinding = 0;
         w.descriptorCount = 1;
         w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         w.pImageInfo = &image;
         vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelineLayout, 0, 1, &w);
-        bind.texture = item.texture;
+        bind.texture = texture;
     }
     // Ring casters address their data inside the ring bound at offset 0; cached ones have their own buffer.
     VkBuffer vb = item.buffer ? item.buffer : m_frames[m_frameIndex].ring;
@@ -797,6 +808,19 @@ void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowI
     push.worldLightViewProj = Mul(item.world, lightViewProj);
     push.alpha[0] = item.alphaRef;
     push.alpha[1] = push.alpha[2] = push.alpha[3] = 0.0f;
+    // A swaying plant (only with its texture bound - sway.glsl reads it): the wind in model space, so the combined
+    // matrix can stay; world displacement d = m * W (3x3), so m = d * inverse(W).
+    std::memset(push.sway, 0, sizeof(push.sway) + sizeof(push.windModel) + sizeof(push.origin));
+    d3d::Matrix inverse;
+    if (item.sway[3] > 0.5f && item.texture && m_sway > 0.0f && InvertMatrix(item.world, &inverse)) {
+        float wind[4];
+        Wind(wind);
+        std::memcpy(push.sway, item.sway, sizeof(push.sway));
+        for (int j = 0; j < 3; ++j) push.windModel[j] = wind[0] * inverse.m[0][j] + wind[1] * inverse.m[2][j];
+        push.origin[0] = item.world.m[3][0];
+        push.origin[1] = item.world.m[3][2];
+        push.origin[2] = wind[2];
+    }
     vkCmdPushConstants(cmd, m_shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(push), &push);
     if (item.indexCount) {

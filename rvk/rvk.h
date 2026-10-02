@@ -438,6 +438,7 @@ private:
         uint32_t view;                           // index into m_casterViews
         float boundsMin[3], boundsMax[3];        // model space
         uint32_t draw;                           // m_frameDraw when the game drew it
+        float sway[4];                           // a plant's sway (DrawTransform sway), 0 = still
     };
     // One caster as the shadow passes draw it: from this frame's ring or from the caster cache (own buffer).
     struct ShadowItem {
@@ -451,6 +452,7 @@ private:
         float boundsMin[3], boundsMax[3];        // world space
         bool cached;                             // remembered, not drawn by the game this frame
         uint32_t group;                          // drawn as part of the same object (character); ~0u = cached
+        float sway[4];                           // a plant's sway, 0 = still
     };
     std::vector<ShadowItem> m_shadowItems;       // EndFrame: what the shadow passes draw
     // What a shadow pass has bound, so unchanged state isn't re-issued.
@@ -522,6 +524,7 @@ private:
         // played back and forth while it is out of view so its shadow keeps moving.
         std::vector<d3d::Matrix> sway;
         double lastSwaySample;
+        float plantSway[4];                      // a plant's wind sway (as ShadowCaster sway)
     };
     static constexpr double kSwayStep = 0.05;
     static constexpr size_t kSwaySamples = 80;
@@ -582,6 +585,8 @@ private:
     struct SwayEntry { uint64_t positions; uint64_t frame; uint32_t stable; };
     std::unordered_map<uint64_t, SwayEntry> m_swayStatic;
     bool SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, float out[4]);
+    float m_drawSway[4] = {};                    // the current draw's sway (for its shadow caster)
+    void Wind(float out[4]) const;               // direction x, z, time, strength
     float m_bloomOverNearer = 0.15f;             // bloom left on objects in front of its light (1 = all)
     bool m_bloomDepth = false;                   // this frame's bloom carries its light's depth
     std::vector<Texture*> m_bloomLevels;         // half resolution and down, float
