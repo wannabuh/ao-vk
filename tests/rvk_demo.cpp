@@ -983,7 +983,32 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
             std::vector<VtxMesh> cv;
             std::vector<uint16_t> ci;
             float wx = g_grassWalk + g_grassWalkSpeed * float(frame);
-            if (g_walkerRound) {                     // rings of 8 around, radius bulging in the middle; smooth normals
+            if (g_walkerRound) {
+                // A rigid head first (as the game draws it): the same vertices every frame, moved by its world matrix.
+                std::vector<VtxMesh> hv;
+                std::vector<uint16_t> hi;
+                const int kSeg = 8, kStack = 5;
+                for (int r = 0; r <= kStack; ++r) {
+                    float phi = 3.14159f * float(r) / kStack;
+                    for (int s = 0; s < kSeg; ++s) {
+                        float a = 6.28318f * float(s) / kSeg;
+                        float nx = std::sin(phi) * std::cos(a), ny = std::cos(phi), nz = std::sin(phi) * std::sin(a);
+                        hv.push_back({0.2f * nx, 0.2f * ny, 0.2f * nz, nx, ny, nz, 0xFFFFFFFF, float(s) / kSeg, float(r) / kStack});
+                    }
+                }
+                for (int r = 0; r < kStack; ++r)
+                    for (int s = 0; s < kSeg; ++s) {
+                        uint16_t a = uint16_t(r * kSeg + s), b = uint16_t(r * kSeg + (s + 1) % kSeg);
+                        uint16_t c = uint16_t(a + kSeg), d = uint16_t(b + kSeg);
+                        uint16_t q[6] = {a, b, c, b, d, c};
+                        hi.insert(hi.end(), q, q + 6);
+                    }
+                Matrix head = Identity();
+                head.m[3][0] = wx; head.m[3][1] = 1.95f; head.m[3][2] = -3.2f;
+                dev.SetTransform(World, head);
+                dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, hv.data(), uint32_t(hv.size()), hi.data(), uint32_t(hi.size()));
+                dev.SetTransform(World, Identity());
+                // Rings of 8 around, radius bulging in the middle; smooth normals.
                 const int kSides = 8, kRings = 5;
                 for (int r = 0; r < kRings; ++r) {
                     float y = 0.05f + 1.7f * float(r) / float(kRings - 1);

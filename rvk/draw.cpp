@@ -429,22 +429,43 @@ float Device::LightScale(const d3d::Light& l) const
 // or not, triangle lists only (3-point patches), lit and with normals (the shape follows them), near the camera.
 float Device::TessellateDraw(uint32_t primitive, uint32_t fvf, uint32_t vertexCount)
 {
-    if (m_tessShape <= 0.0f || !m_tessSupported || m_external || !m_drawMesh || m_drawMeshStatic)
+    if (m_tessShape <= 0.0f || !m_tessSupported || m_external || !m_drawMesh)
         return 0.0f;
-    uint64_t key = m_drawMesh->indexHash ^ (uint64_t(fvf) << 40) ^ (uint64_t(vertexCount) * 0x9E3779B97F4A7C15ull);
-    TessTopology& t = m_tessTopologies[key];
-    if (t.last != m_frameNumber) {
-        t.before = t.last;
-        t.last = m_frameNumber;
+    bool animated = false;
+    if (!m_drawMeshStatic) {
+        uint64_t key = m_drawMesh->indexHash ^ (uint64_t(fvf) << 40) ^ (uint64_t(vertexCount) * 0x9E3779B97F4A7C15ull);
+        TessTopology& t = m_tessTopologies[key];
+        if (t.last != m_frameNumber) {
+            t.before = t.last;
+            t.last = m_frameNumber;
+        }
+        animated = t.before + 1 == m_frameNumber;
     }
-    if (t.before + 1 != m_frameNumber || primitive != d3d::TriangleList || m_drawIsLabel || !m_rs[d3d::RS_LIGHTING] ||
-        !m_rs[d3d::RS_ZWRITEENABLE] || !(fvf & d3d::FVF_NORMAL) || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ ||
+    if (primitive != d3d::TriangleList || m_drawIsLabel || !m_rs[d3d::RS_LIGHTING] || !m_rs[d3d::RS_ZWRITEENABLE] ||
+        !(fvf & d3d::FVF_NORMAL) || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ ||
         (m_target != m_scene && m_target != m_main) || vertexCount > 20000)
         return 0.0f;
     float c[3], e[3];
     DrawWorldBox(c, e);
-    if (e[1] > 2.5f || e[0] > 2.0f || e[2] > 2.0f)        // character-sized (as the grass push's)
-        return 0.0f;
+    if (animated) {
+        if (e[1] > 2.5f || e[0] > 2.0f || e[2] > 2.0f)    // character-sized (as the grass push's)
+            return 0.0f;
+        if (m_tessChars.size() < 1024)                   // where characters are, for their rigid parts next frame
+            m_tessChars.push_back({c[0], c[2], c[1] - e[1], c[1] + e[1]});
+    } else {
+        // A rigid part of a character - its head, hair, a helmet: the game moves those whole by their world matrix
+        // (same vertices every frame), and draws them before the body. Small, in a body's column (last frame's
+        // animated characters) from its feet to a little above its top.
+        if (e[0] > 0.5f || e[1] > 0.5f || e[2] > 0.5f)
+            return 0.0f;
+        bool part = false;
+        for (const TessCharacter& ch : m_tessCharsPrev) {
+            float dx = c[0] - ch.x, dz = c[2] - ch.z;
+            if (dx * dx + dz * dz < 0.6f * 0.6f && c[1] > ch.minY - 0.2f && c[1] < ch.maxY + 0.8f) { part = true; break; }
+        }
+        if (!part)
+            return 0.0f;
+    }
     UpdateFrameEye();
     float d2 = 0.0f;
     for (int j = 0; j < 3; ++j) {

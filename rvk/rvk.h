@@ -624,6 +624,8 @@ private:
     struct TessTopology { uint64_t last = 0, before = 0; };   // frames a topology was drawn animated (not static)
     std::unordered_map<uint64_t, TessTopology> m_tessTopologies;
     float TessellateDraw(uint32_t primitive, uint32_t fvf, uint32_t vertexCount);   // the level (0 = none)
+    struct TessCharacter { float x, z, minY, maxY; };
+    std::vector<TessCharacter> m_tessChars, m_tessCharsPrev;   // animated characters' boxes: this / last frame
     bool SmoothNormals(const void* vertices, uint32_t vertexCount, const detail::FvfLayout& layout);
     std::vector<float> m_smoothNormals;          // the draw's averaged normals (binding 10)
     std::vector<int32_t> m_smoothTable;          // their position hash table

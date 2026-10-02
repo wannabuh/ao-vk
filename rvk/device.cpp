@@ -1055,6 +1055,8 @@ void Device::BeginFrame()
     ++m_frameNumber;
     ProfileBeginFrame(f.main);
     UpdatePushTrail();
+    m_tessCharsPrev.swap(m_tessChars);           // characters drawn last frame (their rigid parts: TessellateDraw)
+    m_tessChars.clear();
     m_windTimePrev = m_windTime;
     m_windTime = std::fmod(SwayClock(), 3600.0);
     if (m_windTimePrev > m_windTime || m_windTime - m_windTimePrev > 0.25)
