@@ -32,18 +32,28 @@ layout(set = 0, binding = 8, std430) readonly buffer PrevPositions { float prevP
 layout(set = 0, binding = 1) uniform sampler2D swayTex;    // texture 0: plants' sway (how much of it is holes)
 #include "sway.glsl"
 
-// Plants bending out of the way of characters (FL.pushers: their feet and the trail behind them; Device::FillPushers):
-// each vertex moves away from the pushers within reach, the tip most, and down so the plant bends rather than
-// stretches. sway as SwayDistance; plantHeight in world units.
-vec3 PushOffset(vec3 posW, vec3 modelPos, vec4 sway, float plantHeight)
+// Plants bending out of the way of characters (FL.pushers: where they are and the trail behind them, w = seconds since
+// a character was there; FL.pusherBorn: seconds since the point was made - fresh while the character walks on;
+// Device::FillPushers). The nearer a character, the further a plant bends away from it - each vertex on its own, so a
+// quad's top parts around the legs while its base stays. Behind a character a plant springs back past upright and
+// settles (a damped spring); while one walks through, the plants it touches rustle. The bend turns each vertex about
+// the base (sideways and down), so the plant keeps its length. sway as SwayDistance; plantHeight in world units.
+float PushSpring(float age)
+{
+    float t = max(age - 0.08, 0.0);
+    return exp(-4.0 * t) * cos(10.0 * t);
+}
+
+vec3 PushOffset(vec3 posW, vec3 modelPos, vec4 sway, float plantHeight, vec2 originXZ)
 {
     uint n = min(FL.info.y, 16u);
     float amount = FL.effects.w;
     if (n == 0u || amount <= 0.0) return vec3(0.0);
     float h = SwayHeight(modelPos, sway);
     if (h <= 0.0) return vec3(0.0);
-    float reach = 0.9 * sqrt(amount);
-    vec2 push = vec2(0.0);
+    float reach = 1.4 * sqrt(amount);
+    float phase = dot(originXZ, vec2(3.1, 2.3));
+    vec2 push = vec2(0.0), rustle = vec2(0.0);
     for (uint i = 0u; i < n; ++i) {
         vec4 p = FL.pushers[i];
         float dy = posW.y - p.y;
@@ -51,16 +61,21 @@ vec3 PushOffset(vec3 posW, vec3 modelPos, vec4 sway, float plantHeight)
         vec2 d = posW.xz - p.xz;
         float dist = length(d);
         if (dist >= reach) continue;
-        float f = smoothstep(reach, 0.25 * reach, dist) * p.w;
-        push += (dist > 1e-3 ? d / dist : vec2(0.7071)) * f;
+        float near = 1.0 - smoothstep(0.15 * reach, reach, dist);
+        vec2 dir = dist > 1e-3 ? d / dist : vec2(0.7071);
+        push += dir * near * PushSpring(p.w);
+        float born = FL.pusherBorn[i >> 2u][i & 3u];
+        float moving = exp(-3.0 * born) * exp(-4.0 * max(p.w - 0.1, 0.0));
+        rustle += vec2(-dir.y, dir.x) * near * moving * sin(FL.wind.z * 17.0 + phase + float(i));
     }
-    float len = length(push);
+    vec2 v = push + 0.3 * rustle;
+    float len = length(v);
     if (len <= 1e-4) return vec3(0.0);
-    push /= max(len, 1.0);
-    len = min(len, 1.0);
+    vec2 dir = v / len;
     float holes = smoothstep(0.92, 0.7, SwayMeanAlpha());
-    float bend = h * holes * min(0.7 * plantHeight * amount, reach);
-    return vec3(push.x * bend, -0.55 * plantHeight * h * holes * len * len * min(amount, 1.0), push.y * bend);
+    float angle = radians(75.0) * min(amount, 1.3) * min(len, 1.0) * holes * (0.4 + 0.6 * h);   // bends most up top
+    float above = h * plantHeight;               // the vertex's height above the base
+    return vec3(dir.x * above * sin(angle), -above * (1.0 - cos(angle)), dir.y * above * sin(angle));
 }
 
 float FogFactor(uint mode, float d)
@@ -140,7 +155,8 @@ void main()
         vec3 swayPrev = vec3(0.0);               // the sway last frame (motion vectors)
         if (D.sway.w > 0.5) {
             int axis = clamp(int(D.sway.w + 0.5) - 1, 0, 2);
-            vec3 push = PushOffset(posW.xyz, inPos.xyz, D.sway, length(D.world[axis].xyz) / abs(D.sway.y));
+            vec3 push = PushOffset(posW.xyz, inPos.xyz, D.sway, length(D.world[axis].xyz) / abs(D.sway.y),
+                                   D.world[3].xz);
             posW.xz += FL.wind.xy * SwayDistance(inPos.xyz, D.sway, D.world[3].xz, FL.wind.z);
             posW.xyz += push;
             swayPrev = push;

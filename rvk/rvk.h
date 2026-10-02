@@ -592,7 +592,7 @@ private:
     float m_grassPush = 1.0f;
     struct PushCandidate { uint64_t mesh; float x, y, z; };
     std::vector<PushCandidate> m_pushNew, m_pushOld;   // the last frame's / the one before (confirmed a frame later)
-    struct PushPoint { float x, y, z; double time; };
+    struct PushPoint { float x, y, z; double time, born; };
     std::vector<PushPoint> m_pushTrail;
     uint64_t m_drawMeshKey = 0;                  // the current draw's mesh cache key
     void PushCandidateDraw(uint32_t fvf);

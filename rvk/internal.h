@@ -66,7 +66,9 @@ struct FrameLights {               // binding 4: per-frame data (constants.glsl 
     float sunDir[4];               // w: light headroom (F_OVERBRIGHT)
     float sunColor[4];             // the shadow-casting sun's colour (0 = none)
     d3d::Matrix prevViewProj;      // motion vectors: the world camera last frame
-    float pushers[kPushers][4];    // what plants bend away from (characters' feet and trails): world x, y, z, strength
+    float pushers[kPushers][4];    // what plants bend away from (characters' feet and trails): world x, y, z, seconds
+                                   // since a character was there
+    float pusherBorn[kPushers];    // seconds since each point was made (a character walking on makes new ones)
     GpuLight lights[kFrameLights];
 };
 

@@ -425,7 +425,7 @@ void Device::UpdatePushTrail()
 {
     constexpr float kMerge = 1.0f;               // parts this close (x, z) are one character
     constexpr float kSpacing = 0.35f;            // a new trail point once a character is this far from the last
-    constexpr double kRecover = 1.6;             // seconds for a pushed plant to stand up again
+    constexpr double kRecover = 1.6;             // seconds for a pushed plant to settle again (ffp.vert PushSpring)
     double now = SwayClock();
     // The frame before last's candidates: animated if their mesh wasn't drawn again last frame.
     struct Character { float x, y, z; int parts; };
@@ -457,7 +457,7 @@ void Device::UpdatePushTrail()
             nearest->time = now;
             nearest->y = c.y;
         } else {
-            m_pushTrail.push_back({x, c.y, z, now});
+            m_pushTrail.push_back({x, c.y, z, now, now});
         }
     }
     m_pushTrail.erase(std::remove_if(m_pushTrail.begin(), m_pushTrail.end(),
@@ -467,25 +467,20 @@ void Device::UpdatePushTrail()
         m_pushTrail.erase(m_pushTrail.begin(), m_pushTrail.end() - 512);
 }
 
-// The trail points for this frame's plants: the strongest nearest the camera. Strength fades as a point ages, so a
-// plant stands up again behind a character.
+// The trail points for this frame's plants: those nearest the camera, fresher ones first. The shader turns a point's
+// age into how far the plants still bend (springing back behind a character).
 void Device::FillPushers(detail::FrameLights* fl, const float eye[3])
 {
     fl->info[1] = 0;
     if (m_grassPush <= 0.0f || m_pushTrail.empty())
         return;
     double now = SwayClock();
-    struct Item { float key, strength; const PushPoint* p; };
+    struct Item { float key; const PushPoint* p; };
     std::vector<Item> items;
     items.reserve(m_pushTrail.size());
     for (const PushPoint& t : m_pushTrail) {
-        float age = float(now - t.time);
-        float s = std::clamp(1.0f - (age - 0.1f) / 1.5f, 0.0f, 1.0f);
-        s = s * s * (3.0f - 2.0f * s);
-        if (s <= 0.0f)
-            continue;
         float dx = t.x - eye[0], dy = t.y - eye[1], dz = t.z - eye[2];
-        items.push_back({std::sqrt(dx * dx + dy * dy + dz * dz) / s, s, &t});
+        items.push_back({std::sqrt(dx * dx + dy * dy + dz * dz) + 4.0f * float(now - t.time), &t});
     }
     uint32_t used = std::min<uint32_t>(uint32_t(items.size()), detail::kPushers);
     std::partial_sort(items.begin(), items.begin() + used, items.end(),
@@ -494,7 +489,8 @@ void Device::FillPushers(detail::FrameLights* fl, const float eye[3])
         fl->pushers[i][0] = items[i].p->x;
         fl->pushers[i][1] = items[i].p->y;
         fl->pushers[i][2] = items[i].p->z;
-        fl->pushers[i][3] = items[i].strength;
+        fl->pushers[i][3] = float(now - items[i].p->time);
+        fl->pusherBorn[i] = float(now - items[i].p->born);
     }
     fl->info[1] = used;
 }
