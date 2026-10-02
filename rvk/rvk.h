@@ -599,6 +599,8 @@ private:
     float m_drawSway[4] = {};                    // the current draw's sway (for its shadow caster)
     bool m_dynamicWriteMask = false;             // per-draw colour write masks (extended dynamic state 3)
     void FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, uint32_t out[4]);
+    struct LightSphere { float x, y, z, r2; };
+    std::vector<LightSphere> m_frameLightSpheres;  // the frame lights' spheres in FrameLights order (light masks)
     void Wind(float out[4]) const;               // direction x, z, time, strength
     bool m_taa = true;
     float m_sharpen = 0.4f;
@@ -902,6 +904,7 @@ public:
     void ProfileAddIdle(double ms) { m_profileIdleMs += ms; }
     std::atomic<uint64_t> m_profileGameWaitUs{0};
     double m_profileIdleMs = 0.0;
+    double m_timerCost = 0.0;                    // ms per clock read (subtracted from the draw sections)
     // Per-draw CPU sections, timed on every 16th frame (Draw); scaled to a per-frame average.
     void ProfileDrawSection(const char* name, double& since);
 private:

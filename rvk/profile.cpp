@@ -4,6 +4,7 @@
 // waited), so they never stall.
 #include "internal.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 
@@ -32,6 +33,11 @@ bool Device::CreateProfiler(std::string* error)
         return true;
     }
     m_timestampPeriod = m_props.limits.timestampPeriod;
+    // What one clock read costs (under Wine a QueryPerformanceCounter): the per-draw sections subtract it.
+    double start = CpuNow();
+    for (int i = 0; i < 2000; ++i) (void)CpuNow();
+    m_timerCost = (CpuNow() - start) / 2001.0;
+    Log("profiling: a clock read costs %.0f ns", m_timerCost * 1e6);
     VkQueryPoolCreateInfo qi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
     qi.queryType = VK_QUERY_TYPE_TIMESTAMP;
     qi.queryCount = kProfileMarks;
@@ -112,7 +118,7 @@ void Device::ProfileDrawSection(const char* name, double& since)
     if ((m_frameNumber & 15) != 0)
         return;
     double now = CpuNow();
-    ProfileAdd(m_profileCpu, name, (now - since) * 16.0);
+    ProfileAdd(m_profileCpu, name, std::max(0.0, now - since - m_timerCost) * 16.0);
     since = now;
 }
 

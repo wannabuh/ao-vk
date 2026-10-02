@@ -288,9 +288,11 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->sunColor[3] = 0.0f;
     fl->prevViewProj = m_prevViewProj;           // the world camera last frame (motion vectors)
     m_frameLightIndices.clear();
+    m_frameLightSpheres.clear();
     for (uint32_t k = 0; k < used; ++k) {
         const CapturedLight& c = m_lightsPrev[candidates[k].index];
         m_frameLightIndices.push_back(candidates[k].index);
+        m_frameLightSpheres.push_back({c.light.position.x, c.light.position.y, c.light.position.z, c.light.range * c.light.range});
         FillGpuLight(c.light, c.cosHalfTheta, c.cosHalfPhi, fl->lights[k]);
         uint32_t cube = PointShadowLayer(c.light);
         fl->lights[k].spot[2] = float(cube);                        // its cube shadow map + 1, 0 = none
@@ -442,14 +444,14 @@ void Device::FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices,
         wmn[j] = c - e;
         wmx[j] = c + e;
     }
+    const LightSphere* spheres = m_frameLightSpheres.data();
+    count = std::min<uint32_t>(count, uint32_t(m_frameLightSpheres.size()));
     for (uint32_t k = 0; k < count; ++k) {
-        const d3d::Light& l = m_lightsPrev[m_frameLightIndices[k]].light;
-        float p[3] = {l.position.x, l.position.y, l.position.z}, d2 = 0.0f;
-        for (int j = 0; j < 3; ++j) {
-            float d = std::max({wmn[j] - p[j], 0.0f, p[j] - wmx[j]});
-            d2 += d * d;
-        }
-        if (d2 <= l.range * l.range)
+        const LightSphere& l = spheres[k];
+        float dx = std::max(std::max(wmn[0] - l.x, l.x - wmx[0]), 0.0f);
+        float dy = std::max(std::max(wmn[1] - l.y, l.y - wmx[1]), 0.0f);
+        float dz = std::max(std::max(wmn[2] - l.z, l.z - wmx[2]), 0.0f);
+        if (dx * dx + dy * dy + dz * dz <= l.r2)
             out[k >> 5] |= 1u << (k & 31);
     }
 }
@@ -464,16 +466,25 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
     if (m_external || !vertices || !vertexCount || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ)
         return;
     const uint8_t* v = static_cast<const uint8_t*>(vertices);
-    uint64_t key = 1469598103934665603ull ^ (uint64_t(fvf) << 40) ^ (uint64_t(stride) << 32) ^ vertexCount;
-    key = HashBytes(&indexCount, 4, key);
+    // Word-wise mixing (positions as three 32-bit words), not byte by byte: this runs for every draw.
+    uint64_t key = 0x9E3779B97F4A7C15ull ^ (uint64_t(fvf) << 40) ^ (uint64_t(stride) << 32) ^ vertexCount;
+    auto mix = [&key](uint64_t x) { key = (key ^ x) * 0xFF51AFD7ED558CCDull; key ^= key >> 32; };
+    mix(indexCount);
     uint32_t step = vertexCount > 16 ? vertexCount / 16 : 1;
-    for (uint32_t i = 0; i < vertexCount; i += step)
-        key = HashBytes(v + size_t(i) * stride, 12, key);
-    key = HashBytes(v + size_t(vertexCount - 1) * stride, 12, key);
+    for (uint32_t i = 0; i < vertexCount; i += step) {
+        uint32_t p[3];
+        std::memcpy(p, v + size_t(i) * stride, 12);
+        mix(uint64_t(p[0]) | uint64_t(p[1]) << 32);
+        mix(p[2]);
+    }
+    uint32_t last[3];
+    std::memcpy(last, v + size_t(vertexCount - 1) * stride, 12);
+    mix(uint64_t(last[0]) | uint64_t(last[1]) << 32);
+    mix(last[2]);
     if (indices && indexCount) {
         uint32_t istep = indexCount > 16 ? indexCount / 16 : 1;
         for (uint32_t i = 0; i < indexCount; i += istep)
-            key = HashBytes(&indices[i], 2, key);
+            mix(indices[i] | uint64_t(i) << 16);
     }
     auto it = m_meshInfo.find(key);
     if (it != m_meshInfo.end()) {
