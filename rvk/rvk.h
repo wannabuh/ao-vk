@@ -497,6 +497,7 @@ private:
         float boundsMin[3], boundsMax[3];        // model space
         uint32_t draw;                           // m_frameDraw when the game drew it
         float sway[4];                           // a plant's sway (DrawTransform sway), 0 = still
+        bool animated;                           // its vertices changed since last frame (a character's body)
     };
     // One caster as the shadow passes draw it: from this frame's ring or from the caster cache (own buffer).
     struct ShadowItem {
@@ -511,6 +512,7 @@ private:
         bool cached;                             // remembered, not drawn by the game this frame
         uint32_t group;                          // drawn as part of the same object (character); ~0u = cached
         float sway[4];                           // a plant's sway, 0 = still
+        bool animated;                           // ShadowCaster animated
     };
     std::vector<ShadowItem> m_shadowItems;       // EndFrame: what the shadow passes draw
     // What a shadow pass has bound, so unchanged state isn't re-issued.

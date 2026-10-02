@@ -428,6 +428,7 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     c.key = key;
     std::memcpy(c.sway, m_drawSway, sizeof(c.sway));
     c.draw = m_frameDraw;
+    c.animated = m_drawMesh && !m_drawMeshStatic;
     m_casters.push_back(c);
     auto cached = m_casterCache.find(key);
     if (cached != m_casterCache.end()) {
@@ -752,6 +753,7 @@ void Device::CollectShadowItems()
         TransformBounds(c.boundsMin, c.boundsMax, c.world, it.boundsMin, it.boundsMax);
         it.cached = false;
         it.group = 0;
+        it.animated = c.animated;
         std::memcpy(it.sway, c.sway, sizeof(it.sway));
         m_shadowItems.push_back(it);
         drawOf.push_back(c.draw);
@@ -775,6 +777,7 @@ void Device::CollectShadowItems()
         std::memcpy(it.boundsMin, e.boundsMin, sizeof(it.boundsMin));
         std::memcpy(it.boundsMax, e.boundsMax, sizeof(it.boundsMax));
         it.cached = true;
+        it.animated = false;
         it.group = ~0u;
         std::memcpy(it.sway, e.plantSway, sizeof(it.sway));
         m_shadowItems.push_back(it);

@@ -495,9 +495,16 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
         float pos[3] = {l.position.x, l.position.y, l.position.z};
         float fade = slots[k].fade;
         // A cube still holding the same light where it was keeps last frame's map every other frame (half the cubes
-        // each frame): a frame's lag of a character's shadow under a lamp doesn't show. Moving lights (carried)
-        // render every frame.
-        if (k < previousCount && previous[k].range == l.range && ((k + m_frameNumber) & 1)) {
+        // each frame) - if only still things are around it. Moving lights (carried) render every frame.
+        // Not while anything animated is in its range: a character's body moves every frame, and against last frame's
+        // map its own limbs and torso shadow it in the wrong places - dark patches flickering on bodies in crowds.
+        bool animatedNear = false;
+        for (const ShadowItem& it : m_shadowItems)
+            if (it.animated && BoxDistance2(it.boundsMin, it.boundsMax, pos) <= l.range * l.range) {
+                animatedNear = true;
+                break;
+            }
+        if (!animatedNear && k < previousCount && previous[k].range == l.range && ((k + m_frameNumber) & 1)) {
             float dx = previous[k].position[0] - pos[0], dy = previous[k].position[1] - pos[1], dz = previous[k].position[2] - pos[2];
             if (dx * dx + dy * dy + dz * dz < 1e-4f) {
                 // This frame's position (the game's lamps wobble in the last bits): PointShadowLayer matches exactly.
