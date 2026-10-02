@@ -107,6 +107,13 @@ bool Device::CreateHdrResources(std::string* error)
     si.maxLod = VK_LOD_CLAMP_NONE;
     if (!Check(vkCreateSampler(m_device, &si, nullptr, &m_bumpSampler), "bump sampler", error))
         return false;
+    // Normal maps (binding 9): tiled, mipmapped, anisotropic (their detail matters most at grazing angles).
+    if (m_maxAnisotropy >= 1.0f) {
+        si.anisotropyEnable = VK_TRUE;
+        si.maxAnisotropy = m_maxAnisotropy < 16.0f ? m_maxAnisotropy : 16.0f;
+    }
+    if (!Check(vkCreateSampler(m_device, &si, nullptr, &m_normalSampler), "normal map sampler", error))
+        return false;
 
     // Layouts: tone mapping reads its inputs (occlusion.glsl); the other passes read up to four images.
     auto setLayout = [&](uint32_t count, VkDescriptorSetLayout* out) {
@@ -288,6 +295,8 @@ void Device::DestroyHdrResources()
     if (m_linearSampler) vkDestroySampler(m_device, m_linearSampler, nullptr);
     if (m_bumpSampler) vkDestroySampler(m_device, m_bumpSampler, nullptr);
     m_bumpSampler = VK_NULL_HANDLE;
+    if (m_normalSampler) vkDestroySampler(m_device, m_normalSampler, nullptr);
+    m_normalSampler = VK_NULL_HANDLE;
     m_bloomLayout = VK_NULL_HANDLE;
     m_bloomSetLayout = VK_NULL_HANDLE;
     m_linearSampler = VK_NULL_HANDLE;

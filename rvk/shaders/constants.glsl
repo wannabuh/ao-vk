@@ -25,7 +25,7 @@ layout(set = 0, binding = 0, std140) uniform DrawConstants {
     vec4 misc;                  // material power, alpha reference (0..255), effect glow gain, bump strength
     vec4 eyePos;                // camera position, world space
     vec4 eyeDir;                // camera forward, world space (non-local viewer)
-    uvec4 vtx;                  // FVF, colour scale (float bits; 0 = 1: the particles' brightness)
+    uvec4 vtx;                  // FVF, colour scale (float bits; 0 = 1: the particles' brightness), normal map strength (float bits)
     uvec4 flags;                // F_* bits, fog vertex mode, fog table mode, alpha func
     uvec4 matSources;           // diffuse, ambient, specular, emissive material sources
     uvec4 stageA[2];            // colorop, colorarg1, colorarg2, alphaop
@@ -54,4 +54,5 @@ const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8
            F_EMISSIVE = 16777216u,   // unlit or self-lit 3D surface: its bright texels glow at night (FL.effects.y)
            F_CUTOUT = 33554432u,     // blended with depth writes: (nearly) see-through fragments dropped (vCutout)
            F_SHADOWCHEAP = 67108864u, // far foliage: one tap of the sun's shadow, no cascade blending
-           F_VERTEXSUN = 134217728u;  // far plants lit per vertex: vMatAmbient = the sun's part, shadowed per pixel
+           F_VERTEXSUN = 134217728u,  // far plants lit per vertex: vMatAmbient = the sun's part, shadowed per pixel
+           F_NORMALMAP = 268435456u; // the stage 0 texture's own normal map (binding 11; C.misc.w = strength)

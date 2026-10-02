@@ -19,6 +19,13 @@ unsigned ComIndex(const char* name);              // counter index of "Interface
 void RvkLog(const char* fmt, ...);
 void ParticleFrame();                             // each presented frame (rvk_particles.cpp)
 
+// rvk_materials.cpp: side-loaded material maps of RDB textures (normal maps). A surface learns its RDB identity
+// from the hooked TextureStreamCreator::CreateTexture exports; QueryInterface(IID_RvkSurface) tells our surfaces
+// apart from another backend's.
+extern const GUID IID_RvkSurface;
+class RSurface;
+void AttachMaterialMaps(RSurface* top);           // after the surface's rvk texture is (re)created
+
 // One lock around every call into the rvk backend: the game may use DirectDraw from more than one thread
 // (D3D serialises internally too). Recursive, since methods call each other. Logs each new thread once.
 class ComScope {
@@ -153,6 +160,9 @@ public:
     bool dirty = false;                            // shadow newer than the GPU copy
     bool anyDirty = false;                         // level 0 only: some level of the chain is dirty
 
+    uint32_t rdbType = 0, rdbId = 0;               // level 0: the RDB texture it holds (0 = unknown)
+    rvk::Texture* materialsFor = nullptr;          // level 0: the rvk texture its material maps were attached to
+
     RSurface* depth = nullptr;                     // attached z-buffer
     RClipper* clipper = nullptr;
     RPalette* palette = nullptr;
@@ -163,7 +173,7 @@ public:
     void EnsureShadow();
 
 protected:
-    void* Cast(REFIID iid) override { return iid == IID_IDirectDrawSurface7 ? this : nullptr; }
+    void* Cast(REFIID iid) override { return iid == IID_IDirectDrawSurface7 || iid == IID_RvkSurface ? this : nullptr; }
     HRESULT DoAddAttachedSurface(LPDIRECTDRAWSURFACE7 s) override;
     HRESULT DoDeleteAttachedSurface(DWORD, LPDIRECTDRAWSURFACE7 s) override;
     HRESULT DoBlt(LPRECT dst, LPDIRECTDRAWSURFACE7 src, LPRECT srcRect, DWORD flags, LPDDBLTFX fx) override;

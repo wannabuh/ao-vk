@@ -62,6 +62,7 @@ private:
     uint32_t m_width = 0, m_height = 0, m_levels = 1;
     Format m_format = Format::A8R8G8B8;
     bool m_renderTarget = false;
+    Texture* m_normalMap = nullptr;    // tangent-space normal map drawn with this texture (owned; SetNormalMap)
     // Layout as of the end of the commands recorded so far (main command buffer for render targets;
     // plain textures only change layout in the upload command buffer, which runs first).
     VkImageLayout m_layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -173,6 +174,11 @@ public:
     // the threshold. 0 = only the threshold.
     // Enhancement, with per-pixel lighting: normals generated from each surface's texture (brightness = height).
     // strength = height change per texel for a full brightness step, in texels (0 = off).
+    // Normal maps (F_NORMALMAP): a texture's own tangent-space normal map (OpenGL convention, +Y = up in the
+    // image), used instead of the generated normals when it is drawn in stage 0. The device owns `normal` and
+    // frees it with the texture; null removes it.
+    void SetNormalMap(Texture* texture, Texture* normal);
+    void SetNormalMaps(bool enable, float strength) { if (m_normalMaps != enable || m_normalStrength != strength) { m_normalMaps = enable; m_normalStrength = strength; m_constantsDirty = true; } }
     void SetBump(float strength) { strength = strength < 0.0f ? 0.0f : strength; if (m_bump != strength) { m_bump = strength; m_constantsDirty = true; } }
     float Bump() const { return m_bump; }
     // Enhancement: anisotropic filtering level for linearly filtered textures (1 = off, up to the GPU's limit, 16).
@@ -417,6 +423,11 @@ private:
     bool m_carrierLit = true;
     float m_lightHeadroom = 1.0f;
     float m_bump = 0.0f;
+    bool m_normalMaps = true;
+    float m_normalStrength = 1.0f;
+    Texture* m_flatNormal = nullptr;             // binding 9 when the draw has no normal map
+    VkSampler m_normalSampler = VK_NULL_HANDLE;
+    Texture* m_constantsNormalMap = nullptr;
     uint32_t m_anisotropy = 1;
     float m_maxAnisotropy = 1.0f;               // GPU limit (0 without the feature)
     // The ground's base pass textures this frame, by chunk (TerrainChunkKey): its lighting pass, drawn later with the

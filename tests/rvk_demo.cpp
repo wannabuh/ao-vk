@@ -752,6 +752,108 @@ void RunDemo(D& dev, bool windowed, bool stress, int frames, const std::string& 
     dev.DestroyVertexBuffer(scene.vb);
 }
 
+// Normal map test (--normal-map-test [strength]): a per-pixel lit wall in four tiles, light from the upper left.
+//   top left:   grey, no normal map                     top middle: grey + flat normal map (must match top left)
+//   top right:  dome heights, generated normals (F_BUMP)  middle left: dome heights + the normal map computed from
+//               the same heights at the same scale (F_NORMALMAP; should look like top right)
+//   centre:     grey + that normal map: the domes from the normal map alone, lit on their upper left
+template <typename D>
+void RunNormalMapTest(D& dev, int frames, const std::string& shot, float bump)
+{
+    const uint32_t n = 128, cells = 4;
+    std::vector<float> height(n * n);
+    for (uint32_t y = 0; y < n; ++y)
+        for (uint32_t x = 0; x < n; ++x) {
+            float cx = (float(x % (n / cells)) + 0.5f) / (n / cells) * 2 - 1, cy = (float(y % (n / cells)) + 0.5f) / (n / cells) * 2 - 1;
+            float r2 = (cx * cx + cy * cy) / 0.64f;
+            height[y * n + x] = r2 < 1 ? std::sqrt(1 - r2) : 0.0f;
+        }
+    std::vector<uint32_t> heightPixels(n * n), flatPixels(n * n, 0xFF8080FF), normalPixels(n * n);
+    for (uint32_t i = 0; i < n * n; ++i) {
+        uint32_t g = uint32_t(std::lround(height[i] * 255));
+        heightPixels[i] = 0xFF000000u | g << 16 | g << 8 | g;
+    }
+    // OpenGL-convention normals of the height field (as quantised to 8 bits, the way F_BUMP sees it), the slope in
+    // brightness per texel times the bump strength (= F_BUMP's world height per texel / world size of a texel).
+    auto h = [&](int x, int y) { x = (x + n) % n; y = (y + n) % n; return float(heightPixels[y * n + x] & 0xFF) / 255.0f; };
+    for (uint32_t y = 0; y < n; ++y)
+        for (uint32_t x = 0; x < n; ++x) {
+            float du = (h(x + 1, y) - h(x - 1, y)) * 0.5f * bump, dv = (h(x, y + 1) - h(x, y - 1)) * 0.5f * bump;
+            float nx = -du, ny = dv, nz = 1, len = std::sqrt(nx * nx + ny * ny + nz * nz);
+            auto enc = [](float v) { return uint32_t(std::lround((v * 0.5f + 0.5f) * 255)); };
+            normalPixels[y * n + x] = 0xFF000000u | enc(nx / len) << 16 | enc(ny / len) << 8 | enc(nz / len);
+        }
+    uint32_t grey = 0xFFB0B0B0;
+    Texture* plain = dev.CreateTexture(1, 1, &grey);
+    Texture* plainMapped = dev.CreateTexture(1, 1, &grey);
+    Texture* heights = dev.CreateTexture(n, n, heightPixels.data());
+    Texture* heightsMapped = dev.CreateTexture(n, n, heightPixels.data());
+    Texture* flat = dev.CreateTexture(n, n, Format::A8R8G8B8, 1);
+    dev.UpdateTexture(flat, 0, 0, 0, n, n, flatPixels.data(), n * 4);
+    Texture* normals = dev.CreateTexture(n, n, Format::A8R8G8B8, 1);
+    dev.UpdateTexture(normals, 0, 0, 0, n, n, normalPixels.data(), n * 4);
+    Texture* greyDomes = dev.CreateTexture(1, 1, &grey);
+    Texture* domeNormals = dev.CreateTexture(n, n, Format::A8R8G8B8, 1);
+    dev.UpdateTexture(domeNormals, 0, 0, 0, n, n, normalPixels.data(), n * 4);
+    dev.SetNormalMap(greyDomes, domeNormals);
+    dev.SetNormalMap(plainMapped, flat);
+    dev.SetNormalMap(heightsMapped, normals);
+    dev.SetPixelLighting(true);
+    dev.SetNormalMaps(true, 1.0f);
+
+    VtxMesh quad[4] = {{-1.5f, 1.5f, 0, 0, 0, -1, 0xFFFFFFFF, 0, 0}, {1.5f, 1.5f, 0, 0, 0, -1, 0xFFFFFFFF, 1, 0},
+                       {-1.5f, -1.5f, 0, 0, 0, -1, 0xFFFFFFFF, 0, 1}, {1.5f, -1.5f, 0, 0, 0, -1, 0xFFFFFFFF, 1, 1}};
+    for (int frame = 0; frame < frames; ++frame) {
+        if (frame == frames - 1)
+            dev.RequestScreenshot(shot);
+        dev.BeginFrame();
+        auto tile = [&](uint32_t col, uint32_t row, Texture* tex, float tileBump) {
+            dev.SetViewport({col * kTile, row * kTile, kTile, kTile, 0.0f, 1.0f});
+            dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF101018, 1.0f);
+            dev.SetBump(tileBump);
+            dev.SetRenderState(RS_ZENABLE, 1);
+            dev.SetRenderState(RS_ZWRITEENABLE, 1);
+            dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+            dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+            dev.SetRenderState(RS_LIGHTING, 1);
+            dev.SetRenderState(RS_AMBIENT, 0xFF181818);
+            dev.SetRenderState(RS_DIFFUSEMATERIALSOURCE, MCS_MATERIAL);
+            Material mat{{1, 1, 1, 1}, {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 0.0f};
+            dev.SetMaterial(mat);
+            Light sun{};
+            sun.type = LIGHT_DIRECTIONAL;
+            sun.diffuse = {1, 1, 1, 1};
+            sun.direction = {0.6f, -0.6f, 0.5f};             // travels to the lower right, into the wall
+            dev.SetLight(0, sun);
+            dev.LightEnable(0, true);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+            dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+            dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+            dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+            dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
+            dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 0);
+            dev.SetTextureStageState(0, TSS_TEXTURETRANSFORMFLAGS, TTFF_DISABLE);
+            dev.SetTextureStageState(0, TSS_MAGFILTER, TFG_LINEAR);
+            dev.SetTextureStageState(0, TSS_MINFILTER, TFN_LINEAR);
+            dev.SetTextureStageState(0, TSS_ADDRESS, TADDRESS_WRAP);
+            dev.SetTextureStageState(1, TSS_COLOROP, TOP_DISABLE);
+            dev.SetTexture(0, tex);
+            dev.SetTransform(World, Identity());
+            dev.SetTransform(View, LookAtLH({0, 0, -4}, {0, 0, 0}, {0, 1, 0}));
+            dev.SetTransform(Projection, PerspectiveLH(kPi / 3, 1.0f, 0.1f, 100.0f));
+            dev.DrawPrimitive(TriangleStrip, kFvfMesh, quad, 4);
+        };
+        tile(0, 0, plain, 0.0f);
+        tile(1, 0, plainMapped, 0.0f);
+        tile(2, 0, heights, bump);
+        tile(0, 1, heightsMapped, 0.0f);
+        tile(1, 1, greyDomes, 0.0f);         // relief from the normal map alone: domes lit from the upper left
+        dev.EndFrame();
+    }
+    for (Texture* t : {plain, plainMapped, heights, heightsMapped, greyDomes})
+        dev.DestroyTexture(t);              // the normal maps go with their textures
+}
+
 float g_cameraYaw = 0.0f;  // --camera-yaw: the shadow test's camera turns this much a frame (motion blur)
 bool g_sunView = false;    // --sun-view: the shadow test's camera low, looking into the sun
 float g_movingCube = 0.0f; // --moving-cube: the shadow test's big right cube moves this far a frame along x
@@ -1549,6 +1651,7 @@ int main(int argc, char** argv)
     float saturation = 1.0f, contrast = 1.0f, warmth = 0.0f, nightTint = 0.0f, vignette = 0.0f;
     bool lutSepia = false, taa = false;
     float sharpen = 0.4f;
+    bool normalMapTest = false;
     uint32_t anisotropy = 1;
     float motionBlur = 0.0f, dof = 0.0f, dofFocus = 0.0f;
     bool dofBokeh = true, dofFar = true;
@@ -1603,6 +1706,7 @@ int main(int argc, char** argv)
         else if (a == "--camera-yaw" && i + 1 < argc) g_cameraYaw = float(std::atof(argv[++i]));
         else if (a == "--aniso" && i + 1 < argc) anisotropy = uint32_t(std::atoi(argv[++i]));
         else if (a == "--bump" && i + 1 < argc) bump = float(std::atof(argv[++i]));
+        else if (a == "--normal-map-test") normalMapTest = true;
         else if (a == "--ao" && i + 1 < argc) { ao = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--ao-radius" && i + 1 < argc) aoRadius = float(std::atof(argv[++i]));
         else if (a == "--gi" && i + 1 < argc) { gi = float(std::atof(argv[++i])); hdr = true; }
@@ -1716,6 +1820,11 @@ int main(int argc, char** argv)
     dev.SetMotionBlurMode(motionMode);
     dev.SetDof(dof > 0.0f, dofBokeh, true, dof, 16.0f, dofFocus, 0.2f, dofFar, 3.0f);
     dev.SetPointShadowFadeIn(fadeIn);    // frames here are milliseconds apart: no fade-in unless asked
+    if (normalMapTest) {
+        RunNormalMapTest(dev, frames, shot, bump > 0.0f ? bump : 1.0f);
+        std::printf("rendered; screenshot %s\n", shot.c_str());
+        return 0;
+    }
     if (pointShadowTest) {               // needs per-pixel lighting with the light override
         dev.SetPixelLighting(true);
         dev.SetLightOverride(true);

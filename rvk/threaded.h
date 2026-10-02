@@ -96,6 +96,8 @@ public:
     void SetVolume(float strength, float haze, float shafts);
     void SetSsr(float strength, float water, float gloss, float wet);
     void SetBump(float strength);
+    void SetNormalMaps(bool enable, float strength);
+    void SetNormalMap(Texture* texture, Texture* normal);   // the device owns `normal` from here on
     void SetAnisotropy(uint32_t level);
     void SetMotionBlur(float strength, float focusNear);
     void SetMotionBlurMode(uint32_t mode);

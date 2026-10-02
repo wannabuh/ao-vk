@@ -431,16 +431,23 @@ float Device::TessellateDraw(uint32_t primitive, uint32_t fvf, uint32_t vertexCo
 {
     if (m_tessShape <= 0.0f || !m_tessSupported || m_external || !m_drawMesh)
         return 0.0f;
-    bool animated = false;
+    // A character's topology (its indices) is drawn animated - new vertices - on most frames, but in crowds the game
+    // skips some characters' animation now and then (the same vertices again: a static mesh for that frame). So a
+    // topology counts as a character's once it was animated on 3 frames within the last 30, and stays one for 10
+    // frames after its last: a building is only "new" the frame it appears. (Characters sharing a model share this.)
+    uint64_t key = m_drawMesh->indexHash ^ (uint64_t(fvf) << 40) ^ (uint64_t(vertexCount) * 0x9E3779B97F4A7C15ull);
+    auto found = m_tessTopologies.find(key);
     if (!m_drawMeshStatic) {
-        uint64_t key = m_drawMesh->indexHash ^ (uint64_t(fvf) << 40) ^ (uint64_t(vertexCount) * 0x9E3779B97F4A7C15ull);
-        TessTopology& t = m_tessTopologies[key];
-        if (t.last != m_frameNumber) {
-            t.before = t.last;
-            t.last = m_frameNumber;
+        TessTopology& t = found != m_tessTopologies.end() ? found->second : m_tessTopologies[key];
+        if (t.frames[0] != m_frameNumber) {              // newest first
+            t.frames[2] = t.frames[1];
+            t.frames[1] = t.frames[0];
+            t.frames[0] = m_frameNumber;
         }
-        animated = t.before + 1 == m_frameNumber;
+        found = m_tessTopologies.find(key);
     }
+    bool animated = found != m_tessTopologies.end() && found->second.frames[2] != 0 &&
+                    found->second.frames[2] + 30 >= m_frameNumber && found->second.frames[0] + 10 >= m_frameNumber;
     if (primitive != d3d::TriangleList || m_drawIsLabel || !m_rs[d3d::RS_LIGHTING] || !m_rs[d3d::RS_ZWRITEENABLE] ||
         !(fvf & d3d::FVF_NORMAL) || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ ||
         (m_target != m_scene && m_target != m_main) || vertexCount > 20000)
@@ -1457,19 +1464,30 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (terrain && m_textures[0]) {
         if (!m_rs[d3d::RS_LIGHTING] && !m_rs[d3d::RS_ALPHABLENDENABLE]) {
             m_terrainBases[TerrainChunkKey(vertices, vertexCount, layout.stride, indexCount)] = m_textures[0];
-        } else if (m_rs[d3d::RS_LIGHTING] && m_bump > 0.0f && IsMultiplyPass()) {
+        } else if (m_rs[d3d::RS_LIGHTING] && IsMultiplyPass()) {
             auto it = m_terrainBases.find(TerrainChunkKey(vertices, vertexCount, layout.stride, indexCount));
-            if (it != m_terrainBases.end()) m_drawBumpBase = it->second;
+            if (it != m_terrainBases.end() &&
+                (m_bump > 0.0f || (m_normalMaps && m_pixelLighting && it->second->m_normalMap)))
+                m_drawBumpBase = it->second;
         }
     }
     uint32_t carrier = m_external ? 0 : CarriedLight(fvf, vertices, vertexCount, layout.stride);
+    // The texture's own normal map (F_NORMALMAP), when it is the surface (stage 0, plain coordinates) of a per-pixel
+    // lit draw; for the ground's lightmap pass, the normal map of its chunk's base texture (as the generated normals).
+    Texture* normalMap = nullptr;
+    if (m_normalMaps && m_pixelLighting && m_textures[0] && m_textures[0]->m_normalMap && !terrain &&
+        m_rs[d3d::RS_LIGHTING] && m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
+        !(m_tss[0][d3d::TSS_TEXTURETRANSFORMFLAGS] & 256u) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
+        normalMap = m_textures[0]->m_normalMap;
+    else if (m_normalMaps && m_pixelLighting && m_drawBumpBase && m_drawBumpBase->m_normalMap)
+        normalMap = m_drawBumpBase->m_normalMap;
     // The foliage level of detail depends on the draw's distance, not the render state: part of the block's key, or
     // a run of plants with the same state would all get the first one's (flickering as the camera moves).
     uint32_t foliageLod = FoliageFar() ? (m_drawSway[3] > 0.5f ? 2u : 1u) : 0u;
     bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
                    m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
                    m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
-                   m_constantsFoliageLod != foliageLod;
+                   m_constantsFoliageLod != foliageLod || m_constantsNormalMap != normalMap;
     VkDeviceSize uboOffset = m_constantsOffset;
     if (rewrite) {
     uboOffset = Allocate(sizeof(DrawConstants), uboAlign, &cpu);
@@ -1483,6 +1501,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsCarrier = carrier;
     m_constantsBumpBase = m_drawBumpBase;
     m_constantsFoliageLod = foliageLod;
+    m_constantsNormalMap = normalMap;
     auto* c = static_cast<DrawConstants*>(cpu);
     c->view = m_view;
     c->proj = m_proj;
@@ -1506,7 +1525,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c->misc[0] = m_material.power;
     c->misc[1] = float(m_rs[d3d::RS_ALPHAREF] & 0xFF);
     c->misc[2] = m_effectGlow;                 // F_GLOW: how much the effect feeds the glow
-    c->misc[3] = m_bump;                       // F_BUMP: height change per texel for a full brightness step
+    c->misc[3] = normalMap ? m_normalStrength : m_bump;   // F_NORMALMAP: slope scale; F_BUMP: height change per texel
+                                                         // for a full brightness step
     // Camera position/forward in world space from the view matrix (columns 0-2 = camera axes for an
     // orthonormal D3D view matrix; row 3 = -eye expressed in those axes).
     const auto& v = m_view.m;
@@ -1543,7 +1563,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (hdrTarget) flags |= F_HDR;
     // Generated normals: per-pixel lit 3D drawn with a texture in stage 0 as its surface (not the ground's
     // lightmap pass, whose stage 0 is the lightmap), with plain coordinates.
-    if ((flags & F_PERPIXEL) && m_bump > 0.0f && m_textures[0] && !terrain && m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
+    if ((flags & F_PERPIXEL) && normalMap)
+        flags |= F_NORMALMAP | (m_drawBumpBase ? F_BUMPBASE : 0u);
+    else if ((flags & F_PERPIXEL) && m_bump > 0.0f && m_textures[0] && !terrain && m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
         !(m_tss[0][d3d::TSS_TEXTURETRANSFORMFLAGS] & 256u) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
         flags |= F_BUMP;
     else if ((flags & F_PERPIXEL) && m_drawBumpBase)
@@ -1575,7 +1597,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // single-tap sun shadow and no relief; small plants (the swaying ones) are lit per vertex, the sun kept apart
     // (F_VERTEXSUN) so that its shadow darkens only the sunlight, as per pixel.
     if (foliage && foliageLod) {
-        flags = (flags & ~(F_BUMP | F_BUMPBASE)) | F_SHADOWCHEAP;
+        flags = (flags & ~(F_BUMP | F_BUMPBASE | F_NORMALMAP)) | F_SHADOWCHEAP;
         if (foliageLod == 2u && (flags & F_PERPIXEL))
             flags = (flags & ~F_PERPIXEL) | F_VERTEXSUN;
     }
@@ -1684,8 +1706,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     VkDescriptorImageInfo shadowDepths{m_shadowDepthSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     // Binding 10: a tessellated draw's averaged normals, else any small part of the ring (unread).
     VkDescriptorBufferInfo smoothNormals{f.ring, smoothOffset, smoothBytes ? smoothBytes : 16};
-    VkWriteDescriptorSet writes[11] = {};
-    for (int i = 0; i < 11; ++i) {
+    // Binding 11: the surface's normal map (F_NORMALMAP), else a flat one (unread).
+    VkDescriptorImageInfo normal{m_normalSampler, (normalMap ? normalMap : m_flatNormal)->m_view,
+                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet writes[12] = {};
+    for (int i = 0; i < 12; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstBinding = uint32_t(i);
         writes[i].descriptorCount = 1;
@@ -1711,7 +1736,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[9].pImageInfo = &shadowDepths;
     writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[10].pBufferInfo = &smoothNormals;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 11, writes);
+    writes[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[11].pImageInfo = &normal;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 12, writes);
 
     if (m_external) {
         VkBuffer buffers[2] = {m_external->vertices, m_nullBuffer};

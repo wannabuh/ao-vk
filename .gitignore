@@ -1,6 +1,6 @@
 build/
-orig/
+/orig
 compile_commands.json
-ghidra/
-logs/
-re/
+/ghidra
+/logs
+/re

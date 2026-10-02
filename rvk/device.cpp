@@ -176,6 +176,7 @@ Device::~Device()
         if (f.imageAvailable) vkDestroySemaphore(m_device, f.imageAvailable, nullptr);
     }
     if (m_blackTexture) DestroyTextureNow(m_blackTexture);
+    if (m_flatNormal) DestroyTextureNow(m_flatNormal);
     for (auto& [key, sampler] : m_samplers) vkDestroySampler(m_device, sampler, nullptr);
     for (VkPipeline p : m_pipelines) if (p) vkDestroyPipeline(m_device, p, nullptr);
     for (VkPipeline p : m_pipelinesHdr) if (p) vkDestroyPipeline(m_device, p, nullptr);
@@ -211,7 +212,9 @@ bool Device::Init(HWND window, uint32_t width, uint32_t height, std::string* err
         return false;
     uint32_t black = 0xFF000000;
     m_blackTexture = CreateTexture(1, 1, &black);
-    return m_blackTexture != nullptr;
+    uint32_t flat = 0xFF8080FF;                  // (0.5, 0.5, 1): the unbent normal
+    m_flatNormal = CreateTexture(1, 1, &flat);
+    return m_blackTexture != nullptr && m_flatNormal != nullptr;
 }
 
 bool Device::CreateInstance(std::string* error)
@@ -602,7 +605,7 @@ bool Device::CreatePipelines(std::string* error)
     // Bindings 0, 3, 4 also for the tessellation stages (characters' Phong tessellation: camera, draw, frame).
     const VkShaderStageFlags vsfs = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     const VkShaderStageFlags tess = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-    VkDescriptorSetLayoutBinding bindings[11] = {
+    VkDescriptorSetLayoutBinding bindings[12] = {
         {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, vsfs | tess, nullptr},
         {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
@@ -614,12 +617,13 @@ bool Device::CreatePipelines(std::string* error)
         {8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
         {9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},   // shadow depths
         {10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},     // tessellation's normals
+        {11, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},  // normal map
     };
     if (!m_tessSupported)
         for (auto& b : bindings) b.stageFlags &= ~tess;
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 11;
+    sl.bindingCount = 12;
     sl.pBindings = bindings;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_setLayout), "vkCreateDescriptorSetLayout", error))
         return false;

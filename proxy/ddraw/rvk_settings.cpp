@@ -44,6 +44,8 @@ Setting g_settings[] = {
     {"RVK_OwnLight",   "A character's own light lights the character",             "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LightOver"},
     {"RVK_BumpOn",     "Generated surface relief (normal maps from textures)",     "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0},
     {"RVK_Bump",       "Relief strength",                                          "Lighting",         Float, 0.25f, 4, 0.25f, 1.5f, "RANDYVK_BUMP", 0, "RVK_BumpOn"},
+    {"RVK_NormalMaps", "Normal maps (from the randy-vk materials folder)",          "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_NormalStr",  "Strength",                                                 "Lighting",         Float, 0.1f, 4, 0.1f, 1, nullptr, 0, "RVK_NormalMaps"},
     {"RVK_LeafOn",     "Sunlight through leaves",                                  "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0},
     {"RVK_LeafLight",  "Strength",                                                 "Lighting",         Float, 0.25f, 2, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
     {"RVK_PtLight",    "Point light intensity (lamps, fires, other lights)",       "Lighting",         Float, 0.25f, 2, 0.05f, 1, nullptr, 0},
@@ -165,7 +167,7 @@ Setting* Find(const char* name)
 // so switching it back on restores them). Settings not listed here only tune something these switch off.
 struct Vanilla { const char* name; float value; };
 const Vanilla kVanilla[] = {
-    {"RVK_PixelLight", 0}, {"RVK_LightOver", 0}, {"RVK_Bump", 0}, {"RVK_LeafLight", 0}, {"RVK_Headroom", 1},
+    {"RVK_PixelLight", 0}, {"RVK_LightOver", 0}, {"RVK_Bump", 0}, {"RVK_NormalMaps", 0}, {"RVK_LeafLight", 0}, {"RVK_Headroom", 1},
     {"RVK_Sway", 0}, {"RVK_GrassPush", 0}, {"RVK_PlantDetail", 0}, {"RVK_FoliageLod", 0}, {"RVK_PtLight", 1}, {"RVK_CharLight", 1}, {"RVK_Tess", 0}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
     {"RVK_Hdr", 0}, {"RVK_Bloom", 0}, {"RVK_BloomFx", 0}, {"RVK_NightGlow", 0}, {"RVK_Ao", 0}, {"RVK_Gi", 0},
     {"RVK_Volume", 0}, {"RVK_Ssr", 0}, {"RVK_MBlur", 0}, {"RVK_Taa", 0}, {"RVK_Saturation", 1}, {"RVK_Contrast", 1},
@@ -255,6 +257,7 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_LightOver")) d->SetLightOverride(V(n) != 0.0f);
     else if (is("RVK_OwnLight")) d->SetCarrierLit(V(n) != 0.0f);
     else if (is("RVK_Bump")) d->SetBump(V(n));
+    else if (is("RVK_NormalMaps") || is("RVK_NormalStr")) d->SetNormalMaps(V("RVK_NormalMaps") != 0.0f, V("RVK_NormalStr"));
     else if (is("RVK_Headroom")) d->SetLightHeadroom(V(n));
     else if (is("RVK_Aniso")) d->SetAnisotropy(uint32_t(V(n)));
     else if (is("RVK_Tess") || is("RVK_TessLevel") || is("RVK_TessDist"))
