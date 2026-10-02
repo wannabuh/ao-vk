@@ -709,10 +709,12 @@ void Device::CollectShadowItems()
     }
 }
 
-// The game draws each character's parts (body pieces, head, held weapon) one after another, so a run of consecutive
-// draws close together is one object. In the dumps a character's parts lie within 0.7 sideways of each other and
-// another character starts a new run. Characters drawn back to back stay apart unless their origins are within
-// 1 of each other: only when one walks right through the other.
+// The game draws each character's parts (body pieces, head, held weapon) one after another, so a run of casters
+// close together is one object. In the dumps a character's parts lie within 0.7 sideways of each other and another
+// character starts a new run. Other draws may come between the parts (effects on a weapon, particles), so only a
+// long stretch without casters ends a run. Characters drawn back to back stay apart unless their origins are
+// within 1 of each other: only when one walks right through the other.
+constexpr uint32_t kGroupMaxGap = 32;
 void Device::GroupShadowItems(const std::vector<uint32_t>& drawOf)
 {
     uint32_t group = 0;
@@ -722,7 +724,7 @@ void Device::GroupShadowItems(const std::vector<uint32_t>& drawOf)
             const auto& a = m_shadowItems[first].world.m[3];
             const auto& b = m_shadowItems[i].world.m[3];
             float dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
-            if (drawOf[i] != drawOf[i - 1] + 1 || dx * dx + dz * dz > 1.0f || std::fabs(dy) > 2.6f) {
+            if (drawOf[i] - drawOf[i - 1] > kGroupMaxGap || dx * dx + dz * dz > 1.0f || std::fabs(dy) > 2.6f) {
                 ++group;
                 first = i;
             }
