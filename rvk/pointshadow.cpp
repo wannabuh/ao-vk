@@ -391,14 +391,14 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             float d2 = BoxDistance2(it.boundsMin, it.boundsMax, pos);
             if (d2 > l.range * l.range)
                 continue;
-            // Whatever carries the light would shadow everything around it: a lamp's housing (small, around the
-            // light) and the character carrying a light at head height (FindCarriers). Characters next to the
-            // carrier keep casting. Big objects (buildings, platforms with their pillars) cast even when their box
-            // contains the light; the near plane clips geometry right at the light.
+            // A lamp's housing (small, around the light) would shadow everything around it. Characters always
+            // cast, the one carrying the light too (telling its pieces apart from others' proved unreliable;
+            // FindCarriers now only serves CarriedLight). Big objects (buildings, platforms with their pillars) cast
+            // even when their box contains the light; the near plane clips geometry right at the light.
             float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
                                      it.boundsMax[2] - it.boundsMin[2]});
             bool housing = d2 == 0.0f && extent < 1.5f;              // smaller than a character
-            if (housing || IsCarrierItem(m_lightsCur[candidates[k].index], it))
+            if (housing)
                 continue;
             inRange.push_back(i);
         }

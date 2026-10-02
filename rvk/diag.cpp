@@ -77,7 +77,7 @@ void Device::EndFrameDump()
                                      it.boundsMax[2] - it.boundsMin[2]});
             if (dx * dx + dz * dz >= 1.5f * 1.5f || dy < -3.5f || dy > 1.0f || extent >= 3.0f) continue;
             std::fprintf(m_dumpFile, " (%s%u %.2f %.2f %.2f%s)", it.cached ? "c" : "g", it.cached ? 0u : it.group, dy,
-                         std::sqrt(dx * dx + dz * dz), extent, IsCarrierItem(c, it) ? " excluded" : "");
+                         std::sqrt(dx * dx + dz * dz), extent, IsCarrierItem(c, it) ? " carrier" : "");
         }
         std::fprintf(m_dumpFile, "\n");
     }
