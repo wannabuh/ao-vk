@@ -29,6 +29,7 @@ const Api& Get()
             get(a.findRgb, "?FindRGB@Message_c@fun@@QBE?AW4MsgErr_e@12@PBDPAVRGB_t@@H@Z") &&
             get(a.addFloat, "?AddFloat@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDM@Z") &&
             get(a.addRgb, "?AddRGB@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDABVRGB_t@@@Z") &&
+            get(a.addBool, "?AddBool@Message_c@fun@@QAE?AW4MsgErr_e@12@PBD_N@Z") &&
             get(a.addVector3, "?AddVector3@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDABVVector3_t@@@Z") &&
             get(a.addQuat, "?AddQuat@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDABVQuaternion_t@@@Z") &&
             get(a.addMatrix4, "?AddMatrix4@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDABVTMatrix4_t@@@Z") &&

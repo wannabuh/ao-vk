@@ -11,7 +11,7 @@ logs=$AO_CLIENT/../logs
 c=$PWD/build/characters
 s=$PWD/build/statics
 character="--character $c/5900.catmesh $c/9386.catanim --crowd 3 --time 400"
-scenes=${*:-"basic dynamic materials plain blend shadow alpha env sfx1 sfx2 lights statics"}
+scenes=${*:-"basic dynamic materials plain blend shadow alpha env sfx1 sfx2 lights manylights statics"}
 grep -q "^$mode=" "$ini" || printf '%s=off\n' "$mode" >> "$ini"
 before=$(grep "^$mode=" "$ini" | cut -d= -f2)
 fail=0
@@ -28,6 +28,7 @@ for scene in $scenes; do
         sfx1) args="$character --sfx 1" ;;
         sfx2) args="$character --sfx 2" ;;
         lights) args="$character --lights 2" ;;
+        manylights) args="$character --crowd 12 --lights 12" ;;
         statics) args="$character --static $s/17879.archive --statics 4" ;;
         *) echo "unknown scene $scene"; exit 2 ;;
     esac

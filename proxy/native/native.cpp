@@ -10,6 +10,7 @@
 #include "native/scene.h"
 #include "native/viewport.h"
 #include "native/refframe.h"
+#include "native/visual.h"
 
 namespace rnative {
 
@@ -31,6 +32,7 @@ void Install(HMODULE orig)
     device::Install(orig);
     viewport::Install(orig);
     refframe::Install(orig);
+    visual::Install(orig);
 }
 
 }  // namespace rnative
