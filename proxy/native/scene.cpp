@@ -37,29 +37,63 @@ void __fastcall RenderRefractionHook(void* viewport, void*, int listFrom, int li
     g_viewport = previous;
 }
 
-// The RTTI type name of an object (".?AVName@@"), or null. C only (SEH).
-// A pointer field of an object that may not be there any more (Randy's light list can hold lights whose frames are
-// gone): null instead of a fault.
-const void* SafeRead(const void* object, uint32_t offset)
+// Reads through pointers that may be stale (Randy's light list can hold lights whose frames are gone) must never
+// fault - not even inside __try: the game's crash handler sees every access violation first and ends the game. So
+// memory is checked first (VirtualQuery; a few pages cached, the cache cleared at each scene update / description).
+struct PageCache {
+    uintptr_t page[16];
+    bool readable[16];
+    int count = 0, next = 0;
+} g_pages;
+
+void ForgetPages() { g_pages.count = 0; }
+
+bool PageReadable(uintptr_t page)
 {
-    if (!object) return nullptr;
-    __try {
-        return *reinterpret_cast<const void* const*>(static_cast<const uint8_t*>(object) + offset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
+    for (int i = 0; i < g_pages.count; ++i)
+        if (g_pages.page[i] == page) return g_pages.readable[i];
+    MEMORY_BASIC_INFORMATION mbi{};
+    bool ok = VirtualQuery(reinterpret_cast<const void*>(page), &mbi, sizeof(mbi)) == sizeof(mbi) &&
+              mbi.State == MEM_COMMIT && !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) &&
+              (mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ |
+                              PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY));
+    const int slot = g_pages.count < 16 ? g_pages.count++ : (g_pages.next++ & 15);
+    g_pages.page[slot] = page;
+    g_pages.readable[slot] = ok;
+    return ok;
 }
 
+bool Readable(const void* p, size_t bytes)
+{
+    const uintptr_t a = reinterpret_cast<uintptr_t>(p);
+    if (a < 0x10000 || a + bytes < a) return false;
+    for (uintptr_t page = a & ~uintptr_t(0xFFF); page < a + bytes; page += 0x1000)
+        if (!PageReadable(page)) return false;
+    return true;
+}
+
+// A pointer field of an object that may not be there any more: null if it isn't readable.
+const void* SafeRead(const void* object, uint32_t offset)
+{
+    const void* at = static_cast<const uint8_t*>(object) + offset;
+    if (!object || !Readable(at, sizeof(void*))) return nullptr;
+    return *static_cast<const void* const*>(at);
+}
+
+// The RTTI type name of an object (".?AVName@@"), or null.
 const char* RawTypeName(const void* object)
 {
-    __try {
-        auto vtable = *reinterpret_cast<const uintptr_t* const*>(object);
-        auto col = reinterpret_cast<const uint32_t*>(vtable[-1]);   // Complete Object Locator
-        const char* name = reinterpret_cast<const char*>(col[3] + 8); // TypeDescriptor: vftable, spare, name
-        return name[0] == '.' && name[1] == '?' ? name : nullptr;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
+    const auto* vtable = static_cast<const uintptr_t*>(SafeRead(object, 0));
+    if (!vtable || !Readable(vtable - 1, sizeof(uintptr_t))) return nullptr;
+    const auto* col = reinterpret_cast<const uint32_t*>(vtable[-1]);   // Complete Object Locator
+    if (!Readable(col, 16)) return nullptr;
+    const char* name = reinterpret_cast<const char*>(col[3] + 8);       // TypeDescriptor: vftable, spare, name
+    if (!Readable(name, 2) || name[0] != '.' || name[1] != '?') return nullptr;
+    for (size_t n = 2; n < 256; ++n) {                                  // the whole name readable
+        if (!Readable(name + n, 1)) return nullptr;
+        if (name[n] == 0) return name;
     }
+    return nullptr;
 }
 
 struct Cached {
@@ -144,6 +178,7 @@ constexpr uint32_t kLightData = 0xA4;              // RLight_t: its D3DLIGHT7 (w
 
 void __fastcall ProcessHook(void* viewport, void*, void* root)
 {
+    ForgetPages();
     g_process(viewport, nullptr, root);
     if (!g_lightSink)
         return;
@@ -174,6 +209,7 @@ const void* CurrentVisual()
 
 VisualInfo Describe(const void* visual)
 {
+    ForgetPages();
     if (!visual)
         return {};
     const void* vtable = *static_cast<const void* const*>(visual);
