@@ -361,3 +361,58 @@
 0x49867	replaced	proxy/native/mesh.cpp	RTriMesh_t::IsRayIntersecting
 0x4D6D3	replaced	proxy/native/visual.cpp	RVisual_t::RVisual_t(archive) (FUN_1004d6d3)
 0x4E412	replaced	proxy/native/visual.cpp	RVisual_t deleting destructor (FUN_1004e412)
+0x188FB	replaced	proxy/native/mesh_data.cpp	TriList deleting destructor (FUN_100188fb)
+0x1FD2A	replaced	proxy/native/mesh_data.cpp	TriList::Archive
+0x1FE9D	replaced	proxy/native/mesh_data.cpp	TriList::AddTriangle
+0x1FEDF	replaced	proxy/native/mesh_data.cpp	TriList::TriList(archive) (FUN_1001fedf)
+0x1FF60	replaced	proxy/native/mesh_data.cpp	TriList::Instantiate
+0x48CDF	replaced	proxy/native/mesh_data.cpp	TriList::TriList(copy) (FUN_10048cdf)
+0x1FE30	replaced	proxy/native/mesh_data.cpp	TriList winding flip (FUN_1001fe30)
+0x1FD66	replaced	proxy/native/mesh_data.cpp	TriList triangle positions (FUN_1001fd66)
+0x4866F	replaced	proxy/native/mesh_data.cpp	RTriList_t::RTriList_t (FUN_1004866f)
+0x48AD9	replaced	proxy/native/mesh_data.cpp	RTriList_t::RTriList_t(copy) (FUN_10048ad9)
+0x486C7	replaced	proxy/native/mesh_data.cpp	RTriList_t::~RTriList_t (FUN_100486c7)
+0x48C07	replaced	proxy/native/mesh_data.cpp	RTriList_t deleting destructor (FUN_10048c07)
+0x48787	replaced	proxy/native/mesh_data.cpp	RTriList_t buffer flags (FUN_10048787)
+0x4881D	replaced	proxy/native/mesh_data.cpp	RTriList_t hardware copy release (FUN_1004881d)
+0x4883E	replaced	proxy/native/mesh_data.cpp	RTriList_t vertices to an archive (FUN_1004883e)
+0x488BD	replaced	proxy/native/mesh_data.cpp	RTriList_t triangle list (FUN_100488bd)
+0x488ED	replaced	proxy/native/mesh_data.cpp	RTriList_t vertices (FUN_100488ed)
+0x4899A	replaced	proxy/native/mesh_data.cpp	RTriList_t vertex format (FUN_1004899a)
+0x48A2E	replaced	proxy/native/mesh_data.cpp	RTriList_t vertex buffer (FUN_10048a2e)
+0x48A5C	replaced	proxy/native/mesh_data.cpp	RTriList_t from an archive (FUN_10048a5c)
+0x4E4B7	replaced	proxy/native/mesh_data.cpp	SimpleMesh::SimpleMesh
+0x4E56F	replaced	proxy/native/mesh_data.cpp	SimpleMesh::SimpleMesh(copy) (FUN_1004e56f)
+0x4E689	replaced	proxy/native/mesh_data.cpp	SimpleMesh::~SimpleMesh (FUN_1004e689)
+0x4F990	replaced	proxy/native/mesh_data.cpp	SimpleMesh deleting destructor (FUN_1004f990)
+0x4E6F4	replaced	proxy/native/mesh_data.cpp	SimpleMesh::Archive (FUN_1004e6f4)
+0x4E76D	replaced	proxy/native/mesh_data.cpp	SimpleMesh system memory flag (FUN_1004e76d)
+0x4E7BE	replaced	proxy/native/mesh_data.cpp	SimpleMesh vertex colours (FUN_1004e7be)
+0x4E809	replaced	proxy/native/mesh_data.cpp	SimpleMesh::SimpleMesh(archive) (FUN_1004e809)
+0x4EB53	replaced	proxy/native/mesh_data.cpp	SimpleMesh::Instantiate
+0x4ED3E	replaced	proxy/native/mesh_data.cpp	SimpleMesh::GetTriangleIndices(uint)
+0x4ED88	replaced	proxy/native/mesh_data.cpp	SimpleMesh::GetTriangleIndices(ushort)
+0x4F369	replaced	proxy/native/mesh_data.cpp	SimpleMesh::GetTriangles
+0x4F723	replaced	proxy/native/mesh_data.cpp	SimpleMesh::GetVertexPositions
+0x4F779	replaced	proxy/native/mesh_data.cpp	SimpleMesh::GetVertexNormals
+0x4F0EB	replaced	proxy/native/mesh_data.cpp	SimpleMesh::GetVertexUVCoords
+0x4E8C2	replaced	proxy/native/mesh_data.cpp	SimpleMesh::Mirror
+0x4F820	replaced	proxy/native/mesh_data.cpp	SimpleMesh bounding volume (FUN_1004f820)
+0x4EDFF	replaced	proxy/native/mesh_data.cpp	RVisualData_t registry add (FUN_1004edff)
+0x4E9C7	replaced	proxy/native/mesh_data.cpp	RVisualData_t registry remove (FUN_1004e9c7)
+0x4EE3F	replaced	proxy/native/mesh_data.cpp	RVisualData_t::RVisualData_t (FUN_1004ee3f)
+0x4EEC6	replaced	proxy/native/mesh_data.cpp	RVisualData_t::RVisualData_t(copy) (FUN_1004eec6)
+0x4EFA8	replaced	proxy/native/mesh_data.cpp	RVisualData_t::RVisualData_t(archive) (FUN_1004efa8)
+0x4F334	replaced	proxy/native/mesh_data.cpp	RVisualData_t::Instantiate
+0x4ECDC	replaced	proxy/native/mesh_data.cpp	RVisualData_t::~RVisualData_t (FUN_1004ecdc)
+0x4FBC1	replaced	proxy/native/mesh_data.cpp	RVisualData_t deleting destructor (FUN_1004fbc1)
+0x4FD7B	replaced	proxy/native/mesh_data.cpp	RVisualData_t clone (FUN_1004fd7b)
+0x4EA04	replaced	proxy/native/mesh_data.cpp	RVisualData_t::Archive
+0x4EB88	replaced	proxy/native/mesh_data.cpp	RVisualData_t vertex count (FUN_1004eb88)
+0x4EBA6	replaced	proxy/native/mesh_data.cpp	RVisualData_t triangle count (FUN_1004eba6)
+0x4F7FC	replaced	proxy/native/mesh_data.cpp	RVisualData_t::GetVertexPositions
+0x4EC2C	replaced	proxy/native/mesh_data.cpp	RVisualData_t hardware copies freed (FUN_1004ec2c)
+0x4EC5B	replaced	proxy/native/mesh_data.cpp	unused mesh buffers freed (FUN_1004ec5b)
+0x462AD	replaced	proxy/native/resource.cpp	RResource_t::RResource_t(copy) (FUN_100462ad)
+0x4624F	replaced	proxy/native/resource.cpp	RResource_t counted flag (FUN_1004624f)
+0x46266	replaced	proxy/native/resource.cpp	RResource_t references (FUN_10046266)

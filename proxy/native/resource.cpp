@@ -60,6 +60,29 @@ void* __fastcall Construct(void* r, void*, const char* name)
     return r;
 }
 
+// FUN_100462ad: a copy (Serializable_c's word copied as its inline copy constructor does), counted, uncounted flag.
+void* __fastcall Copy(void* r, void*, void* from)
+{
+    Field<uint32_t>(r, 4) = Field<uint32_t>(from, 4);
+    Field<uintptr_t>(r, 0) = reinterpret_cast<uintptr_t>(g_orig) + kVtable;
+    Name(r).init();
+    Name(r).allocator = 0;
+    const char* n = Name(from).c_str();
+    Name(r).assign(n, std::strlen(n));
+    Field<int32_t>(r, 0x24) = 1;
+    Field<int32_t>(r, 0x28) = 0xFF;
+    ++Global<int32_t>(kTotalRefs);
+    return r;
+}
+
+void __fastcall SetCounted(void* r, void*, int32_t value)   // FUN_1004624f
+{
+    Field<int32_t>(r, 0x28) = value;
+    if (value == 0) ++Global<int32_t>(kCounted);
+}
+
+void __fastcall SetReferences(void* r, void*, int32_t value) { Field<int32_t>(r, 0x24) = value; }   // FUN_10046266
+
 // From an archive: the name (or "*unknown*"); not counted in the references to all resources.
 void* __fastcall ConstructFrom(void* r, void*, void* archive)
 {
@@ -131,6 +154,9 @@ void Install(HMODULE orig)
         {0x46362, FN(ConstructFrom), "RResource_t::RResource_t(archive)"},
         {0x4641A, FN(Archive), "RResource_t::Archive"},
         {0x46499, FN(Instantiate), "RResource_t::Instantiate"},
+        {0x462AD, FN(Copy), "RResource_t::RResource_t(copy) (FUN_100462ad)"},
+        {0x4624F, FN(SetCounted), "RResource_t counted flag (FUN_1004624f)"},
+        {0x46266, FN(SetReferences), "RResource_t references (FUN_10046266)"},
     };
 #undef FN
     int installed = 0;

@@ -38,8 +38,11 @@ for scene in $scenes; do
     for v in off on; do
         sed -i "s/^$mode=.*/$mode=$v/" "$ini"
         rm -f "$logs/calllog-$v.txt"                  # a run that writes none must not compare an older one
-        RANDYVK_CALLLOG="C:\\linux\\logs\\calllog-$v.txt" RANDYVK_CALLLOG_FRAME=4 \
-            tools/randy-harness.sh build/h-ab --frames 6 $args --destroy > "build/h-ab-$v.txt" 2>&1
+        for attempt in 1 2; do                       # a harness that never started (Wine) gets a second go
+            RANDYVK_CALLLOG="C:\\linux\\logs\\calllog-$v.txt" RANDYVK_CALLLOG_FRAME=4 \
+                tools/randy-harness.sh build/h-ab --frames 6 $args --destroy > "build/h-ab-$v.txt" 2>&1
+            [ -s "build/h-ab-$v.txt" ] && break
+        done
     done
     n=$(cat "$logs/calllog-on.txt" 2>/dev/null | wc -l)
     [ -s "$logs/calllog-off.txt" ] || n=0
