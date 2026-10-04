@@ -356,6 +356,24 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
     }
     void* animSource = Export<DataCtorFn>("??0CATKeyframeAnimData_t@@QAE@PAVDataIO_t@fun@@@Z")(
         ::operator new(0x48), nullptr, animIo);
+    {                                                // what the animation loader made, as one checksum
+        const uint8_t* d = static_cast<const uint8_t*>(animSource);
+        uint32_t h = 2166136261u;
+        auto mix = [&](const void* p, size_t n) {
+            for (size_t i = 0; i < n; ++i) h = (h ^ static_cast<const uint8_t*>(p)[i]) * 16777619u;
+        };
+        auto at = [&](const uint8_t* o, int off) { return *reinterpret_cast<const uint8_t* const*>(o + off); };
+        auto num = [&](const uint8_t* o, int off) { return *reinterpret_cast<const int*>(o + off); };
+        mix(d + 0x2C, 8);
+        mix(d + 0x44, 4);
+        mix(at(d, 0x40), size_t(num(d, 0x3C)) * 4);
+        for (int t = 0; t < num(d, 0x34); ++t) {
+            const uint8_t* tr = at(d, 0x38) + t * 0x10;
+            mix(at(tr, 4), size_t(num(tr, 0)) * 0x14);
+            mix(at(tr, 0xC), size_t(num(tr, 8)) * 0x10);
+        }
+        std::printf("animdata %08x (%d tracks)\n", h, num(d, 0x34));
+    }
     auto frameCtor = Export<FrameCtorFn>("??0RRefFrame_t@@QAE@PAV0@PAVRAnimation_t@@@Z");
     auto setPos = Export<SetPosFn>("?SetRelativePosition@RRefFrame_t@@QAEXABVVector3_t@@PBV1@@Z");
     auto setTarget = Export<SetTargetFn>("?SetWorldTarget@RRefFrame_t@@QAEXABVVector3_t@@@Z");

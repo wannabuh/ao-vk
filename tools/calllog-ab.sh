@@ -12,11 +12,12 @@ logs=$AO_CLIENT/../logs
 c=$PWD/build/characters
 s=$PWD/build/statics
 character="--character $c/5900.catmesh $c/9386.catanim --crowd 3 --time 400"
-scenes=${*:-"basic dynamic materials plain blend shadow alpha env sfx1 sfx2 lights manylights culled terrain occmeshes preprocess lifecycle statics staticshadow"}
+scenes=${*:-"basic dynamic materials plain blend shadow alpha env sfx1 sfx2 lights manylights culled terrain occmeshes preprocess lifecycle anim106 statics staticshadow"}
 grep -q "^$mode=" "$ini" || printf '%s=off\n' "$mode" >> "$ini"
 before=$(grep "^$mode=" "$ini" | cut -d= -f2)
 fail=0
 for scene in $scenes; do
+    least=10                                         # calls a frame at least (else the run counts as failed)
     case $scene in
         basic) args="" ;;
         dynamic) args="--dynamic" ;;
@@ -34,6 +35,8 @@ for scene in $scenes; do
         occmeshes) args="$character --crowd 9 --terrain 6 --playfield 730 --static $s/17879.archive --statics 25" ;;
         preprocess) args="$character --crowd 9 --terrain 6 --preprocess 705" ;;   # hand corrections (generated data)
         lifecycle) args="$character --attach 26 --restore --lights 2 --blend 0.4" ;;   # attractor map, restore
+        anim106) args="--character $c/5900.catmesh $c/260033.catanim --crowd 3 --time 400"; least=1 ;;   # a 0x106
+                                                     # animation (another skeleton: nothing drawn; its data compared)
         culled) args="$character --crowd 49 --lights 6 --look 9 0 6" ;;   # half of them out of view
         statics) args="$character --static $s/17879.archive --statics 4" ;;
         staticshadow) args="$character --static $s/17879.archive --statics 4 --shadow" ;;
@@ -52,11 +55,11 @@ for scene in $scenes; do
     [ -s "$logs/calllog-off.txt" ] || n=0
     if grep -q "harness crashed" build/h-ab-off.txt build/h-ab-on.txt; then
         echo "$scene: CRASHED"; grep -h "harness crashed" build/h-ab-off.txt build/h-ab-on.txt; fail=1
-    elif [ "$n" -lt 10 ]; then
+    elif [ "$n" -lt "$least" ]; then
         echo "$scene: no call log ($n lines)"; fail=1
         for v in off on; do echo "  $v:"; tail -n 3 "build/h-ab-$v.txt" | sed 's/^/    /'; done
     elif tools/calllog-compare.py "$logs/calllog-off.txt" "$logs/calllog-on.txt" >/dev/null &&
-         diff -q <(grep -E '^(pick|query|material|heightmap|meshdata)' build/h-ab-off.txt) <(grep -E '^(pick|query|material|heightmap|meshdata)' build/h-ab-on.txt) >/dev/null; then
+         diff -q <(grep -E '^(pick|query|material|heightmap|meshdata|animdata)' build/h-ab-off.txt) <(grep -E '^(pick|query|material|heightmap|meshdata|animdata)' build/h-ab-on.txt) >/dev/null; then
         echo "$scene: same ($n calls)"
     else
         echo "$scene: DIFFERENT"; tools/calllog-compare.py "$logs/calllog-off.txt" "$logs/calllog-on.txt" | head -12; fail=1

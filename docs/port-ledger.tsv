@@ -520,3 +520,38 @@
 0x52D29	replaced	proxy/native/cat_data.cpp	CATMesh_t active vertices (FUN_10052d29)
 0x52D4F	replaced	proxy/native/cat_data.cpp	CATMesh_t active triangles (FUN_10052d4f)
 0x52F16	replaced	proxy/native/cat_data.cpp	CATMesh_t::CalcBoundingVolume
+0x509F2	replaced	proxy/native/cat_anim_data.cpp	CATAnim_t::CATAnim_t (FUN_100509f2)
+0x50A1F	replaced	proxy/native/cat_anim_data.cpp	CATAnim_t::~CATAnim_t (FUN_10050a1f)
+0x50A3C	replaced	proxy/native/cat_anim_data.cpp	CATAnim_t deleting destructor (FUN_10050a3c)
+0x504D2	replaced	proxy/native/cat_anim_data.cpp	CATAnim_t name (FUN_100504d2)
+0x529A4	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnimData_t track (FUN_100529a4)
+0x52943	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnimData_t track destructor (FUN_10052943)
+0x5295A	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnimData_t tracks deleting (FUN_1005295a)
+0x529D9	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnimData_t tracks resize (FUN_100529d9)
+0x52859	replaced	proxy/native/cat_anim_data.cpp	rotation keys resize (FUN_10052859)
+0x528C5	replaced	proxy/native/cat_anim_data.cpp	position keys resize (FUN_100528c5)
+0x52068	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnimData_t::CATKeyframeAnimData_t (the loader)
+0x51F68	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnimData_t::~CATKeyframeAnimData_t (FUN_10051f68)
+0x52A73	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnimData_t deleting destructor (FUN_10052a73)
+0x509BF	replaced	proxy/native/cat_anim_data.cpp	byte array resize (FUN_100509bf)
+0x51F19	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnim_t tracks in the layers (FUN_10051f19)
+0x51FB2	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnim_t::CATKeyframeAnim_t
+0x52021	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnim_t::~CATKeyframeAnim_t (FUN_10052021)
+0x52A92	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnim_t deleting destructor (FUN_10052a92)
+0x51CFC	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnim_t::SetTime
+0x51F51	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnim_t::SetLayers
+0x52A6C	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnim_t bone count (FUN_10052a6c)
+0x51D23	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnim_t radius (FUN_10051d23)
+0x52A62	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnim_t skeleton (FUN_10052a62)
+0x51EE1	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnim_t rotation (FUN_10051ee1)
+0x51EFD	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnim_t position (FUN_10051efd)
+0x50742	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t tracks (FUN_10050742)
+0x507E5	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t::SetAnim1
+0x5085C	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t::SetAnim2
+0x504F6	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t::SetBlend
+0x508D3	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t::CATAnimBlend_t
+0x5095F	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t::~CATAnimBlend_t (FUN_1005095f)
+0x50AEC	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t deleting destructor (FUN_10050aec)
+0x5050A	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t bone count (FUN_1005050a)
+0x50A9D	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t skeleton (FUN_10050a9d)
+0x50ABC	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t rest pose (FUN_10050abc)
