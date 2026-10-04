@@ -2,7 +2,8 @@
 
 A modern Vulkan renderer for Anarchy Online (the Project Rubi-Ka client), dropped in as a replacement for the
 game's renderer DLL, `randy31.dll`. The game keeps running its own code; ao-vk takes over the Direct3D 7 drawing
-underneath it and draws everything with Vulkan, adding modern lighting, shadows and effects while doing so.
+underneath it and draws everything with Vulkan, adding modern lighting, shadows and effects while doing so - and is
+step by step replacing the game's renderer code itself with native code (see *Replacing the game's renderer*).
 
 (Its files still carry the project's earlier name, randy-vk: `randy-vk.ini`, `randy-vk.log`, the `RANDYVK_*`
 environment variables.)
@@ -57,9 +58,37 @@ repository. Every enhancement can be switched off (in-game or with one hotkey) t
 
 **Performance**
 - The Vulkan work runs on its own thread, so the game's thread only hands draws over.
+- Characters are skinned on the GPU and animated by native code (see *Replacing the game's renderer* below): in a
+  100-character test crowd the game thread's renderer work drops from 8.4 to about 0.9 ms a frame.
 - Caches (mesh fingerprints, shadow casters, shared vertex buffers) keep the per-frame cost down; in big crowds the
   game's own CPU work, not the renderer, is usually the limit.
 - A built-in profiler that measures what each enhancement costs where you stand (Ctrl+Shift+O, see below).
+
+## Replacing the game's renderer
+
+ao-vk started as a layer under the game's renderer. It is now replacing that renderer too: Randy's own code (the
+original `randy31_orig.dll`, about 1,900 functions) is being rewritten function by function as native code in
+`proxy/native/`, with the goal of no longer loading the original at all. Each part is switched on in `randy-vk.ini`:
+
+```ini
+[Native]
+Skin=on       ; character skinning - on the GPU (cpu = native on the CPU, off = the original)
+Anim=on       ; character animation: keyframes, blends, the bone hierarchy
+Visuals=on    ; tells the renderer exactly what each draw is (character, ground, effect...) and who carries a light
+CatRender=on  ; drawing characters
+CatMesh=on    ; characters' per-frame upkeep
+CatQuery=on   ; attach points (weapons, effects), bones and materials by name
+Device=on     ; the device layer: render state, drawing, vertex buffers, state blocks, presenting, surfaces, textures
+```
+
+All of them default to `off` (the original code). They have been played with in game; if something misbehaves,
+turning the one key back off brings the original back for that part.
+
+Every part is checked against the original before it is switched on: computations side by side on random input
+(`tools/native-check.sh`), drawing with a log of every Direct3D call of a frame, which must be identical with the
+part off and on across a set of test scenes (`tools/calllog-ab.sh`). `tools/port-status.py` reports progress
+(`docs/port-ledger.tsv`): about 170 functions are native so far and another 270 no longer reachable, roughly 17% of
+the work. `docs/native.md` has the plan, results and method.
 
 ## Requirements
 
@@ -115,7 +144,8 @@ Delete ao-vk's `randy31.dll`, rename `randy31_orig.dll` back to `randy31.dll`, a
 
 ## Settings
 
-All settings live in `randy-vk.ini` (section `[Renderer]`) and are saved whenever they change. With AOReloaded they
+All settings live in `randy-vk.ini` (section `[Renderer]`; the native code's switches in `[Native]`, above) and are
+saved whenever they change. With AOReloaded they
 appear in the game's options window (F10) under **Renderer**: every feature as an on/off checkbox at the top, its
 sliders and choices further down, grouped by feature. Changes apply immediately.
 
@@ -165,8 +195,8 @@ feature costs exactly where you are.
 - Tested on one system (Linux, Wine, NVIDIA). Windows, AMD and Intel are untested.
 - The game is a 32-bit program, so its memory is limited. Very high settings (8192 sun shadows = 1 GB of video
   memory, 16 point shadows at 2048 = 1.5 GB) are best avoided.
-- In very large crowds the game's own CPU work (animating every character, its interface) limits the frame rate;
-  turning effects off does not help much there.
+- In very large crowds the game's own CPU work (its interface, game logic) still limits the frame rate; the native
+  character code (below) takes the renderer's share of it off the game's thread.
 - Shadows are drawn from the untessellated characters.
 
 ## How it works
@@ -175,10 +205,13 @@ The built `randy31.dll` exports the same 771 functions as the game's original. A
 original (`randy31_orig.dll`), so the game's renderer code still manages its scene; ao-vk replaces what is under
 it: the original's Direct3D 7 / DirectDraw calls are redirected to an implementation of those interfaces on top of
 **rvk**, a Vulkan 1.3 renderer shaped like Direct3D 7's fixed-function pipeline (`docs/rvk.md`), which adds the
-enhancements. A few exports are implemented directly (texture creation, to identify game textures).
+enhancements. On top of that, `proxy/native/` replaces the original's own functions with native ones (a jump
+patched over the original's entry once the client build is recognised), keeping its object layouts so the game's
+other DLLs, which derive from Randy's classes, keep working.
 
 - `docs/architecture.md`: the overall design; `docs/frame.md`: how the game draws a frame
 - `docs/rvk.md`: the renderer; `docs/materials.md`: normal maps; `docs/d3d7-vocabulary.md`: what the game uses
+- `docs/native.md`: replacing Randy; `docs/skinning.md`, `docs/animation.md`: the character code
 
 ## Building
 
@@ -201,13 +234,21 @@ The result is `build/linux-release/randy31.dll`, plus test programs.
 - `tools/rvk-demo.sh [out-dir] [args]`: renders test scenes with rvk headless under Wine with the Khronos
   validation layer and writes a PNG (`--shadow-test`, `--point-shadow-test`, `--grass-walk X`, `--tess 0.75`, ... -
   see `tests/rvk_demo.cpp`).
-- `tools/randy-harness.sh`: drives the game's renderer through the proxy outside the game (`tests/randy_harness.cpp`).
+- `tools/randy-harness.sh`: drives the game's renderer through the proxy outside the game (`tests/randy_harness.cpp`):
+  a 2D test scene, or animated characters (`--character`, `--crowd N`, `--blend`, `--shadow`, `--env`, `--sfx N`,
+  `--lights N`, `--pick`, `--query`) and static meshes (`--static`), from files extracted from the game with
+  `tools/extract-character.py` / `tools/extract-static.py`. It prints the game thread's time per frame.
+- `tools/native-check.sh`: native replacements against the original functions on random input.
+- `tools/calllog-ab.sh <Mode>`: every Direct3D call of a frame in each harness scene, with a `[Native]` part off and
+  on; they must be identical.
+- `tools/port-status.py`: how much of the original is replaced, unreachable, left.
 
 ### Layout
 
 - `rvk/`: the Vulkan renderer (`rvk/shaders/`: GLSL, compiled into the DLL)
 - `proxy/`: the `randy31.dll` proxy, the DirectDraw / Direct3D 7 implementation on rvk (`proxy/ddraw/`), the
   settings (`proxy/ddraw/rvk_settings.cpp`) and the exported settings interface AOReloaded uses
+- `proxy/native/`: the native replacements of the original's functions
 - `interface/`: tables generated from the original DLL and its importers (`tools/gen_interface.py`)
 - `ghidra-scripts/`, `tools/`: the analysis scripts used along the way
 
