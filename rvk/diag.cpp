@@ -136,7 +136,7 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
         }
         return;
     }
-    if (IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount)) {
+    if (vertices && IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount)) {
         std::fprintf(m_dumpFile, "D %u: blob shadow (hidden), prim %u v %u i %u\n", n, primitive, vertexCount, indexCount);
         return;
     }
@@ -168,7 +168,7 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
     std::vector<float> nearest(m_lights.size(), 1e30f);
     const uint8_t* base = static_cast<const uint8_t*>(vertices);
     uint32_t step = std::max(1u, vertexCount / 4096);
-    for (uint32_t i = 0; i < vertexCount; i += step) {
+    for (uint32_t i = 0; base && i < vertexCount; i += step) {   // (none here: skinned on the GPU)
         const float* p = reinterpret_cast<const float*>(base + size_t(i) * layout.stride + layout.offset[0]);
         float o[4] = {p[0], p[1], p[2], 1.0f}, w[4], e[4], c[4];
         Mul(m_world, o, w);
@@ -213,7 +213,7 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
     if (IsShadowCaster(primitive, fvf) || ShadowReceiver(fvf) || ShadowInLightmap(fvf) || ShadowCompensated(fvf))
         std::fprintf(f, " | shadow %s%s%s", IsShadowCaster(primitive, fvf) ? "C" : "", ShadowReceiver(fvf) ? "R" : "",
                      ShadowInLightmap(fvf) ? "L" : ShadowCompensated(fvf) ? "M" : "");
-    if (IsShadowCaster(primitive, fvf)) {
+    if (IsShadowCaster(primitive, fvf) && vertices) {
         float mn[3], mx[3];
         uint64_t key = CasterKey(primitive, fvf, layout.stride, vertices, vertexCount, indices, indexCount, mn, mx);
         auto streak = m_casterStreaks.find(key);
@@ -225,7 +225,9 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
     std::fprintf(f, "\n");
     // Geometry of draws with the vertex count asked for (RANDYVK_DUMP_VERTS): world-space positions, normals
     // (through the world matrix, not normalised), texture coordinates of set 0; then the indices.
-    if (m_dumpVertexCount && vertexCount == m_dumpVertexCount) {
+    if (!vertices)
+        std::fprintf(f, "  (skinned on the GPU)\n");
+    else if (m_dumpVertexCount && vertexCount == m_dumpVertexCount) {
         const uint8_t* v = static_cast<const uint8_t*>(vertices);
         const auto& w = m_world.m;
         for (uint32_t i = 0; i < vertexCount; ++i) {
