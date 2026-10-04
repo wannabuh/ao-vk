@@ -356,6 +356,52 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
     return true;
 }
 
+// ---- --static: a static mesh (.abiff's ObjectArchive, tools/extract-static.py) loaded with serialize.dll the way
+// DisplaySystem loads them, `count` copies in a grid under the scene's root ----
+bool AddStatics(const std::string& path, int count, CharacterScene& scene)
+{
+    HMODULE serialize = LoadLibraryA("serialize.dll");
+    using ArchiveCtorFn = void*(__fastcall*)(void* self, void*, void* io, bool read);
+    using FindFn = int(__fastcall*)(void* self, void*, long* id, const char* name, int);
+    using ReadFn = void*(__fastcall*)(void* self, void*, long id);
+    auto memoryIo = reinterpret_cast<MemoryIoCtorFn>(GetProcAddress(serialize, "??0MemoryIO_t@fun@@QAE@PBXI@Z"));
+    auto archiveCtor = reinterpret_cast<ArchiveCtorFn>(GetProcAddress(serialize, "??0ObjectArchive_c@fun@@QAE@PAVIO_t@1@_N@Z"));
+    auto find = reinterpret_cast<FindFn>(
+        GetProcAddress(serialize, "?FindObjectID@ObjectArchive_c@fun@@QAE?AW4MsgErr_e@Message_c@2@AAJPBDH@Z"));
+    auto read = reinterpret_cast<ReadFn>(GetProcAddress(serialize, "?ReadObject@ObjectArchive_c@fun@@QAEPAVSerializable_c@2@J@Z"));
+    static std::vector<uint8_t> data;
+    data = ReadFile(path);
+    if (!memoryIo || !archiveCtor || !find || !read || data.empty()) {
+        std::printf("static: can't read %s\n", path.c_str());
+        return false;
+    }
+    using AddChildFn = void(__fastcall*)(void* self, void*, void* child);
+    auto addChild = Export<AddChildFn>("?AddChild@RRefFrame_t@@UAEXPAV1@@Z");
+    auto setPos = Export<SetPosFn>("?SetRelativePosition@RRefFrame_t@@QAEXABVVector3_t@@PBV1@@Z");
+    const int columns = int(std::ceil(std::sqrt(double(count))));
+    int loaded = 0;
+    for (int i = 0; i < count; ++i) {
+        void* io = memoryIo(::operator new(0x100), nullptr, data.data(), unsigned(data.size()));
+        void* archive = archiveCtor(::operator new(0x400), nullptr, io, true);
+        long id = -1;
+        if (find(archive, nullptr, &id, "obj", 0) != 0) {
+            std::printf("static: no \"obj\" in the archive\n");
+            return false;
+        }
+        void* object = read(archive, nullptr, id);
+        if (!object) {
+            std::printf("static: ReadObject failed\n");
+            return false;
+        }
+        addChild(scene.root, nullptr, object);
+        Vector3 at{12.0f * float(i % columns - (columns - 1) / 2.0f), 0.0f, 12.0f * float(i / columns) + 20.0f};
+        setPos(object, nullptr, &at, nullptr);
+        ++loaded;
+    }
+    std::printf("static: %d copies of %s\n", loaded, path.c_str());
+    return true;
+}
+
 // Picking: rays from the camera through a few heights of the first character (RCATMesh_t::IsLineIntersecting, what
 // mouse-over uses), printed - the same answers with and without native skinning.
 void PickCharacter(CharacterScene& scene)
@@ -406,6 +452,8 @@ int main(int argc, char** argv)
     int crowd = 1;
     bool pick = false;
     bool still = false;                              // the animation time doesn't advance (static vertex buffers)
+    std::string staticMesh;
+    int statics = 1;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
@@ -415,6 +463,8 @@ int main(int argc, char** argv)
         else if (a == "--crowd" && i + 1 < argc) crowd = std::max(1, std::atoi(argv[++i]));
         else if (a == "--pick") pick = true;
         else if (a == "--still") still = true;
+        else if (a == "--static" && i + 1 < argc) staticMesh = argv[++i];
+        else if (a == "--statics" && i + 1 < argc) statics = std::max(1, std::atoi(argv[++i]));
     }
     const unsigned width = 640, height = 480;
 
@@ -529,6 +579,8 @@ int main(int argc, char** argv)
 
     CharacterScene scene;
     if (!characterMesh.empty() && !MakeCharacterScene(characterMesh, characterAnim, crowd, scene))
+        return 1;
+    if (!staticMesh.empty() && (scene.characters.empty() || !AddStatics(staticMesh, statics, scene)))
         return 1;
     LARGE_INTEGER frequency, frameStart, sceneStart{};
     QueryPerformanceFrequency(&frequency);
