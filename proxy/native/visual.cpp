@@ -294,6 +294,44 @@ void __fastcall Destroy(Visual* v)
     Internal<void(__fastcall*)(void*)>(0x45471)(v);               // RRefFrame_t::~RRefFrame_t
 }
 
+// FUN_1004d6d3: from an archive (its render list, lit, the delta state).
+void* __fastcall ConstructFrom(Visual* v, void*, void* archive)
+{
+    orig::RRefFrame_t_RRefFrame_t_36(v, archive);
+    InitVisualPart(v);
+    const serialize::Api& s = serialize::Get();
+    void* stream = s.getStream(archive, nullptr);
+    Field<void*>(v, kNext) = nullptr;
+    v[kLit] = 1;
+    v[kEnvAllowed] = 1;
+    Field<void*>(v, kDelta) = nullptr;
+    Field<int32_t>(v, kList) = 3;
+    v[0xBC] = 0;
+    int32_t list = 0;
+    s.findInt32(stream, nullptr, "prio", &list, 0);
+    Field<int32_t>(v, kList) = list;
+    s.findBool(stream, nullptr, "enable_light", reinterpret_cast<bool*>(v + kLit), 0);
+    void* delta = nullptr;
+    Field<void*>(v, kDelta) = s.findObject(stream, nullptr, "delta_state", &delta, 0) == 0 ? delta : nullptr;
+    Field<uint32_t>(v, kRestored) = Global<uint32_t>(kRestoreCount);
+    DefaultBlob(v);
+    return v;
+}
+
+// The deleting destructor (vtable slot 0, FUN_1004e412); flag 2: an array (its count before it), last first.
+void* __fastcall Delete(Visual* v, void*, uint8_t flags)
+{
+    if (!(flags & 2)) {
+        Destroy(v);
+        if (flags & 1) vc10::Free(v);
+        return v;
+    }
+    uint8_t* block = v - 4;
+    for (uint32_t i = *reinterpret_cast<uint32_t*>(block); i-- > 0;) Destroy(v + i * 0x178);
+    if (flags & 1) vc10::FreeArray(block);
+    return block;
+}
+
 void __fastcall Archive(Visual* v, void*, void* archive)
 {
     orig::RRefFrame_t_Archive(v, archive);
@@ -311,7 +349,7 @@ void Install(HMODULE orig)
     if (GetMode("Scene", Mode::Off) != Mode::On) return;
     g_orig = orig;
     g_randy = reinterpret_cast<void* const*>(GetProcAddress(orig, "?s_pcRandy@Randy_t@@1PAV1@A"));
-    if (!serialize::Get().complete || !serialize::Get().addBool) {
+    if (!serialize::Get().complete || !serialize::Get().addBool || !serialize::Get().findBool || !serialize::Get().findObject) {
         Log("visuals: serialize.dll exports missing - not replaced");
         return;
     }
@@ -325,6 +363,8 @@ void Install(HMODULE orig)
         {0x4D544, FN(Construct), "RVisual_t::RVisual_t"},
         {0x4D5E5, FN(Copy), "RVisual_t::RVisual_t(copy)"},
         {0x4D7D3, FN(Destroy), "RVisual_t::~RVisual_t"},
+        {0x4D6D3, FN(ConstructFrom), "RVisual_t::RVisual_t(archive) (FUN_1004d6d3)"},
+        {0x4E412, FN(Delete), "RVisual_t deleting destructor (FUN_1004e412)"},
         {0x4C947, FN(Archive), "RVisual_t::Archive"},
         {0x4C9A8, FN(SetMaxActiveLightCount), "RVisual_t::SetMaxActiveLightCount"},
         {0x4C9C2, FN(AddToRenderList), "RVisual_t::AddToRenderList"},

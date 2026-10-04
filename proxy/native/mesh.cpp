@@ -14,6 +14,7 @@
 // +0x1BE an occluder itself ("[OCC]..."), +0x1BF culled by its bounding volume.
 #include "native/mesh.h"
 #include "native/orig_api.gen.h"
+#include "native/serialize.h"
 #include "native/vc10.h"
 #include "native/xmath.h"
 
@@ -522,6 +523,195 @@ void __fastcall TriMeshRenderShadow(Visual* v, void*, void* vp, uint8_t* shadow)
     RasterizeShadow(v, nullptr, vp, Field<uint8_t*>(v, kData), shadow);
 }
 
+// ---- RTriMesh_t: being made, copied, archived, destroyed; its data; rays ----
+
+constexpr uint32_t kTriVtable = 0x957F4, kTriSubjectVtable = 0x957E0, kSubjectPart = 0xA4, kTimer = 0x190,
+                   kRestoredAt = 0xF0, kDataRestored = 0x5C, kTriSize = 0x1C0;
+
+void InitTriMeshPart(Visual* v)
+{
+    Field<uintptr_t>(v, 0) = reinterpret_cast<uintptr_t>(g_orig) + kTriVtable;
+    Field<uintptr_t>(v, kSubjectPart) = reinterpret_cast<uintptr_t>(g_orig) + kTriSubjectVtable;
+    Field<void*>(v, kColours) = nullptr;
+    Field<void*>(v, kData) = nullptr;
+    orig::Timer_Timer_57(v + kTimer);
+}
+
+void __fastcall SetTriMeshData(Visual* v, void*, uint8_t* data)
+{
+    if (data == Field<uint8_t*>(v, kData)) return;
+    if (data) orig::RResource_t_AddRefRResource(data);
+    if (void* old = Field<void*>(v, kData)) orig::RResource_t_ReleaseRResource(old);
+    Field<uint8_t*>(v, kData) = data;
+    if (data) Field<uint32_t>(v, kRestoredAt) = Field<uint32_t>(data, kDataRestored);
+}
+
+void PlaceFromData(Visual* v, uint8_t* data)        // its rotation (+0x38) and position (+0x2C) as the anim matrix
+{
+    xm::M4 m = xm::FromQuaternion(&Field<float>(data, 0x38));
+    m.m[12] = Field<float>(data, 0x2C), m.m[13] = Field<float>(data, 0x30), m.m[14] = Field<float>(data, 0x34);
+    orig::RRefFrame_t_SetAnimMatrix(v, m.m);
+}
+
+void __fastcall TriMeshInit(Visual* v, void*, uint8_t* data)
+{
+    SetTriMeshData(v, nullptr, data);
+    uint8_t* d = Field<uint8_t*>(v, kData);
+    if (!d) return;
+    PlaceFromData(v, d);
+    if (DataIsTransparent(d)) {
+        orig::RVisual_t_SetRenderPriority(v, 6);
+        v[kTransparentFlag] = 1;
+    }
+}
+
+void* __fastcall TriMeshConstruct(Visual* v, void*, uint8_t* data, void* parent, void* animation)
+{
+    orig::RVisual_t_RVisual_t_49(v, parent, animation);
+    InitTriMeshPart(v);
+    v[kTransparentFlag] = 0;
+    TriMeshInit(v, nullptr, data);
+    Field<uint32_t>(v, 0x17C) = 0;
+    Field<uint16_t>(v, 0x180) = 0;
+    Field<uint32_t>(v, kSorted) = 0x1000000;         // sorted, registered, occluder: no; culled by its volume: yes
+    return v;
+}
+
+void* __fastcall TriMeshCopy(Visual* v, void*, Visual* from)   // FUN_10049165
+{
+    orig::RVisual_t_RVisual_t_48(v, from);
+    InitTriMeshPart(v);
+    Field<void*>(v, kColours) = Field<void*>(from, kColours);
+    v[kTransparentFlag] = 0;
+    TriMeshInit(v, nullptr, Field<uint8_t*>(from, kData));
+    std::memcpy(v + 0x17C, from + 0x17C, 6);
+    v[kSorted] = from[kSorted];
+    v[kRegistered] = v[kIsOccluder] = 0;
+    v[kCullByVolume] = from[kCullByVolume];
+    return v;
+}
+
+// FUN_10049e12: the archive's "data" object, when it is an RTriMeshData_t.
+int32_t FindTriMeshData(void* stream, uint8_t** out)
+{
+    using DynamicCastFn = void*(__cdecl*)(void*, long, void*, void*, int);
+    static const auto dynamicCast =
+        reinterpret_cast<DynamicCastFn>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "__RTDynamicCast"));
+    void* object = nullptr;
+    int32_t error = serialize::Get().findObject(stream, nullptr, "data", &object, 0);
+    if (error) return error;
+    void* data = object ? dynamicCast(object, 0, &Global<uint8_t>(0xB60D4), &Global<uint8_t>(0xB6580), 0) : nullptr;
+    if (object && !data) return 1;
+    *out = static_cast<uint8_t*>(data);
+    return 0;
+}
+
+void* __fastcall TriMeshConstructFrom(Visual* v, void*, void* archive)   // FUN_1004927a
+{
+    Internal<void*(__fastcall*)(void*, void*, void*)>(0x4D6D3)(v, nullptr, archive);   // RVisual_t's part
+    InitTriMeshPart(v);
+    void* stream = serialize::Get().getStream(archive, nullptr);
+    Field<uint32_t>(v, 0x17C) = 0;
+    v[0x180] = 0;
+    v[kSorted] = 0;
+    v[kTransparentFlag] = 0;
+    uint8_t* data = nullptr;
+    if (FindTriMeshData(stream, &data) == 0) Field<uint8_t*>(v, kData) = data;
+    if (Field<uint8_t*>(v, kData) && data) PlaceFromData(v, data);
+    v[kRegistered] = v[kIsOccluder] = 0;
+    v[kCullByVolume] = 1;
+    return v;
+}
+
+void __fastcall TriMeshDestroy(Visual* v)
+{
+    Field<uintptr_t>(v, 0) = reinterpret_cast<uintptr_t>(g_orig) + kTriVtable;
+    Field<uintptr_t>(v, kSubjectPart) = reinterpret_cast<uintptr_t>(g_orig) + kTriSubjectVtable;
+    if (void* d = Field<void*>(v, kData)) orig::RResource_t_ReleaseRResource(d);
+    Internal<void(__fastcall*)(void*)>(0x4D7D3)(v);   // ~RVisual_t
+}
+
+void* __fastcall TriMeshDelete(Visual* v, void*, uint8_t flags)   // vtable slot 0 (FUN_10049eca)
+{
+    if (!(flags & 2)) {
+        TriMeshDestroy(v);
+        if (flags & 1) vc10::Free(v);
+        return v;
+    }
+    uint8_t* block = v - 4;
+    for (uint32_t i = *reinterpret_cast<uint32_t*>(block); i-- > 0;) TriMeshDestroy(v + i * kTriSize);
+    if (flags & 1) vc10::FreeArray(block);
+    return block;
+}
+
+void* __cdecl TriMeshInstantiate(void* archive)
+{
+    Visual* v = static_cast<Visual*>(TriMeshConstructFrom(static_cast<Visual*>(vc10::Allocate(kTriSize)), nullptr,
+                                                          archive));
+    if (Field<void*>(v, kData)) return v;
+    Virtual(v, 0, uint32_t(1));
+    return nullptr;
+}
+
+void* __fastcall TriMeshClone(Visual* v) { return TriMeshCopy(static_cast<Visual*>(vc10::Allocate(kTriSize)), nullptr, v); }
+
+void __fastcall TriMeshArchive(Visual* v, void*, void* archive)
+{
+    orig::RVisual_t_Archive(v, archive);
+    const serialize::Api& s = serialize::Get();
+    s.addObject(s.getStream(archive, nullptr), nullptr, "data", Field<void*>(v, kData));
+}
+
+void* __fastcall TriMeshVolume(Visual* v) { return Field<void*>(Field<uint8_t*>(v, kData), kDataVolume); }
+
+void __fastcall CloneMeshData(Visual* v)
+{
+    void* data = Field<void*>(v, kData);
+    void* copy = Virtual<void*>(data, 3);
+    orig::RResource_t_ReleaseRResource(data);
+    Field<void*>(v, kData) = copy;
+}
+
+const char* __fastcall TriMeshName(Visual* v) { return orig::RResource_t_GetName(Field<void*>(v, kData)); }
+
+void __fastcall DataRestore(uint8_t* data)          // FUN_1004ebf7: new hardware copies after a lost device
+{
+    const uint32_t count = Global<uint32_t>(0x17D334);
+    if (Field<uint32_t>(data, kDataRestored) == count) return;
+    for (uint8_t** m = Meshes(data).first; m != Meshes(data).last; ++m) RestoreHardware(Field<uint8_t*>(*m, kMeshData));
+    Field<uint32_t>(data, kDataRestored) = Global<uint32_t>(0x17D334);
+}
+
+void __fastcall TriMeshRestoreData(Visual* v)
+{
+    orig::RVisual_t_RestoreData(v);
+    if (uint8_t* d = Field<uint8_t*>(v, kData)) DataRestore(d);
+}
+
+// RTriMesh_t::IsRayIntersecting: the ray into the mesh's space, then each sub-mesh (the nearest hit when asked).
+bool __fastcall TriMeshRay(Visual* v, void*, const float* from, const float* along, float* at, bool nearest)
+{
+    float inverse[16];
+    std::memcpy(inverse, World(v), sizeof(inverse));
+    Internal<void(__fastcall*)(float*)>(0x6E108)(inverse);
+    float p0[3], p1[3], end[3], d[3];
+    xm::Transform(from, inverse, p0);
+    end[0] = along[0] + from[0], end[1] = along[1] + from[1], end[2] = along[2] + from[2];
+    xm::Transform(end, inverse, p1);
+    d[0] = p1[0] - p0[0], d[1] = p1[1] - p0[1], d[2] = p1[2] - p0[2];
+    const float none = 9.99999968e37f;
+    float best = none;
+    auto& meshes = Meshes(Field<uint8_t*>(v, kData));
+    if (meshes.first == meshes.last) return false;
+    for (uint8_t** m = meshes.first; m != meshes.last; ++m) {
+        if (!orig::SimpleMesh_IsRayIntersecting(*m, p0, d, at, nearest)) continue;
+        if (!nearest) return true;
+        if (best <= *at) *at = best;
+        else best = *at;
+    }
+    return best < none;
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -529,7 +719,11 @@ void Install(HMODULE orig)
     if (GetMode("Scene", Mode::Off) != Mode::On) return;
     g_orig = orig;
     g_randy = reinterpret_cast<void* const*>(GetProcAddress(orig, "?s_pcRandy@Randy_t@@1PAV1@A"));
-    if (!g_randy) return;
+    const serialize::Api& s = serialize::Get();
+    if (!g_randy || !s.complete || !s.findObject) {
+        Log("meshes: serialize.dll / randy31 exports missing - not replaced");
+        return;
+    }
     struct Entry {
         uint32_t rva;
         void* target;
@@ -560,6 +754,22 @@ void Install(HMODULE orig)
         {0x49761, FN(TriMeshRender), "RTriMesh_t::Render"},
         {0x4934C, FN(TriMeshRenderDepth), "RTriMesh_t::RenderDepth"},
         {0x48FBE, FN(TriMeshRenderShadow), "RTriMesh_t::RenderShadow"},
+        {0x49017, FN(SetTriMeshData), "RTriMesh_t::SetTriMeshData"},
+        {0x4905C, FN(TriMeshInit), "RTriMesh_t::Init"},
+        {0x490E3, FN(TriMeshConstruct), "RTriMesh_t::RTriMesh_t"},
+        {0x49165, FN(TriMeshCopy), "RTriMesh_t::RTriMesh_t(copy) (FUN_10049165)"},
+        {0x4927A, FN(TriMeshConstructFrom), "RTriMesh_t::RTriMesh_t(archive) (FUN_1004927a)"},
+        {0x48F39, FN(TriMeshDestroy), "RTriMesh_t::~RTriMesh_t"},
+        {0x49ECA, FN(TriMeshDelete), "RTriMesh_t deleting destructor (FUN_10049eca)"},
+        {0x49502, FN(TriMeshInstantiate), "RTriMesh_t::Instantiate"},
+        {0x49240, FN(TriMeshClone), "RTriMesh_t::Clone"},
+        {0x48F85, FN(TriMeshArchive), "RTriMesh_t::Archive"},
+        {0x48FB4, FN(TriMeshVolume), "RTriMesh_t::GetBoundingVolume"},
+        {0x48FEF, FN(CloneMeshData), "RTriMesh_t::CloneMeshData"},
+        {0x4900C, FN(TriMeshName), "RTriMesh_t::GetName"},
+        {0x4EBF7, FN(DataRestore), "RVisualData_t restore (FUN_1004ebf7)"},
+        {0x490CA, FN(TriMeshRestoreData), "RTriMesh_t::RestoreData"},
+        {0x49867, FN(TriMeshRay), "RTriMesh_t::IsRayIntersecting"},
     };
 #undef FN
     int installed = 0;

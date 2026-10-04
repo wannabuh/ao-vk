@@ -343,3 +343,21 @@
 0x4934C	replaced	proxy/native/mesh.cpp	RTriMesh_t::RenderDepth
 0x48FBE	replaced	proxy/native/mesh.cpp	RTriMesh_t::RenderShadow
 0x2B4A6	replaced	proxy/native/camera.cpp	RCamera_t bounding volume test (FUN_1002b4a6)
+0x49017	replaced	proxy/native/mesh.cpp	RTriMesh_t::SetTriMeshData
+0x4905C	replaced	proxy/native/mesh.cpp	RTriMesh_t::Init
+0x490E3	replaced	proxy/native/mesh.cpp	RTriMesh_t::RTriMesh_t
+0x49165	replaced	proxy/native/mesh.cpp	RTriMesh_t::RTriMesh_t(copy) (FUN_10049165)
+0x4927A	replaced	proxy/native/mesh.cpp	RTriMesh_t::RTriMesh_t(archive) (FUN_1004927a)
+0x48F39	replaced	proxy/native/mesh.cpp	RTriMesh_t::~RTriMesh_t
+0x49ECA	replaced	proxy/native/mesh.cpp	RTriMesh_t deleting destructor (FUN_10049eca)
+0x49502	replaced	proxy/native/mesh.cpp	RTriMesh_t::Instantiate
+0x49240	replaced	proxy/native/mesh.cpp	RTriMesh_t::Clone
+0x48F85	replaced	proxy/native/mesh.cpp	RTriMesh_t::Archive
+0x48FB4	replaced	proxy/native/mesh.cpp	RTriMesh_t::GetBoundingVolume
+0x48FEF	replaced	proxy/native/mesh.cpp	RTriMesh_t::CloneMeshData
+0x4900C	replaced	proxy/native/mesh.cpp	RTriMesh_t::GetName
+0x4EBF7	replaced	proxy/native/mesh.cpp	RVisualData_t restore (FUN_1004ebf7)
+0x490CA	replaced	proxy/native/mesh.cpp	RTriMesh_t::RestoreData
+0x49867	replaced	proxy/native/mesh.cpp	RTriMesh_t::IsRayIntersecting
+0x4D6D3	replaced	proxy/native/visual.cpp	RVisual_t::RVisual_t(archive) (FUN_1004d6d3)
+0x4E412	replaced	proxy/native/visual.cpp	RVisual_t deleting destructor (FUN_1004e412)

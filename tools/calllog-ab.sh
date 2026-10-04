@@ -47,6 +47,7 @@ for scene in $scenes; do
         echo "$scene: CRASHED"; grep -h "harness crashed" build/h-ab-off.txt build/h-ab-on.txt; fail=1
     elif [ "$n" -lt 10 ]; then
         echo "$scene: no call log ($n lines)"; fail=1
+        for v in off on; do echo "  $v:"; tail -n 3 "build/h-ab-$v.txt" | sed 's/^/    /'; done
     elif tools/calllog-compare.py "$logs/calllog-off.txt" "$logs/calllog-on.txt" >/dev/null &&
          diff -q <(grep -E '^(pick|query|material)' build/h-ab-off.txt) <(grep -E '^(pick|query|material)' build/h-ab-on.txt) >/dev/null; then
         echo "$scene: same ($n calls)"
