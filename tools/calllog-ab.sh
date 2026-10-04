@@ -12,7 +12,7 @@ logs=$AO_CLIENT/../logs
 c=$PWD/build/characters
 s=$PWD/build/statics
 character="--character $c/5900.catmesh $c/9386.catanim --crowd 3 --time 400"
-scenes=${*:-"basic dynamic materials plain blend shadow alpha env sfx1 sfx2 lights manylights culled statics staticshadow"}
+scenes=${*:-"basic dynamic materials plain blend shadow alpha env sfx1 sfx2 lights manylights culled terrain statics staticshadow"}
 grep -q "^$mode=" "$ini" || printf '%s=off\n' "$mode" >> "$ini"
 before=$(grep "^$mode=" "$ini" | cut -d= -f2)
 fail=0
@@ -30,6 +30,7 @@ for scene in $scenes; do
         sfx2) args="$character --sfx 2" ;;
         lights) args="$character --lights 2" ;;
         manylights) args="$character --crowd 12 --lights 12" ;;
+        terrain) args="$character --crowd 100 --terrain 6" ;;   # 40 behind a ridge: the heightmap occluder
         culled) args="$character --crowd 49 --lights 6 --look 9 0 6" ;;   # half of them out of view
         statics) args="$character --static $s/17879.archive --statics 4" ;;
         staticshadow) args="$character --static $s/17879.archive --statics 4 --shadow" ;;

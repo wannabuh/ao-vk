@@ -267,6 +267,7 @@ struct CharacterScene {
 int g_carriedLights;                                 // --lights N: the first N characters carry a point light
 float g_alpha = 1.0f;                                // --alpha A: the characters' transparency
 int g_sfx;                                           // --sfx N: their effect type (1 special light, 2 pulse)
+float g_terrain;                                      // --terrain H: a heightmap with a ridge H metres high
 bool g_look;                                         // --look X Y Z: where the camera looks instead (some culled)
 float g_lookAt[3];
 bool g_env;                                          // --env: their materials get an environment map
@@ -408,6 +409,22 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
     Vector3 sunPos{3.0f, 6.0f, -5.0f}, origin{0.0f, 0.0f, 0.0f};
     setPos(sun, nullptr, &sunPos, nullptr);
     setTarget(sun, nullptr, &origin);
+    if (g_terrain > 0.0f) {
+        // The occluder's heightmap starts at the world's origin: the scene moved onto it (100, 0, 100), a ridge across
+        // the crowd's front (64 x 64 cells of 4 m, heights in centimetres), occlusion culling on (its default).
+        Vector3 offset{100.0f, 0.0f, 100.0f};
+        setPos(scene.root, nullptr, &offset, nullptr);
+        void* occ = Export<void*(__cdecl*)()>("?Get@HMOccluder_t@@SAAAV1@XZ")();
+        Export<void(__fastcall*)(void*, void*, int, int)>("?SetHeightmapSize@HMOccluder_t@@QAEXHH@Z")(occ, nullptr, 64, 64);
+        Export<void(__fastcall*)(void*, void*, float, float, float)>("?SetHeightmapScale@HMOccluder_t@@QAEXMMM@Z")(
+            occ, nullptr, 4.0f, 0.0f, 0.01f);
+        static std::vector<uint16_t> heights(64 * 64, 0);
+        const int row = 25;                          // z 100..104: along the crowd's front row
+        for (int x = 0; x < 64; ++x) heights[size_t(row) * 64 + size_t(x)] = uint16_t(g_terrain * 100.0f);
+        Export<void(__fastcall*)(void*, void*, const uint16_t*, int, int, int)>(
+            "?SetHeightmapPatch@HMOccluder_t@@QAEXPBGHHH@Z")(occ, nullptr, heights.data(), 0, 0, 63);
+        std::printf("terrain: ridge %.1f m at row %d\n", g_terrain, row);
+    }
     std::printf("character: mesh %p (%d materials), %d characters, animation %.0f ms\n", mesh, materials, count,
                 scene.duration);
     return true;
@@ -691,6 +708,7 @@ int main(int argc, char** argv)
         else if (a == "--pick") pick = true;
         else if (a == "--still") still = true;
         else if (a == "--destroy") destroy = true;
+        else if (a == "--terrain" && i + 1 < argc) g_terrain = float(std::atof(argv[++i]));
         else if (a == "--lights" && i + 1 < argc) g_carriedLights = std::atoi(argv[++i]);
         else if (a == "--alpha" && i + 1 < argc) g_alpha = float(std::atof(argv[++i]));
         else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);

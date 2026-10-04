@@ -416,3 +416,22 @@
 0x462AD	replaced	proxy/native/resource.cpp	RResource_t::RResource_t(copy) (FUN_100462ad)
 0x4624F	replaced	proxy/native/resource.cpp	RResource_t counted flag (FUN_1004624f)
 0x46266	replaced	proxy/native/resource.cpp	RResource_t references (FUN_10046266)
+0x2FC74	replaced	proxy/native/occluder.cpp	rounding, half down (FUN_1002fc74)
+0x2FCAE	replaced	proxy/native/occluder.cpp	rounding (FUN_1002fcae)
+0x2FC3A	replaced	proxy/native/occluder.cpp	rounding, nudged (FUN_1002fc3a)
+0x2FD6D	replaced	proxy/native/occluder.cpp	HMOccluder_t reset (FUN_1002fd6d)
+0x3ED8B	replaced	proxy/native/occluder.cpp	HMOccluder_t::HMOccluder_t (FUN_1003ed8b)
+0x2FEAF	replaced	proxy/native/occluder.cpp	HMOccluder_t save and free (FUN_1002feaf)
+0x3FB03	replaced	proxy/native/occluder.cpp	HMOccluder_t::Get
+0x3FB49	replaced	proxy/native/occluder.cpp	HMOccluder_t::ShutdownHMOccluder
+0x30043	replaced	proxy/native/occluder.cpp	HMOccluder_t::SetHeightmapSize
+0x300B4	replaced	proxy/native/occluder.cpp	HMOccluder_t::SetHeightmapScale
+0x300C7	replaced	proxy/native/occluder.cpp	HMOccluder_t::SetHeightmapPatch
+0x3011C	replaced	proxy/native/occluder.cpp	HMOccluder_t::SetDataPath
+0x3E85B	replaced	proxy/native/occluder.cpp	HMOccluder_t::ModifyOcclusion
+0x3EC30	replaced	proxy/native/occluder.cpp	HMOccluder_t::GetHeight
+0x3ED78	replaced	proxy/native/occluder.cpp	HMOccluder_t::ToggleOcclusionCulling
+0x2FCBF	replaced	proxy/native/occluder.cpp	RViewPort_t rectangle as floats (FUN_1002fcbf)
+0x2FD3C	replaced	proxy/native/occluder.cpp	RCamera_t field of view (FUN_1002fd3c)
+0x3EDC1	replaced	proxy/native/occluder.cpp	HMOccluder_t horizons (FUN_1003edc1)
+0x3E8F6	replaced	proxy/native/occluder.cpp	HMOccluder_t visibility (FUN_1003e8f6)

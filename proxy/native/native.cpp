@@ -14,6 +14,7 @@
 #include "native/camera.h"
 #include "native/mesh.h"
 #include "native/mesh_data.h"
+#include "native/occluder.h"
 
 namespace rnative {
 
@@ -39,6 +40,7 @@ void Install(HMODULE orig)
     camera::Install(orig);
     mesh::Install(orig);
     meshdata::Install(orig);
+    occluder::Install(orig);
 }
 
 }  // namespace rnative
