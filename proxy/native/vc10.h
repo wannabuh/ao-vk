@@ -1,6 +1,6 @@
 // Living inside the original's objects: its heap (msvcr100.dll - DisplaySystem and Randy allocate and free there, so
 // memory that crosses into their hands must come from it too) and its containers' layouts (Visual Studio 2010:
-// std::vector = first, last, end; std::string = 16-byte buffer or pointer, size, capacity). Our own STL differs, so
+// std::vector = first, last, end, allocator; std::string = 16-byte buffer or pointer, size, capacity, allocator). Our own STL differs, so
 // these fields are handled by the helpers here.
 #pragma once
 
@@ -19,12 +19,13 @@ void Free(void* p);
 void* AllocateArray(size_t bytes);
 void FreeArray(void* p);
 
-// std::vector<T> as VS2010 lays it out (release build: no proxy).
+// std::vector<T> as VS2010 lays it out (release build: no proxy; the empty allocator padded to 4 bytes).
 template <typename T>
 struct Vector {
     T* first;
     T* last;
     T* end;
+    uint32_t allocator;
     size_t size() const { return size_t(last - first); }
     size_t capacity() const { return size_t(end - first); }
     T& operator[](size_t i) { return first[i]; }
@@ -45,7 +46,10 @@ struct Vector {
     }
     void push_back(const T& v)
     {
-        if (last == end) reserve(capacity() ? capacity() + capacity() / 2 + 1 : 4);   // VS2010 grows by half
+        if (last == end) {                          // VS2010's _Grow_to: half again, at least one more
+            size_t grown = capacity() + capacity() / 2;
+            reserve(grown < size() + 1 ? size() + 1 : grown);
+        }
         std::memcpy(static_cast<void*>(last), &v, sizeof(T));
         ++last;
     }
@@ -61,7 +65,7 @@ struct Vector {
         first = last = end = nullptr;
     }
 };
-static_assert(sizeof(Vector<int>) == 12, "VS2010 std::vector");
+static_assert(sizeof(Vector<int>) == 16, "VS2010 std::vector");
 
 // std::string as VS2010 lays it out.
 struct String {
