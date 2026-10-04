@@ -31,6 +31,11 @@ struct Api {
     int32_t(__fastcall* findVector3)(const void* message, void*, const char* name, float* out, int32_t index) = nullptr;
     int32_t(__fastcall* findQuat)(const void* message, void*, const char* name, float* out, int32_t index) = nullptr;
     int32_t(__fastcall* findMatrix4)(const void* message, void*, const char* name, float* out, int32_t index) = nullptr;
+    // Not part of `complete` (only lights use them).
+    int32_t(__fastcall* addData)(void* message, void*, const char* name, const void* data, int32_t bytes, bool copy,
+                                 int32_t count) = nullptr;
+    int32_t(__fastcall* findData)(const void* message, void*, const char* name, const void** out, int32_t* bytes,
+                                  int32_t index) = nullptr;
     bool complete = false;
 };
 

@@ -328,6 +328,12 @@ void __fastcall SetLight(void* render, void*, uint32_t index, void* light)
     if (HRESULT hr = Com(Device(render), 0x48, DWORD(index), light)) Failed("render_t::SetLight", hr);
 }
 
+void __fastcall LightEnable(void* render, void*, uint32_t index, uint32_t enable)   // FUN_100218be
+{
+    if (NoDraw() || !Device(render)) return;
+    if (HRESULT hr = Com(Device(render), 0xB0, DWORD(index), BOOL(enable))) Failed("render_t::LightEnable", hr);
+}
+
 void __fastcall GetViewport(void* render, void*, void* viewport)
 {
     if (!Device(render)) return;
@@ -511,6 +517,7 @@ void Install(HMODULE orig)
         {0x23276, FN(DrawUP<kStrip>), "render_t::RenderTriangleStrip"},
         {0x2382A, FN(SetTransformMatrix), "render_t::SetTransformMatrix"},
         {0x21815, FN(SetLight), "render_t::SetLight"},
+        {0x218BE, FN(LightEnable), "render_t::LightEnable (FUN_100218be)"},
         {0x234D8, FN(GetViewport), "render_t::GetViewport"},
         {0x24A77, FN(CreateVertexBuffer), "render_t::CreateVertexBuffer"},
         {0x24B25, FN(ProcessVertices), "render_t::ProcessVertices"},

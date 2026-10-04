@@ -266,6 +266,8 @@ struct CharacterScene {
 int g_carriedLights;                                 // --lights N: the first N characters carry a point light
 float g_alpha = 1.0f;                                // --alpha A: the characters' transparency
 int g_sfx;                                           // --sfx N: their effect type (1 special light, 2 pulse)
+bool g_look;                                         // --look X Y Z: where the camera looks instead (some culled)
+float g_lookAt[3];
 bool g_env;                                          // --env: their materials get an environment map
 bool g_shadow;                                       // --shadow: the first one also drawn as a projected shadow
 bool g_dynamic;                                      // --dynamic: the 2D scene also draws through DynamicVB_c
@@ -395,6 +397,7 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
     float back = count == 1 ? 4.0f : 2.0f + 1.6f * float(columns);
     Vector3 eye{0.0f, count == 1 ? 1.2f : 0.5f * back, -back}, target{0.0f, 1.0f, 0.8f * float(columns / 2)};
     setPos(scene.camera, nullptr, &eye, nullptr);
+    if (g_look) target = Vector3{g_lookAt[0], g_lookAt[1], g_lookAt[2]};
     setTarget(scene.camera, nullptr, &target);
     // A white sun from above and in front (RLight_t::Type_e 1 = directional).
     using LightCtorFn = void*(__fastcall*)(void* self, void*, void* parent, const float* rgb, int type, void* anim);
@@ -678,6 +681,10 @@ int main(int argc, char** argv)
         else if (a == "--character" && i + 2 < argc) { characterMesh = argv[++i]; characterAnim = argv[++i]; }
         else if (a == "--time" && i + 1 < argc) characterTime = float(std::atof(argv[++i]));
         else if (a == "--crowd" && i + 1 < argc) crowd = std::max(1, std::atoi(argv[++i]));
+        else if (a == "--look" && i + 3 < argc) {
+            g_look = true;
+            for (float& v : g_lookAt) v = float(std::atof(argv[++i]));
+        }
         else if (a == "--pick") pick = true;
         else if (a == "--still") still = true;
         else if (a == "--lights" && i + 1 < argc) g_carriedLights = std::atoi(argv[++i]);

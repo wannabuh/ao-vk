@@ -36,6 +36,8 @@ const Api& Get()
             get(a.findVector3, "?FindVector3@Message_c@fun@@QBE?AW4MsgErr_e@12@PBDPAVVector3_t@@H@Z") &&
             get(a.findQuat, "?FindQuat@Message_c@fun@@QBE?AW4MsgErr_e@12@PBDPAVQuaternion_t@@H@Z") &&
             get(a.findMatrix4, "?FindMatrix4@Message_c@fun@@QBE?AW4MsgErr_e@12@PBDPAVTMatrix4_t@@H@Z");
+        get(a.addData, "?AddData@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDPBXH_NH@Z");
+        get(a.findData, "?FindData@Message_c@fun@@QBE?AW4MsgErr_e@12@PBDPAPBXPAHH@Z");
         return a;
     }();
     return api;

@@ -11,6 +11,7 @@
 #include "native/viewport.h"
 #include "native/refframe.h"
 #include "native/visual.h"
+#include "native/camera.h"
 
 namespace rnative {
 
@@ -33,6 +34,7 @@ void Install(HMODULE orig)
     viewport::Install(orig);
     refframe::Install(orig);
     visual::Install(orig);
+    camera::Install(orig);
 }
 
 }  // namespace rnative

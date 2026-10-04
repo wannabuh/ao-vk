@@ -289,3 +289,33 @@
 0x4CC29	replaced	proxy/native/visual.cpp	RVisual_t::RestoreData
 0x4CC35	replaced	proxy/native/visual.cpp	RVisual_t::Process
 0x4CE96	replaced	proxy/native/visual.cpp	RVisual_t::CullLights
+0x6E108	replaced	proxy/native/camera.cpp	affine inverse (FUN_1006e108)
+0x2A68A	replaced	proxy/native/camera.cpp	RCamera_t::RCamera_t
+0x2A785	replaced	proxy/native/camera.cpp	RCamera_t::RCamera_t(copy) (FUN_1002a785)
+0x2A949	replaced	proxy/native/camera.cpp	RCamera_t::RCamera_t(archive) (FUN_1002a949)
+0x2ADBF	replaced	proxy/native/camera.cpp	RCamera_t::Instantiate
+0x2BBB5	replaced	proxy/native/camera.cpp	RCamera_t clone (FUN_1002bbb5)
+0x2A869	replaced	proxy/native/camera.cpp	RCamera_t::~RCamera_t (FUN_1002a869)
+0x2BBEF	replaced	proxy/native/camera.cpp	RCamera_t deleting destructor (FUN_1002bbef)
+0x2AA66	replaced	proxy/native/camera.cpp	RCamera_t::Archive (FUN_1002aa66)
+0x2A883	replaced	proxy/native/camera.cpp	RCamera_t::GetViewPlaneWindow
+0x2A8E1	replaced	proxy/native/camera.cpp	RCamera_t::SetViewPlaneWindow
+0x2AB00	replaced	proxy/native/camera.cpp	RCamera_t::GetViewMatrix
+0x2AB22	replaced	proxy/native/camera.cpp	RCamera_t::GetTransformationMatrix
+0x2ADF7	replaced	proxy/native/camera.cpp	RCamera_t frustum (FUN_1002adf7)
+0x2B3E4	replaced	proxy/native/camera.cpp	RCamera_t sphere test (FUN_1002b3e4)
+0x3FD4A	replaced	proxy/native/camera.cpp	RLight_t::RLight_t
+0x3FB6B	replaced	proxy/native/camera.cpp	RLight_t::RLight_t(copy) (FUN_1003fb6b)
+0x3FE81	replaced	proxy/native/camera.cpp	RLight_t::RLight_t(archive)
+0x3FF26	replaced	proxy/native/camera.cpp	RLight_t::Instantiate
+0x16C78	replaced	proxy/native/camera.cpp	RLight_t clone (FUN_10016c78)
+0x3FBC6	replaced	proxy/native/camera.cpp	RLight_t::~RLight_t (FUN_1003fbc6)
+0x170B0	replaced	proxy/native/camera.cpp	RLight_t deleting destructor (FUN_100170b0)
+0x3FBD8	replaced	proxy/native/camera.cpp	RLight_t::Archive
+0x3FC21	replaced	proxy/native/camera.cpp	RLight_t::AddChild (FUN_1003fc21)
+0x3FC37	replaced	proxy/native/camera.cpp	RLight_t::RemoveChild (FUN_1003fc37)
+0x3FC4D	replaced	proxy/native/camera.cpp	RLight_t type name (FUN_1003fc4d)
+0x3FC74	replaced	proxy/native/camera.cpp	RLight_t::Enable
+0x3FCDE	replaced	proxy/native/camera.cpp	RLight_t::SetSpotAngles
+0x3FF72	replaced	proxy/native/camera.cpp	RLight_t::Process (FUN_1003ff72)
+0x218BE	replaced	proxy/native/device.cpp	render_t::LightEnable (FUN_100218be)
