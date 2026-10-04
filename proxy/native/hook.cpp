@@ -129,6 +129,78 @@ void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t co
     return tramp;
 }
 
+namespace {
+
+// "module+offset" for an address (module = file name), or the bare address.
+void Where(uintptr_t address, char* out, size_t size)
+{
+    HMODULE m = nullptr;
+    char path[MAX_PATH] = "";
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<const char*>(address), &m) &&
+        GetModuleFileNameA(m, path, sizeof(path))) {
+        const char* name = std::strrchr(path, '\\');
+        std::snprintf(out, size, "%s+%lx", name ? name + 1 : path, (unsigned long)(address - reinterpret_cast<uintptr_t>(m)));
+    } else {
+        std::snprintf(out, size, "%08lx", (unsigned long)address);
+    }
+}
+
+bool IsCode(uintptr_t address)                      // in a loaded module's image
+{
+    HMODULE m = nullptr;
+    return GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                              reinterpret_cast<const char*>(address), &m);
+}
+
+LONG CALLBACK CrashLogger(EXCEPTION_POINTERS* e)
+{
+    static LONG reports;
+    const DWORD code = e->ExceptionRecord->ExceptionCode;
+    if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION && code != EXCEPTION_STACK_OVERFLOW)
+        return EXCEPTION_CONTINUE_SEARCH;
+    char where[MAX_PATH + 32];
+    Where(reinterpret_cast<uintptr_t>(e->ExceptionRecord->ExceptionAddress), where, sizeof(where));
+    static const char* const kWatched[] = {"randy31.dll+", "randy31_orig.dll+", "DisplaySystem.dll+", "Gamecode.dll+"};
+    bool watched = false;
+    for (const char* m : kWatched) watched |= _strnicmp(where, m, std::strlen(m)) == 0;
+    if (!watched || InterlockedIncrement(&reports) > 8) return EXCEPTION_CONTINUE_SEARCH;
+    const ULONG_PTR* info = e->ExceptionRecord->ExceptionInformation;
+    Log("fault %08lx at %s (%s %08lx), thread %lu - first chance, may be handled", (unsigned long)code, where,
+        code == EXCEPTION_ACCESS_VIOLATION ? (info[0] ? "writing" : "reading") : "-",
+        (unsigned long)(code == EXCEPTION_ACCESS_VIOLATION ? info[1] : 0), (unsigned long)GetCurrentThreadId());
+    const CONTEXT* c = e->ContextRecord;
+    Log("  eax %08lx ebx %08lx ecx %08lx edx %08lx esi %08lx edi %08lx ebp %08lx esp %08lx", c->Eax, c->Ebx, c->Ecx,
+        c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp);
+    // Return addresses on the stack (anything pointing into a module).
+    const auto* stack = reinterpret_cast<const uintptr_t*>(c->Esp);
+    int shown = 0;
+    for (int i = 0; i < 256 && shown < 20; ++i) {
+        uintptr_t v;
+        __try {
+            v = stack[i];
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            break;
+        }
+        if (v < 0x10000 || !IsCode(v)) continue;
+        Where(v, where, sizeof(where));
+        Log("  [esp+%03x] %s", i * 4, where);
+        ++shown;
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+}  // namespace
+
+void InstallCrashLog()
+{
+    static bool done;
+    if (!done) {
+        done = true;
+        AddVectoredExceptionHandler(1, &CrashLogger);
+    }
+}
+
 bool KnownBuild(HMODULE module)
 {
     static int known = -1;

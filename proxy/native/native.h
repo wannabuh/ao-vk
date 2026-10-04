@@ -59,6 +59,10 @@ bool Replaceable(HMODULE module, uint32_t rva);
 // Replaces a vtable entry (`vtable` = rva of the table) that holds module + `expected`; returns the original.
 void* HookSlot(HMODULE module, uint32_t vtable, uint32_t slot, uint32_t expected, void* target, const char* what);
 
+// Logs the first few faults (access violations etc.) in Randy (ours or the original), DisplaySystem or Gamecode, with their module + offset and the
+// return addresses on the stack, before anyone handles them (randy-vk.log).
+void InstallCrashLog();
+
 // Every replacement, once randy31_orig.dll is loaded (native.cpp). `orig` is its module.
 void Install(HMODULE orig);
 
