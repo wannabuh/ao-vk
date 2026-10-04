@@ -34,6 +34,23 @@ T Export(const char* name)
     return p;
 }
 
+// A checksum of the DeviceState (render states, texture stage states 1..24, textures: priority / applied / wanted,
+// their changed bits) - not texture stage state 0 or padding, which nothing writes.
+void PrintDeviceState(const char* what, const void* deviceState)
+{
+    const uint8_t* ds = static_cast<const uint8_t*>(deviceState);
+    uint32_t sum = 0;
+    auto add = [&](uint32_t offset, uint32_t bytes) {
+        for (uint32_t i = 0; i < bytes; ++i) sum = sum * 31 + ds[offset + i];
+    };
+    add(0, 0x741);                                   // render states, changed bits, flag
+    for (uint32_t array : {0x744u, 0xA64u, 0xD84u})
+        for (uint32_t stage = 0; stage < 8; ++stage) add(array + (stage * 0x19 + 1) * 4, 24 * 4);
+    for (uint32_t stage = 0; stage < 8; ++stage) add(0x10A4 + stage * 8, 5);
+    add(0x10E4, 0x65);                               // stages in use, textures, changed bits, flag
+    std::printf("%s %08x\n", what, sum);
+}
+
 // Layout of the VS2010 std::string Randy reports errors into (release build: 16-byte buffer, size, capacity).
 struct Vc10String {
     union { char buf[16]; char* ptr; };
@@ -851,6 +868,7 @@ int main(int argc, char** argv)
     void* viewport = Export<ViewPortCtorFn>("??0RViewPort_t@@QAE@IIIIABVRGB_t@@@Z")(
         viewportStorage, nullptr, 0, 0, width, height, Export<void*>("?white@RGB_t@@2V1@A"));   // clear colour
     void* deviceState = *reinterpret_cast<void**>(static_cast<uint8_t*>(viewport) + 8);   // RViewPort_t+8
+    PrintDeviceState("devicestate (new viewport)", deviceState);
 
     auto open = Export<OpenFn>("?Open@RViewPort_t@@QAE_NPA_N@Z");
     auto close = Export<CloseFn>("?Close@RViewPort_t@@QAEXXZ");
@@ -1046,6 +1064,7 @@ int main(int argc, char** argv)
         }
         flip(randy, nullptr, false);
     }
+    PrintDeviceState("devicestate (end)", deviceState);
     if (g_terrain > 0.0f) {                          // the heightmap as meshes left it
         uint8_t* occ = static_cast<uint8_t*>(Export<void*(__cdecl*)()>("?Get@HMOccluder_t@@SAAAV1@XZ")());
         const uint16_t* heights = *reinterpret_cast<uint16_t**>(occ);

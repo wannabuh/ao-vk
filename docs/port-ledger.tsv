@@ -566,3 +566,6 @@
 0x29F2D	replaced	proxy/native/bvolume.cpp	BVolume_t::Archive
 0x29E76	replaced	proxy/native/bvolume.cpp	BVolume_t::~BVolume_t
 0x12B1F	replaced	proxy/native/bvolume.cpp	BVolume_t deleting destructor (FUN_10012b1f)
+0x1BD36	replaced	proxy/native/device.cpp	DeviceState read back from the device (FUN_1001bd36)
+0x1BDF2	replaced	proxy/native/device.cpp	DeviceState instance, made on first use (FUN_1001bdf2)
+0x1BD14	replaced	proxy/native/device.cpp	DeviceState shutdown (FUN_1001bd14)

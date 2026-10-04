@@ -6,7 +6,9 @@
 // DeviceState: render states wanted +0x4C8 / applied +0x264 (one per D3DRENDERSTATETYPE), changed bits +0x72C (5
 // dwords) and flag +0x740; texture stage states wanted +0xD84 / applied +0xA64 (0x19 per stage), changed bits per stage
 // +0x10A4 + stage * 8 (a dword, then a flag byte), stages in use +0x10E4; textures (surface_t*) wanted +0x1128 /
-// applied +0x1108, changed bits +0x1148, flag +0x114C.
+// applied +0x1108, changed bits +0x1148, flag +0x114C. Priorities (never read): render states +0x000, texture stage
+// states +0x744, textures +0x10E8. One DeviceState (0x1150 bytes) for everything: 0x10168FEC, made by Randy_t's
+// constructor, read back from the device on every Flip and new viewport.
 // VertexBuffer_c: one pointer to its VertexBufferImpl_c (0x1C bytes): the IDirect3DVertexBuffer7, FVF, flags (8 =
 // write only), memory (2 = system memory), bytes, stride, vertex count.
 #include "native/device.h"
@@ -362,6 +364,7 @@ void __fastcall ProcessVertices(void* render, void*, void* destination, uint32_t
 constexpr uint32_t kRsWanted = 0x4C8, kRsApplied = 0x264, kRsChanged = 0x72C, kRsFlag = 0x740;
 constexpr uint32_t kTssWanted = 0xD84, kTssApplied = 0xA64, kTssChanged = 0x10A4, kStages = 0x10E4;
 constexpr uint32_t kTexWanted = 0x1128, kTexApplied = 0x1108, kTexChanged = 0x1148, kTexFlag = 0x114C;
+constexpr uint32_t kRsPriority = 0x000, kTssPriority = 0x744, kTexPriority = 0x10E8;
 
 void Mark(uint32_t& bits, uint32_t bit, bool changed)
 {
@@ -427,11 +430,9 @@ void TakeChanged(uint32_t* bits, int words, Fn&& fn)
     for (int i = 0; i < n; ++i) fn(list[i]);
 }
 
-void __fastcall UpdateDevice(uint8_t* ds)
+// The render states changed since the last update, to the device (FUN_1001ba52).
+void FlushRenderStates(uint8_t* ds, void* device, bool apply)
 {
-    void* render = *g_render;
-    void* device = Device(render);
-    const bool apply = !NoDraw() && device;
     if (ds[kRsFlag]) {
         TakeChanged(&Field<uint32_t>(ds, kRsChanged), 5, [&](uint32_t s) {
             const uint32_t v = Field<uint32_t>(ds, kRsWanted + s * 4);
@@ -441,6 +442,14 @@ void __fastcall UpdateDevice(uint8_t* ds)
         });
         ds[kRsFlag] = 0;
     }
+}
+
+void __fastcall UpdateDevice(uint8_t* ds)
+{
+    void* render = *g_render;
+    void* device = Device(render);
+    const bool apply = !NoDraw() && device;
+    FlushRenderStates(ds, device, apply);
     for (uint32_t stage = 0; stage < Field<uint32_t>(ds, kStages); ++stage) {
         uint8_t* changed = ds + kTssChanged + stage * 8;
         if (!changed[4]) continue;
@@ -464,6 +473,92 @@ void __fastcall UpdateDevice(uint8_t* ds)
         });
         ds[kTexFlag] = 0;
     }
+}
+
+
+// Render states D3D7 knows (FUN_1001b9c4): the others are neither asked for nor kept.
+bool KnownRenderState(uint32_t s)
+{
+    if (s >= 0x21 && s <= 0x26) return true;
+    if (s <= 0x26) {                                // 2..0x1E, as its byte table has them
+        static const uint32_t known = 0x7FD9C794;   // bit s: 2 4 7-10 14-16 19 20 22-30
+        return s < 31 && (known >> s & 1);
+    }
+    if (s <= 0x3C) return (s >= 0x34) || s == 0x28 || s == 0x29 || s == 0x2F || s == 0x30;
+    return (s >= 0x80 && s <= 0x94) || s == 0x97 || s == 0x98;
+}
+
+// FUN_1001bd36: the pending render states to the device, then everything as the device has it (texture stage
+// states 1..24 of 8 stages); wanted = applied, priorities 0, no textures (not released: the wanted ones are forgotten).
+void __fastcall Capture(uint8_t* ds)
+{
+    void* device = Device(*g_render);
+    const bool ask = !NoDraw() && device;
+    FlushRenderStates(ds, device, ask);
+    for (uint32_t s = 0; s < 0x99; ++s) {
+        uint32_t& applied = Field<uint32_t>(ds, kRsApplied + s * 4);
+        if (KnownRenderState(s)) {
+            if (ask)
+                if (HRESULT hr = Com(device, 0x54, DWORD(s), &applied)) Failed("render_t::GetRenderState", hr);
+            Field<uint32_t>(ds, kRsWanted + s * 4) = applied;
+        } else {
+            applied = 0;
+            Field<uint32_t>(ds, kRsWanted + s * 4) = 0;
+        }
+        Field<uint32_t>(ds, kRsPriority + s * 4) = 0;
+    }
+    for (uint32_t stage = 0; stage < 8; ++stage) {
+        for (uint32_t type = 1; type < 0x19; ++type) {
+            const uint32_t i = stage * 0x19 + type;
+            uint32_t& applied = Field<uint32_t>(ds, kTssApplied + i * 4);
+            if (ask)
+                if (HRESULT hr = Com(device, 0x90, DWORD(stage), DWORD(type), &applied))
+                    Failed("render_t::GetTextureStageState", hr);
+            Field<uint32_t>(ds, kTssPriority + i * 4) = 0;
+            Field<uint32_t>(ds, kTssWanted + i * 4) = applied;
+        }
+        Field<void*>(ds, kTexApplied + stage * 4) = nullptr;
+        Field<void*>(ds, kTexWanted + stage * 4) = nullptr;
+        Field<uint32_t>(ds, kTexPriority + stage * 4) = 0;
+    }
+}
+
+uint8_t*& Instance() { return Field<uint8_t*>(g_orig, 0x168FEC); }
+
+// FUN_1001bdf2: the DeviceState, made the first time (FUN_1001c408: nothing changed, then read back from the device).
+uint8_t* __cdecl GetDeviceState()
+{
+    uint8_t*& ds = Instance();
+    if (!ds) {
+        ds = static_cast<uint8_t*>(vc10::Allocate(0x1150));
+        std::memset(ds + kRsChanged, 0, 5 * 4);
+        ds[kRsFlag] = 0;
+        for (uint32_t stage = 0; stage < 8; ++stage) {
+            Field<uint32_t>(ds, kTssChanged + stage * 8) = 0;
+            ds[kTssChanged + stage * 8 + 4] = 0;
+        }
+        Field<uint32_t>(ds, kStages) = 0;
+        Field<uint32_t>(ds, kTexChanged) = 0;
+        ds[kTexFlag] = 0;
+        Capture(ds);
+    }
+    return ds;
+}
+
+// FUN_1001bd14 (Randy_t's destructor): the DeviceState gone, its wanted textures released (FUN_1001b9a1).
+void __cdecl ShutdownDeviceState()
+{
+    uint8_t* ds = Instance();
+    if (!ds) return;
+    for (uint32_t stage = 0; stage < 8; ++stage) {
+        void*& surface = Field<void*>(ds, kTexWanted + stage * 4);
+        if (surface) {
+            orig::surface_t_ReleaseDXSurface(surface);
+            surface = nullptr;
+        }
+    }
+    vc10::Free(ds);
+    Instance() = nullptr;
 }
 
 }  // namespace
@@ -501,6 +596,9 @@ void Install(HMODULE orig)
         {0x1BBC1, FN(SetRenderState), "DeviceState::SetRenderState"},
         {0x1BC15, FN(SetTextureStageState), "DeviceState::SetTextureStageState"},
         {0x1BC8E, FN(SetTexture), "DeviceState::SetTexture"},
+        {0x1BD36, FN(Capture), "DeviceState: read back from the device (FUN_1001bd36)"},
+        {0x1BDF2, FN(GetDeviceState), "DeviceState: the one instance (FUN_1001bdf2)"},
+        {0x1BD14, FN(ShutdownDeviceState), "DeviceState: shut down (FUN_1001bd14)"},
         {0x21A88, FN(DrawIndexedVB<kTriangles>), "render_t::RenderTriangleList (vertex buffer, indexed)"},
         {0x21AAA, FN(DrawIndexedVB<kLines>), "render_t::RenderLineList (vertex buffer, indexed)"},
         {0x21CE3, FN(DrawIndexedVB<kFan>), "render_t::RenderTriangleFan (vertex buffer, indexed)"},
