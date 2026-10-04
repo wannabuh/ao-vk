@@ -63,6 +63,8 @@ struct Source {
     std::vector<TriVertex> vertices;
     std::vector<uint16_t> indices;               // the piece's triangles
     const uint16_t* gameIndices = nullptr;       // where the game keeps them (draws pass that pointer)
+    uint64_t indexHash = 0;                      // of the indices, as the renderer's mesh cache hashes them
+    void Finish();                               // after filling: indexHash
 };
 
 // One piece of one character to skin: its vertices and the character's bones at the time. Shared by every draw of
@@ -73,6 +75,8 @@ struct Job {
     std::shared_ptr<const Palette> bones;
     bool rest = false;
     const Vertex* Skinned();                     // thread safe
+    // After Skinned: the box around the skinned vertices (model space).
+    float boundsMin[3] = {}, boundsMax[3] = {};
     // Starts skinning on a pool thread, so it's done by the time it's drawn (Skinned waits if it isn't).
     static void Prefetch(const std::shared_ptr<Job>& job);
 private:

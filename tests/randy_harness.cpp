@@ -254,6 +254,7 @@ std::vector<uint8_t> ReadFile(const std::string& path)
 }
 
 struct CharacterScene {
+    float duration = 0.0f;            // the animation's length (ms): times wrap, as the game wraps them
     void* root = nullptr;
     void* camera = nullptr;
     std::vector<void*> characters;    // RCATMesh_t
@@ -273,6 +274,18 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
     if (!memoryIo || meshData.empty() || animData.empty()) {
         std::printf("character: can't read %s / %s\n", meshPath.c_str(), animPath.c_str());
         return false;
+    }
+    // CATKeyframeAnimData_t: i32 3, i32 version (low 24 bits: 0x105 = integer ms times, else float), duration.
+    if (animData.size() >= 12) {
+        uint32_t version;
+        std::memcpy(&version, animData.data() + 4, 4);
+        if ((version & 0xFFFFFF) < 0x106) {
+            int32_t d;
+            std::memcpy(&d, animData.data() + 8, 4);
+            scene.duration = float(d);
+        } else {
+            std::memcpy(&scene.duration, animData.data() + 8, 4);
+        }
     }
     void* meshIo = memoryIo(::operator new(0x100), nullptr, meshData.data(), unsigned(meshData.size()));
     void* animIo = memoryIo(::operator new(0x100), nullptr, animData.data(), unsigned(animData.size()));
@@ -338,7 +351,8 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
     Vector3 sunPos{3.0f, 6.0f, -5.0f}, origin{0.0f, 0.0f, 0.0f};
     setPos(sun, nullptr, &sunPos, nullptr);
     setTarget(sun, nullptr, &origin);
-    std::printf("character: mesh %p (%d materials), %d characters\n", mesh, materials, count);
+    std::printf("character: mesh %p (%d materials), %d characters, animation %.0f ms\n", mesh, materials, count,
+                scene.duration);
     return true;
 }
 
@@ -346,8 +360,10 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
 void DrawCharacterScene(CharacterScene& scene, void* viewport, float time)
 {
     auto setTime = Export<SetTimeFn>("?SetTime@CATKeyframeAnim_t@@QAEXM@Z");
-    for (size_t i = 0; i < scene.anims.size(); ++i)
-        setTime(scene.anims[i], nullptr, time + 137.0f * float(i));
+    for (size_t i = 0; i < scene.anims.size(); ++i) {
+        float t = time + 137.0f * float(i);
+        setTime(scene.anims[i], nullptr, scene.duration > 0.0f ? std::fmod(t, scene.duration) : t);
+    }
     Export<PtrArgFn>("?SetCamera@RViewPort_t@@QAEXPAVRCamera_t@@@Z")(viewport, nullptr, scene.camera);
     Export<PtrArgFn>("?Process@RViewPort_t@@QAEXPAVRRefFrame_t@@@Z")(viewport, nullptr, scene.root);
     Export<ViewRenderFn>("?Render@RViewPort_t@@QAEXW4RenderList_e@@0W4RenderType_e@1@II@Z")(

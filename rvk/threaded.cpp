@@ -635,7 +635,7 @@ void ThreadedDevice::DrawPrimitiveSkinned(uint32_t primitive, uint32_t fvf, cons
     if (!job || size_t(startVertex) + vertexCount > job->source->vertices.size())
         return;
     Enqueue([this, primitive, fvf, job, startVertex, vertexCount](const uint8_t*) {
-        m_device.DrawPrimitive(primitive, fvf, job->Skinned() + startVertex, vertexCount);
+        m_device.DrawSkinned(primitive, fvf, *job, startVertex, vertexCount, nullptr, 0);
     });
 }
 
@@ -649,14 +649,14 @@ void ThreadedDevice::DrawIndexedPrimitiveSkinned(uint32_t primitive, uint32_t fv
     const skin::Source& source = *job->source;
     if (indices == source.gameIndices && indexCount <= source.indices.size()) {
         Enqueue([this, primitive, fvf, job, startVertex, vertexCount, indexCount](const uint8_t*) {
-            m_device.DrawIndexedPrimitive(primitive, fvf, job->Skinned() + startVertex, vertexCount,
-                                          job->source->indices.data(), indexCount);
+            m_device.DrawSkinned(primitive, fvf, *job, startVertex, vertexCount, job->source->indices.data(),
+                                 indexCount);
         });
         return;
     }
     Enqueue([this, primitive, fvf, job, startVertex, vertexCount, indexCount](const uint8_t* idx) {
-        m_device.DrawIndexedPrimitive(primitive, fvf, job->Skinned() + startVertex, vertexCount,
-                                      reinterpret_cast<const uint16_t*>(idx), indexCount);
+        m_device.DrawSkinned(primitive, fvf, *job, startVertex, vertexCount, reinterpret_cast<const uint16_t*>(idx),
+                             indexCount);
     }, indices, indexCount * 2);
 }
 

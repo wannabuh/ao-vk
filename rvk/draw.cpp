@@ -441,6 +441,13 @@ bool Device::CharacterDraw(uint32_t fvf, uint32_t vertexCount)
     if (m_external || !m_drawMesh || m_drawIsLabel || !m_rs[d3d::RS_LIGHTING] ||
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || (m_target != m_scene && m_target != m_main))
         return false;
+    if (m_drawSkin) {                                    // known to be a character: any size
+        float c[3], e[3];
+        DrawWorldBox(c, e);
+        if (m_tessChars.size() < 1024)
+            m_tessChars.push_back({c[0], c[2], c[1] - e[1], c[1] + e[1]});
+        return true;
+    }
     uint64_t key = m_drawMesh->indexHash ^ (uint64_t(fvf) << 40) ^ (uint64_t(vertexCount) * 0x9E3779B97F4A7C15ull);
     auto found = m_tessTopologies.find(key);
     if (!m_drawMeshStatic) {
@@ -538,6 +545,71 @@ bool Device::SmoothNormals(const void* vertices, uint32_t vertexCount, const Fvf
     for (uint32_t i = 0; i < vertexCount; ++i)
         if (owner[i] != int32_t(i))
             for (int j = 0; j < 3; ++j) m_smoothNormals[size_t(i) * 3 + j] = m_smoothNormals[size_t(owner[i]) * 3 + j];
+    return true;
+}
+
+// SmoothNormals for a skinned piece (m_drawSkin): the vertices sharing a position are the same in every pose, so they
+// are found once per mesh, in its rest pose; each draw only averages its normals over them.
+bool Device::SmoothNormalsSkinned(const void* vertices, uint32_t startVertex, uint32_t vertexCount)
+{
+    const auto& source = m_drawSkin->source;
+    if (!source || size_t(startVertex) + vertexCount > source->vertices.size())
+        return false;
+    SmoothOwners& so = m_smoothOwners[source.get()];
+    if (so.source != source) {                           // new (or another mesh at the same address)
+        so.source = source;
+        const std::vector<skin::TriVertex>& in = source->vertices;
+        uint32_t n = uint32_t(in.size()), size = 64;
+        while (size < n * 2) size *= 2;
+        std::vector<int32_t> table(size, -1);
+        so.owner.assign(n, 0);
+        auto quant = [](float f) { return int32_t(std::lround(f * 2048.0f)); };
+        for (uint32_t i = 0; i < n; ++i) {
+            int32_t q[3] = {quant(in[i].bind[0]), quant(in[i].bind[1]), quant(in[i].bind[2])};
+            uint32_t h = (uint32_t(q[0]) * 73856093u) ^ (uint32_t(q[1]) * 19349663u) ^ (uint32_t(q[2]) * 83492791u);
+            int32_t found = -1;
+            for (uint32_t slot = h & (size - 1);; slot = (slot + 1) & (size - 1)) {
+                int32_t o = table[slot];
+                if (o < 0) { table[slot] = int32_t(i); break; }
+                if (quant(in[o].bind[0]) == q[0] && quant(in[o].bind[1]) == q[1] && quant(in[o].bind[2]) == q[2]) {
+                    found = o;
+                    break;
+                }
+            }
+            so.owner[i] = found < 0 ? int32_t(i) : found;
+        }
+    }
+    so.lastFrame = m_frameNumber;
+    // Sums per owner, then means, then copied to the others (as SmoothNormals). Owners before startVertex (a partial
+    // draw) count as their own group.
+    const auto* v = static_cast<const skin::Vertex*>(vertices);
+    m_smoothNormals.assign(size_t(vertexCount) * 3, 0.0f);
+    static thread_local std::vector<uint16_t> count;
+    count.assign(vertexCount, 0);
+    auto ownerOf = [&](uint32_t i) {
+        int32_t o = so.owner[startVertex + i] - int32_t(startVertex);
+        return o >= 0 ? uint32_t(o) : i;
+    };
+    for (uint32_t i = 0; i < vertexCount; ++i) {
+        const float* n = v[i].normal;
+        float len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+        if (len > 0.0f) {
+            uint32_t o = ownerOf(i);
+            for (int j = 0; j < 3; ++j) m_smoothNormals[size_t(o) * 3 + j] += n[j] / len;
+            ++count[o];
+        }
+    }
+    for (uint32_t i = 0; i < vertexCount; ++i)
+        if (ownerOf(i) == i && count[i] > 1)
+            for (int j = 0; j < 3; ++j) m_smoothNormals[size_t(i) * 3 + j] /= float(count[i]);
+    for (uint32_t i = 0; i < vertexCount; ++i) {
+        uint32_t o = ownerOf(i);
+        if (o != i)
+            for (int j = 0; j < 3; ++j) m_smoothNormals[size_t(i) * 3 + j] = m_smoothNormals[size_t(o) * 3 + j];
+    }
+    if ((m_frameNumber & 255) == 0)                      // meshes not drawn for a while
+        for (auto it = m_smoothOwners.begin(); it != m_smoothOwners.end();)
+            it = it->second.lastFrame + 600 < m_frameNumber ? m_smoothOwners.erase(it) : std::next(it);
     return true;
 }
 
@@ -890,6 +962,28 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
     m_drawMeshStatic = false;
     if (m_external || !vertices || !vertexCount || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ)
         return;
+    if (m_drawSkin) {
+        // A skinned piece: new vertices with every skinning (a key of its own, as new vertices would get), its box
+        // and index hash from the skinning - no pass over the vertices.
+        // (The frame number in it too: a job's memory may be reused by a later frame's.)
+        uint64_t key = (reinterpret_cast<uintptr_t>(m_drawSkin) * 0x9E3779B97F4A7C15ull) ^ (uint64_t(fvf) << 40) ^
+                       vertexCount ^ (uint64_t(indexCount) << 20) ^ (m_frameNumber * 0xC2B2AE3D27D4EB4Full);
+        m_drawMeshKey = key;
+        auto it = m_meshInfo.find(key);
+        if (it == m_meshInfo.end()) {
+            MeshInfo info{};
+            std::memcpy(info.boundsMin, m_drawSkin->boundsMin, sizeof(info.boundsMin));
+            std::memcpy(info.boundsMax, m_drawSkin->boundsMax, sizeof(info.boundsMax));
+            info.indexHash = indexCount == m_drawSkin->source->indices.size() ? m_drawSkin->source->indexHash
+                             : indices && indexCount ? HashBytes(indices, size_t(indexCount) * 2, indexCount) : 0;
+            info.firstFrame = m_frameNumber;
+            it = m_meshInfo.emplace(key, info).first;
+        }
+        it->second.lastFrame = m_frameNumber;
+        m_drawMeshStatic = it->second.firstFrame < m_frameNumber;
+        m_drawMesh = &it->second;
+        return;
+    }
     const uint8_t* v = static_cast<const uint8_t*>(vertices);
     // Word-wise mixing (positions as three 32-bit words), not byte by byte: this runs for every draw.
     uint64_t key = 0x9E3779B97F4A7C15ull ^ (uint64_t(fvf) << 40) ^ (uint64_t(stride) << 32) ^ vertexCount;
@@ -1091,6 +1185,16 @@ void Device::DrawIndexedPrimitive(uint32_t primitive, uint32_t fvf, const void* 
                                   const uint16_t* indices, uint32_t indexCount)
 {
     Draw(primitive, fvf, vertices, vertexCount, indices, indexCount);
+}
+
+void Device::DrawSkinned(uint32_t primitive, uint32_t fvf, skin::Job& job, uint32_t startVertex, uint32_t vertexCount,
+                         const uint16_t* indices, uint32_t indexCount)
+{
+    const skin::Vertex* vertices = job.Skinned();
+    m_drawSkin = &job;
+    m_drawSkinBase = vertices;
+    Draw(primitive, fvf, vertices + startVertex, vertexCount, indices, indexCount);
+    m_drawSkin = nullptr;
 }
 
 void Device::DrawPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32_t startVertex, uint32_t vertexCount)
@@ -1688,7 +1792,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // Phong tessellation: the averaged normals (binding 10) and the draw's level and shape.
     VkDeviceSize smoothOffset = 0, smoothBytes = 0;
     m_drawTess = false;
-    if (tessLevel > 0.0f && SmoothNormals(vertices, vertexCount, layout)) {
+    if (tessLevel > 0.0f &&
+        (m_drawSkin && layout.stride == sizeof(skin::Vertex)
+             ? SmoothNormalsSkinned(vertices, uint32_t(static_cast<const skin::Vertex*>(vertices) - m_drawSkinBase), vertexCount)
+             : SmoothNormals(vertices, vertexCount, layout))) {
         void* smoothCpu;
         smoothBytes = m_smoothNormals.size() * 4;
         smoothOffset = Allocate(smoothBytes, m_props.limits.minStorageBufferOffsetAlignment, &smoothCpu);

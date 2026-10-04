@@ -36,9 +36,13 @@ result, sharing the piece's indices. Characters with vertex effects (callbacks o
 
 | Skin | game thread | overall |
 | --- | --- | --- |
-| off (original) | 7.9 ms | 127 fps |
-| cpu | 4.7 ms | 210 fps |
-| on | 1.2 ms | 244 fps (now the renderer's worker is the limit: copying vertices into the GPU ring) |
+| off (original) | 8.4 ms | 118 fps |
+| cpu | 5.0 ms | 167 fps |
+| on | 1.7 ms | 172 fps (the renderer's worker is now the limit: per-draw work on animated vertices) |
+
+Skinned draws tell the renderer what they are (`Device::DrawSkinned`): exactly a character (any size; the heuristic
+in CharacterDraw is for the rest), its box from the skinning, its index hash from the mesh - no pass over its vertices;
+the vertices sharing a position (Phong tessellation's smooth normals) are found once per mesh, in its rest pose.
 
 ## Tools
 

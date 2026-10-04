@@ -121,6 +121,7 @@ std::shared_ptr<const Source> SourceOf(const TriVertex* in, uint32_t count, cons
         s->vertices.assign(in, in + count);
         if (indices) s->indices.assign(indices, indices + indexCount);
         s->gameIndices = indices;
+        s->Finish();
         c.source = std::move(s);
     }
     c.lastUse = g_sweep;

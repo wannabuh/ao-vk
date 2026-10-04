@@ -4,6 +4,8 @@
 // towards the maximum).
 #include "skin.h"
 
+#include "internal.h"
+
 #include <emmintrin.h>
 #include <malloc.h>
 
@@ -146,11 +148,17 @@ void SkinPositions(const TriVertex* in, uint32_t count, uint32_t step, Vertex* o
     }
 }
 
+void Source::Finish()
+{
+    indexHash = indices.empty() ? 0 : detail::HashBytes(indices.data(), indices.size() * 2, indices.size());
+}
+
 const Vertex* Job::Skinned()
 {
     std::call_once(m_once, [this] {
         const std::vector<TriVertex>& in = source->vertices;
         m_out.resize(in.size());
+        __m128 mn = _mm_set1_ps(FLT_MAX), mx = _mm_set1_ps(-FLT_MAX);
         for (size_t i = 0; i < in.size(); ++i) {
             Vertex& o = m_out[i];
             o.uv[0] = in[i].uv[0];
@@ -160,8 +168,16 @@ const Vertex* Job::Skinned()
                 Store(&o, pos, normal);
             } else {                                // a bone out of range: the rest pose (the original keeps old data)
                 for (int k = 0; k < 3; ++k) o.pos[k] = in[i].bind[k], o.normal[k] = in[i].normal[k];
+                pos = Load3(o.pos);
             }
+            mn = _mm_min_ps(mn, pos);
+            mx = _mm_max_ps(mx, pos);
         }
+        alignas(16) float t[4];
+        _mm_store_ps(t, mn);
+        boundsMin[0] = t[0], boundsMin[1] = t[1], boundsMin[2] = t[2];
+        _mm_store_ps(t, mx);
+        boundsMax[0] = t[0], boundsMax[1] = t[1], boundsMax[2] = t[2];
     });
     return m_out.data();
 }

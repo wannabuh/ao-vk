@@ -6,9 +6,11 @@
 #pragma once
 
 #include "d3d7.h"
+#include "skin.h"
 #include "vk.h"
 
 #include <array>
+#include <memory>
 #include <cstdint>
 #include <string>
 #include <atomic>
@@ -319,6 +321,9 @@ public:
     void DrawPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount);
     void DrawIndexedPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
                               const uint16_t* indices, uint32_t indexCount);
+    // A character piece skinned by `job` (skinned here if no one did yet): exactly a character, its box known.
+    void DrawSkinned(uint32_t primitive, uint32_t fvf, skin::Job& job, uint32_t startVertex, uint32_t vertexCount,
+                     const uint16_t* indices, uint32_t indexCount);
     void DrawPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32_t startVertex, uint32_t vertexCount);
     void DrawIndexedPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32_t startVertex, uint32_t vertexCount,
                                 const uint16_t* indices, uint32_t indexCount);
@@ -645,6 +650,10 @@ private:
     bool SmoothNormals(const void* vertices, uint32_t vertexCount, const detail::FvfLayout& layout);
     std::vector<float> m_smoothNormals;          // the draw's averaged normals (binding 10)
     std::vector<int32_t> m_smoothTable;          // their position hash table
+    // Skinned pieces: which vertices share a position (the first of each), found once per mesh in its rest pose.
+    struct SmoothOwners { std::shared_ptr<const skin::Source> source; std::vector<int32_t> owner; uint64_t lastFrame = 0; };
+    std::unordered_map<const skin::Source*, SmoothOwners> m_smoothOwners;
+    bool SmoothNormalsSkinned(const void* vertices, uint32_t startVertex, uint32_t vertexCount);
     VkDescriptorSetLayout m_tonemapSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_tonemapLayout = VK_NULL_HANDLE;
     VkPipeline m_tonemapPipeline = VK_NULL_HANDLE;
@@ -686,6 +695,8 @@ private:
     struct MeshInfo { float boundsMin[3], boundsMax[3]; uint64_t indexHash; uint64_t firstFrame, lastFrame; };
     std::unordered_map<uint64_t, MeshInfo> m_meshInfo;
     const MeshInfo* m_drawMesh = nullptr;        // the current draw's (null: external geometry, pre-transformed)
+    const skin::Job* m_drawSkin = nullptr;       // the current draw is this skinned character piece (DrawSkinned)
+    const skin::Vertex* m_drawSkinBase = nullptr;   // ... its first skinned vertex
     bool m_drawMeshStatic = false;               // ... seen in an earlier frame with the same vertices
     void DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, const uint16_t* indices,
                       uint32_t indexCount);
