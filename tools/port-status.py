@@ -44,14 +44,25 @@ def call_graph():
     return graph
 
 
+def called_natively():
+    """Original functions our native code still calls by address (Internal<...>(0x...)): live roots."""
+    rvas = set()
+    for f in (ROOT / "proxy/native").glob("*.cpp"):
+        for m in re.finditer(r"Internal<[^;]*?>\(\s*0x([0-9A-Fa-f]+)\s*\)", f.read_text()):
+            rvas.add(int(m.group(1), 16))
+    return rvas
+
+
 def unreachable(graph, done):
-    """Functions nothing live reaches any more: not a root, and every caller native (or itself unreachable)."""
+    """Functions nothing live reaches any more: not a root, not called by native code, and every caller native (or
+    itself unreachable)."""
+    live = called_natively()
     gone = set()
     changed = True
     while changed:
         changed = False
         for rva, (root, callers) in graph.items():
-            if rva in done or rva in gone or root:
+            if rva in done or rva in gone or root or rva in live:
                 continue
             if all(c in done or c in gone for c in callers):
                 gone.add(rva)
@@ -73,8 +84,10 @@ def main():
     groups = {}
     current = "?"
     for rva, size, name in functions():
-        # 0x58200-0x787AE: statically linked D3DX7 (texture loading); past it the CRT glue.
-        if LIB.match(name) or (0x58200 <= rva < 0x787AE and name.startswith("FUN_")) or rva >= 0x787AE:
+        # Below 0x11380: libpng (its static functions unnamed); 0x58200-0x787AE: statically linked D3DX7 (texture
+        # loading); past it the CRT glue.
+        if (LIB.match(name) or rva < 0x11380 or (0x58200 <= rva < 0x787AE and name.startswith("FUN_"))
+                or rva >= 0x787AE):
             cls = "(library)"
         elif name.startswith("FUN_"):
             cls = current
