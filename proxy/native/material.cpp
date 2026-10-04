@@ -301,6 +301,59 @@ void __fastcall DeltaArchive(Delta* d, void*, void* archive)
     }
 }
 
+// Vtable slot 3 (FUN_1002efe4): before applying, the DeviceState's textures for the stages it sets, kept.
+void __fastcall DeltaSave(Delta* d, void*, uint8_t* ds)
+{
+    for (int32_t stage = 0; stage <= int32_t(d->highestStage); ++stage) {
+        Delta::Slot& s = d->slots[stage];
+        if (!s.texture) continue;
+        if (s.surface) {
+            orig::surface_t_ReleaseDXSurface(s.surface);
+            s.surface = nullptr;
+        }
+        s.surface = Field<void*>(ds, 0x1128 + stage * 4);
+        if (s.surface) orig::surface_t_AddRefDXSurface(s.surface);
+    }
+}
+
+// Vtable slot 4 (FUN_1002f275): the blob made again if anything changed, set, and the textures (their surfaces).
+uint32_t __fastcall DeltaApply(Delta* d, void*, void* ds, int32_t priority)
+{
+    if (d->changed) {
+        d->changed = 0;
+        orig::StateBlob_c_Clear(d->blob);
+        for (StateNode* n = d->renderStates.begin(); n != d->renderStates.end(); n = n->next)
+            orig::StateBlob_c_SetRenderState(d->blob, int32_t(n->value.type), n->value.value);
+        for (int32_t stage = 0; stage <= int32_t(d->highestStage); ++stage)
+            for (StateNode* n = d->stageStates[stage].begin(); n != d->stageStates[stage].end(); n = n->next)
+                orig::StateBlob_c_SetTextureStageState(d->blob, uint32_t(stage), int32_t(n->value.type), n->value.value);
+    }
+    orig::StateBlob_c_Validate(d->blob);
+    orig::StateBlob_c_Set(d->blob);
+    for (int32_t stage = 0; stage <= int32_t(d->highestStage); ++stage) {
+        void* texture = d->slots[stage].texture;
+        if (!texture) continue;
+        void* surface = Field<void*>(texture, 0x30);
+        orig::DeviceState_SetTexture(ds, surface, uint32_t(stage), surface ? priority : 10);
+    }
+    return 0;
+}
+
+// Vtable slot 5 (FUN_1002f042): the blob reset, the kept textures back.
+void __fastcall DeltaRestore(Delta* d, void*, void* ds)
+{
+    orig::StateBlob_c_Reset(d->blob);
+    for (int32_t stage = 0; stage <= int32_t(d->highestStage); ++stage) {
+        Delta::Slot& s = d->slots[stage];
+        if (!s.texture) continue;
+        orig::DeviceState_SetTexture(ds, s.surface, uint32_t(stage), 10);
+        if (s.surface) {
+            orig::surface_t_ReleaseDXSurface(s.surface);
+            s.surface = nullptr;
+        }
+    }
+}
+
 // ---- RMaterial_t ----
 
 constexpr uint32_t kMaterialVtable = 0x954B8, kDefaultVtable = 0x940B8;
@@ -537,6 +590,24 @@ void __fastcall InitD3DMaterial(void* m, void*, float* out)   // D3DMATERIAL7
     out[16] = Field<float>(m, kPower);
 }
 
+// FUN_10040aa0 / FUN_10040ac9: a material's own states on the DeviceState (priority 6) and off again - through the
+// delta state's virtual slots, as the original calls them.
+void __fastcall Apply(void* m, void*, void* ds)
+{
+    Delta* d = DeltaOf(m);
+    if (!d) return;
+    void** vt = *reinterpret_cast<void***>(d);
+    reinterpret_cast<void(__fastcall*)(void*, void*, void*)>(vt[3])(d, nullptr, ds);
+    reinterpret_cast<uint32_t(__fastcall*)(void*, void*, void*, int32_t)>(vt[4])(d, nullptr, ds, 6);
+}
+
+void __fastcall Unapply(void* m, void*, void* ds)
+{
+    Delta* d = DeltaOf(m);
+    if (!d) return;
+    reinterpret_cast<void(__fastcall*)(void*, void*, void*)>((*reinterpret_cast<void***>(d))[5])(d, nullptr, ds);
+}
+
 bool NamedOp1(void* m) { return _strnicmp(orig::RResource_t_GetName(m), "op1_", 4) == 0; }
 
 void* __fastcall Construct(void* m, void*, const char* name, void* texture, const float* diffuse, const float* specular,
@@ -717,6 +788,11 @@ void Install(HMODULE orig)
         {0x2F11C, FN(DeltaCount), "RDeltaState count (FUN_1002f11c)"},
         {0x2F13A, FN(DeltaIsEmpty), "RDeltaState::IsEmpty"},
         {0x2F145, FN(DeltaArchive), "RDeltaState::Archive"},
+        {0x2EFE4, FN(DeltaSave), "RDeltaState vtable slot 3 (FUN_1002efe4)"},
+        {0x2F275, FN(DeltaApply), "RDeltaState vtable slot 4 (FUN_1002f275)"},
+        {0x2F042, FN(DeltaRestore), "RDeltaState vtable slot 5 (FUN_1002f042)"},
+        {0x40AA0, FN(Apply), "RMaterial_t apply (FUN_10040aa0)"},
+        {0x40AC9, FN(Unapply), "RMaterial_t unapply (FUN_10040ac9)"},
         {0x41043, FN(Construct), "RMaterial_t::RMaterial_t"},
         {0x41146, FN(Copy), "RMaterial_t::RMaterial_t(copy)"},
         {0x4132D, FN(ConstructFrom), "RMaterial_t::RMaterial_t(archive) (FUN_1004132d)"},

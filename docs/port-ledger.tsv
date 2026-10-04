@@ -214,3 +214,8 @@
 0x2EE70	replaced	proxy/native/material.cpp	DefaultMaterial_t::DefaultMaterial_t
 0x2EEDE	replaced	proxy/native/material.cpp	DefaultMaterial_t(archive) (FUN_1002eede)
 0x2EF5F	replaced	proxy/native/material.cpp	DefaultMaterial_t::Instantiate
+0x2EFE4	replaced	proxy/native/material.cpp	RDeltaState vtable slot 3 (save textures)
+0x2F275	replaced	proxy/native/material.cpp	RDeltaState vtable slot 4 (apply)
+0x2F042	replaced	proxy/native/material.cpp	RDeltaState vtable slot 5 (restore)
+0x40AA0	replaced	proxy/native/material.cpp	RMaterial_t apply
+0x40AC9	replaced	proxy/native/material.cpp	RMaterial_t unapply
