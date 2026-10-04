@@ -236,3 +236,30 @@
 0x4BF39	replaced	proxy/native/viewport.cpp	RViewPort_t::Process
 0x4BFFF	replaced	proxy/native/viewport.cpp	RViewPort_t::Render
 0x4C4EA	replaced	proxy/native/viewport.cpp	RViewPort_t::RenderRefraction
+0x44CC8	replaced	proxy/native/refframe.cpp	RRefFrame_t::RRefFrame_t(parent, animation)
+0x45471	replaced	proxy/native/refframe.cpp	RRefFrame_t::~RRefFrame_t
+0x44ED1	replaced	proxy/native/refframe.cpp	RRefFrame_t::AddChild
+0x44F10	replaced	proxy/native/refframe.cpp	RRefFrame_t::RemoveChild
+0x44F79	replaced	proxy/native/refframe.cpp	RRefFrame_t::Process
+0x44FA2	replaced	proxy/native/refframe.cpp	RRefFrame_t::UpdateWorldMatrix
+0x45712	replaced	proxy/native/refframe.cpp	RRefFrame_t::GetWorldMatrix
+0x45253	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetChangeFlags
+0x4506B	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetAnimationTime
+0x45113	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetLoop
+0x4541A	replaced	proxy/native/refframe.cpp	RRefFrame_t::GetAnimationTotalTime
+0x45430	replaced	proxy/native/refframe.cpp	RRefFrame_t::GetAnimation
+0x45728	replaced	proxy/native/refframe.cpp	RRefFrame_t::GetAnimationTreeTotalTime
+0x457E7	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetAnimMatrix
+0x45894	replaced	proxy/native/refframe.cpp	RRefFrame_t::GetAnimMatrix
+0x4543D	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetVisible
+0x452F8	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetGroupMask
+0x45329	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetEmissive
+0x4538B	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetSpecular
+0x453ED	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetTransparency
+0x452CE	replaced	proxy/native/refframe.cpp	RRefFrame_t::CullBySphere
+0x45769	replaced	proxy/native/refframe.cpp	RRefFrame_t::CullBySphere(at)
+0x16877	replaced	proxy/native/refframe.cpp	RRefFrame_t position (FUN_10016877)
+0x168A6	replaced	proxy/native/refframe.cpp	RRefFrame_t rotation (FUN_100168a6)
+0x559D2	replaced	proxy/native/refframe.cpp	RRefFrame_t scale (FUN_100559d2)
+0x45C85	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetRelativePosition
+0x45CD9	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetRelativeRotation
