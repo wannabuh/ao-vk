@@ -382,10 +382,10 @@ void PickCharacter(CharacterScene& scene)
 }
 
 // One frame of the scene (inside Open / Close): time in ms; each character a bit further along.
-void DrawCharacterScene(CharacterScene& scene, void* viewport, float time)
+void DrawCharacterScene(CharacterScene& scene, void* viewport, float time, bool setTimes)
 {
     auto setTime = Export<SetTimeFn>("?SetTime@CATKeyframeAnim_t@@QAEXM@Z");
-    for (size_t i = 0; i < scene.anims.size(); ++i) {
+    for (size_t i = 0; i < scene.anims.size() && setTimes; ++i) {
         float t = time + 137.0f * float(i);
         setTime(scene.anims[i], nullptr, scene.duration > 0.0f ? std::fmod(t, scene.duration) : t);
     }
@@ -405,6 +405,7 @@ int main(int argc, char** argv)
     float characterTime = 0.0f;
     int crowd = 1;
     bool pick = false;
+    bool still = false;                              // the animation time doesn't advance (static vertex buffers)
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
@@ -413,6 +414,7 @@ int main(int argc, char** argv)
         else if (a == "--time" && i + 1 < argc) characterTime = float(std::atof(argv[++i]));
         else if (a == "--crowd" && i + 1 < argc) crowd = std::max(1, std::atoi(argv[++i]));
         else if (a == "--pick") pick = true;
+        else if (a == "--still") still = true;
     }
     const unsigned width = 640, height = 480;
 
@@ -538,7 +540,7 @@ int main(int argc, char** argv)
         clear(viewport, nullptr, &clearColor, true, true, 0);
         if (!scene.characters.empty()) {
             QueryPerformanceCounter(&frameStart);
-            DrawCharacterScene(scene, viewport, characterTime + 33.0f * float(frame));
+            DrawCharacterScene(scene, viewport, characterTime + (still ? 0.0f : 33.0f * float(frame)), !still || frame == 0);
             if (pick) PickCharacter(scene);
             LARGE_INTEGER now;
             QueryPerformanceCounter(&now);

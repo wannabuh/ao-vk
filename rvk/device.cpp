@@ -187,6 +187,7 @@ Device::~Device()
     DestroyProfiler();
     DestroyParticleResources();
     DestroySkinResources();
+    DestroyStaticGeometry();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_setLayout) vkDestroyDescriptorSetLayout(m_device, m_setLayout, nullptr);
     if (m_nullBuffer) vmaDestroyBuffer(m_allocator, m_nullBuffer, m_nullAllocation);
@@ -758,6 +759,9 @@ bool Device::CreatePipelines(std::string* error)
     if (GetEnvironmentVariableA("RANDYVK_GPU_SKIN", gpuSkin, sizeof(gpuSkin)) && gpuSkin[0] == '0')
         m_gpuSkin = false;
     skin::Job::SetPrefetch(!m_gpuSkin);          // skinned on the GPU: no CPU skinning ahead of draws
+    char staticGpu[8] = "";
+    if (GetEnvironmentVariableA("RANDYVK_STATIC_GPU", staticGpu, sizeof(staticGpu)) && staticGpu[0] == '0')
+        m_staticResident = false;
 
     // Zero vertex data for attributes a format doesn't have (bound with stride 0).
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -1100,6 +1104,7 @@ void Device::BeginFrame()
     }
     ++m_ringGeneration;                          // a different slot's ring: cached offsets are invalid
     BeginSkinFrame();
+    BeginStaticFrame();
 
     VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     b.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

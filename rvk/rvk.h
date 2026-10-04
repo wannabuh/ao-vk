@@ -321,6 +321,9 @@ public:
     void DrawPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount);
     void DrawIndexedPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
                               const uint16_t* indices, uint32_t indexCount);
+    // Vertices that stay the same (a snapshot shared by every draw of them): kept on the GPU, uploaded once.
+    void DrawShared(uint32_t primitive, uint32_t fvf, const std::shared_ptr<const std::vector<uint8_t>>& data,
+                    size_t byteOffset, uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount);
     // A character piece skinned by `job` (skinned here if no one did yet): exactly a character, its box known.
     void DrawSkinned(uint32_t primitive, uint32_t fvf, skin::Job& job, uint32_t startVertex, uint32_t vertexCount,
                      const uint16_t* indices, uint32_t indexCount);
@@ -719,6 +722,21 @@ private:
         bool moved = false;                      // prevOffset holds last frame's positions
     };
     bool m_gpuSkin = true;                       // RANDYVK_GPU_SKIN=0: skinned pieces skinned on the CPU
+    // Static geometry on the GPU (static_gpu.cpp): shared vertex snapshots, uploaded once.
+    struct StaticGeometry {
+        std::shared_ptr<const std::vector<uint8_t>> data;
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VmaAllocation_T* allocation = nullptr;
+        uint64_t lastFrame = 0;
+    };
+    std::unordered_map<const std::vector<uint8_t>*, StaticGeometry> m_staticGeometry;
+    bool m_staticResident = true;                // RANDYVK_STATIC_GPU=0: copied into the ring per draw as before
+    VkDeviceSize m_staticBytes = 0;              // on the GPU now
+    VkBuffer m_drawStaticBuffer = VK_NULL_HANDLE;   // the current draw's vertices are in this buffer, at this offset
+    VkDeviceSize m_drawStaticOffset = 0;
+    VkBuffer StaticBufferFor(const std::shared_ptr<const std::vector<uint8_t>>& data);
+    void BeginStaticFrame();
+    void DestroyStaticGeometry();
     SkinOutput* m_drawGpu = nullptr;             // the current draw is skinned on the GPU, here
     VkDescriptorSetLayout m_skinSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_skinLayout = VK_NULL_HANDLE;

@@ -736,7 +736,8 @@ void Device::CollectShadowItems()
     for (const ShadowCaster& c : m_casters) {
         if (c.view != world)
             continue;
-        if (!c.vb && c.generation != m_ringGeneration) {   // the ring restarted since (mid-frame flush): overwritten
+        bool ringData = !c.vb || c.ib == m_frames[m_frameIndex].ring;
+        if (ringData && c.generation != m_ringGeneration) {   // the ring restarted since (mid-frame flush): overwritten
             staleKeys.push_back(c.key);          // drawn from the caster cache instead, if remembered
             continue;
         }
