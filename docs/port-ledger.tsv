@@ -127,3 +127,24 @@
 0x43319	replaced	proxy/native/randy.cpp	Randy_t::PopRenderTarget
 0x43504	replaced	proxy/native/randy.cpp	Randy_t::PushRenderTarget
 0x11A8C	replaced	proxy/native/randy.cpp	Randy_t::GetRenderTarget
+0x261B9	replaced	proxy/native/surface.cpp	surface_t::surface_t
+0x261CD	replaced	proxy/native/surface.cpp	surface_t::GetSurfaceDesc
+0x2620A	replaced	proxy/native/surface.cpp	surface_t::AddRefDXSurface
+0x26227	replaced	proxy/native/surface.cpp	surface_t::GetSurfacePointer
+0x2622D	replaced	proxy/native/surface.cpp	surface_t::ReleaseDXSurface
+0x23DCC	replaced	proxy/native/surface.cpp	render_t::CreateSurface
+0x23F58	replaced	proxy/native/surface.cpp	render_t::LockTexture
+0x24003	replaced	proxy/native/surface.cpp	render_t::UnlockTexture
+0x2434E	replaced	proxy/native/surface.cpp	render_t::Blt
+0x2414A	replaced	proxy/native/surface.cpp	render_t::GetPixelFormat
+0x23DBC	replaced	proxy/native/surface.cpp	render_t::RestoreAllSurfaces
+0x213E1	replaced	proxy/native/surface.cpp	render_t::CreatePalette
+0x23617	replaced	proxy/native/surface.cpp	render_t::CreateClipper
+0x20CF7	replaced	proxy/native/surface.cpp	render_t::GetInfo
+0x20BF6	replaced	proxy/native/surface.cpp	render_t::SetMonitorRect
+0x2133F	replaced	proxy/native/surface.cpp	render_t::RestoreDisplayMode
+0x2428E	replaced	proxy/native/surface.cpp	render_t flip (FUN_1002428e)
+0x20C0D	replaced	proxy/native/surface.cpp	render_t monitor offset (FUN_10020c0d)
+0x2376A	replaced	proxy/native/surface.cpp	render_t::WaitForVerticalBlank (FUN_1002376a)
+0x23E14	replaced	proxy/native/surface.cpp	render_t::EvictManagedTextures (FUN_10023e14)
+0x21073	replaced	proxy/native/surface.cpp	render_t::GetCaps (FUN_10021073)

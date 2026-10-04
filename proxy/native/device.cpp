@@ -13,6 +13,7 @@
 #include "native/orig_api.gen.h"
 #include "native/dynamic_vb.h"
 #include "native/randy.h"
+#include "native/surface.h"
 #include "native/state_blob.h"
 #include "native/vc10.h"
 
@@ -534,6 +535,7 @@ void Install(HMODULE orig)
     stateblob::Install(orig);
     dynamicvb::Install(orig);
     randy::Install(orig);
+    surface::Install(orig);
 }
 
 }  // namespace rnative::device
