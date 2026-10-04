@@ -499,6 +499,106 @@ bool __fastcall Visible(Occ* o, void*, void*, float left, float right, float bot
     return false;
 }
 
+// FUN_1003ecab: a mesh name that isn't scenery to occlude with (trees, heads, doors, ...): none of these in it.
+// The original's matching, kept: per word a count of characters matched, reset (to 0 or 1) on a mismatch.
+bool __cdecl OccludingName(const char* name)
+{
+    static const char* const kSkipped[] = {
+        "tree", "leaves", "grass", "head", "hair", "weapon", "stardome", "sphere", "bird", "monster", "ship", "face",
+        "hemet", "scenery", "tent", "simplecity", "simple_", "bridge", "line", "stotte", "lightcone", "soppel",
+        "drone", "paper", "helmet", "shop", "door", "horizon", "snutt", "dafdas", "skil", "stenger", "sign",
+        "chamfer", "fork", "serving", "mongomeat", "gunner", "small", "papir", "minibronto", "dinigg_b", "seats",
+        "torus", "snackbar", "cockroach", "containe", "_can", "camera", "trans", "fly", "logo", "beetle", "garbage",
+        "rod", "moth"};
+    constexpr size_t kWords = sizeof(kSkipped) / sizeof(kSkipped[0]);
+    const size_t length = std::strlen(name);
+    if (!length) return false;
+    int32_t matched[kWords] = {};
+    for (size_t i = 0; i < length; ++i) {
+        char c = name[i];
+        if (uint8_t(c - 'A') < 26) c = char(c + 32);
+        for (size_t w = 0; w < kWords; ++w) {
+            const char* word = kSkipped[w];
+            if (word[matched[w]] == c) {
+                if (word[++matched[w]] == 0) return false;
+            } else {
+                matched[w] = word[0] == c ? 1 : 0;
+            }
+        }
+    }
+    return true;
+}
+
+float WorldScale(uint8_t* frame)                     // FUN_1002fd23
+{
+    if (frame[0x9E]) orig::RRefFrame_t_UpdateWorldMatrix(frame);
+    return Field<float>(frame, 0x84);
+}
+
+int32_t Truncate(double x) { return int32_t(x); }   // _ftol2
+
+// FUN_1003f78d: an RTriMesh_t standing on the playfield raises the heightmap to its top, cell by cell under its
+// bounding sphere - where a ray down from twice the radius above the ground hits it and one up from the ground
+// doesn't (not overhanging). On the hand-corrected playfields only (or for an "[OCC]" occluder mesh, which may also
+// lower settled cells' neighbours); a cell is settled after 255 tries or one raise.
+void __fastcall RegisterMesh(Occ* o, void*, uint8_t* mesh)
+{
+    if (!Heights(o)) return;
+    const char* name = orig::RResource_t_GetName(Field<void*>(mesh, 0x184));
+    const bool occluder = std::strncmp(name, "[OCC]", 5) == 0;
+    if (!occluder && !HasCache(Field<int32_t>(o, kPlayfield))) return;
+    if (!OccludingName(name)) return;
+    const uint8_t* volume = Field<uint8_t*>(Field<uint8_t*>(mesh, 0x184), 0x6C);
+    float center[3];
+    xm::Transform(reinterpret_cast<const float*>(volume + 8), static_cast<const float*>(orig::RRefFrame_t_GetWorldMatrix(mesh)), center);
+    const float radius = float(double(Field<float>(const_cast<uint8_t*>(volume), 0x14)) * double(WorldScale(mesh)));
+    const float cell = Field<float>(o, kCell);
+    const int32_t x0 = Truncate(double(float(center[0] - radius)) / double(cell));
+    const int32_t x1 = Truncate(double(float(center[0] + radius)) / double(cell));
+    const int32_t z0 = Truncate(double(float(center[2] - radius)) / double(cell));
+    const int32_t z1 = Truncate(double(float(center[2] + radius)) / double(cell));
+    const float firstX = float(double(x0) * double(cell));
+    const float radiusSq = float(double(radius) * double(radius));
+    const float twice = radius + radius;
+    const float upward[3] = {0.0f, 1.0f, 0.0f}, downward[3] = {0.0f, -1.0f, 0.0f};
+    const int32_t width = Field<int32_t>(o, kWidth);
+    uint8_t* flags = Field<uint8_t*>(o, kFlags);
+    using RayFn = bool(__fastcall*)(void*, void*, const float*, const float*, float*, bool);
+    float rowZ = float(double(z0) * double(cell));
+    int32_t rowStart = width * z0;
+    for (int32_t z = z0; z <= z1; ++z, rowStart += width, rowZ = cell + rowZ) {
+        if (z < 0 || Field<int32_t>(o, kDepth) <= z) continue;
+        float x = firstX;
+        int32_t at = rowStart + x0;
+        for (int32_t column = x0; column <= x1; ++column, ++at, x = cell + x) {
+            if (column < 0 || width <= column) continue;
+            if (!occluder) {
+                if (flags[at] >= 0xFF) continue;
+                if (++flags[at] == 0xFF) continue;
+            }
+            float p[3] = {x, float(int32_t(Heights(o)[at])) * Field<float>(o, kHeightScale), rowZ};
+            if (!occluder) {
+                float d[3] = {p[0] - center[0], p[1] - center[1], p[2] - center[2]};
+                if (radiusSq < xm::LengthSquared(d)) continue;
+            }
+            p[1] = p[1] + twice;
+            const float down[3] = {downward[0] * twice, downward[1] * twice, downward[2] * twice};
+            float hit = 0.0f;
+            const auto ray = reinterpret_cast<RayFn>((*reinterpret_cast<void***>(mesh))[12]);
+            if (!ray(mesh, nullptr, p, down, &hit, false)) continue;
+            p[1] = p[1] - twice;
+            const float up[3] = {upward[0] * twice, upward[1] * twice, upward[2] * twice};
+            if (ray(mesh, nullptr, p, up, nullptr, false)) continue;
+            const double raise = (double(twice) - double(hit) * double(twice)) / double(Field<float>(o, kHeightScale));
+            int32_t h = Truncate(raise) + int32_t(Heights(o)[at]);
+            if (h > 0xFFFF || h < 0) h = 0xFFFF;
+            Heights(o)[at] = uint16_t(h);
+            if (!occluder) flags[at] = 0xFF;
+            ++Global<int32_t>(0x17D288);
+        }
+    }
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -531,6 +631,8 @@ void Install(HMODULE orig)
         {0x2FD3C, FN(FieldOfView), "RCamera_t field of view (FUN_1002fd3c)"},
         {0x3EDC1, FN(BuildHorizons), "HMOccluder_t horizons (FUN_1003edc1)"},
         {0x3E8F6, FN(Visible), "HMOccluder_t visibility (FUN_1003e8f6)"},
+        {0x3ECAB, FN(OccludingName), "HMOccluder_t mesh name filter (FUN_1003ecab)"},
+        {0x3F78D, FN(RegisterMesh), "HMOccluder_t mesh registration (FUN_1003f78d)"},
     };
 #undef FN
     int installed = 0;

@@ -268,6 +268,7 @@ int g_carriedLights;                                 // --lights N: the first N 
 float g_alpha = 1.0f;                                // --alpha A: the characters' transparency
 int g_sfx;                                           // --sfx N: their effect type (1 special light, 2 pulse)
 float g_terrain;                                      // --terrain H: a heightmap with a ridge H metres high
+int g_playfield;                                      // --playfield N: the occluder's playfield (meshes register)
 bool g_look;                                         // --look X Y Z: where the camera looks instead (some culled)
 float g_lookAt[3];
 bool g_env;                                          // --env: their materials get an environment map
@@ -423,6 +424,7 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
         for (int x = 0; x < 64; ++x) heights[size_t(row) * 64 + size_t(x)] = uint16_t(g_terrain * 100.0f);
         Export<void(__fastcall*)(void*, void*, const uint16_t*, int, int, int)>(
             "?SetHeightmapPatch@HMOccluder_t@@QAEXPBGHHH@Z")(occ, nullptr, heights.data(), 0, 0, 63);
+        if (g_playfield) *reinterpret_cast<int*>(static_cast<uint8_t*>(occ) + 0x94) = g_playfield;
         std::printf("terrain: ridge %.1f m at row %d\n", g_terrain, row);
     }
     std::printf("character: mesh %p (%d materials), %d characters, animation %.0f ms\n", mesh, materials, count,
@@ -709,6 +711,7 @@ int main(int argc, char** argv)
         else if (a == "--still") still = true;
         else if (a == "--destroy") destroy = true;
         else if (a == "--terrain" && i + 1 < argc) g_terrain = float(std::atof(argv[++i]));
+        else if (a == "--playfield" && i + 1 < argc) g_playfield = std::atoi(argv[++i]);
         else if (a == "--lights" && i + 1 < argc) g_carriedLights = std::atoi(argv[++i]);
         else if (a == "--alpha" && i + 1 < argc) g_alpha = float(std::atof(argv[++i]));
         else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);
@@ -948,6 +951,18 @@ int main(int argc, char** argv)
                 std::printf("no back buffer surface\n");
         }
         flip(randy, nullptr, false);
+    }
+    if (g_terrain > 0.0f) {                          // the heightmap as meshes left it
+        uint8_t* occ = static_cast<uint8_t*>(Export<void*(__cdecl*)()>("?Get@HMOccluder_t@@SAAAV1@XZ")());
+        const uint16_t* heights = *reinterpret_cast<uint16_t**>(occ);
+        const uint8_t* flags = *reinterpret_cast<uint8_t**>(occ + 4);
+        uint32_t sum = 0, raised = 0, settled = 0;
+        for (uint32_t i = 0; i < 64 * 64; ++i) {
+            sum = sum * 31 + heights[i];
+            raised += heights[i] != 0;
+            settled += flags[i] == 0xFF;
+        }
+        std::printf("heightmap %08x, %u cells above 0, %u settled\n", sum, raised, settled);
     }
     if (destroy) {                                   // --destroy: their destructors too (as the game deletes them)
         using DeleteFn = void*(__fastcall*)(void* self, void*, unsigned flags);

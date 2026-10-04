@@ -12,7 +12,7 @@ logs=$AO_CLIENT/../logs
 c=$PWD/build/characters
 s=$PWD/build/statics
 character="--character $c/5900.catmesh $c/9386.catanim --crowd 3 --time 400"
-scenes=${*:-"basic dynamic materials plain blend shadow alpha env sfx1 sfx2 lights manylights culled terrain statics staticshadow"}
+scenes=${*:-"basic dynamic materials plain blend shadow alpha env sfx1 sfx2 lights manylights culled terrain occmeshes statics staticshadow"}
 grep -q "^$mode=" "$ini" || printf '%s=off\n' "$mode" >> "$ini"
 before=$(grep "^$mode=" "$ini" | cut -d= -f2)
 fail=0
@@ -31,6 +31,7 @@ for scene in $scenes; do
         lights) args="$character --lights 2" ;;
         manylights) args="$character --crowd 12 --lights 12" ;;
         terrain) args="$character --crowd 100 --terrain 6" ;;   # 40 behind a ridge: the heightmap occluder
+        occmeshes) args="$character --crowd 9 --terrain 6 --playfield 730 --static $s/17879.archive --statics 25" ;;
         culled) args="$character --crowd 49 --lights 6 --look 9 0 6" ;;   # half of them out of view
         statics) args="$character --static $s/17879.archive --statics 4" ;;
         staticshadow) args="$character --static $s/17879.archive --statics 4 --shadow" ;;
@@ -53,7 +54,7 @@ for scene in $scenes; do
         echo "$scene: no call log ($n lines)"; fail=1
         for v in off on; do echo "  $v:"; tail -n 3 "build/h-ab-$v.txt" | sed 's/^/    /'; done
     elif tools/calllog-compare.py "$logs/calllog-off.txt" "$logs/calllog-on.txt" >/dev/null &&
-         diff -q <(grep -E '^(pick|query|material)' build/h-ab-off.txt) <(grep -E '^(pick|query|material)' build/h-ab-on.txt) >/dev/null; then
+         diff -q <(grep -E '^(pick|query|material|heightmap)' build/h-ab-off.txt) <(grep -E '^(pick|query|material|heightmap)' build/h-ab-on.txt) >/dev/null; then
         echo "$scene: same ($n calls)"
     else
         echo "$scene: DIFFERENT"; tools/calllog-compare.py "$logs/calllog-off.txt" "$logs/calllog-on.txt" | head -12; fail=1

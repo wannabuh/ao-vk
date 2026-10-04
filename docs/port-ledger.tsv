@@ -435,3 +435,5 @@
 0x2FD3C	replaced	proxy/native/occluder.cpp	RCamera_t field of view (FUN_1002fd3c)
 0x3EDC1	replaced	proxy/native/occluder.cpp	HMOccluder_t horizons (FUN_1003edc1)
 0x3E8F6	replaced	proxy/native/occluder.cpp	HMOccluder_t visibility (FUN_1003e8f6)
+0x3ECAB	replaced	proxy/native/occluder.cpp	HMOccluder_t mesh name filter (FUN_1003ecab)
+0x3F78D	replaced	proxy/native/occluder.cpp	HMOccluder_t mesh registration (FUN_1003f78d)
