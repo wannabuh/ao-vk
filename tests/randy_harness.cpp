@@ -268,7 +268,9 @@ int g_carriedLights;                                 // --lights N: the first N 
 float g_alpha = 1.0f;                                // --alpha A: the characters' transparency
 int g_sfx;                                           // --sfx N: their effect type (1 special light, 2 pulse)
 float g_terrain;                                      // --terrain H: a heightmap with a ridge H metres high
-int g_playfield;                                      // --playfield N: the occluder's playfield (meshes register)
+int g_playfield;
+int g_preprocess;                                     // --preprocess N: PreProcessPlayfield(N) on a 256 x 256 map
+int g_mapSize = 64;                                      // --playfield N: the occluder's playfield (meshes register)
 bool g_look;                                         // --look X Y Z: where the camera looks instead (some culled)
 float g_lookAt[3];
 bool g_env;                                          // --env: their materials get an environment map
@@ -416,15 +418,24 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
         Vector3 offset{100.0f, 0.0f, 100.0f};
         setPos(scene.root, nullptr, &offset, nullptr);
         void* occ = Export<void*(__cdecl*)()>("?Get@HMOccluder_t@@SAAAV1@XZ")();
-        Export<void(__fastcall*)(void*, void*, int, int)>("?SetHeightmapSize@HMOccluder_t@@QAEXHH@Z")(occ, nullptr, 64, 64);
+        if (g_preprocess) g_mapSize = 256;
+        const int n = g_mapSize;
+        Export<void(__fastcall*)(void*, void*, int, int)>("?SetHeightmapSize@HMOccluder_t@@QAEXHH@Z")(occ, nullptr, n, n);
         Export<void(__fastcall*)(void*, void*, float, float, float)>("?SetHeightmapScale@HMOccluder_t@@QAEXMMM@Z")(
             occ, nullptr, 4.0f, 0.0f, 0.01f);
-        static std::vector<uint16_t> heights(64 * 64, 0);
+        static std::vector<uint16_t> heights;
+        heights.assign(size_t(n) * size_t(n), 0);
         const int row = 25;                          // z 100..104: along the crowd's front row
-        for (int x = 0; x < 64; ++x) heights[size_t(row) * 64 + size_t(x)] = uint16_t(g_terrain * 100.0f);
+        for (int x = 0; x < n; ++x) heights[size_t(row) * size_t(n) + size_t(x)] = uint16_t(g_terrain * 100.0f);
         Export<void(__fastcall*)(void*, void*, const uint16_t*, int, int, int)>(
-            "?SetHeightmapPatch@HMOccluder_t@@QAEXPBGHHH@Z")(occ, nullptr, heights.data(), 0, 0, 63);
+            "?SetHeightmapPatch@HMOccluder_t@@QAEXPBGHHH@Z")(occ, nullptr, heights.data(), 0, 0, n - 1);
         if (g_playfield) *reinterpret_cast<int*>(static_cast<uint8_t*>(occ) + 0x94) = g_playfield;
+        if (g_preprocess) {                          // its caches in C:\linux\testclient\occtest\OCC
+            Export<void(__fastcall*)(void*, void*, const char*)>("?SetDataPath@HMOccluder_t@@QAEXPBD@Z")(
+                occ, nullptr, "C:\\linux\\testclient\\occtest");
+            Export<void(__fastcall*)(void*, void*, int)>("?PreProcessPlayfield@HMOccluder_t@@QAEXH@Z")(occ, nullptr,
+                                                                                                    g_preprocess);
+        }
         std::printf("terrain: ridge %.1f m at row %d\n", g_terrain, row);
     }
     std::printf("character: mesh %p (%d materials), %d characters, animation %.0f ms\n", mesh, materials, count,
@@ -712,6 +723,7 @@ int main(int argc, char** argv)
         else if (a == "--destroy") destroy = true;
         else if (a == "--terrain" && i + 1 < argc) g_terrain = float(std::atof(argv[++i]));
         else if (a == "--playfield" && i + 1 < argc) g_playfield = std::atoi(argv[++i]);
+        else if (a == "--preprocess" && i + 1 < argc) g_preprocess = std::atoi(argv[++i]);
         else if (a == "--lights" && i + 1 < argc) g_carriedLights = std::atoi(argv[++i]);
         else if (a == "--alpha" && i + 1 < argc) g_alpha = float(std::atof(argv[++i]));
         else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);
@@ -957,7 +969,7 @@ int main(int argc, char** argv)
         const uint16_t* heights = *reinterpret_cast<uint16_t**>(occ);
         const uint8_t* flags = *reinterpret_cast<uint8_t**>(occ + 4);
         uint32_t sum = 0, raised = 0, settled = 0;
-        for (uint32_t i = 0; i < 64 * 64; ++i) {
+        for (uint32_t i = 0; i < uint32_t(g_mapSize * g_mapSize); ++i) {
             sum = sum * 31 + heights[i];
             raised += heights[i] != 0;
             settled += flags[i] == 0xFF;

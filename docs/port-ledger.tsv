@@ -437,3 +437,4 @@
 0x3E8F6	replaced	proxy/native/occluder.cpp	HMOccluder_t visibility (FUN_1003e8f6)
 0x3ECAB	replaced	proxy/native/occluder.cpp	HMOccluder_t mesh name filter (FUN_1003ecab)
 0x3F78D	replaced	proxy/native/occluder.cpp	HMOccluder_t mesh registration (FUN_1003f78d)
+0x3012C	replaced	proxy/native/occluder.cpp	HMOccluder_t::PreProcessPlayfield (with tools/gen_occlusion_data.py output)

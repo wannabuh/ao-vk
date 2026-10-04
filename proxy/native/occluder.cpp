@@ -17,6 +17,7 @@
 #include "native/xmath.h"
 
 #include <cmath>
+#include <initializer_list>
 #include <cstdio>
 #include <cstring>
 
@@ -599,6 +600,96 @@ void __fastcall RegisterMesh(Occ* o, void*, uint8_t* mesh)
     }
 }
 
+// PreProcessPlayfield's hand corrections: generated from the original (tools/gen_occlusion_data.py) into a git-ignored
+// file - the game's data. Without it the original's function stays.
+struct HandCell {
+    int32_t x;                                       // -1: the playfield in z, its cells follow
+    double height;
+    int32_t z;
+};
+#if __has_include("native/private/occlusion_data.inc")
+#define OCC_PLAYFIELD(p) {-1, 0.0, p},
+#define SETOCC(x, h, z) {x, h, z},
+#define OCC_END()
+constexpr HandCell kHandCells[] = {
+#include "native/private/occlusion_data.inc"
+};
+#undef OCC_PLAYFIELD
+#undef SETOCC
+#undef OCC_END
+constexpr bool kHaveHandCells = true;
+#else
+constexpr HandCell kHandCells[] = {{-1, 0.0, 0}};
+constexpr bool kHaveHandCells = false;
+#endif
+
+// A cached heightmap or flag file read when its size matches.
+void ReadCache(const char* name, void* to, size_t bytes)
+{
+    FILE* f = std::fopen(name, "rb");
+    if (!f) return;
+    std::fseek(f, 0, SEEK_END);
+    if (_ftelli64(f) == int64_t(bytes)) {
+        std::fseek(f, 0, SEEK_SET);
+        std::fread(to, 1, bytes, f);
+    }
+    std::fclose(f);
+}
+
+// HMOccluder_t::PreProcessPlayfield: the playfield's hand corrections, then (for the cached playfields) its
+// preprocessed heightmap and settled cells from <data>\OCC - all caches dropped when version.id changed.
+void __fastcall PreProcessPlayfield(Occ* o, void*, int32_t playfield)
+{
+    if (!Heights(o)) return;
+    Field<int32_t>(o, kPlayfield) = playfield;
+    const int32_t width = Field<int32_t>(o, kWidth);
+    bool in = false;
+    for (const HandCell& c : kHandCells) {
+        if (c.x < 0) {
+            in = c.z == playfield;
+            continue;
+        }
+        if (!in) continue;
+        Field<uint8_t*>(o, kFlags)[width * c.z + c.x] = 0xFF;
+        Heights(o)[width * c.z + c.x] = uint16_t(int64_t(c.height / double(Field<float>(o, kHeightScale))));
+    }
+    if (!HasCache(Field<int32_t>(o, kPlayfield))) return;
+    const char* path = Field<const char*>(o, kDataPath);
+    char name[1024], current[1024], cached[1024];
+    std::sprintf(name, "%s\\OCC", path);
+    CreateDirectoryA(name, nullptr);
+    std::sprintf(name, "version.id");
+    if (FILE* f = std::fopen(name, "rb")) {
+        std::fscanf(f, "%s", current);
+        std::fclose(f);
+    } else {
+        current[0] = 0;
+    }
+    std::sprintf(name, "%s\\OCC\\OCCV.i", path);
+    if (FILE* f = std::fopen(name, "rb")) {
+        std::fscanf(f, "%s", cached);
+        std::fclose(f);
+    } else {
+        cached[0] = '1', cached[1] = 0;
+    }
+    if (std::strcmp(current, cached) != 0) {
+        if (FILE* f = std::fopen(name, "wb")) {
+            std::fprintf(f, "%s\n", current);
+            std::fclose(f);
+        }
+        for (int32_t id : {540, 545, 566, 640, 700, 705, 730, 735, 740, 800})
+            for (const char* kind : {"HM", "BL"}) {
+                std::sprintf(name, "%s\\OCC\\OCC%s_%d.i", path, kind, id);
+                DeleteFileA(name);
+            }
+    }
+    const size_t cells = size_t(uint32_t(Field<int32_t>(o, kDepth) * width));
+    std::sprintf(name, "%s\\OCC\\OCCHM_%d.i", path, Field<int32_t>(o, kPlayfield));
+    ReadCache(name, Heights(o), cells * 2);
+    std::sprintf(name, "%s\\OCC\\OCCBL_%d.i", path, Field<int32_t>(o, kPlayfield));
+    ReadCache(name, Field<uint8_t*>(o, kFlags), cells);
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -637,7 +728,12 @@ void Install(HMODULE orig)
 #undef FN
     int installed = 0;
     for (const Entry& e : entries) installed += Replace(orig, e.rva, e.target, e.what) ? 1 : 0;
-    Log("occluder: %d of %d functions native", installed, int(sizeof(entries) / sizeof(entries[0])));
+    if (kHaveHandCells)
+        installed += Replace(orig, 0x3012C, reinterpret_cast<void*>(&PreProcessPlayfield),
+                             "HMOccluder_t::PreProcessPlayfield (hand corrections generated)") ? 1 : 0;
+    else
+        Log("occluder: no proxy/native/private/occlusion_data.inc (tools/gen_occlusion_data.py) - PreProcessPlayfield stays");
+    Log("occluder: %d of %d functions native", installed, int(sizeof(entries) / sizeof(entries[0])) + (kHaveHandCells ? 1 : 0));
 }
 
 }  // namespace rnative::occluder

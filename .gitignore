@@ -4,3 +4,4 @@ compile_commands.json
 /ghidra
 /logs
 /re
+/proxy/native/private/
