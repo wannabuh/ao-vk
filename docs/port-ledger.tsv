@@ -263,3 +263,14 @@
 0x559D2	replaced	proxy/native/refframe.cpp	RRefFrame_t scale (FUN_100559d2)
 0x45C85	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetRelativePosition
 0x45CD9	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetRelativeRotation
+0x45516	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetLocalDirection
+0x455A8	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetLocalDirection(up)
+0x45D41	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetWorldTarget
+0x45DEB	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetWorldTarget(up)
+0x451C4	replaced	proxy/native/refframe.cpp	RRefFrame_t::FindConnectors
+0x4517B	replaced	proxy/native/refframe.cpp	RRefFrame_t::FindConnectors(name)
+0x45F49	replaced	proxy/native/refframe.cpp	RRefFrame_t::FindConnectorsNoChild
+0x458D0	replaced	proxy/native/refframe.cpp	RRefFrame_t::RRefFrame_t(copy)
+0x45A2F	replaced	proxy/native/refframe.cpp	RRefFrame_t::RRefFrame_t(archive)
+0x45C4D	replaced	proxy/native/refframe.cpp	RRefFrame_t::Instantiate
+0x44DA8	replaced	proxy/native/refframe.cpp	RRefFrame_t::Archive

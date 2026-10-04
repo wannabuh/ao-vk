@@ -24,6 +24,12 @@ struct Api {
     int32_t(__fastcall* findRgb)(const void* message, void*, const char* name, float* out, int32_t index) = nullptr;
     int32_t(__fastcall* addFloat)(void* message, void*, const char* name, float value) = nullptr;
     int32_t(__fastcall* addRgb)(void* message, void*, const char* name, const float* rgb) = nullptr;
+    int32_t(__fastcall* addVector3)(void* message, void*, const char* name, const float* v) = nullptr;
+    int32_t(__fastcall* addQuat)(void* message, void*, const char* name, const float* q) = nullptr;
+    int32_t(__fastcall* addMatrix4)(void* message, void*, const char* name, const float* m) = nullptr;
+    int32_t(__fastcall* findVector3)(const void* message, void*, const char* name, float* out, int32_t index) = nullptr;
+    int32_t(__fastcall* findQuat)(const void* message, void*, const char* name, float* out, int32_t index) = nullptr;
+    int32_t(__fastcall* findMatrix4)(const void* message, void*, const char* name, float* out, int32_t index) = nullptr;
     bool complete = false;
 };
 

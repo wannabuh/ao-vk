@@ -124,4 +124,79 @@ inline void Transform(const float* p, const float* m, float* out)
     out[2] = m[10] * z + m[6] * y + m[2] * x + m[14];
 }
 
+// ---- Randy's own vector / quaternion helpers (Vector3_t, Quaternion_t), in its order of operations ----
+
+inline float LengthSquared(const float* v) { return (v[1] * v[1] + v[0] * v[0]) + v[2] * v[2]; }   // FUN_10016851
+
+// FUN_10018833: v scaled to length `length`.
+inline void Normalize(float* v, float length = 1.0f)
+{
+    const float len = std::sqrt(LengthSquared(v));
+    const float f = (1.0f / len) * length;           // FUN_10017f2b (1 / length), then times `length`
+    v[0] *= f, v[1] *= f, v[2] *= f;
+}
+
+inline void Cross(const float* a, const float* b, float* out)   // FUN_1002a358
+{
+    const float x = b[2] * a[1] - b[1] * a[2];
+    const float y = a[2] * b[0] - a[0] * b[2];
+    const float z = b[1] * a[0] - b[0] * a[1];
+    out[0] = x, out[1] = y, out[2] = z;
+}
+
+// FUN_10044b5d: the shortest rotation taking direction `a` to `b` (both unit length).
+inline void RotateTo(const float* a, const float* b, float* q)
+{
+    float h[3] = {b[0] + a[0], b[1] + a[1], b[2] + a[2]};   // the half-way direction
+    float lenSq = LengthSquared(h);
+    if (lenSq < 1e-12f) {                            // opposite: any perpendicular
+        h[0] = a[2], h[1] = 0.0f, h[2] = -a[0];
+        lenSq = h[0] * h[0] + h[2] * h[2];
+    }
+    const float f = 1.0f / std::sqrt(lenSq);
+    h[0] *= f, h[1] *= f, h[2] *= f;
+    q[0] = a[1] * h[2] - a[2] * h[1];
+    q[1] = a[2] * h[0] - a[0] * h[2];
+    q[2] = a[0] * h[1] - a[1] * h[0];
+    q[3] = (a[1] * h[1] + a[0] * h[0]) + a[2] * h[2];
+}
+
+// FUN_1002ce4b: a rotation of `angle` radians around `axis` (angles outside [0, 2 pi) wrapped).
+inline void AxisAngle(const float* axis, float angle, float* q)
+{
+    float half;
+    if (angle < 0.0f || double(angle) >= 6.283185307179586) {
+        const double turns = double(float(double(angle) / 6.2831854820251465));
+        const float whole = float(std::floor(turns));
+        half = float(double(float(turns - double(whole))) * 3.1415927410125732);
+    } else {
+        half = float(double(angle) * 0.5);
+    }
+    const float s = float(std::sin(double(half)));
+    q[0] = axis[0] * s, q[1] = axis[1] * s, q[2] = axis[2] * s;
+    q[3] = float(std::cos(double(half)));
+}
+
+// FUN_1002a43c: v rotated by the (unit) quaternion q.
+inline void RotateVector(float* v, const float* q)
+{
+    float t1[3], t2[3];
+    Cross(q, v, t1);
+    Cross(q, t1, t2);
+    const float w2 = q[3] * 2.0f;
+    v[0] = v[0] + t1[0] * w2 + t2[0] * 2.0f;
+    v[1] = v[1] + t1[1] * w2 + t2[1] * 2.0f;
+    v[2] = w2 * t1[2] + v[2] + 2.0f * t2[2];
+}
+
+// FUN_100170cf: a = a * b (quaternions).
+inline void QuatMul(float* a, const float* b)
+{
+    const float x = a[0], y = a[1], z = a[2], w = a[3];
+    a[3] = w * b[3] - (b[2] * z + b[0] * x + y * b[1]);
+    a[0] = x * b[3] + ((b[1] * z + w * b[0]) - b[2] * y);
+    a[1] = y * b[3] + (b[2] * x + (w * b[1] - b[0] * z));
+    a[2] = (b[3] * z + b[2] * w) + (y * b[0] - x * b[1]);
+}
+
 }  // namespace rnative::xm

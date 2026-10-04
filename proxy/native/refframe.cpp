@@ -1,7 +1,7 @@
-// RRefFrame_t natively, first part (randy-vk.ini [Native] Scene=on): frames of the scene graph - construction,
-// children, the world matrix, change flags, animation time / loop, visibility, group mask, colour overrides,
-// relative position / rotation, sphere culling. Pointing at targets / directions, connectors, archives and debug
-// drawing are still the original's.
+// RRefFrame_t natively (randy-vk.ini [Native] Scene=on): frames of the scene graph - construction (also as a copy and
+// from an archive), children, the world matrix, change flags, animation time / loop, visibility, group mask, colour
+// overrides, relative position / rotation, pointing at targets / along directions, sphere culling, connectors,
+// archiving. Only the debug drawing is still the original's.
 //
 // RRefFrame_t (0xA4 bytes; DisplaySystem / Gamecode derive from it and read its fields): +0x00 vtable, +0x04
 // Serializable_c's, +0x08 0, +0x0C / +0x10 1.0, +0x14 parent, +0x18 next sibling, +0x1C first child, +0x20 position,
@@ -394,6 +394,249 @@ void __fastcall SetRelativeRotation(Frame* f, void*, const float* q, Frame* rela
     SetRotation(f, nullptr, out);
 }
 
+// ---- pointing ----
+
+const float kForward[3] = {0.0f, 0.0f, 1.0f};       // 0x100B773C
+const float kUp[3] = {0.0f, 1.0f, 0.0f};            // 0x100B7748
+constexpr float kPi = 3.14159274f;                  // _DAT_10095660
+
+bool SameVector(const float* a, const float* b) { return a[0] == b[0] && a[1] == b[1] && a[2] == b[2]; }
+
+// The rotation turning the frame's forward (+z) to `dir` (half a turn around `around` when exactly opposite).
+void Facing(const float* dir, const float* around, float* q)
+{
+    const float back[3] = {-kForward[0], -kForward[1], -kForward[2]};
+    if (SameVector(dir, back)) xm::AxisAngle(around, kPi, q);
+    else xm::RotateTo(kForward, dir, q);
+}
+
+// The up direction `up` without its part along `dir`, unit length.
+void UpAcross(const float* dir, const float* up, float* out)
+{
+    const float along = up[2] * dir[2] + up[0] * dir[0] + up[1] * dir[1];
+    out[0] = up[0] - dir[0] * along;
+    out[1] = up[1] - dir[1] * along;
+    out[2] = up[2] - dir[2] * along;
+    xm::Normalize(out);
+}
+
+// Facing `dir` with the frame's up turned toward `up`: the rotation set directly, then corrected, then flagged.
+void FaceWithUp(Frame* f, const float* dir, const float* upAcross)
+{
+    float* rotation = &Field<float>(f, kRotation);
+    Facing(dir, upAcross, rotation);
+    float turnedUp[3] = {kUp[0], kUp[1], kUp[2]};
+    xm::RotateVector(turnedUp, rotation);
+    const float down[3] = {-turnedUp[0], -turnedUp[1], -turnedUp[2]};
+    float roll[4];
+    if (SameVector(upAcross, down)) xm::AxisAngle(dir, kPi, roll);
+    else xm::RotateTo(turnedUp, upAcross, roll);
+    xm::QuatMul(rotation, roll);
+    SetChangeFlagsV(f, 2, true);
+}
+
+void __fastcall SetLocalDirection(Frame* f, void*, const float* direction)
+{
+    float dir[3] = {direction[0], direction[1], direction[2]};
+    xm::Normalize(dir);
+    float q[4];
+    Facing(dir, kUp, q);
+    SetRotation(f, nullptr, q);
+}
+
+void __fastcall SetLocalDirectionUp(Frame* f, void*, const float* direction, const float* up)
+{
+    float dir[3] = {direction[0], direction[1], direction[2]};
+    xm::Normalize(dir);
+    float across[3];
+    UpAcross(dir, up, across);
+    if (across[0] == 0.0f && across[1] == 0.0f && across[2] == 0.0f) std::memcpy(across, kUp, 12);
+    FaceWithUp(f, dir, across);
+}
+
+void __fastcall SetWorldTarget(Frame* f, void*, const float* target)
+{
+    const float* m = GetWorldMatrix(f);
+    float dir[3] = {target[0] - m[12], target[1] - m[13], target[2] - m[14]};
+    xm::Normalize(dir);
+    float q[4];
+    Facing(dir, kUp, q);
+    SetRotation(f, nullptr, q);
+}
+
+void __fastcall SetWorldTargetUp(Frame* f, void*, const float* target, const float* up)
+{
+    const float* m = GetWorldMatrix(f);
+    float dir[3] = {target[0] - m[12], target[1] - m[13], target[2] - m[14]};
+    xm::Normalize(dir);
+    float across[3];
+    UpAcross(dir, up, across);
+    FaceWithUp(f, dir, across);
+}
+
+// ---- connectors ----
+
+// RegExp (Utils.dll).
+struct RegExpApi {
+    void*(__fastcall* construct)(void*, void*, const char*) = nullptr;
+    void(__fastcall* destroy)(void*, void*) = nullptr;
+    bool(__fastcall* compare)(const void*, void*, const char*) = nullptr;
+    RegExpApi()
+    {
+        if (HMODULE m = GetModuleHandleA("Utils.dll")) {
+            construct = reinterpret_cast<decltype(construct)>(GetProcAddress(m, "??0RegExp@@QAE@PBD@Z"));
+            destroy = reinterpret_cast<decltype(destroy)>(GetProcAddress(m, "??1RegExp@@UAE@XZ"));
+            compare = reinterpret_cast<decltype(compare)>(GetProcAddress(m, "?Compare@RegExp@@QBE_NPBD@Z"));
+        }
+    }
+};
+const RegExpApi& RegExp()
+{
+    static const RegExpApi api;
+    return api;
+}
+
+// The connectors (of this frame, slot 7, and its children, slot 6) whose names match.
+void __fastcall FindConnectors(Frame* f, void*, void* out, const void* pattern)
+{
+    Virtual(f, 7, out, pattern);
+    for (Frame* c = FirstChild(f); c; c = Next(c)) Virtual(c, 6, out, pattern);
+}
+
+void __fastcall FindConnectorsNamed(Frame* f, void*, void* out, const char* pattern)
+{
+    alignas(8) uint8_t regexp[64];
+    RegExp().construct(regexp, nullptr, pattern);
+    Virtual(f, 6, out, static_cast<const void*>(regexp));
+    RegExp().destroy(regexp, nullptr);
+}
+
+void __fastcall FindConnectorsNoChild(Frame* f, void*, vc10::Vector<void*>* out, const void* pattern)
+{
+    void* connector = Field<void*>(f, kConnector);
+    if (connector && RegExp().compare(pattern, nullptr, orig::RResource_t_GetName(connector))) out->push_back(connector);
+}
+
+// ---- copies and archives ----
+
+void InitMembers(Frame* f)                          // what every constructor sets before its own part
+{
+    Field<float>(f, 0xC) = 1.0f;
+    Field<float>(f, 0x10) = 1.0f;
+    Field<uintptr_t>(f, 0) = reinterpret_cast<uintptr_t>(g_orig) + kVtable;
+    f[8] = 0;
+    Field<void*>(f, kParent) = nullptr;
+    Field<void*>(f, kNext) = nullptr;
+    Field<void*>(f, kChild) = nullptr;
+}
+
+void ResetRest(Frame* f)
+{
+    Field<void*>(f, kEmissive) = nullptr;
+    Field<void*>(f, kSpecular) = nullptr;
+    f[kVisible] = 1;
+    Field<void*>(f, kConnector) = nullptr;
+    Field<uint16_t>(f, kChanged) = 0x0F0F;
+    f[kDirty] = 0xF;
+}
+
+// A copy: placement, scale, transparency, group mask, its animation (shared) and matrix, a connector of the same
+// name, and copies of the children (their slot 3).
+void* __fastcall Copy(Frame* f, void*, Frame* from)
+{
+    serialize::Get().construct(f, nullptr);
+    InitMembers(f);
+    std::memcpy(f + kPosition, from + kPosition, kAnim - kPosition);   // position, rotation, scale
+    Field<void*>(f, kAnim) = nullptr;
+    xm::M4 id = xm::Identity();
+    std::memcpy(f + kWorld, id.m, 64);
+    Field<float>(f, kWorldScale) = Field<float>(from, kWorldScale);
+    Field<float>(f, kTransparency) = Field<float>(from, kTransparency);
+    ResetRest(f);
+    Field<uint32_t>(f, kGroupMask) = Field<uint32_t>(from, kGroupMask);
+    if (Anim* a = Field<Anim*>(from, kAnim)) {
+        auto* copy = static_cast<Anim*>(vc10::Allocate(sizeof(Anim)));   // FUN_10044c6e
+        std::memcpy(copy, a, sizeof(Anim));
+        if (copy->animation) orig::RResource_t_AddRefRResource(copy->animation);
+        Field<Anim*>(f, kAnim) = copy;
+        SetAnimMatrix(f, nullptr, a->matrix);
+    }
+    if (void* connector = Field<void*>(from, kConnector)) {
+        void* c = orig::RRefFrameConnector_RRefFrameConnector_33(vc10::Allocate(0x30), orig::RResource_t_GetName(connector), f);
+        Field<void*>(f, kConnector) = c;
+        orig::RResource_t_ReleaseRResource(c);
+    }
+    for (Frame* c = FirstChild(from); c; c = Next(c)) AddChild(f, nullptr, Virtual<Frame*>(c, 3));
+    return f;
+}
+
+void* __fastcall ConstructFrom(Frame* f, void*, void* archive)
+{
+    const serialize::Api& s = serialize::Get();
+    s.constructFrom(f, nullptr, archive);
+    InitMembers(f);
+    std::memset(f + kPosition, 0, 24);
+    Field<float>(f, kRotation + 12) = 1.0f;
+    Field<void*>(f, kAnim) = nullptr;
+    Field<float>(f, kScale) = 1.0f;
+    xm::M4 id = xm::Identity();
+    std::memcpy(f + kWorld, id.m, 64);
+    Field<int32_t>(f, kGroupMask) = -1;
+    Field<float>(f, kTransparency) = 1.0f;
+    ResetRest(f);
+    void* stream = s.getStream(archive, nullptr);
+    int32_t mask = 0;
+    if (s.findInt32(stream, nullptr, "grp_mask", &mask, 0) == 0) Field<int32_t>(f, kGroupMask) = mask;
+    s.findVector3(stream, nullptr, "local_pos", &Field<float>(f, kPosition), 0);
+    s.findQuat(stream, nullptr, "local_rot", &Field<float>(f, kRotation), 0);
+    s.findFloat(stream, nullptr, "scale", &Field<float>(f, kScale), 0);
+    Internal<void(__fastcall*)(void*, void*, const char*, void**, void*)>(0x460B8)(stream, nullptr, "conn",
+                                                                                 &Field<void*>(f, kConnector), nullptr);
+    void* animation = nullptr;
+    Internal<void(__fastcall*)(void*, void*, const char*, void**, void*)>(0x46101)(stream, nullptr, "anim", &animation,
+                                                                                 nullptr);
+    if (!animation) {
+        StaticIdentity(0x17D440, 0x17D400);
+        xm::M4 m = xm::Identity();
+        if (s.findMatrix4(stream, nullptr, "anim_matrix", m.m, 0) == 0) SetAnimMatrix(f, nullptr, m.m);
+    } else {
+        Anim* a = NewAnim(animation);
+        Field<Anim*>(f, kAnim) = a;
+        s.findMatrix4(stream, nullptr, "anim_matrix", a->matrix, 0);
+        orig::RResource_t_ReleaseRResource(animation);
+    }
+    int32_t children = 0;
+    s.findInt32(stream, nullptr, "chld_cnt", &children, 0);
+    for (int32_t i = 0; i < children; ++i) {
+        Frame* child = nullptr;
+        if (Internal<int32_t(__fastcall*)(void*, void*, const char*, Frame**, intptr_t)>(0x2BDDC)(
+                stream, nullptr, "chld", &child, i) == 0)
+            AddChild(f, nullptr, child);
+    }
+    return f;
+}
+
+void* __cdecl Instantiate(void* archive) { return ConstructFrom(static_cast<Frame*>(vc10::Allocate(0xA4)), nullptr, archive); }
+
+void __fastcall Archive(Frame* f, void*, void* archive)
+{
+    const serialize::Api& s = serialize::Get();
+    void* stream = s.getStream(archive, nullptr);
+    s.addInt32(stream, nullptr, "grp_mask", Field<int32_t>(f, kGroupMask));
+    s.addVector3(stream, nullptr, "local_pos", &Field<float>(f, kPosition));
+    s.addQuat(stream, nullptr, "local_rot", &Field<float>(f, kRotation));
+    s.addFloat(stream, nullptr, "scale", Field<float>(f, kScale));
+    s.addObject(stream, nullptr, "conn", Field<void*>(f, kConnector));
+    if (Anim* a = Field<Anim*>(f, kAnim)) {
+        s.addMatrix4(stream, nullptr, "anim_matrix", a->matrix);
+        s.addObject(stream, nullptr, "anim", a->animation);
+    }
+    int32_t children = 0;
+    for (Frame* c = FirstChild(f); c; c = Next(c)) ++children;
+    s.addInt32(stream, nullptr, "chld_cnt", children);
+    for (Frame* c = FirstChild(f); c; c = Next(c)) s.addObject(stream, nullptr, "chld", c);
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -438,6 +681,17 @@ void Install(HMODULE orig)
         {0x559D2, FN(SetScale), "RRefFrame_t scale (FUN_100559d2)"},
         {0x45C85, FN(SetRelativePosition), "RRefFrame_t::SetRelativePosition"},
         {0x45CD9, FN(SetRelativeRotation), "RRefFrame_t::SetRelativeRotation"},
+        {0x45516, FN(SetLocalDirection), "RRefFrame_t::SetLocalDirection"},
+        {0x455A8, FN(SetLocalDirectionUp), "RRefFrame_t::SetLocalDirection(up)"},
+        {0x45D41, FN(SetWorldTarget), "RRefFrame_t::SetWorldTarget"},
+        {0x45DEB, FN(SetWorldTargetUp), "RRefFrame_t::SetWorldTarget(up)"},
+        {0x451C4, FN(FindConnectors), "RRefFrame_t::FindConnectors"},
+        {0x4517B, FN(FindConnectorsNamed), "RRefFrame_t::FindConnectors(name)"},
+        {0x45F49, FN(FindConnectorsNoChild), "RRefFrame_t::FindConnectorsNoChild"},
+        {0x458D0, FN(Copy), "RRefFrame_t::RRefFrame_t(copy)"},
+        {0x45A2F, FN(ConstructFrom), "RRefFrame_t::RRefFrame_t(archive)"},
+        {0x45C4D, FN(Instantiate), "RRefFrame_t::Instantiate"},
+        {0x44DA8, FN(Archive), "RRefFrame_t::Archive"},
     };
 #undef FN
     int installed = 0;
