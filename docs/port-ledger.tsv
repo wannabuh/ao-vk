@@ -438,3 +438,37 @@
 0x3ECAB	replaced	proxy/native/occluder.cpp	HMOccluder_t mesh name filter (FUN_1003ecab)
 0x3F78D	replaced	proxy/native/occluder.cpp	HMOccluder_t mesh registration (FUN_1003f78d)
 0x3012C	replaced	proxy/native/occluder.cpp	HMOccluder_t::PreProcessPlayfield (with tools/gen_occlusion_data.py output)
+0x53F36	replaced	proxy/native/cat_life.cpp	CATRender_t slot (0x10053f36)
+0x53F40	replaced	proxy/native/cat_life.cpp	CATRender_t slot destructor (FUN_10053f40)
+0x55434	replaced	proxy/native/cat_life.cpp	CATRender_t slots deleting (FUN_10055434)
+0x53F4D	replaced	proxy/native/cat_life.cpp	CATRender_t slot buffer (FUN_10053f4d)
+0x53FC0	replaced	proxy/native/cat_life.cpp	CATRender_t slot lock (FUN_10053fc0)
+0x5548D	replaced	proxy/native/cat_life.cpp	CATRender_t slots resize (FUN_1005548d)
+0x5555C	replaced	proxy/native/cat_life.cpp	CATRender_t group (0x1005555c)
+0x54B77	replaced	proxy/native/cat_life.cpp	CATRender_t group destructor (FUN_10054b77)
+0x55512	replaced	proxy/native/cat_life.cpp	CATRender_t groups deleting (FUN_10055512)
+0x5559B	replaced	proxy/native/cat_life.cpp	CATRender_t groups resize (FUN_1005559b)
+0x5538F	replaced	proxy/native/cat_life.cpp	CATRender_t bones resize (FUN_1005538f)
+0x553D2	replaced	proxy/native/cat_life.cpp	CATRender_t pairs resize (FUN_100553d2)
+0x53EDD	replaced	proxy/native/cat_life.cpp	CATRender_t bone identity (FUN_10053edd)
+0x55243	replaced	proxy/native/cat_life.cpp	CATRender_t::CATRender_t (FUN_10055243)
+0x55299	replaced	proxy/native/cat_life.cpp	CATRender_t::~CATRender_t (FUN_10055299)
+0x5564D	replaced	proxy/native/cat_life.cpp	CATRender_t deleting destructor (FUN_1005564d)
+0x55108	replaced	proxy/native/cat_life.cpp	CATRender_t::SetMesh
+0x53FE2	replaced	proxy/native/cat_life.cpp	CATRender_t::SetAnim
+0x5536C	replaced	proxy/native/cat_life.cpp	CATRender_t::RegisterVertexProcessCallback
+0x55331	replaced	proxy/native/cat_life.cpp	CATRender_t::UnregisterVertexProcessCallback
+0x543BC	replaced	proxy/native/cat_life.cpp	CATRender_t buffers on the CPU (FUN_100543bc)
+0x583AA	replaced	proxy/native/cat_life.cpp	RCATMesh_t attractor map (FUN_100583aa)
+0x58F11	replaced	proxy/native/cat_life.cpp	RCATMesh_t attractor map destructor (FUN_10058f11)
+0x58E75	replaced	proxy/native/cat_life.cpp	RCATMesh_t attractor map [] (FUN_10058e75)
+0x57DE0	replaced	proxy/native/cat_life.cpp	RCATMesh_t::AddAttractorChild
+0x57E96	replaced	proxy/native/cat_life.cpp	RCATMesh_t::RemoveAttractorChild
+0x55A3E	replaced	proxy/native/cat_life.cpp	RCATMesh_t effect states (FUN_10055a3e)
+0x57FE0	replaced	proxy/native/cat_life.cpp	RCATMesh_t::RCATMesh_t
+0x57F15	replaced	proxy/native/cat_life.cpp	RCATMesh_t::~RCATMesh_t (FUN_10057f15)
+0x58F67	replaced	proxy/native/cat_life.cpp	RCATMesh_t deleting destructor (FUN_10058f67)
+0x58F54	replaced	proxy/native/cat_life.cpp	RCATMesh_t deleting destructor, visual (FUN_10058f54)
+0x58F5C	replaced	proxy/native/cat_life.cpp	RCATMesh_t deleting destructor, third base (FUN_10058f5c)
+0x55CCD	replaced	proxy/native/cat_life.cpp	RCATMesh_t group extents (FUN_10055ccd)
+0x55C75	replaced	proxy/native/cat_life.cpp	RCATMesh_t::RestoreData (FUN_10055c75)

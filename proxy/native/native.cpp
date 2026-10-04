@@ -15,6 +15,7 @@
 #include "native/mesh.h"
 #include "native/mesh_data.h"
 #include "native/occluder.h"
+#include "native/cat_life.h"
 
 namespace rnative {
 
@@ -41,6 +42,7 @@ void Install(HMODULE orig)
     mesh::Install(orig);
     meshdata::Install(orig);
     occluder::Install(orig);
+    catlife::Install(orig);
 }
 
 }  // namespace rnative

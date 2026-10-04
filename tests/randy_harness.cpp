@@ -269,6 +269,8 @@ float g_alpha = 1.0f;                                // --alpha A: the character
 int g_sfx;                                           // --sfx N: their effect type (1 special light, 2 pulse)
 float g_terrain;                                      // --terrain H: a heightmap with a ridge H metres high
 int g_playfield;
+int g_attach;                                         // --attach N: N attractor children a character, half removed
+bool g_restore;                                       // --restore: a lost device's restore at frame 2
 int g_preprocess;                                     // --preprocess N: PreProcessPlayfield(N) on a 256 x 256 map
 int g_mapSize = 64;                                      // --playfield N: the occluder's playfield (meshes register)
 bool g_look;                                         // --look X Y Z: where the camera looks instead (some culled)
@@ -383,6 +385,19 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
             for (int i = 0; i < materials; ++i)
                 if (void* m = getSubst(character, nullptr, i))
                     if (skins[size_t(i)]) setEnv(m, nullptr, skins[size_t(i)]);
+        }
+        if (g_attach) {                              // children by attractor name (a std::map), every other one removed
+            using AttachFn = void(__fastcall*)(void* self, void*, const char* name, void* frame);
+            auto add = Export<AttachFn>("?AddAttractorChild@RCATMesh_t@@QAEXPBDPAVRRefFrame_t@@@Z");
+            auto remove = Export<AttachFn>("?RemoveAttractorChild@RCATMesh_t@@QAEXPBDPBVRRefFrame_t@@@Z");
+            static const char* const names[] = {"m", "f", "t", "c", "h", "q", "w", "a", "d", "k", "o", "r", "u", "y",
+                                                "b", "e", "g", "i", "l", "n", "p", "s", "v", "x", "z", "j"};
+            for (int i = 0; i < g_attach; ++i) {
+                void* child = frameCtor(::operator new(0xA4), nullptr, nullptr, nullptr);
+                add(character, nullptr, names[i % 26], child);
+                add(character, nullptr, names[i % 26], child);   // (already there: ignored)
+                if (i % 2) remove(character, nullptr, names[i % 26], child);
+            }
         }
         if (c < g_carriedLights) {                   // a point light at head height, carried (RLight_t Type_e 2)
             using LightCtorFn = void*(__fastcall*)(void* self, void*, void* parent, const float* rgb, int type, void* anim);
@@ -724,6 +739,8 @@ int main(int argc, char** argv)
         else if (a == "--terrain" && i + 1 < argc) g_terrain = float(std::atof(argv[++i]));
         else if (a == "--playfield" && i + 1 < argc) g_playfield = std::atoi(argv[++i]);
         else if (a == "--preprocess" && i + 1 < argc) g_preprocess = std::atoi(argv[++i]);
+        else if (a == "--attach" && i + 1 < argc) g_attach = std::atoi(argv[++i]);
+        else if (a == "--restore") g_restore = true;
         else if (a == "--lights" && i + 1 < argc) g_carriedLights = std::atoi(argv[++i]);
         else if (a == "--alpha" && i + 1 < argc) g_alpha = float(std::atof(argv[++i]));
         else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);
@@ -857,6 +874,7 @@ int main(int argc, char** argv)
     QueryPerformanceFrequency(&frequency);
     double sceneSeconds = 0.0;
     for (int frame = 0; frame < frames; ++frame) {
+        if (g_restore && frame == 2) ++*Export<unsigned*>("?s_nRestoreCount@Randy_t@@0IA");
         bool restored = false;
         open(viewport, nullptr, &restored);
         unsigned clearColor = 0xFF203040;
