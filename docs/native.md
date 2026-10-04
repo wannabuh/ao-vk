@@ -39,7 +39,7 @@ result, sharing the piece's indices. Characters with vertex effects (callbacks o
 | off (original) | 8.4 ms | 118 fps |
 | cpu | 5.0 ms | 167 fps |
 | on, skinned on the CPU (`RANDYVK_GPU_SKIN=0`) | 1.6 ms | 180 fps (the worker: per-vertex copies) |
-| on, skinned on the GPU (default) | 0.9 ms | 414 fps |
+| on, skinned on the GPU (default) | 0.9-1.0 ms | 350-410 fps |
 
 **GPU skinning** (`rvk/skin_gpu.cpp`, `shaders/skin.comp`): a piece drawn with `Device::DrawSkinned` is skinned by a
 compute dispatch in the frame's upload command buffer (run before the main pass) into a per-frame arena; the mesh

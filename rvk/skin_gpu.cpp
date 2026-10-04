@@ -94,6 +94,7 @@ void Device::BeginSkinFrame()
     Frame& f = m_frames[m_frameIndex];
     f.skinArenaOffset = 0;
     m_skinOutputs.clear();
+    m_skinBonesAt.clear();
     if (m_gpuSkin && (!f.skinArena || f.skinArenaSize < m_skinArenaWanted)) {
         if (f.skinArena) vmaDestroyBuffer(m_allocator, f.skinArena, f.skinArenaAllocation);
         f.skinArena = VK_NULL_HANDLE;
@@ -230,6 +231,12 @@ bool Device::SkinArenaAlloc(VkDeviceSize bytes, VkDeviceSize* offset)
 // The bones, as skin.comp reads them (three rows per bone), into the ring.
 VkDeviceSize Device::SkinBones(const skin::Palette& bones, VkDeviceSize* bytes)
 {
+    // A character's pieces share their bones: written once per frame (and ring restart).
+    auto found = m_skinBonesAt.find(&bones);
+    if (found != m_skinBonesAt.end() && found->second.generation == m_ringGeneration) {
+        *bytes = found->second.bytes;
+        return found->second.offset;
+    }
     *bytes = std::max<VkDeviceSize>(VkDeviceSize(bones.count) * 48, 48);
     void* cpu;
     VkDeviceSize offset = Allocate(*bytes, m_props.limits.minStorageBufferOffsetAlignment, &cpu);
@@ -239,6 +246,7 @@ VkDeviceSize Device::SkinBones(const skin::Palette& bones, VkDeviceSize* bytes)
             for (int c = 0; c < 4; ++c)
                 rows[b * 12 + r * 4 + c] = bones.bones[b].c[c][r];
     if (!bones.count) std::memset(rows, 0, 48);
+    m_skinBonesAt[&bones] = {offset, *bytes, m_ringGeneration};
     return offset;
 }
 

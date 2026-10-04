@@ -160,9 +160,38 @@ bool SkinDeferred(void* render)
     palette->Set(bones, boneCount);
     const bool rest = At<uint8_t>(render, kRenderRest) == 1;
     static std::vector<Vertex> sparse;                      // the blob shadow's positions (every 4th vertex)
-    uint32_t vertexBase = 0, triBase = 0;
+    // The pieces' jobs first, with one box for the character (from all its pieces' bone boxes).
+    struct PieceJob { void* buffer; uint8_t* piece; std::shared_ptr<Job> job; };
+    static std::vector<PieceJob> pieceJobs;
+    static std::vector<const rvk::skin::Source*> sources;
+    pieceJobs.clear();
+    sources.clear();
     const int32_t groupCount = At<int32_t>(render, kRenderGroupCount);
     auto* groups = At<RenderGroup*>(render, kRenderGroups);
+    for (int32_t g = 0; g < groupCount; ++g) {
+        uint8_t* meshGroup = At<uint8_t*>(groups[g].mesh, kMeshGroups) + g * kGroupSize;
+        const int32_t pieces = At<int32_t>(meshGroup, kGroupPieceCount);
+        uint8_t* piece = At<uint8_t*>(meshGroup, kGroupPieces);
+        for (int32_t p = 0; p < pieces; ++p, piece += kPieceSize) {
+            PieceJob pj{groups[g].slots[p].buffer, piece, nullptr};
+            const auto* in = At<const TriVertex*>(piece, kPieceVertices);
+            const uint32_t count = At<uint32_t>(piece, kPieceVertexCount);
+            if (count && in) {
+                pj.job = std::make_shared<Job>();
+                const auto* indices = At<const uint16_t*>(piece, kPieceIndices);
+                const uint32_t tris = At<uint32_t>(piece, kPieceTriCount);
+                pj.job->source = SourceOf(in, count, indices, indices ? tris * 3 : 0);
+                pj.job->bones = palette;
+                pj.job->rest = rest;
+                sources.push_back(pj.job->source.get());
+            }
+            pieceJobs.push_back(std::move(pj));
+        }
+    }
+    float boxMin[3], boxMax[3];
+    Job::BoundsOf(sources.data(), sources.size(), *palette, rest, boxMin, boxMax);
+    uint32_t vertexBase = 0, triBase = 0;
+    size_t next = 0;
     for (int32_t g = 0; g < groupCount; ++g) {
         uint8_t* meshGroup = At<uint8_t*>(groups[g].mesh, kMeshGroups) + g * kGroupSize;
         const int32_t pieces = At<int32_t>(meshGroup, kGroupPieceCount);
@@ -173,13 +202,9 @@ bool SkinDeferred(void* render)
             const uint32_t count = At<uint32_t>(piece, kPieceVertexCount);
             const uint32_t tris = At<uint32_t>(piece, kPieceTriCount);
             bool handed = false;
-            if (count && in) {
-                auto job = std::make_shared<Job>();
-                const auto* indices = At<const uint16_t*>(piece, kPieceIndices);
-                job->source = SourceOf(in, count, indices, indices ? tris * 3 : 0);
-                job->bones = palette;
-                job->rest = rest;
-                job->ComputeBounds();
+            if (std::shared_ptr<Job>& job = pieceJobs[next++].job) {
+                std::memcpy(job->boundsMin, boxMin, sizeof(boxMin));
+                std::memcpy(job->boundsMax, boxMax, sizeof(boxMax));
                 handed = g_sink(D3dBuffer(buffer), job);
                 if (handed)
                     Job::Prefetch(job);
@@ -200,6 +225,7 @@ bool SkinDeferred(void* render)
             triBase += tris;
         }
     }
+    pieceJobs.clear();                                      // the buffers hold the jobs now
     return true;
 }
 

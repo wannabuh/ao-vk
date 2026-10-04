@@ -170,23 +170,48 @@ void Source::Finish()
 
 void Job::ComputeBounds()
 {
-    for (int j = 0; j < 3; ++j) boundsMin[j] = FLT_MAX, boundsMax[j] = -FLT_MAX;
-    auto add = [this](const float* p) {
-        for (int j = 0; j < 3; ++j) boundsMin[j] = std::min(boundsMin[j], p[j]), boundsMax[j] = std::max(boundsMax[j], p[j]);
+    const Source* s = source.get();
+    BoundsOf(&s, 1, *bones, rest, boundsMin, boundsMax);
+}
+
+void Job::BoundsOf(const Source* const* sources, size_t count, const Palette& bones, bool rest, float boxMin[3],
+                   float boxMax[3])
+{
+    for (int j = 0; j < 3; ++j) boxMin[j] = FLT_MAX, boxMax[j] = -FLT_MAX;
+    auto add = [&](const float* p) {
+        for (int j = 0; j < 3; ++j) boxMin[j] = std::min(boxMin[j], p[j]), boxMax[j] = std::max(boxMax[j], p[j]);
     };
     // A vertex is in the rest pose, or a blend of its bones' transforms of its positions in their spaces - inside
     // the union of the bones' boxes, transformed (a vertex with a bone out of range: the rest pose, so that too).
+    // The pieces' boxes per bone are merged first: each bone's corners are transformed once.
+    static thread_local std::vector<float> merged;
+    size_t boxes = 0;
+    for (size_t i = 0; i < count; ++i) boxes = std::max(boxes, sources[i]->boneBoxes.size() / 6);
+    merged.assign(boxes * 6, 0.0f);
+    for (size_t b = 0; b < boxes; ++b)
+        for (int j = 0; j < 3; ++j) merged[b * 6 + j] = FLT_MAX, merged[b * 6 + 3 + j] = -FLT_MAX;
     bool restToo = rest;
-    const uint32_t boxes = uint32_t(source->boneBoxes.size() / 6);
-    for (uint32_t b = 0; b < boxes && !rest; ++b) {
-        const float* box = &source->boneBoxes[size_t(b) * 6];
+    for (size_t i = 0; i < count; ++i) {
+        const std::vector<float>& own = sources[i]->boneBoxes;
+        for (size_t k = 0; k < own.size(); k += 6)
+            for (int j = 0; j < 3; ++j) {
+                merged[k + j] = std::min(merged[k + j], own[k + j]);
+                merged[k + 3 + j] = std::max(merged[k + 3 + j], own[k + 3 + j]);
+            }
+        if (rest) {
+            add(sources[i]->bindMin);
+            add(sources[i]->bindMax);
+        }
+    }
+    for (size_t b = 0; b < boxes && !rest; ++b) {
+        const float* box = &merged[b * 6];
         if (box[0] > box[3])
             continue;                            // no vertex in this bone's space
-        if (b >= bones->count) {
+        if (b >= bones.count) {
             restToo = true;
             continue;
         }
-        const Palette::Columns& m = bones->bones[b];
+        const Palette::Columns& m = bones.bones[b];
         for (int corner = 0; corner < 8; ++corner) {
             float p[3] = {box[(corner & 1) ? 3 : 0], box[(corner & 2) ? 4 : 1], box[(corner & 4) ? 5 : 2]};
             float q[3];
@@ -195,12 +220,13 @@ void Job::ComputeBounds()
             add(q);
         }
     }
-    if (restToo) {
-        add(source->bindMin);
-        add(source->bindMax);
-    }
-    if (boundsMin[0] > boundsMax[0])             // no vertices
-        for (int j = 0; j < 3; ++j) boundsMin[j] = boundsMax[j] = 0.0f;
+    if (restToo && !rest)
+        for (size_t i = 0; i < count; ++i) {
+            add(sources[i]->bindMin);
+            add(sources[i]->bindMax);
+        }
+    if (boxMin[0] > boxMax[0])                   // no vertices
+        for (int j = 0; j < 3; ++j) boxMin[j] = boxMax[j] = 0.0f;
 }
 
 const Vertex* Job::Skinned()

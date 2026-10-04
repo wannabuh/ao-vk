@@ -85,6 +85,9 @@ struct Job {
     // skinning (ComputeBounds, when the job is made). Larger than the exact one by a little.
     float boundsMin[3] = {}, boundsMax[3] = {};
     void ComputeBounds();
+    // The same for several pieces of one character together (one box for all: cheaper than one each).
+    static void BoundsOf(const Source* const* sources, size_t count, const Palette& bones, bool rest, float boxMin[3],
+                         float boxMax[3]);
     // Starts skinning on a pool thread, so it's done by the time it's drawn (Skinned waits if it isn't) - unless the
     // renderer skins on the GPU (SetPrefetch(false)).
     static void Prefetch(const std::shared_ptr<Job>& job);

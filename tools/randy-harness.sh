@@ -19,7 +19,7 @@ fi
 cp build/linux-release/randy_harness.exe "$client/randy_harness.exe" || exit 1
 # Test the freshly built proxy; put back whatever was installed afterwards.
 cp "$client/randy31.dll" "$client/randy31.dll.harness-bak" || exit 1
-cp build/linux-release/randy31.dll "$client/randy31.dll"
+cp "${RANDY_DLL:-build/linux-release/randy31.dll}" "$client/randy31.dll"
 cd "$client" || exit 1
 # RANDYVK_DDRAW (e.g. trace) is passed through from the caller's environment.
 rm -f ../logs/randy-vk-harness.log

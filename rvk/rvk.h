@@ -727,6 +727,8 @@ private:
     bool m_skinUploadsPending = false;
     std::unordered_map<const skin::Source*, SkinMesh> m_skinMeshes;
     std::unordered_map<const skin::Job*, SkinOutput> m_skinOutputs;   // this frame's
+    struct SkinBonesAt { VkDeviceSize offset, bytes; uint64_t generation; };
+    std::unordered_map<const skin::Palette*, SkinBonesAt> m_skinBonesAt;   // this frame's bones in the ring
     bool CreateSkinResources(std::string* error);
     void DestroySkinResources();
     void BeginSkinFrame();
