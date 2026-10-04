@@ -104,6 +104,7 @@
     X(vkCmdDispatch) \
     X(vkCmdFillBuffer) \
     X(vkCmdCopyBufferToImage) \
+    X(vkCmdCopyBuffer) \
     X(vkCmdCopyImageToBuffer) \
     X(vkCmdBlitImage)
 

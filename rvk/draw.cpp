@@ -912,7 +912,7 @@ void Device::FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices,
         (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW || m_frameLightIndices.empty())
         return;
     uint32_t count = std::min<uint32_t>(uint32_t(m_frameLightIndices.size()), 64);
-    if (m_external || !vertices || !vertexCount) {
+    if (m_external || (!vertices && !m_drawMesh) || !vertexCount) {
         out[0] = count >= 32 ? ~0u : (1u << count) - 1u;
         out[1] = count > 32 ? (count >= 64 ? ~0u : (1u << (count - 32)) - 1u) : 0u;
         return;
@@ -960,7 +960,7 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
 {
     m_drawMesh = nullptr;
     m_drawMeshStatic = false;
-    if (m_external || !vertices || !vertexCount || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ)
+    if (m_external || (!vertices && !m_drawSkin) || !vertexCount || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ)
         return;
     if (m_drawSkin) {
         // A skinned piece: new vertices with every skinning (a key of its own, as new vertices would get), its box
@@ -1067,6 +1067,12 @@ uint32_t Device::CarriedLight(uint32_t fvf, const void* vertices, uint32_t verte
     const auto& w = m_world.m;
     float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
     const uint8_t* v = static_cast<const uint8_t*>(vertices);
+    if (!v && m_drawMesh) {                              // no vertices here (skinned on the GPU): its box
+        float c[3], e[3];
+        DrawWorldBox(c, e);
+        for (int j = 0; j < 3; ++j) { mn[j] = c[j] - e[j]; mx[j] = c[j] + e[j]; }
+        vertexCount = 0;
+    }
     for (uint32_t i = 0; i < vertexCount; ++i) {
         float q[3];
         std::memcpy(q, v + size_t(i) * stride, sizeof(q));
@@ -1190,11 +1196,21 @@ void Device::DrawIndexedPrimitive(uint32_t primitive, uint32_t fvf, const void* 
 void Device::DrawSkinned(uint32_t primitive, uint32_t fvf, skin::Job& job, uint32_t startVertex, uint32_t vertexCount,
                          const uint16_t* indices, uint32_t indexCount)
 {
-    const skin::Vertex* vertices = job.Skinned();
     m_drawSkin = &job;
-    m_drawSkinBase = vertices;
-    Draw(primitive, fvf, vertices + startVertex, vertexCount, indices, indexCount);
+    m_drawGpu = nullptr;
+    // On the GPU: the whole piece with its own triangles (the game's draws of a character piece always are).
+    if (m_gpuSkin && fvf == skin::kVertexFvf && startVertex == 0 && vertexCount == job.source->vertices.size() &&
+        indices && indices == job.source->indices.data() && indexCount <= job.source->indices.size() && m_inFrame)
+        m_drawGpu = SkinOnGpu(job);
+    if (m_drawGpu) {
+        Draw(primitive, fvf, nullptr, vertexCount, indices, indexCount);
+    } else {
+        const skin::Vertex* vertices = job.Skinned();
+        m_drawSkinBase = vertices;
+        Draw(primitive, fvf, vertices + startVertex, vertexCount, indices, indexCount);
+    }
     m_drawSkin = nullptr;
+    m_drawGpu = nullptr;
 }
 
 void Device::DrawPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32_t startVertex, uint32_t vertexCount)
@@ -1452,8 +1468,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     }
     m_drawIsLabel = !m_external && IsLabel(primitive, fvf, vertexCount);
     if (m_dumpFile && !m_external)
-        DumpDraw(primitive, fvf, vertices, vertexCount, indices, indexCount);
-    if (!m_external && IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount))
+        DumpDraw(primitive, fvf, m_drawGpu ? nullptr : vertices, vertexCount, indices, indexCount);
+    if (!m_external && !m_drawGpu && IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount))
         return;                                  // replaced by sun shadows
     if (IsTerrain(fvf) && IsMultiplyPass())
         m_terrainLitPassCur = true;
@@ -1486,7 +1502,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // the particles - is already in a GPU buffer.)
     const VkDeviceSize uboAlign = m_props.limits.minUniformBufferOffsetAlignment;
     bool motion = !m_external && MotionVectorDraw(fvf);   // reads the last frame's camera from the frame block
-    VkDeviceSize geometryBytes = m_external ? 0 : VkDeviceSize(layout.stride) * vertexCount + VkDeviceSize(indexCount) * 2;
+    VkDeviceSize geometryBytes = m_external || m_drawGpu ? 0 : VkDeviceSize(layout.stride) * vertexCount + VkDeviceSize(indexCount) * 2;
     m_drawIsCharacter = CharacterDraw(fvf, vertexCount);
     float tessLevel = TessellateDraw(primitive, fvf, vertexCount);
     EnsureRingSpace(sizeof(DrawConstants) + sizeof(DrawTransform) + sizeof(FrameLights) + geometryBytes + 3 * uboAlign +
@@ -1509,6 +1525,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     VkDeviceSize transformOffset = Allocate(sizeof(DrawTransform), uboAlign, &cpu);
     auto* drawTransform = static_cast<DrawTransform*>(cpu);
     VkDeviceSize prevPositionsOffset = 0, prevPositionsBytes = 0;   // binding 8 (animated meshes' last positions)
+    VkBuffer prevPositionsBuffer = f.ring;
     drawTransform->world = m_world;
     drawTransform->prevWorld = m_world;
     drawTransform->motion[0] = motion ? 1.0f : 0.0f;
@@ -1536,7 +1553,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         // This frame's positions (for next frame's match) of a mesh small enough to be a character's part.
         // Static meshes (the mesh cache: same vertices as before) need none - only animated ones are compared.
         std::vector<float> positions;
-        if (vertexCount <= kMotionMaxVertices && !m_drawMeshStatic) {
+        if (vertexCount <= kMotionMaxVertices && !m_drawMeshStatic && !m_drawGpu) {
             positions.resize(size_t(vertexCount) * 3);
             const uint8_t* v = static_cast<const uint8_t*>(vertices);
             for (uint32_t i = 0; i < vertexCount; ++i)
@@ -1555,6 +1572,13 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             if (best) {
                 drawTransform->prevWorld = best->world;
                 best->used = true;
+                // Skinned on the GPU: last frame's positions came from the same dispatch (last frame's bones).
+                if (m_drawGpu && m_drawGpu->moved) {
+                    prevPositionsBuffer = m_frames[m_frameIndex].skinArena;
+                    prevPositionsOffset = m_drawGpu->prevOffset;
+                    prevPositionsBytes = VkDeviceSize(vertexCount) * 12;
+                    drawTransform->motion[1] = 1.0f;
+                }
                 // Animated (its vertices changed): last frame's positions for the vertex shader (binding 8).
                 if (!positions.empty() && best->positions.size() == positions.size() &&
                     std::memcmp(best->positions.data(), positions.data(), positions.size() * 4) != 0) {
@@ -1586,7 +1610,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                 m_drawBumpBase = it->second;
         }
     }
-    uint32_t carrier = m_external ? 0 : CarriedLight(fvf, vertices, vertexCount, layout.stride);
+    uint32_t carrier = m_external ? 0 : CarriedLight(fvf, m_drawGpu ? nullptr : vertices, vertexCount, layout.stride);
     // The texture's own normal map (F_NORMALMAP), when it is the surface (stage 0, plain coordinates) of a per-pixel
     // lit draw; for the ground's lightmap pass, the normal map of its chunk's base texture (as the generated normals).
     Texture* normalMap = nullptr;
@@ -1777,7 +1801,14 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // Geometry: vertices aligned to their stride and indices to 2 bytes, so the draw can address them inside
     // the ring buffer bound once (vertexOffset / firstIndex) instead of rebinding buffers per draw.
     VkDeviceSize vbOffset = 0, ibOffset = 0;
-    if (!m_external) {
+    if (m_drawGpu) {
+        // Skinned on the GPU: the vertices in the frame's skin arena, the indices in the mesh's buffer.
+        vbOffset = m_drawGpu->vertexOffset;
+        ibOffset = m_drawGpu->mesh->indexOffset;
+        drawTransform->motion[2] = float(vbOffset / layout.stride);
+        RecordShadowCaster(primitive, fvf, layout.stride, nullptr, vertexCount, vbOffset, indices, indices ? indexCount : 0,
+                           ibOffset, m_frames[m_frameIndex].skinArena, m_drawGpu->mesh->buffer);
+    } else if (!m_external) {
         VkDeviceSize vbBytes = VkDeviceSize(layout.stride) * vertexCount;
         vbOffset = Allocate(vbBytes, layout.stride, &cpu);
         std::memcpy(cpu, vertices, vbBytes);
@@ -1791,8 +1822,19 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     }
     // Phong tessellation: the averaged normals (binding 10) and the draw's level and shape.
     VkDeviceSize smoothOffset = 0, smoothBytes = 0;
+    VkBuffer smoothBuffer = f.ring;
     m_drawTess = false;
-    if (tessLevel > 0.0f &&
+    if (tessLevel > 0.0f && m_drawGpu) {
+        if (SkinSmoothOnGpu(*m_drawSkin, *m_drawGpu)) {
+            smoothBuffer = m_frames[m_frameIndex].skinArena;
+            smoothOffset = m_drawGpu->smoothOffset;
+            smoothBytes = VkDeviceSize(vertexCount) * 12;
+            drawTransform->tess[0] = tessLevel;
+            drawTransform->tess[1] = m_tessShape;
+            drawTransform->tess[2] = float(vbOffset / layout.stride);
+            m_drawTess = true;
+        }
+    } else if (tessLevel > 0.0f &&
         (m_drawSkin && layout.stride == sizeof(skin::Vertex)
              ? SmoothNormalsSkinned(vertices, uint32_t(static_cast<const skin::Vertex*>(vertices) - m_drawSkinBase), vertexCount)
              : SmoothNormals(vertices, vertexCount, layout))) {
@@ -1823,11 +1865,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     Texture* bumpBase = m_drawBumpBase ? m_drawBumpBase : m_blackTexture;
     VkDescriptorImageInfo bump{m_bumpSampler, bumpBase->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     // Binding 8: an animated mesh's last positions, else any small part of the ring (unread).
-    VkDescriptorBufferInfo prevPositions{f.ring, prevPositionsOffset, prevPositionsBytes ? prevPositionsBytes : 16};
+    VkDescriptorBufferInfo prevPositions{prevPositionsBuffer, prevPositionsOffset, prevPositionsBytes ? prevPositionsBytes : 16};
     // Binding 9: the sun shadow cascades' depths, read without comparison (soft shadows' blocker search).
     VkDescriptorImageInfo shadowDepths{m_shadowDepthSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     // Binding 10: a tessellated draw's averaged normals, else any small part of the ring (unread).
-    VkDescriptorBufferInfo smoothNormals{f.ring, smoothOffset, smoothBytes ? smoothBytes : 16};
+    VkDescriptorBufferInfo smoothNormals{smoothBuffer, smoothOffset, smoothBytes ? smoothBytes : 16};
     // Binding 11: the surface's normal map (F_NORMALMAP), else a flat one (unread).
     VkDescriptorImageInfo normal{m_normalSampler, (normalMap ? normalMap : m_flatNormal)->m_view,
                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
@@ -1868,6 +1910,15 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
         vkCmdBindIndexBuffer(cmd, m_external->indices, 0, VK_INDEX_TYPE_UINT16);
         vkCmdDrawIndexed(cmd, indexCount, 1, 0, m_external->baseVertex, 0);
+        m_cache.buffersBound = false;            // the next draw binds the ring again
+        return;
+    }
+    if (m_drawGpu) {
+        VkBuffer buffers[2] = {m_frames[m_frameIndex].skinArena, m_nullBuffer};
+        VkDeviceSize offsets[2] = {0, 0};
+        vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
+        vkCmdBindIndexBuffer(cmd, m_drawGpu->mesh->buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);
         m_cache.buffersBound = false;            // the next draw binds the ring again
         return;
     }

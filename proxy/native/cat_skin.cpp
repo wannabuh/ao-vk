@@ -179,6 +179,7 @@ bool SkinDeferred(void* render)
                 job->source = SourceOf(in, count, indices, indices ? tris * 3 : 0);
                 job->bones = palette;
                 job->rest = rest;
+                job->ComputeBounds();
                 handed = g_sink(D3dBuffer(buffer), job);
                 if (handed)
                     Job::Prefetch(job);

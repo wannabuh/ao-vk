@@ -6,7 +6,9 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <chrono>
+#include <memory>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -270,6 +272,41 @@ void Compare(const char* name, int groups, int pieces, int vertices, int bones, 
     Check(callsSame, "callbacks");
 }
 
+// Job::ComputeBounds: a box from the bones and the mesh's per-bone boxes must hold every skinned vertex.
+void CheckBounds()
+{
+    for (int round = 0; round < 6; ++round) {
+        Character c = Make(1, 1, 400, 20, round == 5, round == 4 ? 2 : 0);
+        Piece& piece = c.groups[0][0];
+        auto source = std::make_shared<rvk::skin::Source>();
+        source->vertices = piece.vertices;
+        source->indices = piece.indices;
+        source->Finish();
+        auto palette = std::make_shared<rvk::skin::Palette>();
+        palette->Set(c.bones.data(), uint32_t(c.bones.size()));
+        auto job = std::make_shared<rvk::skin::Job>();
+        job->source = source;
+        job->bones = palette;
+        job->rest = round == 5;
+        job->ComputeBounds();
+        const rvk::skin::Vertex* v = job->Skinned();
+        float exactMin[3] = {1e30f, 1e30f, 1e30f}, exactMax[3] = {-1e30f, -1e30f, -1e30f};
+        bool inside = true;
+        for (size_t i = 0; i < piece.vertices.size(); ++i)
+            for (int j = 0; j < 3; ++j) {
+                exactMin[j] = std::min(exactMin[j], v[i].pos[j]);
+                exactMax[j] = std::max(exactMax[j], v[i].pos[j]);
+                inside &= v[i].pos[j] >= job->boundsMin[j] - 1e-4f && v[i].pos[j] <= job->boundsMax[j] + 1e-4f;
+            }
+        float grow = 0.0f;
+        for (int j = 0; j < 3; ++j)
+            grow = std::max(grow, (job->boundsMax[j] - job->boundsMin[j]) / std::max(exactMax[j] - exactMin[j], 1e-3f));
+        std::printf("bounds round %d: %s, box up to %.2fx the exact one\n", round, inside ? "holds every vertex" : "MISSES",
+                    grow);
+        Check(inside, "job bounds hold the vertices");
+    }
+}
+
 double Seconds(std::chrono::steady_clock::time_point since)
 {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - since).count();
@@ -318,6 +355,7 @@ int main(int argc, char** argv)
     Compare("skin: no box", 1, 2, 20, 8, false, 0, false, false);
     Compare("skin: one vertex pieces", 2, 3, 1, 4, false, 0, true, false);
     Compare("skin: big", 6, 8, 600, 60, false, 1, true, true);
+    CheckBounds();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;

@@ -401,6 +401,8 @@ bool AttachSkin(void* d3dVertexBuffer, std::shared_ptr<rvk::skin::Job> job)
     if (!vb || !job || !g_rvk.device || vb->desc.dwFVF != rvk::skin::kVertexFvf ||
         job->source->vertices.size() > vb->desc.dwNumVertices)
         return false;
+    if (vb->skin && !job->prevBones)
+        job->prevBones = vb->skin->bones;        // what it was last time: motion vectors
     vb->skin = std::move(job);
     vb->shared.reset();
     vb->lastWriteFrame = g_rvk.presentCount;

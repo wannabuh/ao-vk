@@ -1,0 +1,131 @@
+// GPU skinning of the game's characters (skin_gpu.cpp): one invocation per vertex of a character piece. Same rules as
+// the CPU loop (rvk/skin.cpp): up to two bones (weight of bone A <= 0.99: both, else A alone), a bone out of range or
+// the rest pose: the bind position and normal.
+//
+// Writes the piece's vertices in the game's format (FVF 0x112: position, normal, uv - 8 floats), and on request the
+// positions under last frame's bones (motion vectors, binding 8 of the draw) and the normals averaged over the
+// vertices sharing a position (Phong tessellation's smooth normals, binding 10): each vertex sums the skinned normals
+// of its group itself, so no invocation waits for another.
+#version 450
+
+layout(local_size_x = 64) in;
+
+// The mesh: 17 floats per vertex (CATTriVertex_t): posA 0-2, posB 3-5, bind 6-8, normal 9-11, uv 12-13,
+// bone A 14 (int bits), bone B 15, weight A 16. Then the same-position groups: per vertex (first, count) into the
+// member list that follows them.
+layout(std430, binding = 0) readonly buffer Mesh { float meshData[]; };
+layout(std430, binding = 1) readonly buffer MeshGroups { uint groups[]; };
+// Bones: three rows per bone (x' = dot(row0, p1), ...): this frame's, then last frame's.
+layout(std430, binding = 2) readonly buffer Bones { vec4 bones[]; };
+layout(std430, binding = 3) readonly buffer PrevBones { vec4 prevBones[]; };
+layout(std430, binding = 4) writeonly buffer Out { float outData[]; };
+
+layout(push_constant) uniform Push {
+    uint count;          // vertices
+    uint boneCount, prevBoneCount;
+    uint flags;          // 1: rest pose, 2: write last frame's positions, 4: write smooth normals, 8: only those
+    uint outVertex;      // first float of the vertices in Out
+    uint outPrev;        // ... of last frame's positions (3 floats each)
+    uint outSmooth;      // ... of the smooth normals (3 floats each)
+    uint membersBase;    // first uint of the member list in MeshGroups
+} pc;
+
+const uint STRIDE = 17u;
+
+vec3 Load3(uint v, uint at)
+{
+    uint b = v * STRIDE + at;
+    return vec3(meshData[b], meshData[b + 1u], meshData[b + 2u]);
+}
+
+vec3 Transform(uint bone, vec3 p, bool prev)
+{
+    vec4 p1 = vec4(p, 1.0);
+    if (prev)
+        return vec3(dot(prevBones[bone * 3u], p1), dot(prevBones[bone * 3u + 1u], p1), dot(prevBones[bone * 3u + 2u], p1));
+    return vec3(dot(bones[bone * 3u], p1), dot(bones[bone * 3u + 1u], p1), dot(bones[bone * 3u + 2u], p1));
+}
+
+vec3 Rotate(uint bone, vec3 n)
+{
+    vec4 n0 = vec4(n, 0.0);
+    return vec3(dot(bones[bone * 3u], n0), dot(bones[bone * 3u + 1u], n0), dot(bones[bone * 3u + 2u], n0));
+}
+
+// The skinned position (under this or last frame's bones), and the normal.
+void Skin(uint v, bool prev, out vec3 pos, out vec3 normal)
+{
+    uint b = v * STRIDE;
+    uint boneA = floatBitsToUint(meshData[b + 14u]), boneB = floatBitsToUint(meshData[b + 15u]);
+    float w = meshData[b + 16u];
+    uint n = prev ? pc.prevBoneCount : pc.boneCount;
+    normal = Load3(v, 9u);
+    if ((pc.flags & 1u) != 0u) {
+        pos = Load3(v, 6u);
+        return;
+    }
+    if (w <= 0.99) {
+        if (boneA >= n || boneB >= n) {
+            pos = Load3(v, 6u);
+            return;
+        }
+        pos = w * Transform(boneA, Load3(v, 0u), prev) + (1.0 - w) * Transform(boneB, Load3(v, 3u), prev);
+    } else {
+        if (boneA >= n) {
+            pos = Load3(v, 6u);
+            return;
+        }
+        pos = Transform(boneA, Load3(v, 0u), prev);
+    }
+    if (!prev)
+        normal = Rotate(boneA, normal);
+}
+
+void main()
+{
+    uint v = gl_GlobalInvocationID.x;
+    if (v >= pc.count)
+        return;
+    vec3 pos, normal;
+    Skin(v, false, pos, normal);
+    if ((pc.flags & 8u) == 0u) {
+    uint o = pc.outVertex + v * 8u;
+    outData[o] = pos.x;
+    outData[o + 1u] = pos.y;
+    outData[o + 2u] = pos.z;
+    outData[o + 3u] = normal.x;
+    outData[o + 4u] = normal.y;
+    outData[o + 5u] = normal.z;
+    outData[o + 6u] = meshData[v * STRIDE + 12u];
+    outData[o + 7u] = meshData[v * STRIDE + 13u];
+    }
+    if ((pc.flags & 2u) != 0u && (pc.flags & 8u) == 0u) {
+        vec3 prevPos, unused;
+        Skin(v, true, prevPos, unused);
+        uint p = pc.outPrev + v * 3u;
+        outData[p] = prevPos.x;
+        outData[p + 1u] = prevPos.y;
+        outData[p + 2u] = prevPos.z;
+    }
+    if ((pc.flags & 4u) != 0u) {
+        uint first = groups[v * 2u], members = groups[v * 2u + 1u];
+        vec3 sum = vec3(0.0);
+        uint counted = 0u;
+        for (uint i = 0u; i < members; ++i) {
+            uint m = groups[pc.membersBase + first + i];
+            vec3 mp, mn;
+            Skin(m, false, mp, mn);
+            float len = length(mn);
+            if (len > 0.0) {
+                sum += mn / len;
+                ++counted;
+            }
+        }
+        if (counted > 1u)
+            sum /= float(counted);
+        uint s = pc.outSmooth + v * 3u;
+        outData[s] = sum.x;
+        outData[s + 1u] = sum.y;
+        outData[s + 2u] = sum.z;
+    }
+}

@@ -374,6 +374,9 @@ private:
         VkDeviceSize ringSize = 0;                 // grows (GrowRing) after a frame overflowed it
         uint64_t serial = 0;                       // submission number last signalled through `fence`
         bool uploadsRecorded = false;
+        VkBuffer skinArena = VK_NULL_HANDLE;       // GPU skinning's output this frame (skin_gpu.cpp)
+        VmaAllocation_T* skinArenaAllocation = nullptr;
+        VkDeviceSize skinArenaSize = 0, skinArenaOffset = 0;
     };
 
     struct LightSlot {
@@ -493,6 +496,7 @@ private:
     struct ShadowCaster {
         uint32_t primitive, stride, vertexCount, indexCount;
         VkDeviceSize vbOffset, ibOffset;
+        VkBuffer vb, ib;                         // VK_NULL_HANDLE: the frame's ring (else: skinned on the GPU)
         d3d::Matrix world;
         uint64_t generation;
         Texture* texture;                        // alpha-tested casters: texture 0, its coordinates' offset, ref
@@ -508,7 +512,8 @@ private:
     // One caster as the shadow passes draw it: from this frame's ring or from the caster cache (own buffer).
     struct ShadowItem {
         VkBuffer buffer;                         // VK_NULL_HANDLE: the frame's ring
-        VkDeviceSize vbOffset, ibOffset;         // ring: byte offsets; cached: index data offset in `buffer`
+        VkBuffer ibBuffer;                       // the indices' buffer; VK_NULL_HANDLE: `buffer` (or the ring)
+        VkDeviceSize vbOffset, ibOffset;         // byte offsets in their buffers
         uint32_t primitive, stride, vertexCount, indexCount;
         Texture* texture;
         int texOffset;
@@ -570,7 +575,8 @@ private:
     void DestroyShadowResources();
     void PrepareShadowMap(VkCommandBuffer cmd);
     void RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
-                            VkDeviceSize vbOffset, const uint16_t* indices, uint32_t indexCount, VkDeviceSize ibOffset);
+                            VkDeviceSize vbOffset, const uint16_t* indices, uint32_t indexCount, VkDeviceSize ibOffset,
+                            VkBuffer vb = VK_NULL_HANDLE, VkBuffer ib = VK_NULL_HANDLE);
     // Static casters remembered across frames, so objects the camera turned away from (and the game therefore
     // no longer draws) keep casting. A caster drawn unchanged for kPromoteFrames frames in a row is copied here.
     static constexpr uint32_t kPromoteFrames = 20, kMaxCachedCasters = 16384;
@@ -697,6 +703,40 @@ private:
     const MeshInfo* m_drawMesh = nullptr;        // the current draw's (null: external geometry, pre-transformed)
     const skin::Job* m_drawSkin = nullptr;       // the current draw is this skinned character piece (DrawSkinned)
     const skin::Vertex* m_drawSkinBase = nullptr;   // ... its first skinned vertex
+    // GPU skinning (skin_gpu.cpp).
+    struct SkinMesh {
+        std::shared_ptr<const skin::Source> source;
+        VkBuffer buffer = VK_NULL_HANDLE;        // vertices | groups | members | indices
+        VmaAllocation_T* allocation = nullptr;
+        VkDeviceSize groupsOffset = 0, indexOffset = 0;
+        uint32_t membersBase = 0;
+        uint64_t lastFrame = 0;
+    };
+    struct SkinOutput {
+        SkinMesh* mesh = nullptr;
+        VkDeviceSize vertexOffset = 0, prevOffset = 0, smoothOffset = 0;   // in the frame's skin arena
+        bool smoothReady = false;
+        bool moved = false;                      // prevOffset holds last frame's positions
+    };
+    bool m_gpuSkin = true;                       // RANDYVK_GPU_SKIN=0: skinned pieces skinned on the CPU
+    SkinOutput* m_drawGpu = nullptr;             // the current draw is skinned on the GPU, here
+    VkDescriptorSetLayout m_skinSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout m_skinLayout = VK_NULL_HANDLE;
+    VkPipeline m_skinPipeline = VK_NULL_HANDLE;
+    VkDeviceSize m_skinArenaWanted = 0;
+    bool m_skinUploadsPending = false;
+    std::unordered_map<const skin::Source*, SkinMesh> m_skinMeshes;
+    std::unordered_map<const skin::Job*, SkinOutput> m_skinOutputs;   // this frame's
+    bool CreateSkinResources(std::string* error);
+    void DestroySkinResources();
+    void BeginSkinFrame();
+    SkinMesh* SkinMeshFor(const std::shared_ptr<const skin::Source>& source);
+    bool SkinArenaAlloc(VkDeviceSize bytes, VkDeviceSize* offset);
+    VkDeviceSize SkinBones(const skin::Palette& bones, VkDeviceSize* bytes);
+    void SkinDispatch(SkinMesh& mesh, const skin::Job& job, uint32_t flags, const SkinOutput& out);
+    SkinOutput* SkinOnGpu(skin::Job& job);
+    bool SkinSmoothOnGpu(const skin::Job& job, SkinOutput& out);
+    void FinishSkinUploads(VkCommandBuffer cmd);
     bool m_drawMeshStatic = false;               // ... seen in an earlier frame with the same vertices
     void DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, const uint16_t* indices,
                       uint32_t indexCount);

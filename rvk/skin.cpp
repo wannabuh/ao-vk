@@ -10,6 +10,7 @@
 #include <malloc.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cfloat>
 #include <condition_variable>
 #include <deque>
@@ -151,6 +152,55 @@ void SkinPositions(const TriVertex* in, uint32_t count, uint32_t step, Vertex* o
 void Source::Finish()
 {
     indexHash = indices.empty() ? 0 : detail::HashBytes(indices.data(), indices.size() * 2, indices.size());
+    int32_t maxBone = -1;
+    for (const TriVertex& v : vertices) maxBone = std::max({maxBone, v.boneA, v.boneB});
+    boneBoxes.assign(size_t(maxBone + 1) * 6, 0.0f);
+    for (int32_t b = 0; b <= maxBone; ++b)
+        for (int j = 0; j < 3; ++j) boneBoxes[b * 6 + j] = FLT_MAX, boneBoxes[b * 6 + 3 + j] = -FLT_MAX;
+    for (int j = 0; j < 3; ++j) bindMin[j] = FLT_MAX, bindMax[j] = -FLT_MAX;
+    auto grow = [](float* box, const float* p) {
+        for (int j = 0; j < 3; ++j) { box[j] = std::min(box[j], p[j]); box[3 + j] = std::max(box[3 + j], p[j]); }
+    };
+    for (const TriVertex& v : vertices) {
+        for (int j = 0; j < 3; ++j) bindMin[j] = std::min(bindMin[j], v.bind[j]), bindMax[j] = std::max(bindMax[j], v.bind[j]);
+        if (v.boneA >= 0) grow(&boneBoxes[size_t(v.boneA) * 6], v.posA);
+        if (v.weightA <= 0.99f && v.boneB >= 0) grow(&boneBoxes[size_t(v.boneB) * 6], v.posB);
+    }
+}
+
+void Job::ComputeBounds()
+{
+    for (int j = 0; j < 3; ++j) boundsMin[j] = FLT_MAX, boundsMax[j] = -FLT_MAX;
+    auto add = [this](const float* p) {
+        for (int j = 0; j < 3; ++j) boundsMin[j] = std::min(boundsMin[j], p[j]), boundsMax[j] = std::max(boundsMax[j], p[j]);
+    };
+    // A vertex is in the rest pose, or a blend of its bones' transforms of its positions in their spaces - inside
+    // the union of the bones' boxes, transformed (a vertex with a bone out of range: the rest pose, so that too).
+    bool restToo = rest;
+    const uint32_t boxes = uint32_t(source->boneBoxes.size() / 6);
+    for (uint32_t b = 0; b < boxes && !rest; ++b) {
+        const float* box = &source->boneBoxes[size_t(b) * 6];
+        if (box[0] > box[3])
+            continue;                            // no vertex in this bone's space
+        if (b >= bones->count) {
+            restToo = true;
+            continue;
+        }
+        const Palette::Columns& m = bones->bones[b];
+        for (int corner = 0; corner < 8; ++corner) {
+            float p[3] = {box[(corner & 1) ? 3 : 0], box[(corner & 2) ? 4 : 1], box[(corner & 4) ? 5 : 2]};
+            float q[3];
+            for (int j = 0; j < 3; ++j)
+                q[j] = m.c[0][j] * p[0] + m.c[1][j] * p[1] + m.c[2][j] * p[2] + m.c[3][j];
+            add(q);
+        }
+    }
+    if (restToo) {
+        add(source->bindMin);
+        add(source->bindMax);
+    }
+    if (boundsMin[0] > boundsMax[0])             // no vertices
+        for (int j = 0; j < 3; ++j) boundsMin[j] = boundsMax[j] = 0.0f;
 }
 
 const Vertex* Job::Skinned()
@@ -158,7 +208,6 @@ const Vertex* Job::Skinned()
     std::call_once(m_once, [this] {
         const std::vector<TriVertex>& in = source->vertices;
         m_out.resize(in.size());
-        __m128 mn = _mm_set1_ps(FLT_MAX), mx = _mm_set1_ps(-FLT_MAX);
         for (size_t i = 0; i < in.size(); ++i) {
             Vertex& o = m_out[i];
             o.uv[0] = in[i].uv[0];
@@ -168,16 +217,8 @@ const Vertex* Job::Skinned()
                 Store(&o, pos, normal);
             } else {                                // a bone out of range: the rest pose (the original keeps old data)
                 for (int k = 0; k < 3; ++k) o.pos[k] = in[i].bind[k], o.normal[k] = in[i].normal[k];
-                pos = Load3(o.pos);
             }
-            mn = _mm_min_ps(mn, pos);
-            mx = _mm_max_ps(mx, pos);
         }
-        alignas(16) float t[4];
-        _mm_store_ps(t, mn);
-        boundsMin[0] = t[0], boundsMin[1] = t[1], boundsMin[2] = t[2];
-        _mm_store_ps(t, mx);
-        boundsMax[0] = t[0], boundsMax[1] = t[1], boundsMax[2] = t[2];
     });
     return m_out.data();
 }
@@ -232,8 +273,17 @@ private:
 
 }  // namespace
 
+std::atomic<bool> g_prefetch{true};
+
+void Job::SetPrefetch(bool enable)
+{
+    g_prefetch = enable;
+}
+
 void Job::Prefetch(const std::shared_ptr<Job>& job)
 {
+    if (!g_prefetch)
+        return;
     Pool& pool = Pool::Get();
     if (pool.Enabled())
         pool.Push(job);

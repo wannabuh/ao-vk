@@ -38,11 +38,18 @@ result, sharing the piece's indices. Characters with vertex effects (callbacks o
 | --- | --- | --- |
 | off (original) | 8.4 ms | 118 fps |
 | cpu | 5.0 ms | 167 fps |
-| on | 1.7 ms | 172 fps (the renderer's worker is now the limit: per-draw work on animated vertices) |
+| on, skinned on the CPU (`RANDYVK_GPU_SKIN=0`) | 1.6 ms | 180 fps (the worker: per-vertex copies) |
+| on, skinned on the GPU (default) | 0.9 ms | 414 fps |
+
+**GPU skinning** (`rvk/skin_gpu.cpp`, `shaders/skin.comp`): a piece drawn with `Device::DrawSkinned` is skinned by a
+compute dispatch in the frame's upload command buffer (run before the main pass) into a per-frame arena; the mesh
+(vertices, same-position groups, indices) is uploaded once. The same dispatch writes last frame's positions (the
+piece's previous bones: motion vectors); tessellated draws get the smooth normals from a second one. The CPU never
+touches the vertices: the box comes from the bones and the mesh's per-bone boxes (`Job::ComputeBounds`), shadow
+casters reference the arena. Pieces drawn partially or with other indices take the CPU way.
 
 Skinned draws tell the renderer what they are (`Device::DrawSkinned`): exactly a character (any size; the heuristic
-in CharacterDraw is for the rest), its box from the skinning, its index hash from the mesh - no pass over its vertices;
-the vertices sharing a position (Phong tessellation's smooth normals) are found once per mesh, in its rest pose.
+in CharacterDraw is for the rest), its box and index hash known - no pass over its vertices.
 
 ## Tools
 

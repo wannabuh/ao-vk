@@ -398,7 +398,7 @@ bool Device::IsShadowCaster(uint32_t primitive, uint32_t fvf) const
 // Called by Draw for every draw, after its geometry went into the ring.
 void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices,
                                 uint32_t vertexCount, VkDeviceSize vbOffset, const uint16_t* indices, uint32_t indexCount,
-                                VkDeviceSize ibOffset)
+                                VkDeviceSize ibOffset, VkBuffer vb, VkBuffer ib)
 {
     if (!IsShadowCaster(primitive, fvf))
         return;
@@ -421,6 +421,8 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     c.indexCount = indexCount;
     c.vbOffset = vbOffset;
     c.ibOffset = ibOffset;
+    c.vb = vb;
+    c.ib = ib;
     c.world = m_world;
     c.generation = m_ringGeneration;
     ShadowCutout(fvf, &c.texture, &c.texOffset, &c.alphaRef);
@@ -449,7 +451,7 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     if (streak.lastFrame + 1 == m_frameNumber) ++streak.count;
     else if (streak.lastFrame != m_frameNumber) streak.count = 1;
     streak.lastFrame = m_frameNumber;
-    if (streak.count >= kPromoteFrames)
+    if (streak.count >= kPromoteFrames && vertices)     // (skinned on the GPU: no vertices here to keep)
         CacheCaster(key, c, vertices, indices);
 }
 
@@ -734,12 +736,13 @@ void Device::CollectShadowItems()
     for (const ShadowCaster& c : m_casters) {
         if (c.view != world)
             continue;
-        if (c.generation != m_ringGeneration) {  // the ring restarted since (mid-frame flush): data overwritten
+        if (!c.vb && c.generation != m_ringGeneration) {   // the ring restarted since (mid-frame flush): overwritten
             staleKeys.push_back(c.key);          // drawn from the caster cache instead, if remembered
             continue;
         }
         ShadowItem it;
-        it.buffer = VK_NULL_HANDLE;
+        it.buffer = c.vb;
+        it.ibBuffer = c.ib;
         it.vbOffset = c.vbOffset;
         it.ibOffset = c.ibOffset;
         it.primitive = c.primitive;
@@ -764,6 +767,7 @@ void Device::CollectShadowItems()
             continue;                            // drawn this frame: in the list above
         ShadowItem it;
         it.buffer = e.buffer;
+        it.ibBuffer = VK_NULL_HANDLE;
         it.vbOffset = 0;
         it.ibOffset = e.indexOffset;
         it.primitive = e.primitive;
@@ -874,18 +878,20 @@ void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowI
     vkCmdPushConstants(cmd, m_shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(push), &push);
     if (item.indexCount) {
-        VkDeviceSize ibOffset = item.buffer ? item.ibOffset : 0;
-        if (vb != bind.ib || ibOffset != bind.ibOffset) {
-            vkCmdBindIndexBuffer(cmd, vb, ibOffset, VK_INDEX_TYPE_UINT16);
-            bind.ib = vb;
+        // Cached casters: vertices and indices in their own buffer (indices bound at their offset); ring and
+        // GPU-skinned ones: addressed by first index / vertex offset (the latter's indices in their mesh's buffer).
+        bool cached = item.buffer && !item.ibBuffer;
+        VkBuffer ib = item.ibBuffer ? item.ibBuffer : vb;
+        VkDeviceSize ibOffset = cached ? item.ibOffset : 0;
+        if (ib != bind.ib || ibOffset != bind.ibOffset) {
+            vkCmdBindIndexBuffer(cmd, ib, ibOffset, VK_INDEX_TYPE_UINT16);
+            bind.ib = ib;
             bind.ibOffset = ibOffset;
         }
-        if (item.buffer)
-            vkCmdDrawIndexed(cmd, item.indexCount, 1, 0, 0, 0);
-        else
-            vkCmdDrawIndexed(cmd, item.indexCount, 1, uint32_t(item.ibOffset / 2), int32_t(item.vbOffset / item.stride), 0);
+        vkCmdDrawIndexed(cmd, item.indexCount, 1, cached ? 0 : uint32_t(item.ibOffset / 2),
+                         int32_t(item.vbOffset / item.stride), 0);
     } else {
-        vkCmdDraw(cmd, item.vertexCount, 1, item.buffer ? 0 : uint32_t(item.vbOffset / item.stride), 0);
+        vkCmdDraw(cmd, item.vertexCount, 1, uint32_t(item.vbOffset / item.stride), 0);
     }
 }
 

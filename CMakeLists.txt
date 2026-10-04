@@ -30,7 +30,7 @@ find_program(GLSLC glslc HINTS "${VULKAN_SDK_DIR}/bin" REQUIRED)
 
 set(RVK_SHADER_OUT "${CMAKE_CURRENT_BINARY_DIR}/rvk-shaders")
 set(RVK_SHADER_INCS)
-foreach(shader ffp.vert ffp.tesc ffp.tese ffp.frag ffp_glow.frag shadow.vert shadow.frag fullscreen.vert tonemap.frag bloom_down.frag bloom_up.frag ao.frag ao_blur.frag gi.frag gi_blur.frag volume.frag volume_blur.frag ssr.frag contact.frag taa.frag sharpen.frag motion_blur.frag motion_tilemax.frag motion_neighbourmax.frag motion_object.frag dof_composite.frag dof_focus.frag dof_prefilter.frag dof_tiles.frag dof_gather.frag dof_final.frag particles.comp)
+foreach(shader ffp.vert ffp.tesc ffp.tese ffp.frag ffp_glow.frag shadow.vert shadow.frag fullscreen.vert tonemap.frag bloom_down.frag bloom_up.frag ao.frag ao_blur.frag gi.frag gi_blur.frag volume.frag volume_blur.frag ssr.frag contact.frag taa.frag sharpen.frag motion_blur.frag motion_tilemax.frag motion_neighbourmax.frag motion_object.frag dof_composite.frag dof_focus.frag dof_prefilter.frag dof_tiles.frag dof_gather.frag dof_final.frag particles.comp skin.comp)
     set(src "${CMAKE_CURRENT_SOURCE_DIR}/rvk/shaders/${shader}")
     set(out "${RVK_SHADER_OUT}/${shader}.inc")
     add_custom_command(OUTPUT "${out}"
@@ -49,7 +49,7 @@ foreach(shader ffp.vert ffp.tesc ffp.tese ffp.frag ffp_glow.frag shadow.vert sha
     list(APPEND RVK_SHADER_INCS "${out}")
 endforeach()
 
-add_library(rvk STATIC rvk/vk.cpp rvk/vma.cpp rvk/device.cpp rvk/resources.cpp rvk/draw.cpp rvk/diag.cpp rvk/shadow.cpp rvk/pointshadow.cpp rvk/hdr.cpp rvk/particles.cpp rvk/grading.cpp rvk/profile.cpp rvk/skin.cpp rvk/threaded.cpp ${RVK_SHADER_INCS})
+add_library(rvk STATIC rvk/vk.cpp rvk/vma.cpp rvk/device.cpp rvk/resources.cpp rvk/draw.cpp rvk/diag.cpp rvk/shadow.cpp rvk/pointshadow.cpp rvk/hdr.cpp rvk/particles.cpp rvk/grading.cpp rvk/profile.cpp rvk/skin.cpp rvk/skin_gpu.cpp rvk/threaded.cpp ${RVK_SHADER_INCS})
 target_include_directories(rvk PUBLIC rvk PRIVATE "${RVK_SHADER_OUT}")
 # Vulkan headers and VMA come from the SDK; /imsvc keeps their warnings quiet.
 target_compile_options(rvk PUBLIC "/imsvc${VULKAN_SDK_DIR}/include")

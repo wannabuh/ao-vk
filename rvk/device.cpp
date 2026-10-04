@@ -186,6 +186,7 @@ Device::~Device()
     DestroyHdrResources();
     DestroyProfiler();
     DestroyParticleResources();
+    DestroySkinResources();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_setLayout) vkDestroyDescriptorSetLayout(m_device, m_setLayout, nullptr);
     if (m_nullBuffer) vmaDestroyBuffer(m_allocator, m_nullBuffer, m_nullAllocation);
@@ -751,8 +752,12 @@ bool Device::CreatePipelines(std::string* error)
     vkDestroyShaderModule(m_device, fragGlow, nullptr);
     vkDestroyShaderModule(m_device, frag, nullptr);
     if (!ok || !CreateShadowResources(error) || !CreatePointShadowResources(error) || !CreateHdrResources(error) ||
-        !CreateParticleResources(error))
+        !CreateParticleResources(error) || !CreateSkinResources(error))
         return false;
+    char gpuSkin[8] = "";
+    if (GetEnvironmentVariableA("RANDYVK_GPU_SKIN", gpuSkin, sizeof(gpuSkin)) && gpuSkin[0] == '0')
+        m_gpuSkin = false;
+    skin::Job::SetPrefetch(!m_gpuSkin);          // skinned on the GPU: no CPU skinning ahead of draws
 
     // Zero vertex data for attributes a format doesn't have (bound with stride 0).
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -923,6 +928,7 @@ void Device::EnsureRingSpace(VkDeviceSize bytes)
         if (wasRendering)
             BeginRenderingOn(m_target);
     } else if (f.uploadsRecorded) {
+        FinishSkinUploads(f.upload);
         vkEndCommandBuffer(f.upload);
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
         si.commandBufferCount = 1;
@@ -1093,6 +1099,7 @@ void Device::BeginFrame()
         m_midFrameFlushes = 0;
     }
     ++m_ringGeneration;                          // a different slot's ring: cached offsets are invalid
+    BeginSkinFrame();
 
     VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     b.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -1200,6 +1207,7 @@ void Device::EndFrame()
     VkCommandBuffer cmds[2];
     uint32_t cmdCount = 0;
     if (f.uploadsRecorded) {
+        FinishSkinUploads(f.upload);
         vkEndCommandBuffer(f.upload);
         cmds[cmdCount++] = f.upload;
     }
@@ -1246,6 +1254,7 @@ void Device::SubmitAndWait()
     VkCommandBuffer cmds[2];
     uint32_t n = 0;
     if (f.uploadsRecorded) {
+        FinishSkinUploads(f.upload);
         vkEndCommandBuffer(f.upload);
         cmds[n++] = f.upload;
         f.uploadsRecorded = false;

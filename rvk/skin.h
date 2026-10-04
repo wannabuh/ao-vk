@@ -64,7 +64,11 @@ struct Source {
     std::vector<uint16_t> indices;               // the piece's triangles
     const uint16_t* gameIndices = nullptr;       // where the game keeps them (draws pass that pointer)
     uint64_t indexHash = 0;                      // of the indices, as the renderer's mesh cache hashes them
-    void Finish();                               // after filling: indexHash
+    // Per bone, the box of the vertex positions given in its space (posA of the vertices it is bone A of, posB of
+    // those it is bone B of): min x y z, max x y z. Empty boxes have min > max.
+    std::vector<float> boneBoxes;
+    float bindMin[3] = {}, bindMax[3] = {};      // the rest pose's box
+    void Finish();                               // after filling: indexHash, the boxes
 };
 
 // One piece of one character to skin: its vertices and the character's bones at the time. Shared by every draw of
@@ -73,12 +77,18 @@ struct Source {
 struct Job {
     std::shared_ptr<const Source> source;
     std::shared_ptr<const Palette> bones;
+    std::shared_ptr<const Palette> prevBones;    // the piece's bones before (motion vectors); null: none
     bool rest = false;
+    uint64_t gpuFrame = 0;                       // the renderer's: the frame it first skinned it on the GPU
     const Vertex* Skinned();                     // thread safe
-    // After Skinned: the box around the skinned vertices (model space).
+    // A box around the skinned vertices (model space), from the bones and the mesh's per-bone boxes - without
+    // skinning (ComputeBounds, when the job is made). Larger than the exact one by a little.
     float boundsMin[3] = {}, boundsMax[3] = {};
-    // Starts skinning on a pool thread, so it's done by the time it's drawn (Skinned waits if it isn't).
+    void ComputeBounds();
+    // Starts skinning on a pool thread, so it's done by the time it's drawn (Skinned waits if it isn't) - unless the
+    // renderer skins on the GPU (SetPrefetch(false)).
     static void Prefetch(const std::shared_ptr<Job>& job);
+    static void SetPrefetch(bool enable);
 private:
     std::once_flag m_once;
     std::vector<Vertex> m_out;
