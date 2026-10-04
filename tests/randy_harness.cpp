@@ -264,6 +264,9 @@ struct CharacterScene {
 // Builds root -> {camera, sun, `count` characters in a grid}, all with the same model and animation (each its own
 // animation instance, at different times). False (with a message) if a stream can't be read.
 int g_carriedLights;                                 // --lights N: the first N characters carry a point light
+float g_alpha = 1.0f;                                // --alpha A: the characters' transparency
+int g_sfx;                                           // --sfx N: their effect type (1 special light, 2 pulse)
+bool g_env;                                          // --env: their materials get an environment map
 
 bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath, int count, CharacterScene& scene)
 {
@@ -337,6 +340,30 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
         Export<SetVisibleFn>("?SetVisible@RRefFrame_t@@QAEX_N0@Z")(visual, nullptr, true, true);
         Vector3 at{1.6f * float(c % columns - (columns - 1) / 2.0f), 0.0f, 1.6f * float(c / columns)};
         setPos(visual, nullptr, &at, nullptr);
+        if (g_alpha < 1.0f) {                          // RVisual_t +0x88: drawn translucent, colour overrides apply
+            using SetTransparencyFn = void(__fastcall*)(void* self, void*, float);
+            Export<SetTransparencyFn>("?SetTransparency@RRefFrame_t@@QAEXM@Z")(visual, nullptr, g_alpha);
+        }
+        if (g_sfx == 1 && c == 0 && skins[0]) {         // the special light (RandyShadowlandsData_s' CAT light)
+            Export<void(__cdecl*)(bool)>("?EnableCATLight@RandyShadowlandsData_s@@SAX_N@Z")(true);
+            Export<void(__cdecl*)(void*)>("?SetCATLightTexture@RandyShadowlandsData_s@@SAXPAVRTexture_t@@@Z")(skins[0]);
+            Export<void(__cdecl*)(float)>("?SetCATLightIntensity@RandyShadowlandsData_s@@SAXM@Z")(0.8f);
+            Vector3 down{0.3f, -1.0f, 0.2f};
+            Export<void(__cdecl*)(const Vector3*)>("?SetCATLightDirection@RandyShadowlandsData_s@@SAXABVVector3_t@@@Z")(&down);
+        }
+        if (g_sfx) {
+            using SetSfxFn = void(__fastcall*)(void* self, void*, int);
+            Export<SetSfxFn>("?SetSfxType@RCATMesh_t@@QAEXW4SfxType_e@1@@Z")(character, nullptr, g_sfx);
+        }
+        if (g_env) {
+            using GetSubstFn = void*(__fastcall*)(void* self, void*, int index);
+            using SetEnvFn = void(__fastcall*)(void* self, void*, void* texture);
+            auto getSubst = Export<GetSubstFn>("?GetSubstMaterial@RCATMesh_t@@QBEPAVRMaterial_t@@H@Z");
+            auto setEnv = Export<SetEnvFn>("?SetEnvTexture@RMaterial_t@@QAEXPAVRTexture_t@@@Z");
+            for (int i = 0; i < materials; ++i)
+                if (void* m = getSubst(character, nullptr, i))
+                    if (skins[size_t(i)]) setEnv(m, nullptr, skins[size_t(i)]);
+        }
         if (c < g_carriedLights) {                   // a point light at head height, carried (RLight_t Type_e 2)
             using LightCtorFn = void*(__fastcall*)(void* self, void*, void* parent, const float* rgb, int type, void* anim);
             const float warm[3] = {1.0f, 0.8f, 0.5f};
@@ -476,6 +503,9 @@ int main(int argc, char** argv)
         else if (a == "--pick") pick = true;
         else if (a == "--still") still = true;
         else if (a == "--lights" && i + 1 < argc) g_carriedLights = std::atoi(argv[++i]);
+        else if (a == "--alpha" && i + 1 < argc) g_alpha = float(std::atof(argv[++i]));
+        else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);
+        else if (a == "--env") g_env = true;
         else if (a == "--static" && i + 1 < argc) staticMesh = argv[++i];
         else if (a == "--statics" && i + 1 < argc) statics = std::max(1, std::atoi(argv[++i]));
     }

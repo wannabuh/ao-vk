@@ -26,6 +26,7 @@ from the decompiles (`re/`, not in the repository) and written down in `docs/`.
 | --- | --- | --- | --- |
 | character skinning | FUN_1005470d | `Skin` = off / cpu / on / verify | docs/skinning.md |
 | character animation | FUN_10051d2a, FUN_10051df4, FUN_100540a5 | `Anim` = off / on | docs/animation.md; same results (native_check), crowd's game thread -10% |
+| character drawing | FUN_10056ed6 (+ FUN_10055dba) | `CatRender` = off / on | `proxy/native/cat_render.cpp`: materials, overrides, environment map, special light, pulsing glow; identical call log to the original in every path (randy_harness --alpha / --env / --sfx 1 / --sfx 2) |
 | which visual draws | RViewPort_t::Render / RenderRefraction (hooked, not replaced) | `Visuals` = off / on | `proxy/native/scene.cpp`: the visual Render keeps at RViewPort_t +0x164, its RTTI class, attached-to-a-character by its frames; the renderer gets it per draw (Device::SetDrawVisual, frame dumps show it) and uses it for character detection and blob shadows. Also hooks RViewPort_t::Process: after the scene update it reads Randy's light list (0x1017D290, world-space D3DLIGHT7 at RLight_t +0xA4) with each light's carrier (a character up its frames, or next to it under a small parent); draws carry their character too, so which character carries which light (point shadows, the carried-light setting, characters unlit by their own light) is exact |
 
 `Skin=cpu`: SSE on the game's thread, identical results (native_check), 2.8x faster than the original loop.
@@ -52,6 +53,15 @@ casters reference the arena. Pieces drawn partially or with other indices take t
 
 Skinned draws tell the renderer what they are (`Device::DrawSkinned`): exactly a character (any size; the heuristic
 in CharacterDraw is for the rest), its box and index hash known - no pass over its vertices.
+
+## How a port is checked
+
+Pure computations: `tests/native_check.cpp` runs the original function and ours on the same input. Drawing code: the
+**call log** (`RANDYVK_CALLLOG=<file> RANDYVK_CALLLOG_FRAME=<n>`) lists every Direct3D call of one frame with objects as
+ids and data as hashes; the harness scene logged with the replacement off and on must give the same file.
+`tools/port-status.py` reports progress against `docs/port-ledger.tsv`; native code calls what isn't ported yet
+through `proxy/native/orig_api.gen.h` (tools/gen_orig_api.py), and lives in the game's heap / containers via
+`proxy/native/vc10.h`.
 
 ## Tools
 

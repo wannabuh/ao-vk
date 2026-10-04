@@ -1,6 +1,7 @@
 // The replacements, installed once randy31_orig.dll is loaded.
 #include "native/native.h"
 #include "native/cat_anim.h"
+#include "native/cat_render.h"
 #include "native/cat_skin.h"
 #include "native/orig_api.gen.h"
 #include "native/scene.h"
@@ -18,6 +19,7 @@ void Install(HMODULE orig)
     skin::Install(orig);
     anim::Install(orig);
     scene::Install(orig);
+    catrender::Install(orig);
 }
 
 }  // namespace rnative

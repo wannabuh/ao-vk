@@ -10,3 +10,4 @@
 0x4BFFF	wrapped	proxy/native/scene.cpp	RViewPort_t::Render (current viewport)
 0x4C4EA	wrapped	proxy/native/scene.cpp	RViewPort_t::RenderRefraction
 0x4BF39	wrapped	proxy/native/scene.cpp	RViewPort_t::Process (lights after the scene update)
+0x56ED6	replaced	proxy/native/cat_render.cpp	RCATMesh_t render (RVisual_t vtable slot 13)

@@ -7,7 +7,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")   # static CRT: no extra runtime
 
 # Native Randy: our implementations of randy31_orig's code (proxy/native, docs/native.md), shared with the tests.
 add_library(randy_native STATIC proxy/native/hook.cpp proxy/native/native.cpp proxy/native/cat_skin.cpp proxy/native/cat_anim.cpp proxy/native/scene.cpp
-            proxy/native/vc10.cpp proxy/native/orig_api.gen.cpp)
+            proxy/native/vc10.cpp proxy/native/orig_api.gen.cpp proxy/native/cat_render.cpp)
 target_include_directories(randy_native PUBLIC proxy)
 target_link_libraries(randy_native PUBLIC rvk)
 target_compile_definitions(randy_native PRIVATE _CRT_SECURE_NO_WARNINGS)
