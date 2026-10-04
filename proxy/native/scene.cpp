@@ -38,6 +38,18 @@ void __fastcall RenderRefractionHook(void* viewport, void*, int listFrom, int li
 }
 
 // The RTTI type name of an object (".?AVName@@"), or null. C only (SEH).
+// A pointer field of an object that may not be there any more (Randy's light list can hold lights whose frames are
+// gone): null instead of a fault.
+const void* SafeRead(const void* object, uint32_t offset)
+{
+    if (!object) return nullptr;
+    __try {
+        return *reinterpret_cast<const void* const*>(static_cast<const uint8_t*>(object) + offset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
 const char* RawTypeName(const void* object)
 {
     __try {
@@ -60,7 +72,8 @@ std::unordered_map<const void*, std::string> g_classNames;   // by vtable; never
 
 const char* ClassName(const void* object)
 {
-    const void* vtable = *static_cast<const void* const*>(object);
+    const void* vtable = SafeRead(object, 0);
+    if (!vtable) return "";
     auto found = g_classNames.find(vtable);
     if (found != g_classNames.end())
         return found->second.c_str();
@@ -95,8 +108,8 @@ Kind KindOf(const char* name)
 // The character (RCATMesh_t frame) somewhere up an object's parents, or null.
 const void* CharacterAbove(const void* object)
 {
-    const void* frame = At<const void*>(object, kParent);
-    for (int depth = 0; frame && depth < 12; ++depth, frame = At<const void*>(frame, kParent))
+    const void* frame = SafeRead(object, kParent);
+    for (int depth = 0; frame && depth < 12; ++depth, frame = SafeRead(frame, kParent))
         if (!std::strcmp(ClassName(frame), "RCATMesh_t"))
             return frame;
     return nullptr;
@@ -109,13 +122,13 @@ const void* CarrierOf(const void* light)
 {
     if (const void* character = CharacterAbove(light))
         return character;
-    const void* parent = At<const void*>(light, kParent);
+    const void* parent = SafeRead(light, kParent);
     if (!parent)
         return nullptr;
     const void* found = nullptr;
     int children = 0;
-    for (const void* child = At<const void*>(parent, kFirstChild); child && children < 64;
-         child = At<const void*>(child, kNextSibling), ++children)
+    for (const void* child = SafeRead(parent, kFirstChild); child && children < 64;
+         child = SafeRead(child, kNextSibling), ++children)
         if (!found && !std::strcmp(ClassName(child), "RCATMesh_t"))
             found = child;
     return children <= 8 ? found : nullptr;
