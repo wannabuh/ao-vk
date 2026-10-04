@@ -2,6 +2,7 @@
 // synthetic input and compares the results, then times both. Run under Wine with tools/native-check.sh.
 //
 //   native_check.exe <path to randy31_orig.dll>
+#include "native/cat_anim.h"
 #include "native/cat_skin.h"
 
 #include <windows.h>
@@ -307,6 +308,168 @@ void CheckBounds()
     }
 }
 
+// ---- Animation: keyframe sampling and the bone hierarchy against FUN_10051d2a / FUN_10051df4 / FUN_100540a5 ----
+HMODULE g_orig;
+
+struct TrackSet {
+    std::vector<std::vector<anim::RotationKey>> rotations;
+    std::vector<std::vector<anim::PositionKey>> positions;
+    std::vector<anim::Track> tracks;
+    std::vector<uint8_t> data;                       // CATKeyframeAnimData_t: +0x38 tracks
+};
+
+TrackSet MakeTracks(int bones)
+{
+    TrackSet s;
+    s.rotations.resize(bones);
+    s.positions.resize(bones);
+    for (int b = 0; b < bones; ++b) {
+        int nr = b % 5 == 0 ? 1 : int(Rand(2, 30)), np = b % 7 == 0 ? 1 : int(Rand(2, 30));
+        float t = 0.0f;
+        for (int k = 0; k < nr; ++k) {
+            float q[4] = {Rand(-1, 1), Rand(-1, 1), Rand(-1, 1), Rand(-1, 1)};
+            float l = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+            anim::RotationKey key{t, {q[0] / l, q[1] / l, q[2] / l, q[3] / l}};
+            if (k % 4 == 3) std::memcpy(key.q, s.rotations[b].back().q, 16);   // equal neighbours: linear
+            s.rotations[b].push_back(key);
+            t += Rand(10, 200);
+        }
+        t = 0.0f;
+        for (int k = 0; k < np; ++k) {
+            s.positions[b].push_back({t, {Rand(-1, 1), Rand(-1, 1), Rand(-1, 1)}});
+            t += Rand(10, 200);
+        }
+    }
+    for (int b = 0; b < bones; ++b)
+        s.tracks.push_back({int32_t(s.rotations[b].size()), s.rotations[b].data(), int32_t(s.positions[b].size()),
+                            s.positions[b].data()});
+    s.data.assign(0x48, 0);
+    At<anim::Track*>(s.data.data(), anim::kDataTracks) = s.tracks.data();
+    return s;
+}
+
+using SampleFn = void(__fastcall*)(const void* data, void*, float* out, int32_t bone, float time);
+
+void CheckSampling()
+{
+    auto rotation = reinterpret_cast<SampleFn>(reinterpret_cast<uint8_t*>(g_orig) + 0x51D2A);
+    auto position = reinterpret_cast<SampleFn>(reinterpret_cast<uint8_t*>(g_orig) + 0x51DF4);
+    TrackSet s = MakeTracks(40);
+    size_t checked = 0, bad = 0;
+    float worst = 0.0f;
+    for (int b = 0; b < 40; ++b) {
+        float end = std::max(s.rotations[b].back().time, s.positions[b].back().time);
+        std::vector<float> times = {-5.0f, 0.0f, end, end + 1.0f};
+        for (int k = 0; k < 60; ++k) times.push_back(Rand(0, end));
+        for (const auto& key : s.rotations[b]) times.push_back(key.time), times.push_back(key.time + 0.001f);
+        for (float time : times) {
+            float a[4], o[4], pa[3], po[3];
+            rotation(s.data.data(), nullptr, o, b, time);
+            anim::SampleRotation(s.tracks[b], time, a);
+            position(s.data.data(), nullptr, po, b, time);
+            anim::SamplePosition(s.tracks[b], time, pa);
+            bool same = true;
+            for (int j = 0; j < 4; ++j) same &= Near(a[j], o[j], &worst);
+            for (int j = 0; j < 3; ++j) same &= Near(pa[j], po[j], &worst);
+            ++checked;
+            if (!same && ++bad <= 3)
+                std::printf("  bone %d time %g: ours (%g %g %g %g | %g %g %g) original (%g %g %g %g | %g %g %g)\n", b,
+                            time, a[0], a[1], a[2], a[3], pa[0], pa[1], pa[2], o[0], o[1], o[2], o[3], po[0], po[1], po[2]);
+        }
+    }
+    std::printf("anim: %zu samples, %zu differ (largest relative error %.2g)\n", checked, bad, worst);
+    Check(bad == 0, "keyframe sampling");
+}
+
+// A bone hierarchy (CATMesh_t bones with children and child scales) driven by a keyframe animation object with the
+// original's vtable, plus controllers of type 1 and 2 on a few bones.
+struct FakeHierarchy {
+    TrackSet tracks;
+    std::vector<uint8_t> meshBones;                  // 0x28 each
+    std::vector<std::vector<int32_t>> children;
+    std::vector<uint8_t> mesh, anim, render;
+    std::vector<Bone> out;
+    std::vector<uint8_t> controllers;               // 0x10 each
+};
+
+void __cdecl Controller1(void*, float*, float* q, float* position, void* user)
+{
+    float k = *static_cast<float*>(user);
+    q[0] *= k; position[1] += k;
+}
+void __cdecl Controller2(float* out, void*, float* parent, float*, float* position, void*)
+{
+    for (int i = 0; i < 12; ++i) out[i] = parent[i] * 0.5f;
+    out[9] += position[0];
+}
+float g_controllerScale = 0.75f;
+
+void BuildHierarchy(FakeHierarchy& h, int bones, float time)
+{
+    h.tracks = MakeTracks(bones);
+    h.children.assign(bones, {});
+    for (int b = 1; b < bones; ++b) h.children[int(Rand(0, float(b) - 0.01f))].push_back(b);
+    h.meshBones.assign(size_t(bones) * 0x28, 0);
+    for (int b = 0; b < bones; ++b) {
+        uint8_t* mb = h.meshBones.data() + b * 0x28;
+        At<float>(mb, 0x1C) = Rand(0.8f, 1.2f);
+        At<int32_t>(mb, 0x20) = int32_t(h.children[b].size());
+        At<int32_t*>(mb, 0x24) = h.children[b].data();
+    }
+    h.mesh.assign(0x64, 0);
+    At<uint8_t*>(h.mesh.data(), 0x44) = h.meshBones.data();
+    h.anim.assign(0x60, 0);
+    At<uintptr_t>(h.anim.data(), 0) = reinterpret_cast<uintptr_t>(g_orig) + 0x95BA4;   // CATKeyframeAnim_t vtable
+    At<void*>(h.anim.data(), 0x4C) = h.tracks.data.data();
+    At<float>(h.anim.data(), 0x50) = time;
+    h.out.assign(bones, Bone{});
+    h.controllers.assign(size_t(bones) * 0x10, 0);
+    for (int b = 3; b < bones; b += 7) {
+        uint8_t* c = h.controllers.data() + b * 0x10;
+        bool second = (b / 7) % 2;
+        At<int32_t>(c, 0) = second ? 2 : 1;
+        At<void*>(c, 4) = &g_controllerScale;
+        At<void*>(c, second ? 0xC : 8) = second ? reinterpret_cast<void*>(&Controller2) : reinterpret_cast<void*>(&Controller1);
+    }
+    h.render.assign(0x60, 0);
+    At<void*>(h.render.data(), cat::kRenderMesh) = h.mesh.data();
+    At<void*>(h.render.data(), cat::kRenderAnim) = h.anim.data();
+    At<int32_t>(h.render.data(), cat::kRenderBoneCount) = bones;
+    At<Bone*>(h.render.data(), cat::kRenderBones) = h.out.data();
+    At<uint8_t*>(h.render.data(), 0x20) = h.controllers.data();
+}
+
+void CheckHierarchy()
+{
+    using HierarchyFn = void(__fastcall*)(void* render, void*, float* parent, int32_t bone, float scale);
+    auto original = reinterpret_cast<HierarchyFn>(reinterpret_cast<uint8_t*>(g_orig) + 0x540A5);
+    size_t checked = 0, bad = 0;
+    float worst = 0.0f;
+    for (int round = 0; round < 8; ++round) {
+        std::mt19937 saved = g_rng;
+        FakeHierarchy theirs, ours;
+        BuildHierarchy(theirs, 40, Rand(0, 2000));
+        g_rng = saved;
+        BuildHierarchy(ours, 40, Rand(0, 2000));
+        float identity[12] = {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0};
+        original(theirs.render.data(), nullptr, identity, 0, 1.0f);
+        // Ours, with the hooks' entry point: its own recursion and sampling.
+        anim::SetKeyframeVtable(reinterpret_cast<uintptr_t>(g_orig) + 0x95BA4);
+        anim::Hierarchy(ours.render.data(), identity, 0, 1.0f);
+        for (int b = 0; b < 40; ++b) {
+            bool same = true;
+            for (int i = 0; i < 12; ++i) same &= Near(ours.out[b].m[i], theirs.out[b].m[i], &worst);
+            ++checked;
+            if (!same && ++bad <= 3)
+                std::printf("  round %d bone %d: ours t (%g %g %g) original (%g %g %g)\n", round, b, ours.out[b].m[9],
+                            ours.out[b].m[10], ours.out[b].m[11], theirs.out[b].m[9], theirs.out[b].m[10],
+                            theirs.out[b].m[11]);
+        }
+    }
+    std::printf("hierarchy: %zu bone matrices, %zu differ (largest relative error %.2g)\n", checked, bad, worst);
+    Check(bad == 0, "bone hierarchy");
+}
+
 double Seconds(std::chrono::steady_clock::time_point since)
 {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - since).count();
@@ -341,6 +504,7 @@ int main(int argc, char** argv)
         std::printf("can't load %s (%lu)\n", path, GetLastError());
         return 2;
     }
+    g_orig = orig;
     g_original = reinterpret_cast<OriginalFn>(reinterpret_cast<uint8_t*>(orig) + 0x5470D);
     g_lock = reinterpret_cast<skin::LockFn>(GetProcAddress(orig, "?Lock@VertexBuffer_c@@QAEPAXII@Z"));
     g_unlock = reinterpret_cast<skin::UnlockFn>(GetProcAddress(orig, "?Unlock@VertexBuffer_c@@QAEXXZ"));
@@ -356,6 +520,8 @@ int main(int argc, char** argv)
     Compare("skin: one vertex pieces", 2, 3, 1, 4, false, 0, true, false);
     Compare("skin: big", 6, 8, 600, 60, false, 1, true, true);
     CheckBounds();
+    CheckSampling();
+    CheckHierarchy();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;

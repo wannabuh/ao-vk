@@ -25,6 +25,7 @@ from the decompiles (`re/`, not in the repository) and written down in `docs/`.
 | piece | original | `[Native]` | notes |
 | --- | --- | --- | --- |
 | character skinning | FUN_1005470d | `Skin` = off / cpu / on / verify | docs/skinning.md |
+| character animation | FUN_10051d2a, FUN_10051df4, FUN_100540a5 | `Anim` = off / on | docs/animation.md; same results (native_check), crowd's game thread -10% |
 
 `Skin=cpu`: SSE on the game's thread, identical results (native_check), 2.8x faster than the original loop.
 `Skin=on` (deferred): the game's thread hands each piece's vertex buffer a skin job (`rvk/skin.h`: the piece's mesh
