@@ -11,3 +11,8 @@
 0x4C4EA	wrapped	proxy/native/scene.cpp	RViewPort_t::RenderRefraction
 0x4BF39	wrapped	proxy/native/scene.cpp	RViewPort_t::Process (lights after the scene update)
 0x56ED6	replaced	proxy/native/cat_render.cpp	RCATMesh_t render (RVisual_t vtable slot 13)
+0x55D52	replaced	proxy/native/cat_mesh.cpp	RCATMesh_t bones update
+0x55C1C	replaced	proxy/native/cat_mesh.cpp	RCATMesh_t skinning update
+0x55A23	replaced	proxy/native/cat_mesh.cpp	animation version
+0x5798B	replaced	proxy/native/cat_mesh.cpp	RCATMesh_t::Process (vtable slot 8)
+0x54D16	replaced	proxy/native/cat_mesh.cpp	root bones (inlined into the bones update)
