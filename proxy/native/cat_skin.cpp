@@ -255,6 +255,8 @@ void SkinForPicking(void* render)
     SkinRender(render, &At<float>(render, kBoxMin), &At<float>(render, kBoxMax), g_lock, g_unlock);
 }
 
+bool g_deferred;                                            // Skin=on: picking needs the scope below
+
 bool __fastcall IsLineHook(void* render, void*, const void* from, const void* to, float* at, uint32_t flag)
 {
     ++g_exact;
@@ -401,6 +403,7 @@ void Install(HMODULE orig)
     if (!g_original)
         return;
     if (target == reinterpret_cast<void*>(&SkinOn)) {
+        g_deferred = true;
         g_isLine = reinterpret_cast<IsLineFn>(HookEntry(orig, kIsLineRva, kIsLinePrologue, sizeof(kIsLinePrologue),
                                                         reinterpret_cast<void*>(&IsLineHook),
                                                         "RCATMesh_t::IsLineIntersecting"));
@@ -413,5 +416,15 @@ void Install(HMODULE orig)
                         : cpu                                     ? "cpu (on the game's thread)"
                                                                   : "verify");
 }
+
+bool PickingBegin(void* render)
+{
+    if (!g_deferred) return false;
+    ++g_exact;
+    SkinForPicking(render);
+    return true;
+}
+
+void PickingEnd() { --g_exact; }
 
 }  // namespace rnative::skin

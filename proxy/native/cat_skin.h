@@ -35,4 +35,9 @@ void SetSink(SinkFn sink);
 // Installs the replacement (randy-vk.ini [Native] Skin).
 void Install(HMODULE orig);
 
+// Native picking (cat_pick.cpp, which replaces the hooks above): with deferred skinning, the character skinned on this
+// thread (box included) and kept exact until PickingEnd. False (and nothing to end) when skinning isn't deferred.
+bool PickingBegin(void* render);
+void PickingEnd();
+
 }  // namespace rnative::skin

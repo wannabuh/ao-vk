@@ -6,8 +6,6 @@
 0x51D2A	replaced	proxy/native/cat_anim.cpp	keyframe rotations
 0x51DF4	replaced	proxy/native/cat_anim.cpp	keyframe positions
 0x540A5	replaced	proxy/native/cat_anim.cpp	bone hierarchy
-0x56786	wrapped	proxy/native/cat_skin.cpp	RCATMesh_t::IsLineIntersecting (exact skinning first)
-0x5632D	wrapped	proxy/native/cat_skin.cpp	RCATMesh_t line test (vtable slot 12)
 0x56ED6	replaced	proxy/native/cat_render.cpp	RCATMesh_t render (RVisual_t vtable slot 13)
 0x55D52	replaced	proxy/native/cat_mesh.cpp	RCATMesh_t bones update
 0x55C1C	replaced	proxy/native/cat_mesh.cpp	RCATMesh_t skinning update
@@ -472,3 +470,9 @@
 0x58F5C	replaced	proxy/native/cat_life.cpp	RCATMesh_t deleting destructor, third base (FUN_10058f5c)
 0x55CCD	replaced	proxy/native/cat_life.cpp	RCATMesh_t group extents (FUN_10055ccd)
 0x55C75	replaced	proxy/native/cat_life.cpp	RCATMesh_t::RestoreData (FUN_10055c75)
+0x4FE93	replaced	proxy/native/cat_pick.cpp	point outside a box (FUN_1004fe93)
+0x4FEFE	replaced	proxy/native/cat_pick.cpp	segment against a box (FUN_1004fefe)
+0x50358	replaced	proxy/native/cat_pick.cpp	ray into a box (FUN_10050358)
+0x58382	replaced	proxy/native/cat_pick.cpp	distance (FUN_10058382)
+0x56786	replaced	proxy/native/cat_pick.cpp	RCATMesh_t::IsLineIntersecting
+0x5632D	replaced	proxy/native/cat_pick.cpp	RCATMesh_t ray test (FUN_1005632d)
