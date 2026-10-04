@@ -29,6 +29,7 @@ from the decompiles (`re/`, not in the repository) and written down in `docs/`.
 | character drawing | FUN_10056ed6 (+ FUN_10055dba) | `CatRender` = off / on | `proxy/native/cat_render.cpp`: materials, overrides, environment map, special light, pulsing glow; identical call log to the original in every path (randy_harness --alpha / --env / --sfx 1 / --sfx 2); also the projected shadow an RShadow draws (FUN_1005604b, vtable slot 20; `--shadow`) |
 | character upkeep | FUN_1005798b (Process), FUN_10055d52, FUN_10055c1c, FUN_10055a23 | `CatMesh` = off / on | `proxy/native/cat_mesh.cpp`: visibility, attachments, when bones and skinning are redone; identical call log |
 | character queries | HasAttractor, GetAttractor (FUN_10054df1), GetBoneMatrix (FUN_10054f4f), ProcessAttractorChilds, GetMaterialIndex, Get/Set/CreateSubstMaterial, SetSfxType, GetBoundingSphereRadius/Pos | `CatQuery` = off / on | `proxy/native/cat_query.cpp`, with the D3DX7 matrix / quaternion helpers in `proxy/native/xmath.h`: where weapons and effects attach, bones by name, per-character materials; same results as the original (native_check on random input, `randy_harness --query` on a real character) |
+| device layer (first part) | DeviceState (SetRenderState, SetTextureStageState, SetTexture, UpdateDevice), render_t's 14 draw calls, SetTransformMatrix, SetLight, GetViewport, CreateVertexBuffer, ProcessVertices, VertexBuffer_c (all but GetImpl) | `Device` = off / on | `proxy/native/device.cpp`: the same objects and D3D7 calls; identical call log in every harness scene (`tools/calllog-ab.sh Device`) |
 | which visual draws | RViewPort_t::Render / RenderRefraction (hooked, not replaced) | `Visuals` = off / on | `proxy/native/scene.cpp`: the visual Render keeps at RViewPort_t +0x164, its RTTI class, attached-to-a-character by its frames; the renderer gets it per draw (Device::SetDrawVisual, frame dumps show it) and uses it for character detection and blob shadows. Also hooks RViewPort_t::Process: after the scene update it reads Randy's light list (0x1017D290, world-space D3DLIGHT7 at RLight_t +0xA4) with each light's carrier (a character up its frames, or next to it under a small parent); draws carry their character too, so which character carries which light (point shadows, the carried-light setting, characters unlit by their own light) is exact |
 
 `Skin=cpu`: SSE on the game's thread, identical results (native_check), 2.8x faster than the original loop.
@@ -61,6 +62,11 @@ in CharacterDraw is for the rest), its box and index hash known - no pass over i
 Pure computations: `tests/native_check.cpp` runs the original function and ours on the same input. Drawing code: the
 **call log** (`RANDYVK_CALLLOG=<file> RANDYVK_CALLLOG_FRAME=<n>`) lists every Direct3D call of one frame with objects as
 ids and data as hashes; the harness scene logged with the replacement off and on must give the same file.
+`tools/calllog-ab.sh <Mode> [scenes]` runs the harness scenes (2D test, characters with blends / shadow / alpha /
+environment / effects / lights, statics) with a mode off and on and compares the logs. Functions ported whole are
+patched with `Replace` (native.h): it checks the client build once (PE timestamp and size) instead of each function's
+bytes, and refuses entries that can't take a 5-byte jump (`proxy/native/entry_guard.gen.h` from
+`tools/gen_entry_guard.py`: functions shorter than that, or with a branch into their first bytes).
 `tools/port-status.py` reports progress against `docs/port-ledger.tsv`; native code calls what isn't ported yet
 through `proxy/native/orig_api.gen.h` (tools/gen_orig_api.py), and lives in the game's heap / containers via
 `proxy/native/vc10.h`.

@@ -45,6 +45,15 @@ struct HookFixups {
 void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t count, void* target, const char* what,
                 const HookFixups& fixups = {});
 
+// The client build the replacements were written against (randy31_orig.dll's PE timestamp 0x5CD328BA and image size
+// 0x1ED000): Replace works only on it.
+bool KnownBuild(HMODULE module);
+
+// Replaces the function at `rva` outright: a jump to `target` over its entry, no way back. Refused (false, logged) on
+// another build and for the functions in entry_guard.gen.h (shorter than the jump, or something branches into it).
+// For functions ported whole; HookEntry for ones that still run the original.
+bool Replace(HMODULE module, uint32_t rva, void* target, const char* what);
+
 // Replaces a vtable entry (`vtable` = rva of the table) that holds module + `expected`; returns the original.
 void* HookSlot(HMODULE module, uint32_t vtable, uint32_t slot, uint32_t expected, void* target, const char* what);
 

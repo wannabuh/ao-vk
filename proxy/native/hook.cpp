@@ -1,5 +1,8 @@
 // Patching helpers and the [Native] modes (native.h).
 #include "native/native.h"
+#include "native/entry_guard.gen.h"
+
+#include <algorithm>
 
 #include <cstdarg>
 #include <cstdio>
@@ -124,6 +127,39 @@ void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t co
     VirtualProtect(at, count, protect, &protect);
     FlushInstructionCache(GetCurrentProcess(), at, count);
     return tramp;
+}
+
+bool KnownBuild(HMODULE module)
+{
+    static int known = -1;
+    if (known < 0) {
+        const auto* base = reinterpret_cast<const uint8_t*>(module);
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+        const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS32*>(base + dos->e_lfanew);
+        known = nt->FileHeader.TimeDateStamp == 0x5CD328BAu && nt->OptionalHeader.SizeOfImage == 0x1ED000u ? 1 : 0;
+        if (!known)
+            Log("randy31_orig.dll is not the build the replacements know (timestamp %08lx, size %lx)",
+                (unsigned long)nt->FileHeader.TimeDateStamp, (unsigned long)nt->OptionalHeader.SizeOfImage);
+    }
+    return known == 1;
+}
+
+bool Replace(HMODULE module, uint32_t rva, void* target, const char* what)
+{
+    if (!KnownBuild(module))
+        return false;
+    if (std::binary_search(std::begin(kUnsafeEntries), std::end(kUnsafeEntries), rva)) {
+        Log("%s: can't take a jump over its entry (entry_guard.gen.h), not replaced", what);
+        return false;
+    }
+    auto* at = reinterpret_cast<uint8_t*>(module) + rva;
+    DWORD protect;
+    if (!VirtualProtect(at, 5, PAGE_EXECUTE_READWRITE, &protect))
+        return false;
+    WriteJump(at, target);
+    VirtualProtect(at, 5, protect, &protect);
+    FlushInstructionCache(GetCurrentProcess(), at, 5);
+    return true;
 }
 
 void* HookSlot(HMODULE module, uint32_t vtable, uint32_t slot, uint32_t expected, void* target, const char* what)

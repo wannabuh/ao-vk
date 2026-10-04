@@ -36,3 +36,42 @@
 0x5063C	replaced	proxy/native/cat_anim.cpp	CATAnimBlend_t positions (vtable slot 6)
 0x50529	replaced	proxy/native/cat_anim.cpp	CATAnimBlend_t radius (vtable slot 7)
 0x50A5F	replaced	proxy/native/cat_anim.cpp	CATAnimBlend_t version (vtable slot 8)
+0x1BBAA	replaced	proxy/native/device.cpp	DeviceState::UpdateDevice
+0x1BBC1	replaced	proxy/native/device.cpp	DeviceState::SetRenderState
+0x1BC15	replaced	proxy/native/device.cpp	DeviceState::SetTextureStageState
+0x1BC8E	replaced	proxy/native/device.cpp	DeviceState::SetTexture
+0x21A88	replaced	proxy/native/device.cpp	render_t::RenderTriangleList (vertex buffer, indexed)
+0x21AAA	replaced	proxy/native/device.cpp	render_t::RenderLineList (vertex buffer, indexed)
+0x21CE3	replaced	proxy/native/device.cpp	render_t::RenderTriangleFan (vertex buffer, indexed)
+0x21E1F	replaced	proxy/native/device.cpp	render_t::RenderTriangleStrip (vertex buffer, indexed)
+0x2256E	replaced	proxy/native/device.cpp	render_t::RenderTriangleList (vertex buffer)
+0x227B6	replaced	proxy/native/device.cpp	render_t::RenderPointList (vertex buffer)
+0x2325A	replaced	proxy/native/device.cpp	render_t::RenderTriangleStrip (vertex buffer)
+0x21E41	replaced	proxy/native/device.cpp	render_t::RenderTriangleList (indexed)
+0x21FC8	replaced	proxy/native/device.cpp	render_t::RenderLineList (indexed)
+0x2214F	replaced	proxy/native/device.cpp	render_t::RenderTriangleFan (indexed)
+0x22AF3	replaced	proxy/native/device.cpp	render_t::RenderTriangleList
+0x22C6E	replaced	proxy/native/device.cpp	render_t::RenderLineList
+0x230DF	replaced	proxy/native/device.cpp	render_t::RenderTriangleFan
+0x23276	replaced	proxy/native/device.cpp	render_t::RenderTriangleStrip
+0x2382A	replaced	proxy/native/device.cpp	render_t::SetTransformMatrix
+0x21815	replaced	proxy/native/device.cpp	render_t::SetLight
+0x234D8	replaced	proxy/native/device.cpp	render_t::GetViewport
+0x24A77	replaced	proxy/native/device.cpp	render_t::CreateVertexBuffer
+0x24B25	replaced	proxy/native/device.cpp	render_t::ProcessVertices
+0x114A1	replaced	proxy/native/device.cpp	VertexBuffer_c::operator=
+0x114B1	replaced	proxy/native/device.cpp	VertexBuffer_c::VertexBuffer_c(fvf, flags, memory, bytes)
+0x114F9	replaced	proxy/native/device.cpp	VertexBuffer_c::VertexBuffer_c(copy)
+0x1153A	replaced	proxy/native/device.cpp	VertexBuffer_c::VertexBuffer_c(copy, flags, memory)
+0x11581	replaced	proxy/native/device.cpp	VertexBuffer_c::VertexBuffer_c(copy, fvf, flags, memory)
+0x115CB	replaced	proxy/native/device.cpp	VertexBuffer_c::Lock
+0x115D6	replaced	proxy/native/device.cpp	VertexBuffer_c::Unlock
+0x115DD	replaced	proxy/native/device.cpp	VertexBuffer_c::NextVertex
+0x115E8	replaced	proxy/native/device.cpp	VertexBuffer_c::GetNumVertices
+0x115EE	replaced	proxy/native/device.cpp	VertexBuffer_c::GetStride
+0x115F4	replaced	proxy/native/device.cpp	VertexBuffer_c::GetElementOffset
+0x115FF	replaced	proxy/native/device.cpp	VertexBuffer_c::GetFormat
+0x11605	replaced	proxy/native/device.cpp	VertexBuffer_c::GetSize
+0x1160B	replaced	proxy/native/device.cpp	VertexBuffer_c::GetFormatSize
+0x11614	replaced	proxy/native/device.cpp	VertexBuffer_c::~VertexBuffer_c
+0x11632	replaced	proxy/native/device.cpp	VertexBuffer_c::Release

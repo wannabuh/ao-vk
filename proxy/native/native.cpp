@@ -5,6 +5,7 @@
 #include "native/cat_query.h"
 #include "native/cat_render.h"
 #include "native/cat_skin.h"
+#include "native/device.h"
 #include "native/orig_api.gen.h"
 #include "native/scene.h"
 
@@ -24,6 +25,7 @@ void Install(HMODULE orig)
     catrender::Install(orig);
     catmesh::Install(orig);
     catquery::Install(orig);
+    device::Install(orig);
 }
 
 }  // namespace rnative
