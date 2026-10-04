@@ -83,10 +83,22 @@ Mode GetMode(const char* name, Mode fallback)
     return Mode::Off;
 }
 
-void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t count, void* target, const char* what)
+void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t count, void* target, const char* what,
+                const HookFixups& fixups)
 {
     auto* at = reinterpret_cast<uint8_t*>(module) + rva;
-    if (count < 5 || count > kTrampSize - 5 || std::memcmp(at, expected, count) != 0) {
+    uint8_t want[kTrampSize];
+    if (count <= kTrampSize) {
+        std::memcpy(want, expected, count);
+        const uint32_t delta = uint32_t(reinterpret_cast<uintptr_t>(module) - 0x10000000u);
+        for (size_t i = 0; i < fixups.abs32Count; ++i) {
+            uint32_t v;
+            std::memcpy(&v, want + fixups.abs32[i], 4);
+            v += delta;
+            std::memcpy(want + fixups.abs32[i], &v, 4);
+        }
+    }
+    if (count < 5 || count > kTrampSize - 5 || std::memcmp(at, want, count) != 0) {
         Log("%s: unexpected code at %p - unknown client build, not replaced", what, (void*)at);
         return nullptr;
     }
@@ -94,6 +106,14 @@ void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t co
     if (!tramp)
         return nullptr;
     std::memcpy(tramp, at, count);
+    for (size_t i = 0; i < fixups.rel32Count; ++i) {   // relative operands keep pointing at their targets
+        const size_t o = fixups.rel32[i];
+        int32_t rel;
+        std::memcpy(&rel, at + o, 4);
+        uintptr_t dest = reinterpret_cast<uintptr_t>(at + o + 4) + rel;
+        rel = int32_t(dest - reinterpret_cast<uintptr_t>(tramp + o + 4));
+        std::memcpy(tramp + o, &rel, 4);
+    }
     WriteJump(tramp + count, at + count);
     DWORD protect;
     if (!VirtualProtect(at, count, PAGE_EXECUTE_READWRITE, &protect))

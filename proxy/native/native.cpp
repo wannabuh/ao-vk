@@ -2,6 +2,7 @@
 #include "native/native.h"
 #include "native/cat_anim.h"
 #include "native/cat_skin.h"
+#include "native/scene.h"
 
 namespace rnative {
 
@@ -13,6 +14,7 @@ void Install(HMODULE orig)
     done = true;
     skin::Install(orig);
     anim::Install(orig);
+    scene::Install(orig);
 }
 
 }  // namespace rnative

@@ -629,6 +629,11 @@ void ThreadedDevice::DrawIndexedPrimitiveShared(uint32_t primitive, uint32_t fvf
     }, indices, indexCount * 2);
 }
 
+void ThreadedDevice::SetDrawVisual(uint32_t kind, const char* className)
+{
+    Enqueue([this, kind, className](const uint8_t*) { m_device.SetDrawVisual(kind, className); });
+}
+
 void ThreadedDevice::DrawPrimitiveSkinned(uint32_t primitive, uint32_t fvf, const SkinJob& job, uint32_t startVertex,
                                           uint32_t vertexCount)
 {

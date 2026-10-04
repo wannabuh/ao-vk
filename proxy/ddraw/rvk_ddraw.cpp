@@ -234,9 +234,15 @@ void RvkState::Present()
         RvkLog("lighting debug view %s", device->LightingDebug() ? "on" : "off");
     }
     // Ctrl+Shift+F9: dump the next frame's 3D draws + a screenshot next to the log (logs\rvk-frame-HHMMSS.*).
+    // RANDYVK_DUMP_AT_FRAME=N: the same at the N-th presented frame (tests).
     static bool f9Down;
+    static int dumpAt = [] {
+        char v[16] = "";
+        return GetEnvironmentVariableA("RANDYVK_DUMP_AT_FRAME", v, sizeof(v)) ? std::atoi(v) : -1;
+    }();
+    static int presented;
     bool f9 = chord && (GetAsyncKeyState(VK_F9) & 0x8000);
-    if (f9 && !f9Down) {
+    if ((f9 && !f9Down) || ++presented == dumpAt) {
         char dir[MAX_PATH] = "";
         GetEnvironmentVariableA("RANDYVK_LOG", dir, sizeof(dir));
         if (char* slash = std::strrchr(dir, '\\')) slash[1] = 0; else dir[0] = 0;

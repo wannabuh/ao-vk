@@ -188,6 +188,7 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
     }
 
     std::fprintf(f, "D %u: prim %u fvf 0x%X v %u i %u | lit %d", n, primitive, fvf, vertexCount, indexCount, lit ? 1 : 0);
+    if (m_drawVisualName[0]) std::fprintf(f, " | visual %s (%u)", m_drawVisualName, m_drawVisualKind);
     if (lit) {
         std::fprintf(f, " lights");
         for (size_t k = 0; k < m_lights.size(); ++k) {

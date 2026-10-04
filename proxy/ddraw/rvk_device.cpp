@@ -1,5 +1,6 @@
 // rvk backend: IDirect3DDevice7 and IDirect3DVertexBuffer7.
 #include "rvk_backend.h"
+#include "native/scene.h"
 
 #include <cmath>
 #include <cstring>
@@ -308,12 +309,27 @@ HRESULT RDevice::DoGetTexture(DWORD stage, LPDIRECTDRAWSURFACE7* out)
     return D3D_OK;
 }
 
+// The game's visual behind the next draws (native scene tracking, [Native] Visuals), when it changes.
+void NoteVisual(rvk::ThreadedDevice* dev)
+{
+    if (!rnative::scene::Installed())
+        return;
+    static const void* last = reinterpret_cast<const void*>(1);
+    const void* visual = rnative::scene::CurrentVisual();
+    if (visual == last)
+        return;
+    last = visual;
+    rnative::scene::VisualInfo info = rnative::scene::Describe(visual);
+    dev->SetDrawVisual(uint32_t(info.kind), info.className);
+}
+
 HRESULT RDevice::DoDrawPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID verts, DWORD count, DWORD)
 {
     CountBackendDraw();
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !verts) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
+    NoteVisual(dev);
     dev->DrawPrimitive(type, fvf, verts, count);
     return D3D_OK;
 }
@@ -325,6 +341,7 @@ HRESULT RDevice::DoDrawIndexedPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !verts || !idx) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
+    NoteVisual(dev);
     dev->DrawIndexedPrimitive(type, fvf, verts, vcount, idx, icount);
     return D3D_OK;
 }
@@ -336,6 +353,7 @@ HRESULT RDevice::DoDrawPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !vb || start + count > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
+    NoteVisual(dev);
     if (vb->skin)
         dev->DrawPrimitiveSkinned(type, vb->desc.dwFVF, vb->skin, start, count);
     else if (auto* shared = vb->StaticShared())
@@ -354,6 +372,7 @@ HRESULT RDevice::DoDrawIndexedPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTE
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !vb || !idx || start + vcount > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
+    NoteVisual(dev);
     if (vb->skin)
         dev->DrawIndexedPrimitiveSkinned(type, vb->desc.dwFVF, vb->skin, start, vcount, idx, icount);
     else if (auto* shared = vb->StaticShared())

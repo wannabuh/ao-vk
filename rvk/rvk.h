@@ -26,6 +26,11 @@ namespace rvk::detail { struct FrameLights; struct FvfLayout; }
 
 namespace rvk {
 
+// What the game's visual issuing a draw is (Device::SetDrawVisual; same values as rnative::scene::Kind).
+enum class VisualKind : uint32_t {
+    Unknown = 0, Character, CharacterPart, Static, Terrain, Room, Water, Sky, BlobShadow, Effect, Other,
+};
+
 class Device;
 
 // Diagnostics. Default: stderr, flushed per line. SetLogSink redirects (e.g. into the game's log file).
@@ -314,6 +319,9 @@ public:
     static constexpr uint32_t kParticleFvf = 0x142;           // XYZ | DIFFUSE | TEX1: the game's sprite vertices
 
     void SetTexture(uint32_t stage, Texture* texture);
+    // The game's visual issuing the next draws (rnative::scene): its kind (VisualKind) and class name - for exact
+    // decisions where the draw alone needs heuristics. 0 / "": not known.
+    void SetDrawVisual(uint32_t kind, const char* className);
     // Null = the main target. Like D3D, resets the viewport to the whole target.
     void SetRenderTarget(Texture* target);
     Texture* GetRenderTarget() const { return m_target == m_main ? nullptr : m_target; }
@@ -705,6 +713,8 @@ private:
     std::unordered_map<uint64_t, MeshInfo> m_meshInfo;
     const MeshInfo* m_drawMesh = nullptr;        // the current draw's (null: external geometry, pre-transformed)
     const skin::Job* m_drawSkin = nullptr;       // the current draw is this skinned character piece (DrawSkinned)
+    uint32_t m_drawVisualKind = 0;               // SetDrawVisual (VisualKind)
+    const char* m_drawVisualName = "";
     const skin::Vertex* m_drawSkinBase = nullptr;   // ... its first skinned vertex
     // GPU skinning (skin_gpu.cpp).
     struct SkinMesh {

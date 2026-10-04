@@ -441,7 +441,13 @@ bool Device::CharacterDraw(uint32_t fvf, uint32_t vertexCount)
     if (m_external || !m_drawMesh || m_drawIsLabel || !m_rs[d3d::RS_LIGHTING] ||
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || (m_target != m_scene && m_target != m_main))
         return false;
-    if (m_drawSkin) {                                    // known to be a character: any size
+    // Known from the game's visual: a character's body or a part attached to it; or known not to be one.
+    const auto kind = VisualKind(m_drawVisualKind);
+    if (kind == VisualKind::CharacterPart)
+        return true;
+    if (kind != VisualKind::Unknown && kind != VisualKind::Character && kind != VisualKind::Other)
+        return false;
+    if (m_drawSkin || kind == VisualKind::Character) {   // known to be a character: any size
         float c[3], e[3];
         DrawWorldBox(c, e);
         if (m_tessChars.size() < 1024)
@@ -1086,6 +1092,12 @@ uint32_t Device::CarriedLight(uint32_t fvf, const void* vertices, uint32_t verte
         if (IsCarrierPart(m_lightsPrev[m_frameLightIndices[k]], m_world, mn, mx))
             return k + 1;
     return 0;
+}
+
+void Device::SetDrawVisual(uint32_t kind, const char* className)
+{
+    m_drawVisualKind = kind;
+    m_drawVisualName = className ? className : "";
 }
 
 void Device::SetTexture(uint32_t stage, Texture* texture)

@@ -120,6 +120,7 @@ public:
                          uint32_t count);
     void EndParticleEmitter();
     void SetTexture(uint32_t stage, Texture* texture);
+    void SetDrawVisual(uint32_t kind, const char* className);   // className must stay valid (the game's RTTI)
     void SetRenderTarget(Texture* target);
     Texture* GetRenderTarget() const { return m_target; }
 
