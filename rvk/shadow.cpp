@@ -662,6 +662,12 @@ bool Device::ShadowInLightmap(uint32_t fvf) const
 bool Device::IsBlobShadow(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
                           uint32_t indexCount) const
 {
+    // Known from the game's visual (rnative::scene): the blob shadow's own, or something else.
+    const auto kind = VisualKind(m_drawVisualKind);
+    if (kind == VisualKind::BlobShadow)
+        return m_shadows && m_shadowValid;
+    if (kind != VisualKind::Unknown && kind != VisualKind::Other)
+        return false;
     if (!m_shadows || !m_shadowValid || fvf != (d3d::FVF_XYZ | d3d::FVF_DIFFUSE | (1u << 8)) || vertexCount % 2 == 0 ||
         vertexCount < 7 || vertexCount > 129)
         return false;
