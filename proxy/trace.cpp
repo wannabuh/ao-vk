@@ -16,6 +16,7 @@
 #include "ddraw/rvk_settings.h"
 #include "native/cat_skin.h"
 #include "native/native.h"
+#include "native/scene.h"
 
 #include <windows.h>
 
@@ -270,8 +271,10 @@ void Init()
         rvkproxy::InstallDDrawHooks(g_orig);
         rnative::SetLog(&rvkproxy::RvkLog);
         rnative::SetIniPath(rvk_settings::IniPath());
-        if (rvkproxy::RvkBackend())
+        if (rvkproxy::RvkBackend()) {
             rnative::skin::SetSink(&rvkproxy::AttachSkin);
+            rnative::scene::SetLightSink(&rvkproxy::SceneLights);
+        }
         rnative::Install(g_orig);
     }
 }

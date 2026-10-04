@@ -1088,16 +1088,30 @@ uint32_t Device::CarriedLight(uint32_t fvf, const void* vertices, uint32_t verte
             mx[j] = std::max(mx[j], wq);
         }
     }
-    for (uint32_t k = 0; k < m_frameLightIndices.size(); ++k)
-        if (IsCarrierPart(m_lightsPrev[m_frameLightIndices[k]], m_world, mn, mx))
+    for (uint32_t k = 0; k < m_frameLightIndices.size(); ++k) {
+        const CapturedLight& c = m_lightsPrev[m_frameLightIndices[k]];
+        if (m_drawOwner && (c.owner || m_sceneLightsFrame + 1 >= m_frameNumber)) {   // known: exactly
+            if (c.owner == m_drawOwner)
+                return k + 1;
+            continue;
+        }
+        if (IsCarrierPart(c, m_world, mn, mx))
             return k + 1;
+    }
     return 0;
 }
 
-void Device::SetDrawVisual(uint32_t kind, const char* className)
+void Device::SetDrawVisual(uint32_t kind, const char* className, uint32_t owner)
 {
     m_drawVisualKind = kind;
     m_drawVisualName = className ? className : "";
+    m_drawOwner = owner;
+}
+
+void Device::SetSceneLights(const SceneLight* lights, uint32_t count)
+{
+    m_sceneLights.assign(lights, lights + count);
+    m_sceneLightsFrame = m_frameNumber;
 }
 
 void Device::SetTexture(uint32_t stage, Texture* texture)

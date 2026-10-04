@@ -23,6 +23,10 @@ void ParticleFrame();                             // each presented frame (rvk_p
 bool RvkBackend();                                // RANDYVK_DDRAW=rvk installed (com_trace.cpp)
 // Native deferred skinning (proxy/native/cat_skin.cpp): gives a vertex buffer its skin job; false if it can't take it.
 bool AttachSkin(void* d3dVertexBuffer, std::shared_ptr<rvk::skin::Job> job);
+}  // namespace rvkproxy
+namespace rnative::scene { struct SceneLight; }
+namespace rvkproxy {
+void SceneLights(const rnative::scene::SceneLight* lights, size_t count);   // rvk_device.cpp
 
 // rvk_materials.cpp: side-loaded material maps of RDB textures (normal maps). A surface learns its RDB identity
 // from the hooked TextureStreamCreator::CreateTexture exports; QueryInterface(IID_RvkSurface) tells our surfaces

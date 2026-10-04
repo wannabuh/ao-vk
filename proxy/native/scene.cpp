@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace rnative::scene {
 
@@ -91,7 +92,67 @@ Kind KindOf(const char* name)
     return name[0] ? Kind::Other : Kind::Unknown;
 }
 
+// The character (RCATMesh_t frame) somewhere up an object's parents, or null.
+const void* CharacterAbove(const void* object)
+{
+    const void* frame = At<const void*>(object, kParent);
+    for (int depth = 0; frame && depth < 12; ++depth, frame = At<const void*>(frame, kParent))
+        if (!std::strcmp(ClassName(frame), "RCATMesh_t"))
+            return frame;
+    return nullptr;
+}
+
+// The character carrying a light: one up its parents, or one next to it under its parent (a character's visual hangs
+// its light on its own frame) - only under a small parent (not a zone's root, which may hold characters too).
+constexpr uint32_t kFirstChild = 0x1C, kNextSibling = 0x18;   // RRefFrame_t children list
+const void* CarrierOf(const void* light)
+{
+    if (const void* character = CharacterAbove(light))
+        return character;
+    const void* parent = At<const void*>(light, kParent);
+    if (!parent)
+        return nullptr;
+    const void* found = nullptr;
+    int children = 0;
+    for (const void* child = At<const void*>(parent, kFirstChild); child && children < 64;
+         child = At<const void*>(child, kNextSibling), ++children)
+        if (!found && !std::strcmp(ClassName(child), "RCATMesh_t"))
+            found = child;
+    return children <= 8 ? found : nullptr;
+}
+
+// ---- lights ----
+using ProcessFn = void(__fastcall*)(void* viewport, void*, void* root);
+ProcessFn g_process;
+LightSinkFn g_lightSink;
+const void* const* g_lightsBegin;                  // randy31 0x1017D290: std::vector<RLight_t*> begin, end
+constexpr uint32_t kLightListRva = 0x17D290;
+constexpr uint32_t kLightData = 0xA4;              // RLight_t: its D3DLIGHT7 (world space after Process)
+
+void __fastcall ProcessHook(void* viewport, void*, void* root)
+{
+    g_process(viewport, nullptr, root);
+    if (!g_lightSink)
+        return;
+    static std::vector<SceneLight> lights;
+    lights.clear();
+    const void* const* begin = g_lightsBegin[0] ? static_cast<const void* const*>(g_lightsBegin[0]) : nullptr;
+    const void* const* end = static_cast<const void* const*>(g_lightsBegin[1]);
+    for (const void* const* it = begin; it && it != end && lights.size() < 1024; ++it) {
+        SceneLight l;
+        std::memcpy(l.d3dLight, static_cast<const uint8_t*>(*it) + kLightData, sizeof(l.d3dLight));
+        l.owner = CarrierOf(*it);
+        lights.push_back(l);
+    }
+    g_lightSink(lights.data(), lights.size());
+}
+
 }  // namespace
+
+void SetLightSink(LightSinkFn sink)
+{
+    g_lightSink = sink;
+}
 
 const void* CurrentVisual()
 {
@@ -111,14 +172,12 @@ VisualInfo Describe(const void* visual)
     c.info.className = ClassName(visual);
     c.info.kind = KindOf(c.info.className);
     // Attached to a character (somewhere up its frames): one of its parts.
-    if (c.info.kind != Kind::Character && c.info.kind != Kind::BlobShadow) {
-        const void* frame = At<const void*>(visual, kParent);
-        for (int depth = 0; frame && depth < 12; ++depth, frame = At<const void*>(frame, kParent))
-            if (!std::strcmp(ClassName(frame), "RCATMesh_t")) {
-                c.info.kind = Kind::CharacterPart;
-                break;
-            }
-    }
+    c.info.owner = c.info.kind == Kind::Character ? visual : nullptr;
+    if (c.info.kind != Kind::Character && c.info.kind != Kind::BlobShadow)
+        if (const void* character = CharacterAbove(visual)) {
+            c.info.kind = Kind::CharacterPart;
+            c.info.owner = character;
+        }
     VisualInfo info = c.info;
     if (g_visuals.size() > 20000)                       // visuals come and go: start over now and then
         g_visuals.clear();
@@ -148,7 +207,18 @@ void Install(HMODULE orig)
     g_renderRefraction = reinterpret_cast<RenderFn>(
         HookEntry(orig, 0x4C4EA, kRefraction, sizeof(kRefraction), reinterpret_cast<void*>(&RenderRefractionHook),
                   "RViewPort_t::RenderRefraction"));
-    Log("visuals: %s", g_render && g_renderRefraction ? "on" : "not installed (unknown client build)");
+    // RViewPort_t::Process: push ebp; mov ebp, esp; push ecx; fld dword [<constant>] (absolute).
+    static const uint8_t kProcess[] = {0x55, 0x8B, 0xEC, 0x51, 0xD9, 0x05, 0x54, 0x3F, 0x09, 0x10};
+    static const size_t kProcessAbs[] = {6};
+    HookFixups processFixups;
+    processFixups.abs32 = kProcessAbs;
+    processFixups.abs32Count = 1;
+    g_lightsBegin = reinterpret_cast<const void* const*>(reinterpret_cast<uint8_t*>(orig) + kLightListRva);
+    g_process = reinterpret_cast<ProcessFn>(HookEntry(orig, 0x4BF39, kProcess, sizeof(kProcess),
+                                                      reinterpret_cast<void*>(&ProcessHook), "RViewPort_t::Process",
+                                                      processFixups));
+    Log("visuals: %s%s", g_render && g_renderRefraction ? "on" : "not installed (unknown client build)",
+        g_process ? ", lights from the scene" : "");
 }
 
 }  // namespace rnative::scene

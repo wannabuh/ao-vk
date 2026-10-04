@@ -64,7 +64,8 @@ void Device::EndFrameDump()
         if (!c.hasCarrier && !cube)
             continue;
         const d3d::Vector& l = c.light.position;
-        std::fprintf(m_dumpFile, "# light (%.1f %.1f %.1f) r%.1f carrier:", l.x, l.y, l.z, c.light.range);
+        std::fprintf(m_dumpFile, "# light (%.1f %.1f %.1f) r%.1f carrier%s:", l.x, l.y, l.z, c.light.range,
+                     c.owner ? " (the scene's, exact)" : "");
         if (c.hasCarrier)
             std::fprintf(m_dumpFile, " g%u origin (%.2f %.2f %.2f), %.2f under the light;", c.carrierGroup,
                          c.carrier[0], c.carrier[1], c.carrier[2], l.y - c.carrier[1]);

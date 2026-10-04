@@ -27,7 +27,17 @@ enum class Kind : uint32_t {
 struct VisualInfo {
     Kind kind = Kind::Unknown;
     const char* className = "";   // RTTI ".?AVName@@" without the decoration
+    const void* owner = nullptr;  // Character / CharacterPart: the character (its RCATMesh_t frame)
 };
+
+// Randy's lights of the frame (after RViewPort_t::Process placed them in the world), each with the character that
+// carries it (its RCATMesh_t frame up its parents), if any.
+struct SceneLight {
+    uint8_t d3dLight[104];        // D3DLIGHT7, world space
+    const void* owner;
+};
+using LightSinkFn = void (*)(const SceneLight* lights, size_t count);
+void SetLightSink(LightSinkFn sink);
 
 // The visual being rendered right now (null outside RViewPort_t::Render), and what it is.
 const void* CurrentVisual();

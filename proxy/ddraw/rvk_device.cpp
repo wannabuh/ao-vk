@@ -320,7 +320,22 @@ void NoteVisual(rvk::ThreadedDevice* dev)
         return;
     last = visual;
     rnative::scene::VisualInfo info = rnative::scene::Describe(visual);
-    dev->SetDrawVisual(uint32_t(info.kind), info.className);
+    dev->SetDrawVisual(uint32_t(info.kind), info.className, uint32_t(reinterpret_cast<uintptr_t>(info.owner)));
+}
+
+// The game's lights after its scene update (native scene tracking), to the renderer.
+void SceneLights(const rnative::scene::SceneLight* lights, size_t count)
+{
+    rvk::ThreadedDevice* dev = g_rvk.device;
+    if (!dev)
+        return;
+    static std::vector<rvk::Device::SceneLight> out;
+    out.resize(count);
+    for (size_t i = 0; i < count; ++i) {
+        std::memcpy(&out[i].light, lights[i].d3dLight, sizeof(out[i].light));
+        out[i].owner = uint32_t(reinterpret_cast<uintptr_t>(lights[i].owner));
+    }
+    dev->SetSceneLights(out.data(), uint32_t(count));
 }
 
 HRESULT RDevice::DoDrawPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID verts, DWORD count, DWORD)

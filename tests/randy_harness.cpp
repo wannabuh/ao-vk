@@ -263,6 +263,8 @@ struct CharacterScene {
 
 // Builds root -> {camera, sun, `count` characters in a grid}, all with the same model and animation (each its own
 // animation instance, at different times). False (with a message) if a stream can't be read.
+int g_carriedLights;                                 // --lights N: the first N characters carry a point light
+
 bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath, int count, CharacterScene& scene)
 {
     HMODULE serialize = LoadLibraryA("serialize.dll");
@@ -335,6 +337,16 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
         Export<SetVisibleFn>("?SetVisible@RRefFrame_t@@QAEX_N0@Z")(visual, nullptr, true, true);
         Vector3 at{1.6f * float(c % columns - (columns - 1) / 2.0f), 0.0f, 1.6f * float(c / columns)};
         setPos(visual, nullptr, &at, nullptr);
+        if (c < g_carriedLights) {                   // a point light at head height, carried (RLight_t Type_e 2)
+            using LightCtorFn = void*(__fastcall*)(void* self, void*, void* parent, const float* rgb, int type, void* anim);
+            const float warm[3] = {1.0f, 0.8f, 0.5f};
+            void* light = Export<LightCtorFn>("??0RLight_t@@QAE@PAVRRefFrame_t@@ABVRGB_t@@W4Type_e@0@PAVRAnimation_t@@@Z")(
+                ::operator new(0x11C), nullptr, visual, warm, 2, nullptr);
+            *reinterpret_cast<float*>(static_cast<uint8_t*>(light) + 0xF0) = 6.0f;     // range
+            *reinterpret_cast<float*>(static_cast<uint8_t*>(light) + 0xFC) = 0.2f;     // attenuation 1
+            Vector3 head{0.0f, 2.0f, 0.0f};
+            setPos(light, nullptr, &head, visual);
+        }
         scene.characters.push_back(character);
         scene.anims.push_back(anim);
     }
@@ -463,6 +475,7 @@ int main(int argc, char** argv)
         else if (a == "--crowd" && i + 1 < argc) crowd = std::max(1, std::atoi(argv[++i]));
         else if (a == "--pick") pick = true;
         else if (a == "--still") still = true;
+        else if (a == "--lights" && i + 1 < argc) g_carriedLights = std::atoi(argv[++i]);
         else if (a == "--static" && i + 1 < argc) staticMesh = argv[++i];
         else if (a == "--statics" && i + 1 < argc) statics = std::max(1, std::atoi(argv[++i]));
     }

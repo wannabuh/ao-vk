@@ -26,7 +26,7 @@ from the decompiles (`re/`, not in the repository) and written down in `docs/`.
 | --- | --- | --- | --- |
 | character skinning | FUN_1005470d | `Skin` = off / cpu / on / verify | docs/skinning.md |
 | character animation | FUN_10051d2a, FUN_10051df4, FUN_100540a5 | `Anim` = off / on | docs/animation.md; same results (native_check), crowd's game thread -10% |
-| which visual draws | RViewPort_t::Render / RenderRefraction (hooked, not replaced) | `Visuals` = off / on | `proxy/native/scene.cpp`: the visual Render keeps at RViewPort_t +0x164, its RTTI class, attached-to-a-character by its frames; the renderer gets it per draw (Device::SetDrawVisual, frame dumps show it) and uses it for character detection |
+| which visual draws | RViewPort_t::Render / RenderRefraction (hooked, not replaced) | `Visuals` = off / on | `proxy/native/scene.cpp`: the visual Render keeps at RViewPort_t +0x164, its RTTI class, attached-to-a-character by its frames; the renderer gets it per draw (Device::SetDrawVisual, frame dumps show it) and uses it for character detection and blob shadows. Also hooks RViewPort_t::Process: after the scene update it reads Randy's light list (0x1017D290, world-space D3DLIGHT7 at RLight_t +0xA4) with each light's carrier (a character up its frames, or next to it under a small parent); draws carry their character too, so which character carries which light (point shadows, the carried-light setting, characters unlit by their own light) is exact |
 
 `Skin=cpu`: SSE on the game's thread, identical results (native_check), 2.8x faster than the original loop.
 `Skin=on` (deferred): the game's thread hands each piece's vertex buffer a skin job (`rvk/skin.h`: the piece's mesh

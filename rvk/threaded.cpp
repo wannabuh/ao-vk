@@ -629,9 +629,16 @@ void ThreadedDevice::DrawIndexedPrimitiveShared(uint32_t primitive, uint32_t fvf
     }, indices, indexCount * 2);
 }
 
-void ThreadedDevice::SetDrawVisual(uint32_t kind, const char* className)
+void ThreadedDevice::SetDrawVisual(uint32_t kind, const char* className, uint32_t owner)
 {
-    Enqueue([this, kind, className](const uint8_t*) { m_device.SetDrawVisual(kind, className); });
+    Enqueue([this, kind, className, owner](const uint8_t*) { m_device.SetDrawVisual(kind, className, owner); });
+}
+
+void ThreadedDevice::SetSceneLights(const Device::SceneLight* lights, uint32_t count)
+{
+    Enqueue([this, count](const uint8_t* data) {
+        m_device.SetSceneLights(reinterpret_cast<const Device::SceneLight*>(data), count);
+    }, lights, uint32_t(count * sizeof(Device::SceneLight)));
 }
 
 void ThreadedDevice::DrawPrimitiveSkinned(uint32_t primitive, uint32_t fvf, const SkinJob& job, uint32_t startVertex,

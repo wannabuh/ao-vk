@@ -431,6 +431,7 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     std::memcpy(c.sway, m_drawSway, sizeof(c.sway));
     c.draw = m_frameDraw;
     c.animated = m_drawMesh && !m_drawMeshStatic;
+    c.owner = m_drawOwner;
     m_casters.push_back(c);
     auto cached = m_casterCache.find(key);
     if (cached != m_casterCache.end()) {
@@ -764,6 +765,7 @@ void Device::CollectShadowItems()
         it.cached = false;
         it.group = 0;
         it.animated = c.animated;
+        it.owner = c.owner;
         std::memcpy(it.sway, c.sway, sizeof(it.sway));
         m_shadowItems.push_back(it);
         drawOf.push_back(c.draw);
@@ -774,6 +776,7 @@ void Device::CollectShadowItems()
             continue;                            // drawn this frame: in the list above
         ShadowItem it;
         it.buffer = e.buffer;
+        it.owner = 0;
         it.ibBuffer = VK_NULL_HANDLE;
         it.vbOffset = 0;
         it.ibOffset = e.indexOffset;

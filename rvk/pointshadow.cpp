@@ -218,13 +218,44 @@ void Device::FindCarriers()
         groupLowestOrigin[it.group] = std::min(groupLowestOrigin[it.group], it.world.m[3][1]);
     }
 
+    const bool exact = m_sceneLightsFrame == m_frameNumber;   // the game's own lights with their carriers
     for (CapturedLight& c : m_lightsCur) {
         c.hasCarrier = false;
+        c.owner = 0;
         c.carrierGroup = ~0u;
         c.carrierGroups.clear();
         if (c.light.range < 1.0f)
             continue;
         const d3d::Vector& p = c.light.position;
+        if (exact) {
+            // The scene light it is (same range, where it stands), its character's pieces this frame.
+            uint32_t owner = 0;
+            float bestD2 = 0.3f * 0.3f;
+            for (const SceneLight& s : m_sceneLights) {
+                if (s.light.range != c.light.range) continue;
+                float dx = s.light.position.x - p.x, dy = s.light.position.y - p.y, dz = s.light.position.z - p.z;
+                float d2 = dx * dx + dy * dy + dz * dz;
+                if (d2 < bestD2) { bestD2 = d2; owner = s.owner; }
+            }
+            c.owner = owner;
+            if (!owner)
+                continue;
+            std::vector<uint8_t> linked(groups, 0);
+            for (const ShadowItem& it : m_shadowItems) {
+                if (it.cached || it.owner != owner) continue;
+                linked[it.group] = 1;
+                if (!c.hasCarrier || it.world.m[3][1] < c.carrier[1]) {   // its feet: the lowest origin
+                    c.carrier[0] = it.world.m[3][0];
+                    c.carrier[1] = it.world.m[3][1];
+                    c.carrier[2] = it.world.m[3][2];
+                    c.carrierGroup = it.group;
+                }
+                c.hasCarrier = true;
+            }
+            for (uint32_t g = 0; g < groups; ++g)
+                if (linked[g]) c.carrierGroups.push_back(g);
+            continue;
+        }
         // The same light last frame (it moves with its character, a little per frame) and who carried it.
         const CapturedLight* prev = nullptr;
         float prevBest = 1.0f;

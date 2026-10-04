@@ -321,7 +321,11 @@ public:
     void SetTexture(uint32_t stage, Texture* texture);
     // The game's visual issuing the next draws (rnative::scene): its kind (VisualKind) and class name - for exact
     // decisions where the draw alone needs heuristics. 0 / "": not known.
-    void SetDrawVisual(uint32_t kind, const char* className);
+    void SetDrawVisual(uint32_t kind, const char* className, uint32_t owner = 0);
+    // The game's lights of this frame (rnative::scene), each with its carrier's owner id (SetDrawVisual's) or 0: who
+    // carries which light, exactly (FindCarriers).
+    struct SceneLight { d3d::Light light; uint32_t owner; };
+    void SetSceneLights(const SceneLight* lights, uint32_t count);
     // Null = the main target. Like D3D, resets the viewport to the whole target.
     void SetRenderTarget(Texture* target);
     Texture* GetRenderTarget() const { return m_target == m_main ? nullptr : m_target; }
@@ -481,6 +485,7 @@ private:
         std::vector<uint32_t> carrierGroups;     // every group that is the carrier's (sorted): the point shadow pass
         float carrier[3] = {};
         float carried = 0.0f;                    // 0..1: counted as a character's light (smoothed over frames)
+        uint32_t owner = 0;                      // its carrier (SetDrawVisual owner) when the scene's lights are known
     };
     // End of frame: for each light, the character carrying it - the body origin nearest under it. The game places a
     // character's light up to ~0.4 sideways off the body while it moves, so a fixed radius around the light either
@@ -519,6 +524,7 @@ private:
         uint32_t draw;                           // m_frameDraw when the game drew it
         float sway[4];                           // a plant's sway (DrawTransform sway), 0 = still
         bool animated;                           // its vertices changed since last frame (a character's body)
+        uint32_t owner;                          // the character it belongs to (SetDrawVisual), 0: unknown
     };
     // One caster as the shadow passes draw it: from this frame's ring or from the caster cache (own buffer).
     struct ShadowItem {
@@ -535,6 +541,7 @@ private:
         uint32_t group;                          // drawn as part of the same object (character); ~0u = cached
         float sway[4];                           // a plant's sway, 0 = still
         bool animated;                           // ShadowCaster animated
+        uint32_t owner;                          // ShadowCaster owner
     };
     std::vector<ShadowItem> m_shadowItems;       // EndFrame: what the shadow passes draw
     // What a shadow pass has bound, so unchanged state isn't re-issued.
@@ -714,6 +721,9 @@ private:
     const MeshInfo* m_drawMesh = nullptr;        // the current draw's (null: external geometry, pre-transformed)
     const skin::Job* m_drawSkin = nullptr;       // the current draw is this skinned character piece (DrawSkinned)
     uint32_t m_drawVisualKind = 0;               // SetDrawVisual (VisualKind)
+    uint32_t m_drawOwner = 0;                    // ... the character it belongs to (0: none / unknown)
+    std::vector<SceneLight> m_sceneLights;       // SetSceneLights, of frame m_sceneLightsFrame
+    uint64_t m_sceneLightsFrame = 0;
     const char* m_drawVisualName = "";
     const skin::Vertex* m_drawSkinBase = nullptr;   // ... its first skinned vertex
     // GPU skinning (skin_gpu.cpp).
