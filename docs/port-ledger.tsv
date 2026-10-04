@@ -1,0 +1,12 @@
+# randy31_orig functions with a native implementation (tools/port-status.py reads this).
+# rva	status	where	notes
+# status: replaced = ours runs instead (when its [Native] mode is on); wrapped = ours runs around the original
+0x5470D	replaced	proxy/native/cat_skin.cpp	CATRender_t skinning loop
+0x51D2A	replaced	proxy/native/cat_anim.cpp	keyframe rotations
+0x51DF4	replaced	proxy/native/cat_anim.cpp	keyframe positions
+0x540A5	replaced	proxy/native/cat_anim.cpp	bone hierarchy
+0x56786	wrapped	proxy/native/cat_skin.cpp	RCATMesh_t::IsLineIntersecting (exact skinning first)
+0x5632D	wrapped	proxy/native/cat_skin.cpp	RCATMesh_t line test (vtable slot 12)
+0x4BFFF	wrapped	proxy/native/scene.cpp	RViewPort_t::Render (current viewport)
+0x4C4EA	wrapped	proxy/native/scene.cpp	RViewPort_t::RenderRefraction
+0x4BF39	wrapped	proxy/native/scene.cpp	RViewPort_t::Process (lights after the scene update)
