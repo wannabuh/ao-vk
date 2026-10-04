@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <string>
 #include <cstdlib>
 #include <unordered_map>
 #include <cstring>
@@ -117,6 +118,20 @@ uint32_t Fnv(const void* data, size_t bytes)
     const auto* b = static_cast<const uint8_t*>(data);
     for (size_t i = 0; i < bytes; ++i) h = (h ^ b[i]) * 16777619u;
     return h;
+}
+
+// Floats written out (compared with a tolerance by tools/calllog-compare.py: ported math may round differently
+// from the original's x87 code in the last bit).
+std::string Floats(const void* data, size_t count)
+{
+    std::string out;
+    char buf[24];
+    const auto* f = static_cast<const float*>(data);
+    for (size_t i = 0; i < count; ++i) {
+        std::snprintf(buf, sizeof(buf), " %.9g", f[i]);
+        out += buf;
+    }
+    return out;
 }
 
 uint32_t LogId(const void* object)
@@ -246,7 +261,7 @@ HRESULT RDevice::DoClear(DWORD count, LPD3DRECT rects, DWORD flags, D3DCOLOR col
 
 HRESULT RDevice::DoSetTransform(D3DTRANSFORMSTATETYPE type, LPD3DMATRIX m)
 {
-    if (m) CALL_LOG("XF %d %08x", type, Fnv(m, sizeof(*m)));
+    if (m) CALL_LOG("XF %d%s", type, Floats(m, 16).c_str());
     if (!m || DWORD(type) >= 32) return DDERR_INVALIDPARAMS;
     m_transforms[type] = *m;
     if (rvk::ThreadedDevice* dev = g_rvk.device)
@@ -287,7 +302,7 @@ HRESULT RDevice::DoGetViewport(LPD3DVIEWPORT7 vp)
 
 HRESULT RDevice::DoSetMaterial(LPD3DMATERIAL7 m)
 {
-    if (m) CALL_LOG("MAT %08x", Fnv(m, sizeof(*m)));
+    if (m) CALL_LOG("MAT%s", Floats(m, sizeof(*m) / 4).c_str());
     if (!m) return DDERR_INVALIDPARAMS;
     m_material = *m;
     if (rvk::ThreadedDevice* dev = g_rvk.device)
@@ -304,7 +319,7 @@ HRESULT RDevice::DoGetMaterial(LPD3DMATERIAL7 m)
 
 HRESULT RDevice::DoSetLight(DWORD i, LPD3DLIGHT7 l)
 {
-    if (l) CALL_LOG("LIGHT %lu %08x", i, Fnv(l, sizeof(*l)));
+    if (l) CALL_LOG("LIGHT %lu %08x%s", i, Fnv(l, 4), Floats(reinterpret_cast<const uint8_t*>(l) + 4, (sizeof(*l) - 4) / 4).c_str());
     if (!l) return DDERR_INVALIDPARAMS;
     if (i >= m_lights.size()) m_lights.resize(i + 1, {D3DLIGHT7{}, FALSE});
     m_lights[i].first = *l;
