@@ -148,3 +148,11 @@
 0x2376A	replaced	proxy/native/surface.cpp	render_t::WaitForVerticalBlank (FUN_1002376a)
 0x23E14	replaced	proxy/native/surface.cpp	render_t::EvictManagedTextures (FUN_10023e14)
 0x21073	replaced	proxy/native/surface.cpp	render_t::GetCaps (FUN_10021073)
+0x4621A	replaced	proxy/native/resource.cpp	RResource_t::AddRefRResource
+0x46224	replaced	proxy/native/resource.cpp	RResource_t::ReleaseRResource
+0x46277	replaced	proxy/native/resource.cpp	RResource_t::GetName
+0x46283	replaced	proxy/native/resource.cpp	RResource_t::~RResource_t
+0x46311	replaced	proxy/native/resource.cpp	RResource_t::RResource_t(name)
+0x46362	replaced	proxy/native/resource.cpp	RResource_t::RResource_t(archive)
+0x4641A	replaced	proxy/native/resource.cpp	RResource_t::Archive
+0x46499	replaced	proxy/native/resource.cpp	RResource_t::Instantiate
