@@ -319,3 +319,27 @@
 0x3FCDE	replaced	proxy/native/camera.cpp	RLight_t::SetSpotAngles
 0x3FF72	replaced	proxy/native/camera.cpp	RLight_t::Process (FUN_1003ff72)
 0x218BE	replaced	proxy/native/device.cpp	render_t::LightEnable (FUN_100218be)
+0x1237D	replaced	proxy/native/mesh.cpp	render state guard (FUN_1001237d)
+0x123C0	replaced	proxy/native/mesh.cpp	render state guard end (FUN_100123c0)
+0x4E792	replaced	proxy/native/mesh.cpp	SimpleMesh::GetVertexBuffer
+0x4E7AB	replaced	proxy/native/mesh.cpp	SimpleMesh::GetVertexBufferFormat
+0x4E7F3	replaced	proxy/native/mesh.cpp	SimpleMesh::GetVertexCount
+0x4E7FA	replaced	proxy/native/mesh.cpp	SimpleMesh::GetTriangleCount
+0x4872B	replaced	proxy/native/mesh.cpp	SimpleMesh data hardware copy (FUN_1004872b)
+0x4E7A3	replaced	proxy/native/mesh.cpp	SimpleMesh::RestoreHWBuffer
+0x4E743	replaced	proxy/native/mesh.cpp	SimpleMesh::SetMaterial
+0x4F898	replaced	proxy/native/mesh.cpp	SimpleMesh::GetBoundingVolume
+0x1FDBA	replaced	proxy/native/mesh.cpp	index range draw (FUN_1001fdba)
+0x4F154	replaced	proxy/native/mesh.cpp	SimpleMesh::Render
+0x4EBC4	replaced	proxy/native/mesh.cpp	RVisualData_t::IsTransparent
+0x4D076	replaced	proxy/native/mesh.cpp	RVisual_t statel light pass (FUN_1004d076)
+0x4D18A	replaced	proxy/native/mesh.cpp	RVisual_t environment map pass (FUN_1004d18a)
+0x4D2D8	replaced	proxy/native/mesh.cpp	RVisual_t::RenderWithTransparency
+0x4D84A	replaced	proxy/native/mesh.cpp	RVisual_t::Rasterize
+0x4CD31	replaced	proxy/native/mesh.cpp	RVisual_t depth pass (FUN_1004cd31)
+0x4CDE6	replaced	proxy/native/mesh.cpp	RVisual_t shadow pass (FUN_1004cde6)
+0x49554	replaced	proxy/native/mesh.cpp	RTriMesh_t::Process
+0x49761	replaced	proxy/native/mesh.cpp	RTriMesh_t::Render
+0x4934C	replaced	proxy/native/mesh.cpp	RTriMesh_t::RenderDepth
+0x48FBE	replaced	proxy/native/mesh.cpp	RTriMesh_t::RenderShadow
+0x2B4A6	replaced	proxy/native/camera.cpp	RCamera_t bounding volume test (FUN_1002b4a6)

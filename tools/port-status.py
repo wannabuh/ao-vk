@@ -3,7 +3,7 @@
 named functions by their class, unnamed ones by the named function before them (MSVC keeps a source file's functions
 together) - against docs/port-ledger.tsv. Library code (CRT, STL, libpng, zlib, statically linked D3DX7) is counted apart.
 
-Usage: tools/port-status.py [--classes N]
+Usage: tools/port-status.py [--classes N] [--list CLASS]   (--list: the functions of CLASS left to port)
 """
 import pathlib
 import re
@@ -61,6 +61,7 @@ def unreachable(graph, done):
 
 def main():
     show = int(sys.argv[sys.argv.index("--classes") + 1]) if "--classes" in sys.argv else 25
+    listing = sys.argv[sys.argv.index("--list") + 1] if "--list" in sys.argv else None
     ledger = {}
     for line in open(ROOT / "docs/port-ledger.tsv"):
         if line.startswith("#") or not line.strip():
@@ -89,6 +90,8 @@ def main():
         elif rva in gone:                              # only called from replaced code
             g[4] += 1
             g[5] += size
+        elif cls == listing:
+            print(f"0x{rva:05X} {size:6d}  {name}")
     lib = groups.pop("(library)", [0, 0, 0, 0, 0, 0])
     total = [sum(g[i] for g in groups.values()) for i in range(6)]
     wrapped = sum(1 for s in ledger.values() if s == "wrapped")

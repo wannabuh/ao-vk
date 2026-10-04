@@ -37,7 +37,7 @@ using Frame = uint8_t;
 
 constexpr uint32_t kCameraVtable = 0x93EE4, kLightVtable = 0x953D8;
 constexpr uint32_t kCurrentCamera = 0x17D338, kDebuggerMode = 0xB7500, kLightsChanged = 0xB7728,
-                   kLightList = 0x17D290, kLightsMoved = 0x17D28C, kRender = 0x16BED0;
+                   kLightList = 0x17D290, kLightsMoved = 0x17D28C, kRender = 0x16BED0, kBoxTest = 0x17D14C;
 constexpr uint32_t kRotation = 0x2C, kChanged = 0x9D;
 
 // RCamera_t
@@ -397,6 +397,44 @@ bool __fastcall Sees(Frame* c, void*, const float* center, float radius)
     return true;
 }
 
+// FUN_1002b4a6: can a bounding volume (+8 centre, +0x14 radius, +0x18 / +0x24 box corners) under matrix `m` and
+// scale `scale` be seen; with the box switch (0x1017D14C) also not wholly behind any plane of the frustum.
+bool __fastcall SeesVolume(Frame* c, void*, uint8_t* volume, const float* m, float scale)
+{
+    if (!c[kOne]) return true;
+    float center[3];
+    xm::Transform(&Field<float>(volume, 8), m, center);
+    const float radius = Field<float>(volume, 0x14) * scale;
+    if (!InSphere(c, center, radius)) return false;
+    const bool inside = InsidePlanes(c, center, radius);
+    if (Global<uint8_t>(kBoxTest)) {
+        if (!inside) return false;
+        float corners[6], p[3];
+        const float* eye = World(c) + 12;
+        xm::Transform(&Field<float>(volume, 0x18), m, p);
+        Sub(p, eye, corners);
+        xm::Transform(&Field<float>(volume, 0x24), m, p);
+        Sub(p, World(c) + 12, corners + 3);
+        for (int i = 0; i < 6; ++i) {
+            const float* n = &Field<float>(c, kForward + 12 * i);
+            uint32_t u = 0;
+            for (; u != 8; ++u) {
+                const float x = corners[(u & 1) * 3], y = corners[(~(u >> 1) & 1) * 3 + 1],
+                            z = corners[(~(u >> 2) & 1) * 3 + 2];
+                if (0.0f < n[2] * z + n[1] * y + n[0] * x) break;
+            }
+            if (u == 8) {
+                if (DebugCull()) DebugMark(c, center, 1.0f, 0.5f, 0.5f);
+                return false;
+            }
+        }
+    }
+    if (!inside) return false;
+    const bool seen = NotOccluded(c, center, radius);
+    if (seen && DebugCull()) DebugMark(c, center, 1.0f, 1.0f, 1.0f);
+    return seen;
+}
+
 // ---- RLight_t ----
 
 uint32_t D3DType(int32_t type) { return type == 2 ? 1 : type == 4 ? 2 : 3; }   // FUN_1003fcbe
@@ -585,6 +623,7 @@ void Install(HMODULE orig)
         {0x2AB22, FN(GetTransformationMatrix), "RCamera_t::GetTransformationMatrix"},
         {0x2ADF7, FN(SetupFrustum), "RCamera_t frustum (FUN_1002adf7)"},
         {0x2B3E4, FN(Sees), "RCamera_t sphere test (FUN_1002b3e4)"},
+        {0x2B4A6, FN(SeesVolume), "RCamera_t bounding volume test (FUN_1002b4a6)"},
         {0x3FD4A, FN(ConstructLight), "RLight_t::RLight_t"},
         {0x3FB6B, FN(CopyLight), "RLight_t::RLight_t(copy) (FUN_1003fb6b)"},
         {0x3FE81, FN(ConstructLightFrom), "RLight_t::RLight_t(archive)"},

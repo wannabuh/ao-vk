@@ -12,6 +12,7 @@
 #include "native/refframe.h"
 #include "native/visual.h"
 #include "native/camera.h"
+#include "native/mesh.h"
 
 namespace rnative {
 
@@ -35,6 +36,7 @@ void Install(HMODULE orig)
     refframe::Install(orig);
     visual::Install(orig);
     camera::Install(orig);
+    mesh::Install(orig);
 }
 
 }  // namespace rnative
