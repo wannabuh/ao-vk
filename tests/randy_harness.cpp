@@ -268,6 +268,7 @@ float g_alpha = 1.0f;                                // --alpha A: the character
 int g_sfx;                                           // --sfx N: their effect type (1 special light, 2 pulse)
 bool g_env;                                          // --env: their materials get an environment map
 bool g_shadow;                                       // --shadow: the first one also drawn as a projected shadow
+bool g_dynamic;                                      // --dynamic: the 2D scene also draws through DynamicVB_c
 float g_blend = -1.0f;                               // --blend F: each animated by a blend (F) of two keyframe animations
 
 bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath, int count, CharacterScene& scene)
@@ -586,6 +587,7 @@ int main(int argc, char** argv)
         else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);
         else if (a == "--env") g_env = true;
         else if (a == "--shadow") g_shadow = true;
+        else if (a == "--dynamic") g_dynamic = true;
         else if (a == "--blend" && i + 1 < argc) g_blend = float(std::atof(argv[++i]));
         else if (a == "--query") query = true;
         else if (a == "--static" && i + 1 < argc) staticMesh = argv[++i];
@@ -782,6 +784,30 @@ int main(int argc, char** argv)
         triStrip(render, nullptr, kFvfRhwDiffuseTex, dxtQuad, 4, 0);
         setTexture(deviceState, nullptr, nullptr, 0, prio);
         update(deviceState, nullptr);
+        if (g_dynamic) {
+            // Triangles through the dynamic vertex buffer, as the UI draws: growing requests (the ring is made,
+            // remade bigger, wraps), every other frame starts with a reset.
+            using GetFn = void*(__cdecl*)();
+            using GetVerticesFn = unsigned(__fastcall*)(void*, void*, unsigned fvf, unsigned stride, unsigned n, void** out);
+            using GetVBFn = void*(__fastcall*)(void*, void*, unsigned fvf);
+            using DrawVBFn = void(__fastcall*)(void*, void*, void* vb, unsigned start, unsigned n, unsigned flags);
+            void* dyn = Export<GetFn>("?Get@DynamicVB_c@@SAAAV1@XZ")();
+            if (frame % 2 == 0) Export<void(__fastcall*)(void*, void*)>("?Reset@DynamicVB_c@@QAEXXZ")(dyn, nullptr);
+            auto getVertices = Export<GetVerticesFn>("?GetVertices@DynamicVB_c@@QAEIIIIPAPAX@Z");
+            auto getVB = Export<GetVBFn>("?GetVB@DynamicVB_c@@QAEPAVVertexBuffer_c@@I@Z");
+            auto drawVB = Export<DrawVBFn>("?RenderTriangleList@render_t@@QAEXPAVVertexBuffer_c@@KKK@Z");
+            for (int k = 0; k < 40; ++k) {
+                const unsigned n = k == 20 ? 4500u : 3u * unsigned(1 + k % 7);   // one past the 4000 it starts with
+                void* out = nullptr;
+                unsigned start = getVertices(dyn, nullptr, kFvfRhwDiffuse, sizeof(VtxRhw), n, &out);
+                auto* v = static_cast<VtxRhw*>(out);
+                for (unsigned i = 0; i < n; ++i) {
+                    float x = 40.0f + 14.0f * float(k) + (i % 3 == 1 ? 10.0f : 0.0f), y = 300.0f + 5.0f * float(i / 3);
+                    v[i] = {x, y + (i % 3 == 2 ? 10.0f : 0.0f), 0, 1, 0xFF000000u | (0x10101u * unsigned(k * 6))};
+                }
+                drawVB(render, nullptr, getVB(dyn, nullptr, kFvfRhwDiffuse), start, n, 0);
+            }
+        }
 
         close(viewport, nullptr);
         if (frame == frames - 1) {

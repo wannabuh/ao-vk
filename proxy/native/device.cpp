@@ -11,6 +11,7 @@
 // write only), memory (2 = system memory), bytes, stride, vertex count.
 #include "native/device.h"
 #include "native/orig_api.gen.h"
+#include "native/dynamic_vb.h"
 #include "native/state_blob.h"
 #include "native/vc10.h"
 
@@ -530,6 +531,7 @@ void Install(HMODULE orig)
     for (const Entry& e : entries) installed += Replace(orig, e.rva, e.target, e.what) ? 1 : 0;
     Log("device layer: %d of %d functions native", installed, int(sizeof(entries) / sizeof(entries[0])));
     stateblob::Install(orig);
+    dynamicvb::Install(orig);
 }
 
 }  // namespace rnative::device

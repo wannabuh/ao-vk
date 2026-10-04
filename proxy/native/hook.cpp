@@ -144,6 +144,11 @@ bool KnownBuild(HMODULE module)
     return known == 1;
 }
 
+bool Replaceable(HMODULE module, uint32_t rva)
+{
+    return KnownBuild(module) && !std::binary_search(std::begin(kUnsafeEntries), std::end(kUnsafeEntries), rva);
+}
+
 bool Replace(HMODULE module, uint32_t rva, void* target, const char* what)
 {
     if (!KnownBuild(module))

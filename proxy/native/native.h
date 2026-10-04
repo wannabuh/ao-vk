@@ -53,6 +53,8 @@ bool KnownBuild(HMODULE module);
 // another build and for the functions in entry_guard.gen.h (shorter than the jump, or something branches into it).
 // For functions ported whole; HookEntry for ones that still run the original.
 bool Replace(HMODULE module, uint32_t rva, void* target, const char* what);
+// Whether Replace would take `rva` (for replacements that must go in together or not at all).
+bool Replaceable(HMODULE module, uint32_t rva);
 
 // Replaces a vtable entry (`vtable` = rva of the table) that holds module + `expected`; returns the original.
 void* HookSlot(HMODULE module, uint32_t vtable, uint32_t slot, uint32_t expected, void* target, const char* what);

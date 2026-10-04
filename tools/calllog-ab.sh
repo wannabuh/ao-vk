@@ -11,13 +11,14 @@ logs=$AO_CLIENT/../logs
 c=$PWD/build/characters
 s=$PWD/build/statics
 character="--character $c/5900.catmesh $c/9386.catanim --crowd 3 --time 400"
-scenes=${*:-"basic plain blend shadow alpha env sfx1 sfx2 lights statics"}
+scenes=${*:-"basic dynamic plain blend shadow alpha env sfx1 sfx2 lights statics"}
 grep -q "^$mode=" "$ini" || printf '%s=off\n' "$mode" >> "$ini"
 before=$(grep "^$mode=" "$ini" | cut -d= -f2)
 fail=0
 for scene in $scenes; do
     case $scene in
         basic) args="" ;;
+        dynamic) args="--dynamic" ;;
         plain) args="$character" ;;
         blend) args="$character --blend 0.4 --pick --query" ;;
         shadow) args="$character --shadow" ;;
