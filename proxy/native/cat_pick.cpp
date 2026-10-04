@@ -101,7 +101,7 @@ bool __cdecl RayBox(const float* o, const float* d, const float* lo, const float
     return true;
 }
 
-float __fastcall Distance(const float* a, const float* b)   // FUN_10058382
+float __fastcall Distance(const float* a, void*, const float* b)   // FUN_10058382 (thiscall on a)
 {
     float d[3];
     Sub(a, b, d);
@@ -211,7 +211,7 @@ bool LineTest(uint8_t* mesh, const float* from, const float* to, float* at, bool
     bool found = RayBox(a, d, &Field<float>(mesh, kBoxMin), &Field<float>(mesh, kBoxMax), hit);
     float distance = 0.0f;
     if (found) {
-        distance = Distance(a, hit);
+        distance = Distance(a, nullptr, hit);
         if (length < distance) found = false;
     }
     if (sphere) {

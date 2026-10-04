@@ -404,6 +404,9 @@ void Install(HMODULE orig)
         return;
     if (target == reinterpret_cast<void*>(&SkinOn)) {
         g_deferred = true;
+    }
+    if (target == reinterpret_cast<void*>(&SkinOn) && GetMode("Scene", Mode::Off) != Mode::On) {
+        // (Scene=on: picking is native, cat_pick.cpp, and opens this scope itself - PickingBegin.)
         g_isLine = reinterpret_cast<IsLineFn>(HookEntry(orig, kIsLineRva, kIsLinePrologue, sizeof(kIsLinePrologue),
                                                         reinterpret_cast<void*>(&IsLineHook),
                                                         "RCATMesh_t::IsLineIntersecting"));

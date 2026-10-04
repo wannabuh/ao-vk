@@ -7,6 +7,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <set>
 
 namespace rnative {
 
@@ -86,6 +87,13 @@ Mode GetMode(const char* name, Mode fallback)
     return Mode::Off;
 }
 
+// Entries already wrapped (HookEntry): a Replace of one of them would silently drop the wrap.
+std::set<uint32_t>& Wrapped()
+{
+    static std::set<uint32_t> wrapped;
+    return wrapped;
+}
+
 void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t count, void* target, const char* what,
                 const HookFixups& fixups)
 {
@@ -126,6 +134,7 @@ void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t co
         at[i] = 0xCC;                                      // never reached: the jump skips the rest
     VirtualProtect(at, count, protect, &protect);
     FlushInstructionCache(GetCurrentProcess(), at, count);
+    Wrapped().insert(rva);
     return tramp;
 }
 
@@ -227,6 +236,10 @@ bool Replace(HMODULE module, uint32_t rva, void* target, const char* what)
         return false;
     if (std::binary_search(std::begin(kUnsafeEntries), std::end(kUnsafeEntries), rva)) {
         Log("%s: can't take a jump over its entry (entry_guard.gen.h), not replaced", what);
+        return false;
+    }
+    if (Wrapped().count(rva)) {
+        Log("%s: already wrapped by another [Native] mode (HookEntry) - not replaced; merge the two", what);
         return false;
     }
     auto* at = reinterpret_cast<uint8_t*>(module) + rva;
