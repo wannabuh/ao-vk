@@ -12,6 +12,7 @@
 #include "native/device.h"
 #include "native/orig_api.gen.h"
 #include "native/dynamic_vb.h"
+#include "native/randy.h"
 #include "native/state_blob.h"
 #include "native/vc10.h"
 
@@ -532,6 +533,7 @@ void Install(HMODULE orig)
     Log("device layer: %d of %d functions native", installed, int(sizeof(entries) / sizeof(entries[0])));
     stateblob::Install(orig);
     dynamicvb::Install(orig);
+    randy::Install(orig);
 }
 
 }  // namespace rnative::device
