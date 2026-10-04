@@ -156,3 +156,25 @@
 0x46362	replaced	proxy/native/resource.cpp	RResource_t::RResource_t(archive)
 0x4641A	replaced	proxy/native/resource.cpp	RResource_t::Archive
 0x46499	replaced	proxy/native/resource.cpp	RResource_t::Instantiate
+0x47900	replaced	proxy/native/texture.cpp	RTexture_t::RTexture_t(name, size, format)
+0x47A99	replaced	proxy/native/texture.cpp	RTexture_t::RTexture_t(name)
+0x47B2E	replaced	proxy/native/texture.cpp	RTexture_t::RTexture_t(name, creator)
+0x47BF2	replaced	proxy/native/texture.cpp	RTexture_t::RTexture_t(archive)
+0x47E59	replaced	proxy/native/texture.cpp	RTexture_t::Instantiate
+0x477FE	replaced	proxy/native/texture.cpp	RTexture_t::~RTexture_t (FUN_100477fe)
+0x477D6	replaced	proxy/native/texture.cpp	RTexture_t::FindTexture
+0x47876	replaced	proxy/native/texture.cpp	RTexture_t registry insert (FUN_10047876)
+0x47304	replaced	proxy/native/texture.cpp	RTexture_t::GetTotalPinkTextureCount
+0x47321	replaced	proxy/native/texture.cpp	RTexture_t::Archive
+0x4734D	replaced	proxy/native/texture.cpp	RTexture_t::Load(pixels)
+0x473A2	replaced	proxy/native/texture.cpp	RTexture_t::Load(texture)
+0x476C8	replaced	proxy/native/texture.cpp	RTexture_t::LockRTexture
+0x4749D	replaced	proxy/native/texture.cpp	RTexture_t::UnlockRTexture
+0x474C1	replaced	proxy/native/texture.cpp	RTexture_t::AddRefRTexture
+0x474CC	replaced	proxy/native/texture.cpp	RTexture_t::ReleaseRTexture
+0x474D7	replaced	proxy/native/texture.cpp	RTexture_t::GetTextureFormat
+0x475BB	replaced	proxy/native/texture.cpp	RTexture_t::IsCompressed
+0x4762E	replaced	proxy/native/texture.cpp	RTexture_t::GetWidth
+0x47633	replaced	proxy/native/texture.cpp	RTexture_t::GetHeight
+0x47693	replaced	proxy/native/texture.cpp	RTexture_t::GetDefault
+0x47730	replaced	proxy/native/texture.cpp	RTexture_t::GetTextureSize

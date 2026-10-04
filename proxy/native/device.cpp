@@ -15,6 +15,7 @@
 #include "native/randy.h"
 #include "native/surface.h"
 #include "native/resource.h"
+#include "native/texture.h"
 #include "native/state_blob.h"
 #include "native/vc10.h"
 
@@ -538,6 +539,7 @@ void Install(HMODULE orig)
     randy::Install(orig);
     surface::Install(orig);
     resource::Install(orig);
+    texture::Install(orig);
 }
 
 }  // namespace rnative::device

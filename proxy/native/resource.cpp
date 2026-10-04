@@ -4,11 +4,11 @@
 // RResource_t (0x2C bytes): +0x00 vtable (0x100956C4 for a plain one), +0x04 Serializable_c's, +0x08 name
 // (std::string), +0x24 references, +0x28 0xFF (0: counted in 0x1017D448). 0x1017D444: references to all resources.
 #include "native/resource.h"
+#include "native/serialize.h"
 #include "native/vc10.h"
 
 #include <cstdio>
 #include <cstring>
-#include <type_traits>
 
 namespace rnative::resource {
 
@@ -23,32 +23,7 @@ T& Global(uint32_t rva) { return *reinterpret_cast<T*>(reinterpret_cast<uint8_t*
 
 constexpr uint32_t kVtable = 0x956C4, kTotalRefs = 0x17D444, kCounted = 0x17D448;
 
-// serialize.dll.
-struct Serialize {
-    void*(__fastcall* construct)(void*, void*) = nullptr;
-    void*(__fastcall* constructFrom)(void*, void*, void* archive) = nullptr;
-    void(__fastcall* destroy)(void*, void*) = nullptr;
-    void*(__fastcall* getStream)(void* archive, void*) = nullptr;
-    int32_t(__fastcall* addInt32)(void* message, void*, const char* name, int32_t value) = nullptr;
-    int32_t(__fastcall* addString)(void* message, void*, const char* name, const vc10::String* value) = nullptr;
-    int32_t(__fastcall* findString)(void* message, void*, const char* name, vc10::String* out, int32_t index) = nullptr;
-    bool Load()
-    {
-        HMODULE m = GetModuleHandleA("serialize.dll");
-        if (!m) return false;
-        auto get = [m](auto& fn, const char* name) {
-            fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(GetProcAddress(m, name));
-            return fn != nullptr;
-        };
-        return get(construct, "??0Serializable_c@fun@@QAE@XZ") &&
-               get(constructFrom, "??0Serializable_c@fun@@QAE@PAVObjectArchive_c@1@@Z") &&
-               get(destroy, "??1Serializable_c@fun@@UAE@XZ") &&
-               get(getStream, "?GetStream@ObjectArchive_c@fun@@QAEPAVArchiveStream_c@2@XZ") &&
-               get(addInt32, "?AddInt32@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDJ@Z") &&
-               get(addString, "?AddString@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z") &&
-               get(findString, "?FindString@Message_c@fun@@QBE?AW4MsgErr_e@12@PBDPAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@H@Z");
-    }
-} g_serialize;
+const serialize::Api& S() { return serialize::Get(); }
 
 vc10::String& Name(void* r) { return Field<vc10::String>(r, 8); }
 
@@ -75,7 +50,7 @@ const char* __fastcall GetName(void* r) { return Name(r).c_str(); }
 
 void* __fastcall Construct(void* r, void*, const char* name)
 {
-    g_serialize.construct(r, nullptr);
+    S().construct(r, nullptr);
     Field<uintptr_t>(r, 0) = reinterpret_cast<uintptr_t>(g_orig) + kVtable;
     Name(r).init();
     Name(r).assign(name, std::strlen(name));
@@ -88,16 +63,16 @@ void* __fastcall Construct(void* r, void*, const char* name)
 // From an archive: the name (or "*unknown*"); not counted in the references to all resources.
 void* __fastcall ConstructFrom(void* r, void*, void* archive)
 {
-    g_serialize.constructFrom(r, nullptr, archive);
+    S().constructFrom(r, nullptr, archive);
     Field<uintptr_t>(r, 0) = reinterpret_cast<uintptr_t>(g_orig) + kVtable;
     Name(r).init();
     Field<int32_t>(r, 0x24) = 1;
     Field<int32_t>(r, 0x28) = 0xFF;
-    void* stream = g_serialize.getStream(archive, nullptr);
+    void* stream = S().getStream(archive, nullptr);
     vc10::String found;
     found.init();
     found.allocator = 0;
-    if (g_serialize.findString(stream, nullptr, "name", &found, 0) == 0)
+    if (S().findString(stream, nullptr, "name", &found, 0) == 0)
         Name(r).assign(found.c_str(), found.size);
     else
         Name(r).assign("*unknown*", 9);
@@ -110,19 +85,19 @@ void __fastcall Destroy(void* r)
     Field<uintptr_t>(r, 0) = reinterpret_cast<uintptr_t>(g_orig) + kVtable;
     if (Field<int32_t>(r, 0x28) == 0) --Global<int32_t>(kCounted);
     Name(r).release();
-    g_serialize.destroy(r, nullptr);
+    S().destroy(r, nullptr);
 }
 
 void __fastcall Archive(void* r, void*, void* archive)
 {
-    void* stream = g_serialize.getStream(archive, nullptr);
-    g_serialize.addInt32(stream, nullptr, "version", 1);
+    void* stream = S().getStream(archive, nullptr);
+    S().addInt32(stream, nullptr, "version", 1);
     vc10::String name;
     name.init();
     name.allocator = 0;
     const char* n = Name(r).c_str();
     name.assign(n, std::strlen(n));
-    g_serialize.addString(stream, nullptr, "name", &name);
+    S().addString(stream, nullptr, "name", &name);
     name.release();
 }
 
@@ -137,7 +112,7 @@ void* __cdecl Instantiate(void* archive)
 void Install(HMODULE orig)
 {
     g_orig = orig;
-    if (!g_serialize.Load()) {
+    if (!S().complete) {
         Log("resources: serialize.dll exports missing - not replaced");
         return;
     }
