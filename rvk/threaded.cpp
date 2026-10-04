@@ -629,6 +629,37 @@ void ThreadedDevice::DrawIndexedPrimitiveShared(uint32_t primitive, uint32_t fvf
     }, indices, indexCount * 2);
 }
 
+void ThreadedDevice::DrawPrimitiveSkinned(uint32_t primitive, uint32_t fvf, const SkinJob& job, uint32_t startVertex,
+                                          uint32_t vertexCount)
+{
+    if (!job || size_t(startVertex) + vertexCount > job->source->vertices.size())
+        return;
+    Enqueue([this, primitive, fvf, job, startVertex, vertexCount](const uint8_t*) {
+        m_device.DrawPrimitive(primitive, fvf, job->Skinned() + startVertex, vertexCount);
+    });
+}
+
+void ThreadedDevice::DrawIndexedPrimitiveSkinned(uint32_t primitive, uint32_t fvf, const SkinJob& job,
+                                                 uint32_t startVertex, uint32_t vertexCount, const uint16_t* indices,
+                                                 uint32_t indexCount)
+{
+    if (!job || size_t(startVertex) + vertexCount > job->source->vertices.size())
+        return;
+    // The piece's own triangles (as almost always): the job's copy of them, no copy per draw.
+    const skin::Source& source = *job->source;
+    if (indices == source.gameIndices && indexCount <= source.indices.size()) {
+        Enqueue([this, primitive, fvf, job, startVertex, vertexCount, indexCount](const uint8_t*) {
+            m_device.DrawIndexedPrimitive(primitive, fvf, job->Skinned() + startVertex, vertexCount,
+                                          job->source->indices.data(), indexCount);
+        });
+        return;
+    }
+    Enqueue([this, primitive, fvf, job, startVertex, vertexCount, indexCount](const uint8_t* idx) {
+        m_device.DrawIndexedPrimitive(primitive, fvf, job->Skinned() + startVertex, vertexCount,
+                                      reinterpret_cast<const uint16_t*>(idx), indexCount);
+    }, indices, indexCount * 2);
+}
+
 void ThreadedDevice::DrawPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32_t startVertex, uint32_t vertexCount)
 {
     if (!vb || startVertex + vertexCount > vb->m_count)

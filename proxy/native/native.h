@@ -27,6 +27,7 @@ void Log(const char* fmt, ...);
 
 // randy-vk.ini [Native] `name` (written with `fallback` if absent).
 void SetIniPath(const char* path);
+const char* IniPath();
 Mode GetMode(const char* name, Mode fallback);
 const char* ModeName(Mode mode);
 

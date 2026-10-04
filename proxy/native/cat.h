@@ -2,6 +2,8 @@
 // the decompiled original (docs/skinning.md); accessed through At<> since the classes are only partly known.
 #pragma once
 
+#include "skin.h"
+
 #include <cstdint>
 
 namespace rnative {
@@ -19,30 +21,10 @@ inline const T& At(const void* object, uint32_t offset)
 
 namespace cat {
 
-// CATTriVertex_t: a mesh vertex as stored (0x44 bytes).
-struct TriVertex {
-    float posA[3];             // in bone A's space
-    float posB[3];             // in bone B's space
-    float bind[3];             // rest position
-    float normal[3];           // bone A's space; also the rest normal
-    float uv[2];
-    int32_t boneA, boneB;
-    float weightA;             // over 0.99: bone A alone
-};
-static_assert(sizeof(TriVertex) == 0x44, "CATTriVertex_t");
-
-// CATVertex_t: a skinned vertex in the piece's vertex buffer (FVF 0x112).
-struct Vertex {
-    float pos[3];
-    float normal[3];
-    float uv[2];
-};
-static_assert(sizeof(Vertex) == 0x20, "CATVertex_t");
-
-// Bone matrix (0x30 bytes): rows 0-2 (floats 0-8) and the translation (9-11); p' = p * M.
-struct Bone {
-    float m[12];
-};
+// Vertices and bones (rvk/skin.h).
+using TriVertex = rvk::skin::TriVertex;
+using Vertex = rvk::skin::Vertex;
+using Bone = rvk::skin::Bone;
 
 // CATRender_t (the first 0x3C bytes of RCATMesh_t).
 constexpr uint32_t kRenderMesh = 0x04;          // CATMesh_t*

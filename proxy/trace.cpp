@@ -14,6 +14,7 @@
 #include "ddraw/com_trace.h"
 #include "ddraw/rvk_backend.h"
 #include "ddraw/rvk_settings.h"
+#include "native/cat_skin.h"
 #include "native/native.h"
 
 #include <windows.h>
@@ -269,6 +270,8 @@ void Init()
         rvkproxy::InstallDDrawHooks(g_orig);
         rnative::SetLog(&rvkproxy::RvkLog);
         rnative::SetIniPath(rvk_settings::IniPath());
+        if (rvkproxy::RvkBackend())
+            rnative::skin::SetSink(&rvkproxy::AttachSkin);
         rnative::Install(g_orig);
     }
 }

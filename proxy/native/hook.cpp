@@ -58,6 +58,11 @@ void SetIniPath(const char* path)
     std::snprintf(g_ini, sizeof(g_ini), "%s", path ? path : "");
 }
 
+const char* IniPath()
+{
+    return g_ini;
+}
+
 const char* ModeName(Mode mode)
 {
     return mode == Mode::On ? "on" : mode == Mode::Verify ? "verify" : "off";

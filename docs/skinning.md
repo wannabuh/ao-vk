@@ -81,3 +81,9 @@ vertexBase, triBase, void* user)`, per piece, `out` = the locked buffer.
   callback. Picking materializes the vertices (and box) first.
 - Draws of a buffer with a job are skinned by the renderer (worker thread, SIMD; or a compute shader later), and are
   known to be characters (no need for the animated-topology heuristic).
+
+## What ao-vk does (proxy/native/cat_skin.cpp, rvk/skin.cpp)
+
+`[Native] Skin=on` replaces the loop with deferred skinning; see docs/native.md for the modes and measurements. The
+blob shadow callback gets the positions of every 4th vertex (all it reads); the box is computed only for picking,
+which skins its character on the game's thread first.

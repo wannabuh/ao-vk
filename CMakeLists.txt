@@ -6,8 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")   # static CRT: no extra runtime DLL next to the game
 
 # Native Randy: our implementations of randy31_orig's code (proxy/native, docs/native.md), shared with the tests.
-add_library(randy_native STATIC proxy/native/hook.cpp proxy/native/native.cpp proxy/native/skin.cpp)
+add_library(randy_native STATIC proxy/native/hook.cpp proxy/native/native.cpp proxy/native/cat_skin.cpp)
 target_include_directories(randy_native PUBLIC proxy)
+target_link_libraries(randy_native PUBLIC rvk)
 target_compile_definitions(randy_native PRIVATE _CRT_SECURE_NO_WARNINGS)
 
 # Drop-in randy31.dll. Exports not implemented here forward to the original, renamed randy31_orig.dll.
@@ -48,7 +49,7 @@ foreach(shader ffp.vert ffp.tesc ffp.tese ffp.frag ffp_glow.frag shadow.vert sha
     list(APPEND RVK_SHADER_INCS "${out}")
 endforeach()
 
-add_library(rvk STATIC rvk/vk.cpp rvk/vma.cpp rvk/device.cpp rvk/resources.cpp rvk/draw.cpp rvk/diag.cpp rvk/shadow.cpp rvk/pointshadow.cpp rvk/hdr.cpp rvk/particles.cpp rvk/grading.cpp rvk/profile.cpp rvk/threaded.cpp ${RVK_SHADER_INCS})
+add_library(rvk STATIC rvk/vk.cpp rvk/vma.cpp rvk/device.cpp rvk/resources.cpp rvk/draw.cpp rvk/diag.cpp rvk/shadow.cpp rvk/pointshadow.cpp rvk/hdr.cpp rvk/particles.cpp rvk/grading.cpp rvk/profile.cpp rvk/skin.cpp rvk/threaded.cpp ${RVK_SHADER_INCS})
 target_include_directories(rvk PUBLIC rvk PRIVATE "${RVK_SHADER_OUT}")
 # Vulkan headers and VMA come from the SDK; /imsvc keeps their warnings quiet.
 target_compile_options(rvk PUBLIC "/imsvc${VULKAN_SDK_DIR}/include")

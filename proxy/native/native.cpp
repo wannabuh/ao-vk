@@ -1,6 +1,6 @@
 // The replacements, installed once randy31_orig.dll is loaded.
 #include "native/native.h"
-#include "native/skin.h"
+#include "native/cat_skin.h"
 
 namespace rnative {
 

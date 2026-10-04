@@ -299,6 +299,12 @@ uint32_t ComCallCount(unsigned index)
 
 bool ComTraceActive() { return g_active; }
 
+namespace {
+bool g_rvkBackend;
+}
+
+bool RvkBackend() { return g_rvkBackend; }
+
 bool InstallDDrawHooks(HMODULE randyOrig)
 {
     // RANDYVK_DDRAW: rvk (the default) renders with randy-vk's Vulkan renderer; trace keeps the game's DirectDraw and
@@ -316,6 +322,7 @@ bool InstallDDrawHooks(HMODULE randyOrig)
         bool ok = PatchImport(randyOrig, "DDRAW.dll", "DirectDrawCreateEx", reinterpret_cast<void*>(RvkDirectDrawCreateEx)) &&
                   PatchImport(randyOrig, "DDRAW.dll", "DirectDrawEnumerateExA", reinterpret_cast<void*>(RvkDirectDrawEnumerateExA));
         g_active = ok;
+        g_rvkBackend = ok;
         LogLine("randy-vk: rvk backend %s", ok ? "installed" : "FAILED to install");
         return ok;
     }

@@ -24,7 +24,29 @@ from the decompiles (`re/`, not in the repository) and written down in `docs/`.
 
 | piece | original | `[Native]` | notes |
 | --- | --- | --- | --- |
-| character skinning | FUN_1005470d | `Skin` | SSE; identical results (native_check), 3.1x faster. docs/skinning.md |
+| character skinning | FUN_1005470d | `Skin` = off / cpu / on / verify | docs/skinning.md |
+
+`Skin=cpu`: SSE on the game's thread, identical results (native_check), 2.8x faster than the original loop.
+`Skin=on` (deferred): the game's thread hands each piece's vertex buffer a skin job (`rvk/skin.h`: the piece's mesh
+vertices, copied once per mesh, and the character's bones); pool threads skin it right away and the renderer draws the
+result, sharing the piece's indices. Characters with vertex effects (callbacks other than the blob shadow) and picking
+(`RCATMesh_t::IsLineIntersecting`, the line test) skin on the game's thread; reading a buffer back materializes it.
+
+100 animated Atrox in the harness (`--crowd 100`), game thread per frame / overall frame rate:
+
+| Skin | game thread | overall |
+| --- | --- | --- |
+| off (original) | 7.9 ms | 127 fps |
+| cpu | 4.7 ms | 210 fps |
+| on | 1.2 ms | 244 fps (now the renderer's worker is the limit: copying vertices into the GPU ring) |
+
+## Tools
+
+- `tools/extract-character.py <cir> <ani> build/characters`, then `tools/randy-harness.sh <out> --character
+  <catmesh> <catanim> [--crowd N] [--frames N] [--time ms]`: animated characters through Randy's own scene graph,
+  offline; prints the game thread's time per frame. AO_CLIENT=linux/testclient keeps the game's folder alone.
+- `tools/profile-harness.sh <harness args>`: perf profile of the harness by module and function
+  (`tools/profile-report.py`; `--thread` for another thread than the busiest).
 
 ## Order
 

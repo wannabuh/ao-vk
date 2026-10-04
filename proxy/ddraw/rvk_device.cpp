@@ -336,7 +336,9 @@ HRESULT RDevice::DoDrawPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !vb || start + count > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
-    if (auto* shared = vb->StaticShared())
+    if (vb->skin)
+        dev->DrawPrimitiveSkinned(type, vb->desc.dwFVF, vb->skin, start, count);
+    else if (auto* shared = vb->StaticShared())
         dev->DrawPrimitiveShared(type, vb->desc.dwFVF, *shared, size_t(start) * vb->stride, count);
     else
         dev->DrawPrimitive(type, vb->desc.dwFVF, vb->Bytes() + size_t(start) * vb->stride, count);
@@ -352,7 +354,9 @@ HRESULT RDevice::DoDrawIndexedPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTE
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !vb || !idx || start + vcount > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
-    if (auto* shared = vb->StaticShared())
+    if (vb->skin)
+        dev->DrawIndexedPrimitiveSkinned(type, vb->desc.dwFVF, vb->skin, start, vcount, idx, icount);
+    else if (auto* shared = vb->StaticShared())
         dev->DrawIndexedPrimitiveShared(type, vb->desc.dwFVF, *shared, size_t(start) * vb->stride, vcount, idx, icount);
     else
         dev->DrawIndexedPrimitive(type, vb->desc.dwFVF, vb->Bytes() + size_t(start) * vb->stride, vcount, idx, icount);
@@ -379,8 +383,33 @@ RVertexBuffer::RVertexBuffer(const D3DVERTEXBUFFERDESC& d) : desc(d)
 // About to be written (or the pointer for writing handed out): if queued draws still reference the vertices, the
 // buffer goes on with a copy of its own (they keep theirs). Only the game's thread makes references, so a count of 1
 // means none are left.
+// The skin job's vertices into the buffer (for reading it); the job stays for draws.
+void RVertexBuffer::Materialize()
+{
+    if (!skin)
+        return;
+    std::shared_ptr<rvk::skin::Job> job = std::move(skin);
+    Written();                                   // its own copy if queued draws reference the old one
+    size_t n = std::min<size_t>(job->source->vertices.size(), desc.dwNumVertices);
+    std::memcpy(Bytes(), job->Skinned(), n * sizeof(rvk::skin::Vertex));
+    skin = std::move(job);
+}
+
+bool AttachSkin(void* d3dVertexBuffer, std::shared_ptr<rvk::skin::Job> job)
+{
+    auto* vb = static_cast<RVertexBuffer*>(static_cast<IDirect3DVertexBuffer7*>(d3dVertexBuffer));
+    if (!vb || !job || !g_rvk.device || vb->desc.dwFVF != rvk::skin::kVertexFvf ||
+        job->source->vertices.size() > vb->desc.dwNumVertices)
+        return false;
+    vb->skin = std::move(job);
+    vb->shared.reset();
+    vb->lastWriteFrame = g_rvk.presentCount;
+    return true;
+}
+
 void RVertexBuffer::Written()
 {
+    skin.reset();
     shared.reset();
     if (buf.use_count() > 1)
         buf = std::make_shared<std::vector<uint8_t>>(*buf);
@@ -401,7 +430,9 @@ const std::shared_ptr<const std::vector<uint8_t>>* RVertexBuffer::StaticShared()
 HRESULT RVertexBuffer::DoLock(DWORD flags, LPVOID* out, LPDWORD size)
 {
     if (!out) return DDERR_INVALIDPARAMS;
-    if (!(flags & DDLOCK_READONLY))              // reading (picking, native verify) leaves it unchanged
+    if (flags & DDLOCK_READONLY)                 // reading (picking, native verify) leaves it unchanged
+        Materialize();
+    else
         Written();
     *out = Bytes();
     if (size) *size = DWORD(buf->size());
@@ -486,6 +517,7 @@ HRESULT RDevice::ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, D
     Fvf sf = DecodeFvf(src->desc.dwFVF), df = DecodeFvf(dst->desc.dwFVF);
     if (!df.rhw || sf.rhw || srcIndex + count > src->desc.dwNumVertices || dstIndex + count > dst->desc.dwNumVertices)
         return DDERR_INVALIDPARAMS;
+    src->Materialize();
     bool copyData = !(flags & D3DPV_DONOTCOPYDATA);
     bool light = (op & D3DVOP_LIGHT) && m_rs[D3DRENDERSTATE_LIGHTING];
     D3DMATRIX wvp = Multiply(Multiply(m_transforms[D3DTRANSFORMSTATE_WORLD], m_transforms[D3DTRANSFORMSTATE_VIEW]),

@@ -4,6 +4,7 @@
 
 #include "com_trace.h"
 #include "rvk.h"
+#include "skin.h"
 #include "threaded.h"
 
 #include <atomic>
@@ -19,6 +20,9 @@ void CountBackendDraw();                          // heartbeat statistics
 unsigned ComIndex(const char* name);              // counter index of "Interface::Method"
 void RvkLog(const char* fmt, ...);
 void ParticleFrame();                             // each presented frame (rvk_particles.cpp)
+bool RvkBackend();                                // RANDYVK_DDRAW=rvk installed (com_trace.cpp)
+// Native deferred skinning (proxy/native/cat_skin.cpp): gives a vertex buffer its skin job; false if it can't take it.
+bool AttachSkin(void* d3dVertexBuffer, std::shared_ptr<rvk::skin::Job> job);
 
 // rvk_materials.cpp: side-loaded material maps of RDB textures (normal maps). A surface learns its RDB identity
 // from the hooked TextureStreamCreator::CreateTexture exports; QueryInterface(IID_RvkSurface) tells our surfaces
@@ -233,6 +237,10 @@ public:
     void Written();
     const std::shared_ptr<const std::vector<uint8_t>>* StaticShared();   // null: written lately (copy per draw)
     std::shared_ptr<const std::vector<uint8_t>> shared;                  // StaticShared's const view of buf
+    // A character piece skinned by the renderer when drawn (native deferred skinning, AttachSkin); its vertices in
+    // buf are out of date until someone reads them (Materialize). Any write drops it.
+    std::shared_ptr<rvk::skin::Job> skin;
+    void Materialize();
 
 protected:
     void* Cast(REFIID iid) override { return iid == IID_IDirect3DVertexBuffer7 ? this : nullptr; }

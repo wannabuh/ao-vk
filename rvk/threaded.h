@@ -11,6 +11,7 @@
 #pragma once
 
 #include "rvk.h"
+#include "skin.h"
 
 #include <atomic>
 #include <memory>
@@ -137,6 +138,12 @@ public:
                                     uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount);
     void DrawIndexedPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32_t startVertex, uint32_t vertexCount,
                                 const uint16_t* indices, uint32_t indexCount);
+    // Draws a character piece the worker skins first (once per job, however often it is drawn): no vertices copied.
+    using SkinJob = std::shared_ptr<skin::Job>;
+    void DrawPrimitiveSkinned(uint32_t primitive, uint32_t fvf, const SkinJob& job, uint32_t startVertex,
+                              uint32_t vertexCount);
+    void DrawIndexedPrimitiveSkinned(uint32_t primitive, uint32_t fvf, const SkinJob& job, uint32_t startVertex,
+                                     uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount);
     VertexBuffer* CreateVertexBuffer(uint32_t fvf, uint32_t vertexCount) { return m_device.CreateVertexBuffer(fvf, vertexCount); }
     void* Lock(VertexBuffer* vb) { return m_device.Lock(vb); }
     void Unlock(VertexBuffer* vb) { m_device.Unlock(vb); }

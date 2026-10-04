@@ -2,7 +2,7 @@
 // synthetic input and compares the results, then times both. Run under Wine with tools/native-check.sh.
 //
 //   native_check.exe <path to randy31_orig.dll>
-#include "native/skin.h"
+#include "native/cat_skin.h"
 
 #include <windows.h>
 

@@ -5,11 +5,14 @@
 //
 //   randy_harness.exe [--frames N] [--shot out.bmp]
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #define INITGUID
 #include <windows.h>
 #include <ddraw.h>
 #include <d3d.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -253,12 +256,13 @@ std::vector<uint8_t> ReadFile(const std::string& path)
 struct CharacterScene {
     void* root = nullptr;
     void* camera = nullptr;
-    void* character = nullptr;    // RCATMesh_t
-    void* anim = nullptr;          // CATKeyframeAnim_t
+    std::vector<void*> characters;    // RCATMesh_t
+    std::vector<void*> anims;         // CATKeyframeAnim_t, one per character
 };
 
-// Builds root -> {camera, character}. False (with a message) if a stream can't be read.
-bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath, CharacterScene& scene)
+// Builds root -> {camera, sun, `count` characters in a grid}, all with the same model and animation (each its own
+// animation instance, at different times). False (with a message) if a stream can't be read.
+bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath, int count, CharacterScene& scene)
 {
     HMODULE serialize = LoadLibraryA("serialize.dll");
     if (!serialize) { std::printf("character: no serialize.dll\n"); return false; }
@@ -275,77 +279,79 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
     static const void* noTextures[3] = {};                  // std::vector<std::string>: empty
     void* mesh = Export<MeshCtorFn>("??0CATMesh_t@@QAE@PAVDataIO_t@fun@@ABV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z")(
         ::operator new(0x64), nullptr, meshIo, noTextures);
-    void* animData_ = Export<DataCtorFn>("??0CATKeyframeAnimData_t@@QAE@PAVDataIO_t@fun@@@Z")(
+    void* animSource = Export<DataCtorFn>("??0CATKeyframeAnimData_t@@QAE@PAVDataIO_t@fun@@@Z")(
         ::operator new(0x48), nullptr, animIo);
-    scene.anim = Export<AnimCtorFn>("??0CATKeyframeAnim_t@@QAE@PBVCATKeyframeAnimData_t@@I@Z")(
-        ::operator new(0x60), nullptr, animData_, 0xFFFFFFFFu);
     auto frameCtor = Export<FrameCtorFn>("??0RRefFrame_t@@QAE@PAV0@PAVRAnimation_t@@@Z");
+    auto setPos = Export<SetPosFn>("?SetRelativePosition@RRefFrame_t@@QAEXABVVector3_t@@PBV1@@Z");
+    auto setTarget = Export<SetTargetFn>("?SetWorldTarget@RRefFrame_t@@QAEXABVVector3_t@@@Z");
     scene.root = frameCtor(::operator new(0xA4), nullptr, nullptr, nullptr);
     scene.camera = Export<CameraCtorFn>("??0RCamera_t@@QAE@MMMMPAVRRefFrame_t@@PAVRAnimation_t@@@Z")(
         ::operator new(0x200), nullptr, 0.6f, 640.0f / 480.0f, 0.1f, 200.0f, scene.root, nullptr);
-    void* character = Export<FrameCtorFn>("??0RCATMesh_t@@QAE@PAVRRefFrame_t@@@Z")(
-        ::operator new(0x438), nullptr, scene.root, nullptr);
-    scene.character = character;
-    Export<PtrArgFn>("?SetMesh@CATRender_t@@QAEXPBVCATMesh_t@@@Z")(character, nullptr, mesh);
-    Export<PtrArgFn>("?SetAnim@CATRender_t@@QAEXPAVCATAnim_t@@@Z")(character, nullptr, scene.anim);
-    // Each of the mesh's materials gets the character's own copy, as DisplaySystem does (drawing uses those).
+
+    // Skins (extract-character.py: per material slot, u32 width, height, BGRA rows), shared by the crowd.
+    const int materials = *reinterpret_cast<int*>(static_cast<uint8_t*>(mesh) + 0x38);
+    const std::string base = meshPath.substr(0, meshPath.rfind('.'));
+    std::vector<void*> skins(size_t(std::max(materials, 0)), nullptr);
+    for (int i = 0; i < materials; ++i) {
+        std::vector<uint8_t> tex = ReadFile(base + ".tex" + std::to_string(i));
+        uint32_t w = 0, h = 0;
+        if (tex.size() > 8) { std::memcpy(&w, tex.data(), 4); std::memcpy(&h, tex.data() + 4, 4); }
+        if (w && h && tex.size() >= 8 + size_t(w) * h * 4)
+            skins[size_t(i)] = MakeTexture(("skin" + std::to_string(i)).c_str(), w, h, D3DX_SF_A8R8G8B8, tex.data() + 8,
+                                           w * 4);
+    }
     using CreateSubstFn = void*(__fastcall*)(void* self, void*, int index);
     auto createSubst = Export<CreateSubstFn>("?CreateSubstMaterial@RCATMesh_t@@QAEPAVRMaterial_t@@H@Z");
-    const int materials = *reinterpret_cast<int*>(static_cast<uint8_t*>(mesh) + 0x38);
     using SetMaterialTextureFn = void(__fastcall*)(void* self, void*, void* texture, unsigned char stage, int flags);
     auto setMaterialTexture = Export<SetMaterialTextureFn>("?SetTexture@RMaterial_t@@QAEXPAVRTexture_t@@EH@Z");
-    const std::string base = meshPath.substr(0, meshPath.rfind('.'));
-    for (int i = 0; i < materials; ++i) {
-        void* material = createSubst(character, nullptr, i);
-        // Its skin (extract-character.py: u32 width, height, BGRA rows), if there is one.
-        std::vector<uint8_t> tex = ReadFile(base + ".tex" + std::to_string(i));
-        if (material && tex.size() > 8) {
-            uint32_t w, h;
-            std::memcpy(&w, tex.data(), 4);
-            std::memcpy(&h, tex.data() + 4, 4);
-            if (tex.size() >= 8 + size_t(w) * h * 4)
-                setMaterialTexture(material, nullptr,
-                                   MakeTexture(("skin" + std::to_string(i)).c_str(), w, h, D3DX_SF_A8R8G8B8,
-                                               tex.data() + 8, w * 4), 0, 0);
+    const int columns = int(std::ceil(std::sqrt(double(count))));
+    for (int c = 0; c < count; ++c) {
+        void* anim = Export<AnimCtorFn>("??0CATKeyframeAnim_t@@QAE@PBVCATKeyframeAnimData_t@@I@Z")(
+            ::operator new(0x60), nullptr, animSource, 0xFFFFFFFFu);
+        void* character = Export<FrameCtorFn>("??0RCATMesh_t@@QAE@PAVRRefFrame_t@@@Z")(
+            ::operator new(0x438), nullptr, scene.root, nullptr);
+        Export<PtrArgFn>("?SetMesh@CATRender_t@@QAEXPBVCATMesh_t@@@Z")(character, nullptr, mesh);
+        Export<PtrArgFn>("?SetAnim@CATRender_t@@QAEXPAVCATAnim_t@@@Z")(character, nullptr, anim);
+        // Each of the mesh's materials gets the character's own copy, as DisplaySystem does (drawing uses those).
+        for (int i = 0; i < materials; ++i) {
+            void* material = createSubst(character, nullptr, i);
+            if (material && skins[size_t(i)]) setMaterialTexture(material, nullptr, skins[size_t(i)], 0, 0);
         }
+        void* visual = static_cast<uint8_t*>(character) + 0x3C;  // its RVisual_t
+        Export<SetPriorityFn>("?SetRenderPriority@RVisual_t@@QAEXW4RenderList_e@@@Z")(visual, nullptr, 3);
+        Export<SetVisibleFn>("?SetVisible@RRefFrame_t@@QAEX_N0@Z")(visual, nullptr, true, true);
+        Vector3 at{1.6f * float(c % columns - (columns - 1) / 2.0f), 0.0f, 1.6f * float(c / columns)};
+        setPos(visual, nullptr, &at, nullptr);
+        scene.characters.push_back(character);
+        scene.anims.push_back(anim);
     }
-    void* visual = static_cast<uint8_t*>(character) + 0x3C;  // its RVisual_t
-    Export<SetPriorityFn>("?SetRenderPriority@RVisual_t@@QAEXW4RenderList_e@@@Z")(visual, nullptr, 3);
-    Export<SetVisibleFn>("?SetVisible@RRefFrame_t@@QAEX_N0@Z")(visual, nullptr, true, true);
-    Vector3 eye{0.0f, 1.2f, -4.0f}, target{0.0f, 1.0f, 0.0f};
-    Export<SetPosFn>("?SetRelativePosition@RRefFrame_t@@QAEXABVVector3_t@@PBV1@@Z")(scene.camera, nullptr, &eye, nullptr);
-    Export<SetTargetFn>("?SetWorldTarget@RRefFrame_t@@QAEXABVVector3_t@@@Z")(scene.camera, nullptr, &target);
+    // The camera: close for one character, back and up for a crowd.
+    float back = count == 1 ? 4.0f : 2.0f + 1.6f * float(columns);
+    Vector3 eye{0.0f, count == 1 ? 1.2f : 0.5f * back, -back}, target{0.0f, 1.0f, 0.8f * float(columns / 2)};
+    setPos(scene.camera, nullptr, &eye, nullptr);
+    setTarget(scene.camera, nullptr, &target);
     // A white sun from above and in front (RLight_t::Type_e 1 = directional).
     using LightCtorFn = void*(__fastcall*)(void* self, void*, void* parent, const float* rgb, int type, void* anim);
     const float white[3] = {1.0f, 0.95f, 0.85f};
     void* sun = Export<LightCtorFn>("??0RLight_t@@QAE@PAVRRefFrame_t@@ABVRGB_t@@W4Type_e@0@PAVRAnimation_t@@@Z")(
         ::operator new(0x11C), nullptr, scene.root, white, 1, nullptr);
     Vector3 sunPos{3.0f, 6.0f, -5.0f}, origin{0.0f, 0.0f, 0.0f};
-    Export<SetPosFn>("?SetRelativePosition@RRefFrame_t@@QAEXABVVector3_t@@PBV1@@Z")(sun, nullptr, &sunPos, nullptr);
-    Export<SetTargetFn>("?SetWorldTarget@RRefFrame_t@@QAEXABVVector3_t@@@Z")(sun, nullptr, &origin);
-    std::printf("character: mesh %p (%d materials) anim %p RCATMesh_t %p camera %p\n", mesh, materials, scene.anim,
-                character, scene.camera);
+    setPos(sun, nullptr, &sunPos, nullptr);
+    setTarget(sun, nullptr, &origin);
+    std::printf("character: mesh %p (%d materials), %d characters\n", mesh, materials, count);
     return true;
 }
 
-// One frame of the scene (inside Open / Close): time in ms.
+// One frame of the scene (inside Open / Close): time in ms; each character a bit further along.
 void DrawCharacterScene(CharacterScene& scene, void* viewport, float time)
 {
-    Export<SetTimeFn>("?SetTime@CATKeyframeAnim_t@@QAEXM@Z")(scene.anim, nullptr, time);
+    auto setTime = Export<SetTimeFn>("?SetTime@CATKeyframeAnim_t@@QAEXM@Z");
+    for (size_t i = 0; i < scene.anims.size(); ++i)
+        setTime(scene.anims[i], nullptr, time + 137.0f * float(i));
     Export<PtrArgFn>("?SetCamera@RViewPort_t@@QAEXPAVRCamera_t@@@Z")(viewport, nullptr, scene.camera);
     Export<PtrArgFn>("?Process@RViewPort_t@@QAEXPAVRRefFrame_t@@@Z")(viewport, nullptr, scene.root);
     Export<ViewRenderFn>("?Render@RViewPort_t@@QAEXW4RenderList_e@@0W4RenderType_e@1@II@Z")(
         viewport, nullptr, 0, 10, 4, 0, 1799);
-    static int logged;
-    if (!logged++) {
-        using WorldFn = const float*(__fastcall*)(const void* self, void*);
-        auto world = Export<WorldFn>("?GetWorldMatrix@RRefFrame_t@@QBEABVTMatrix4_t@@XZ");
-        const float* c = world(scene.camera, nullptr);
-        const float* m = world(static_cast<uint8_t*>(scene.character) + 0x3C, nullptr);
-        std::printf("character: in view %d, camera rows (%.2f %.2f %.2f) (%.2f %.2f %.2f) (%.2f %.2f %.2f) at (%.2f %.2f %.2f),"
-                    " character at (%.2f %.2f %.2f)\n", *(static_cast<uint8_t*>(scene.character) + 0x1C8), c[0], c[1],
-                    c[2], c[4], c[5], c[6], c[8], c[9], c[10], c[12], c[13], c[14], m[12], m[13], m[14]);
-    }
 }
 
 }  // namespace
@@ -356,12 +362,14 @@ int main(int argc, char** argv)
     std::string shot = "randy_harness.bmp";
     std::string characterMesh, characterAnim;
     float characterTime = 0.0f;
+    int crowd = 1;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
         else if (a == "--shot" && i + 1 < argc) shot = argv[++i];
         else if (a == "--character" && i + 2 < argc) { characterMesh = argv[++i]; characterAnim = argv[++i]; }
         else if (a == "--time" && i + 1 < argc) characterTime = float(std::atof(argv[++i]));
+        else if (a == "--crowd" && i + 1 < argc) crowd = std::max(1, std::atoi(argv[++i]));
     }
     const unsigned width = 640, height = 480;
 
@@ -475,15 +483,26 @@ int main(int argc, char** argv)
     }
 
     CharacterScene scene;
-    if (!characterMesh.empty() && !MakeCharacterScene(characterMesh, characterAnim, scene))
+    if (!characterMesh.empty() && !MakeCharacterScene(characterMesh, characterAnim, crowd, scene))
         return 1;
+    LARGE_INTEGER frequency, frameStart, sceneStart{};
+    QueryPerformanceFrequency(&frequency);
+    double sceneSeconds = 0.0;
     for (int frame = 0; frame < frames; ++frame) {
         bool restored = false;
         open(viewport, nullptr, &restored);
         unsigned clearColor = 0xFF203040;
         clear(viewport, nullptr, &clearColor, true, true, 0);
-        if (scene.character) {
+        if (!scene.characters.empty()) {
+            QueryPerformanceCounter(&frameStart);
             DrawCharacterScene(scene, viewport, characterTime + 33.0f * float(frame));
+            LARGE_INTEGER now;
+            QueryPerformanceCounter(&now);
+            if (frame > 0) sceneSeconds += double(now.QuadPart - frameStart.QuadPart) / double(frequency.QuadPart);
+            (void)sceneStart;
+            if (frame == frames - 1 && frames > 1)
+                std::printf("character: %d frames, %.3f ms per frame in Process + Render (the game thread's share)\n",
+                            frames - 1, 1000.0 * sceneSeconds / (frames - 1));
             close(viewport, nullptr);
             if (frame == frames - 1) {
                 void* bb = backBuffer(randy, nullptr);
