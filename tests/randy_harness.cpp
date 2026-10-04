@@ -267,6 +267,7 @@ int g_carriedLights;                                 // --lights N: the first N 
 float g_alpha = 1.0f;                                // --alpha A: the characters' transparency
 int g_sfx;                                           // --sfx N: their effect type (1 special light, 2 pulse)
 bool g_env;                                          // --env: their materials get an environment map
+bool g_shadow;                                       // --shadow: the first one also drawn as a projected shadow
 
 bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath, int count, CharacterScene& scene)
 {
@@ -466,6 +467,70 @@ void PickCharacter(CharacterScene& scene)
     std::printf("\n");
 }
 
+// The first character's projected shadow (RVisual_t vtable slot 20, as RShadow draws its caster): a fake RShadow
+// with its matrix (+0x1AC, flattening onto y = 0.01; +0x1EC 0 = up to date) and material (+0x178).
+void DrawShadow(CharacterScene& scene, void* viewport)
+{
+    alignas(16) static uint8_t shadow[0x200];
+    float m[16] = {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.01f, 0, 1};
+    std::memcpy(shadow + 0x1AC, m, sizeof(m));
+    void* catMesh = *reinterpret_cast<void**>(static_cast<uint8_t*>(scene.characters[0]) + 4);
+    *reinterpret_cast<void**>(shadow + 0x178) = (*reinterpret_cast<void***>(static_cast<uint8_t*>(catMesh) + 0x3C))[0];
+    uint8_t* visual = static_cast<uint8_t*>(scene.characters[0]) + 0x3C;
+    using ShadowFn = void(__fastcall*)(void* self, void*, void* viewport, void* shadow);
+    reinterpret_cast<ShadowFn>((*reinterpret_cast<void***>(visual))[20])(visual, nullptr, viewport, shadow);
+}
+
+// What the game asks the first character (attractors, bones, materials, its sphere), printed: the same with and
+// without CatQuery.
+void QueryCharacter(CharacterScene& scene)
+{
+    uint8_t* mesh = static_cast<uint8_t*>(scene.characters[0]);
+    uint8_t* catMesh = *reinterpret_cast<uint8_t**>(mesh + 4);
+    using LookupFn = bool(__fastcall*)(void* self, void*, const char* name, float* out);
+    auto attractor = Export<LookupFn>("?GetAttractor@RCATMesh_t@@QAE_NPBDAAVTMatrix4_t@@@Z");
+    auto bone = Export<LookupFn>("?GetBoneMatrix@RCATMesh_t@@QAE_NPBDAAVTMatrix4_t@@@Z");
+    auto has = Export<bool(__fastcall*)(void*, void*, const char*)>("?HasAttractor@CATRender_t@@QBE_NPBD@Z");
+    auto materialIndex = Export<int(__fastcall*)(void*, void*, const char*)>("?GetMaterialIndex@RCATMesh_t@@QBEHPBD@Z");
+    auto name = Export<const char*(__fastcall*)(void*, void*)>("?GetName@RResource_t@@QBEPBDXZ");
+    auto radius = Export<float(__fastcall*)(void*, void*)>("?GetBoundingSphereRadius@RCATMesh_t@@QBEMXZ");
+    auto center = Export<Vector3*(__fastcall*)(void*, void*, Vector3*)>("?GetBoundingSpherePos@RCATMesh_t@@QBE?AVVector3_t@@XZ");
+    auto print = [](const char* what, const char* n, bool ok, const float* m) {
+        std::printf("query %s '%s': %d", what, n, ok ? 1 : 0);
+        if (ok) for (int i = 0; i < 16; ++i) std::printf(" %.5g", m[i]);
+        std::printf("\n");
+    };
+    int groups = *reinterpret_cast<int*>(mesh + 0x0C);
+    auto* renderGroups = *reinterpret_cast<uint8_t**>(mesh + 0x10);
+    for (int g = 0; g < groups; ++g) {
+        uint8_t* groupMesh = *reinterpret_cast<uint8_t**>(renderGroups + g * 0xC);
+        uint8_t* record = *reinterpret_cast<uint8_t**>(groupMesh + 0x4C) + g * 0x34;
+        int count = *reinterpret_cast<int*>(record + 0x2C);
+        for (int i = 0; i < count; ++i) {
+            auto* str = reinterpret_cast<Vc10String*>(*reinterpret_cast<uint8_t**>(record + 0x30) + i * 0x40);
+            float out[16] = {};
+            bool ok = attractor(mesh, nullptr, str->c_str(), out);
+            print("attractor", str->c_str(), ok && has(mesh, nullptr, str->c_str()), out);
+        }
+    }
+    float out[16] = {};
+    print("attractor", "no such", attractor(mesh, nullptr, "no such", out), out);
+    int bones = *reinterpret_cast<int*>(catMesh + 0x40);
+    for (int b = 0; b < bones; b += 3) {
+        auto* str = reinterpret_cast<Vc10String*>(*reinterpret_cast<uint8_t**>(catMesh + 0x44) + b * 0x28);
+        bool ok = bone(mesh, nullptr, str->c_str(), out);
+        print("bone", str->c_str(), ok, out);
+    }
+    int materials = *reinterpret_cast<int*>(catMesh + 0x38);
+    for (int i = 0; i < materials; ++i) {
+        const char* n = name((*reinterpret_cast<void***>(catMesh + 0x3C))[i], nullptr);
+        std::printf("query material '%s': %d\n", n ? n : "(null)", n ? materialIndex(mesh, nullptr, n) : -2);
+    }
+    Vector3 c{};
+    center(mesh, nullptr, &c);
+    std::printf("query sphere: %.5g at %.5g %.5g %.5g\n", radius(mesh, nullptr), c.x, c.y, c.z);
+}
+
 // One frame of the scene (inside Open / Close): time in ms; each character a bit further along.
 void DrawCharacterScene(CharacterScene& scene, void* viewport, float time, bool setTimes)
 {
@@ -478,6 +543,7 @@ void DrawCharacterScene(CharacterScene& scene, void* viewport, float time, bool 
     Export<PtrArgFn>("?Process@RViewPort_t@@QAEXPAVRRefFrame_t@@@Z")(viewport, nullptr, scene.root);
     Export<ViewRenderFn>("?Render@RViewPort_t@@QAEXW4RenderList_e@@0W4RenderType_e@1@II@Z")(
         viewport, nullptr, 0, 10, 4, 0, 1799);
+    if (g_shadow) DrawShadow(scene, viewport);
 }
 
 }  // namespace
@@ -490,6 +556,7 @@ int main(int argc, char** argv)
     float characterTime = 0.0f;
     int crowd = 1;
     bool pick = false;
+    bool query = false;
     bool still = false;                              // the animation time doesn't advance (static vertex buffers)
     std::string staticMesh;
     int statics = 1;
@@ -506,6 +573,8 @@ int main(int argc, char** argv)
         else if (a == "--alpha" && i + 1 < argc) g_alpha = float(std::atof(argv[++i]));
         else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);
         else if (a == "--env") g_env = true;
+        else if (a == "--shadow") g_shadow = true;
+        else if (a == "--query") query = true;
         else if (a == "--static" && i + 1 < argc) staticMesh = argv[++i];
         else if (a == "--statics" && i + 1 < argc) statics = std::max(1, std::atoi(argv[++i]));
     }
@@ -637,6 +706,7 @@ int main(int argc, char** argv)
             QueryPerformanceCounter(&frameStart);
             DrawCharacterScene(scene, viewport, characterTime + (still ? 0.0f : 33.0f * float(frame)), !still || frame == 0);
             if (pick) PickCharacter(scene);
+            if (query && frame + 1 == frames) QueryCharacter(scene);
             LARGE_INTEGER now;
             QueryPerformanceCounter(&now);
             if (frame > 0) sceneSeconds += double(now.QuadPart - frameStart.QuadPart) / double(frequency.QuadPart);

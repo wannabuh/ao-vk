@@ -339,6 +339,36 @@ void __fastcall Render(uint8_t* visual, void*, void* viewport)
     orig::RVisual_t_SetRenderPriority(visual, transparent ? 6 : 3);
 }
 
+// RVisual_t vtable slot 20 (FUN_1005604b): the character flattened by an RShadow (its matrix, its material), after
+// the children; every piece's active triangles from what the skinning last wrote.
+void __fastcall RenderShadow(uint8_t* visual, void*, void* viewport, uint8_t* shadow)
+{
+    orig::RVisual_t_RenderShadow(visual, viewport, shadow);
+    uint8_t* mesh = visual - 0x3C;
+    if (!At<void*>(mesh, cat::kRenderMesh) || !At<void*>(mesh, cat::kRenderAnim))
+        return;
+    orig::RVisual_t_CullLights(visual, viewport, 0.0f, 0xFFFFFFFFu);
+    void* matrix = Internal<void*(__fastcall*)(void*)>(0x46D5F)(shadow);    // RShadow's matrix, brought up to date
+    orig::render_t_SetTransformMatrix(Renderer(), 1, matrix);               // D3DTRANSFORMSTATE_WORLD
+    orig::RViewPort_t_SetMaterial(viewport, At<void*>(shadow, 0x178));
+    orig::RViewPort_t_RealizeRenderStates(viewport);
+    Internal<void(__fastcall*)(void*)>(0x55D52)(mesh);                      // bones
+    Internal<void(__fastcall*)(void*)>(0x55C1C)(mesh);                      // skinning
+    const int32_t groupCount = At<int32_t>(mesh, cat::kRenderGroupCount);
+    auto* groups = At<cat::RenderGroup*>(mesh, cat::kRenderGroups);
+    for (int32_t g = 0; g < groupCount; ++g) {
+        uint8_t* meshGroup = At<uint8_t*>(groups[g].mesh, cat::kMeshGroups) + g * cat::kGroupSize;
+        uint8_t* piece = At<uint8_t*>(meshGroup, cat::kGroupPieces);
+        for (int32_t p = 0; p < At<int32_t>(meshGroup, cat::kGroupPieceCount); ++p, piece += cat::kPieceSize) {
+            const int32_t active = At<int32_t>(piece, cat::kPieceActiveTris);
+            if (active > 0)
+                orig::render_t_RenderTriangleList_408(Renderer(), groups[g].slots[p].buffer, 0,
+                                                      groups[g].slots[p].vertexCount, At<void*>(piece, cat::kPieceIndices),
+                                                      uint32_t(active), 8);
+        }
+    }
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -354,8 +384,9 @@ void Install(HMODULE orig)
         Log("character drawing: exports missing - not replaced");
         return;
     }
-    // RCATMesh_t's RVisual_t vtable (0x10095EDC), slot 13 = FUN_10056ed6.
-    if (HookSlot(orig, 0x95EDC, 13, 0x56ED6, reinterpret_cast<void*>(&Render), "RCATMesh_t::Render"))
+    // RCATMesh_t's RVisual_t vtable (0x10095EDC), slot 13 = FUN_10056ed6, slot 20 = FUN_1005604b.
+    if (HookSlot(orig, 0x95EDC, 13, 0x56ED6, reinterpret_cast<void*>(&Render), "RCATMesh_t::Render") &&
+        HookSlot(orig, 0x95EDC, 20, 0x5604B, reinterpret_cast<void*>(&RenderShadow), "RCATMesh_t::RenderShadow"))
         Log("character drawing: on");
 }
 

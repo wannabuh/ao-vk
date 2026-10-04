@@ -3,7 +3,10 @@
 //
 //   native_check.exe <path to randy31_orig.dll>
 #include "native/cat_anim.h"
+#include "native/cat_query.h"
 #include "native/cat_skin.h"
+#include "native/vc10.h"
+#include "native/xmath.h"
 
 #include <windows.h>
 
@@ -14,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <random>
+#include <string>
 #include <vector>
 
 using namespace rnative;
@@ -177,7 +181,7 @@ void Build(Character& c)
     }
     vb = 0;
     for (int g = 0; g < groups; ++g)
-        for (auto& slot : c.slots[g]) slot = {nullptr, &c.vertexBuffers[vb++]};
+        for (auto& slot : c.slots[g]) slot = {0, &c.vertexBuffers[vb++]};
     At<void*>(c.render, kRenderAnim) = &c.anim;
     At<int32_t>(c.render, kRenderGroupCount) = groups;
     At<RenderGroup*>(c.render, kRenderGroups) = c.renderGroups.data();
@@ -470,6 +474,154 @@ void CheckHierarchy()
     Check(bad == 0, "bone hierarchy");
 }
 
+// A random rotation (unit quaternion) as a matrix, scaled, with a translation.
+xm::M4 RandomTransform(float scale)
+{
+    float q[4], n = 0;
+    for (float& v : q) v = Rand(-1, 1), n += v * v;
+    n = std::sqrt(n);
+    for (float& v : q) v /= n;
+    xm::M4 m = xm::FromQuaternion(q);
+    xm::ScaleColumns(m, scale, scale, scale);
+    for (int i = 12; i < 15; ++i) m.m[i] = Rand(-10, 10);
+    return m;
+}
+
+void CheckMath()
+{
+    auto toQuat = reinterpret_cast<float*(__fastcall*)(float*, void*, const float*)>(reinterpret_cast<uint8_t*>(g_orig) + 0x6ED0B);
+    auto fromQuat = reinterpret_cast<void(__fastcall*)(float*, void*, const float*)>(reinterpret_cast<uint8_t*>(g_orig) + 0x6EBED);
+    auto mul = reinterpret_cast<float*(__fastcall*)(const float*, void*, float*, const float*)>(reinterpret_cast<uint8_t*>(g_orig) + 0x6E302);
+    size_t bad = 0;
+    float worst = 0.0f;
+    for (int i = 0; i < 2000; ++i) {
+        xm::M4 a = RandomTransform(i % 3 == 0 ? Rand(0.5f, 2.0f) : 1.0f), b = RandomTransform(1.0f);
+        float qo[4], qa[4];
+        toQuat(qo, nullptr, a.m);
+        xm::ToQuaternion(a, qa);
+        xm::M4 mo, ma = xm::FromQuaternion(qa), po, pa = xm::Mul(a, b);
+        fromQuat(mo.m, nullptr, qa);
+        mul(a.m, nullptr, po.m, b.m);
+        bool same = true;
+        for (int j = 0; j < 4; ++j) same &= Near(qa[j], qo[j], &worst);
+        for (int j = 0; j < 16; ++j) same &= Near(ma.m[j], mo.m[j], &worst) && Near(pa.m[j], po.m[j], &worst);
+        if (!same && ++bad <= 3)
+            std::printf("  matrix %d: quaternion ours (%g %g %g %g) original (%g %g %g %g)\n", i, qa[0], qa[1], qa[2],
+                        qa[3], qo[0], qo[1], qo[2], qo[3]);
+    }
+    std::printf("math: 2000 quaternions / rotations / products, %zu differ (largest relative error %.2g)\n", bad, worst);
+    Check(bad == 0, "matrix / quaternion helpers");
+}
+
+// A character with named attractors on its mesh groups and named bones.
+struct FakeAttach {
+    std::vector<std::vector<uint8_t>> meshes;        // CATMesh_t per group
+    std::vector<std::vector<uint8_t>> groupRecords;  // the mesh's group records (0x34 each)
+    std::vector<std::vector<uint8_t>> attractors;    // 0x40 each
+    std::vector<uint8_t> boneNames;                  // 0x28 each
+    std::vector<RenderGroup> groups;
+    std::vector<Bone> bones;
+    std::vector<uint8_t> render, anim;
+};
+
+void Name(void* at, const char* s)
+{
+    auto* str = static_cast<vc10::String*>(at);
+    str->init();
+    str->assign(s, std::strlen(s));
+}
+
+void BuildAttach(FakeAttach& f, int groupCount, int boneCount)
+{
+    f.bones.resize(boneCount);
+    for (auto& b : f.bones) {
+        xm::M4 m = RandomTransform(Rand(0.7f, 1.4f));
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 3; ++j) b.m[i * 3 + j] = m.m[i * 4 + j];
+    }
+    f.boneNames.assign(size_t(boneCount) * 0x28, 0);
+    char name[64];
+    for (int b = 0; b < boneCount; ++b) {
+        std::snprintf(name, sizeof(name), b % 4 == 0 ? "Bip01 a long bone name %d" : "bone%d", b);
+        Name(f.boneNames.data() + b * 0x28, name);
+    }
+    f.meshes.assign(groupCount, std::vector<uint8_t>(0x64, 0));
+    f.groupRecords.assign(groupCount, std::vector<uint8_t>(size_t(groupCount) * 0x34, 0));
+    f.attractors.assign(groupCount, {});
+    f.groups.assign(groupCount, RenderGroup{});
+    for (int g = 0; g < groupCount; ++g) {
+        int count = g == 1 ? 0 : 3;
+        f.attractors[g].assign(size_t(count) * 0x40, 0);
+        for (int i = 0; i < count; ++i) {
+            uint8_t* a = f.attractors[g].data() + i * 0x40;
+            std::snprintf(name, sizeof(name), i == 2 ? "attractor with a long name %d-%d" : "attr%d-%d", g, i);
+            Name(a, name);
+            for (int k = 0; k < 3; ++k) At<float>(a, 0x1C + k * 4) = Rand(-1, 1);
+            float q[4], n = 0;
+            for (float& v : q) v = Rand(-1, 1), n += v * v;
+            for (int k = 0; k < 4; ++k) At<float>(a, 0x28 + k * 4) = q[k] / std::sqrt(n);
+            At<float>(a, 0x38) = Rand(0.5f, 1.5f);
+            At<int32_t>(a, 0x3C) = int32_t(Rand(0, float(boneCount) - 0.01f));
+        }
+        uint8_t* record = f.groupRecords[g].data() + g * 0x34;   // group g reads its own index from its mesh
+        At<int32_t>(record, 0x2C) = count;
+        At<uint8_t*>(record, 0x30) = f.attractors[g].data();
+        At<uint8_t*>(f.meshes[g].data(), cat::kMeshGroups) = f.groupRecords[g].data();
+        f.groups[g].mesh = f.meshes[g].data();
+    }
+    At<int32_t>(f.meshes[0].data(), 0x40) = boneCount;
+    At<uint8_t*>(f.meshes[0].data(), 0x44) = f.boneNames.data();
+    f.anim.assign(0x60, 0);
+    f.render.assign(0x60, 0);
+    At<void*>(f.render.data(), cat::kRenderMesh) = f.meshes[0].data();
+    At<void*>(f.render.data(), cat::kRenderAnim) = f.anim.data();
+    At<int32_t>(f.render.data(), cat::kRenderGroupCount) = groupCount;
+    At<RenderGroup*>(f.render.data(), cat::kRenderGroups) = f.groups.data();
+    At<int32_t>(f.render.data(), cat::kRenderBoneCount) = boneCount;
+    At<Bone*>(f.render.data(), cat::kRenderBones) = f.bones.data();
+}
+
+void CheckAttractors()
+{
+    using LookupFn = uint32_t(__fastcall*)(const void* render, void*, const char* name, float* out);
+    auto attractor = reinterpret_cast<LookupFn>(reinterpret_cast<uint8_t*>(g_orig) + 0x54DF1);
+    auto bone = reinterpret_cast<LookupFn>(reinterpret_cast<uint8_t*>(g_orig) + 0x54F4F);
+    FakeAttach f;
+    BuildAttach(f, 4, 30);
+    std::vector<std::string> names = {"nope", "", "bone"};
+    char name[64];
+    for (int g = 0; g < 4; ++g)
+        for (int i = 0; i < 3; ++i) {
+            std::snprintf(name, sizeof(name), i == 2 ? "attractor with a long name %d-%d" : "attr%d-%d", g, i);
+            names.push_back(name);
+        }
+    for (int b = 0; b < 30; ++b) {
+        std::snprintf(name, sizeof(name), b % 4 == 0 ? "Bip01 a long bone name %d" : "bone%d", b);
+        names.push_back(name);
+    }
+    size_t checked = 0, bad = 0;
+    float worst = 0.0f;
+    for (int withAnim = 1; withAnim >= 0; --withAnim) {
+        At<void*>(f.render.data(), cat::kRenderAnim) = withAnim ? f.anim.data() : nullptr;
+        for (const auto& n : names)
+            for (int which = 0; which < 2; ++which) {
+                float o[16] = {}, a[16] = {};
+                bool ro = ((which ? bone : attractor)(f.render.data(), nullptr, n.c_str(), o) & 0xFF) != 0;
+                bool ra = which ? catquery::BoneMatrix(f.render.data(), n.c_str(), a)
+                                : catquery::AttractorMatrix(f.render.data(), n.c_str(), a);
+                bool same = ro == ra;
+                for (int j = 0; j < 16; ++j) same &= Near(a[j], o[j], &worst);
+                ++checked;
+                if (!same && ++bad <= 3)
+                    std::printf("  %s '%s' (anim %d): ours %d (%g %g %g) original %d (%g %g %g)\n",
+                                which ? "bone" : "attractor", n.c_str(), withAnim, ra, a[12], a[13], a[14], ro, o[12],
+                                o[13], o[14]);
+            }
+    }
+    std::printf("attractors / bones by name: %zu lookups, %zu differ (largest relative error %.2g)\n", checked, bad, worst);
+    Check(bad == 0, "attractor / bone lookups");
+}
+
 double Seconds(std::chrono::steady_clock::time_point since)
 {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - since).count();
@@ -522,6 +674,8 @@ int main(int argc, char** argv)
     CheckBounds();
     CheckSampling();
     CheckHierarchy();
+    CheckMath();
+    CheckAttractors();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;

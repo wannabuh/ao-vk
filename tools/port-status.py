@@ -52,14 +52,16 @@ def main():
         g = groups.setdefault(cls, [0, 0, 0, 0])      # functions, bytes, replaced functions, replaced bytes
         g[0] += 1
         g[1] += size
-        if ledger.get(rva) == "replaced":
+        if ledger.get(rva) in ("replaced", "dead"):   # dead: never called, nothing to port
             g[2] += 1
             g[3] += size
     lib = groups.pop("(library)", [0, 0, 0, 0])
     total = [sum(g[i] for g in groups.values()) for i in range(4)]
     wrapped = sum(1 for s in ledger.values() if s == "wrapped")
+    dead = sum(1 for s in ledger.values() if s == "dead")
     print(f"Randy's own code: {total[0]} functions, {total[1] / 1024:.0f} KB; replaced {total[2]} functions "
-          f"({total[3] / 1024:.1f} KB, {100.0 * total[3] / max(total[1], 1):.1f}%), {wrapped} more wrapped")
+          f"({total[3] / 1024:.1f} KB, {100.0 * total[3] / max(total[1], 1):.1f}%), {wrapped} more wrapped"
+          + (f" (done includes {dead} never called)" if dead else ""))
     print(f"library code (not to port): {lib[0]} functions, {lib[1] / 1024:.0f} KB")
     print(f"{'class':32} {'functions':>9} {'KB':>6} {'replaced':>9}")
     for cls, g in sorted(groups.items(), key=lambda kv: -kv[1][1])[:show]:

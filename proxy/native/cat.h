@@ -41,7 +41,7 @@ struct RenderGroup {
     void* mesh;                // CATMesh_t*
     uint32_t unknown;
     struct Slot {
-        void* d3dBuffer;
+        uint32_t vertexCount;  // (what the buffer was made for)
         void* buffer;          // VertexBuffer_c*
     }* slots;
 };

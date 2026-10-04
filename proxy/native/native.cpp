@@ -2,6 +2,7 @@
 #include "native/native.h"
 #include "native/cat_anim.h"
 #include "native/cat_mesh.h"
+#include "native/cat_query.h"
 #include "native/cat_render.h"
 #include "native/cat_skin.h"
 #include "native/orig_api.gen.h"
@@ -22,6 +23,7 @@ void Install(HMODULE orig)
     scene::Install(orig);
     catrender::Install(orig);
     catmesh::Install(orig);
+    catquery::Install(orig);
 }
 
 }  // namespace rnative
