@@ -3,6 +3,10 @@
 #include "native/scene.h"
 
 #include <cmath>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <unordered_map>
 #include <cstring>
 
 namespace rvkproxy {
@@ -97,6 +101,69 @@ RDevice::~RDevice()
     m_d3d->Release();
 }
 
+// ---------------------------------------------------------------------------------------------------
+// Call log (tests): every Direct3D call of one frame, with arguments, objects as ids in order of first use and data as
+// hashes - two runs drawing the same thing log the same lines (comparing a native port with the original).
+// RANDYVK_CALLLOG=<file>, RANDYVK_CALLLOG_FRAME=<presented frame number>.
+namespace {
+
+FILE* g_callLog;
+uint64_t g_callLogFrame = ~0ull;
+std::unordered_map<const void*, uint32_t> g_callLogIds;
+
+uint32_t Fnv(const void* data, size_t bytes)
+{
+    uint32_t h = 2166136261u;
+    const auto* b = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < bytes; ++i) h = (h ^ b[i]) * 16777619u;
+    return h;
+}
+
+uint32_t LogId(const void* object)
+{
+    if (!object) return 0;
+    auto it = g_callLogIds.find(object);
+    if (it != g_callLogIds.end()) return it->second;
+    uint32_t id = uint32_t(g_callLogIds.size()) + 1;
+    g_callLogIds.emplace(object, id);
+    return id;
+}
+
+void CallLog(const char* fmt, ...)
+{
+    if (!g_callLog) return;
+    va_list args;
+    va_start(args, fmt);
+    std::vfprintf(g_callLog, fmt, args);
+    va_end(args);
+    std::fputc('\n', g_callLog);
+}
+
+}  // namespace
+
+// Each present: opens the log for the frame asked for, closes it after.
+void CallLogFrame(uint64_t presented)
+{
+    static const uint64_t wanted = [] {
+        char v[16] = "";
+        return GetEnvironmentVariableA("RANDYVK_CALLLOG_FRAME", v, sizeof(v)) ? uint64_t(std::atoll(v)) : ~0ull;
+    }();
+    if (g_callLog) {
+        std::fclose(g_callLog);
+        g_callLog = nullptr;
+        RvkLog("call log written (frame %llu)", (unsigned long long)g_callLogFrame);
+    }
+    if (presented + 1 == wanted) {
+        char path[MAX_PATH] = "";
+        if (GetEnvironmentVariableA("RANDYVK_CALLLOG", path, sizeof(path))) {
+            g_callLog = std::fopen(path, "w");
+            g_callLogFrame = wanted;
+            g_callLogIds.clear();
+        }
+    }
+}
+
+
 HRESULT RDevice::DoGetCaps(LPD3DDEVICEDESC7 desc)
 {
     if (!desc) return DDERR_INVALIDPARAMS;
@@ -138,6 +205,7 @@ HRESULT RDevice::DoGetDirect3D(LPDIRECT3D7* out)
 
 HRESULT RDevice::DoSetRenderTarget(LPDIRECTDRAWSURFACE7 iface, DWORD)
 {
+    CallLog("RT %u", LogId(iface));
     auto* s = static_cast<RSurface*>(iface);
     if (!s || (s->kind != RSurface::Kind::Main && s->kind != RSurface::Kind::RenderTarget))
         return DDERR_INVALIDPARAMS;
@@ -162,6 +230,7 @@ HRESULT RDevice::DoGetRenderTarget(LPDIRECTDRAWSURFACE7* out)
 
 HRESULT RDevice::DoClear(DWORD count, LPD3DRECT rects, DWORD flags, D3DCOLOR color, D3DVALUE z, DWORD)
 {
+    CallLog("CLEAR %lu %lx %08lx %g", count, flags, color, z);
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev) return DDERR_GENERIC;
     g_rvk.Frame();
@@ -171,6 +240,7 @@ HRESULT RDevice::DoClear(DWORD count, LPD3DRECT rects, DWORD flags, D3DCOLOR col
 
 HRESULT RDevice::DoSetTransform(D3DTRANSFORMSTATETYPE type, LPD3DMATRIX m)
 {
+    if (m) CallLog("XF %d %08x", type, Fnv(m, sizeof(*m)));
     if (!m || DWORD(type) >= 32) return DDERR_INVALIDPARAMS;
     m_transforms[type] = *m;
     if (rvk::ThreadedDevice* dev = g_rvk.device)
@@ -194,6 +264,7 @@ HRESULT RDevice::DoMultiplyTransform(D3DTRANSFORMSTATETYPE type, LPD3DMATRIX m)
 
 HRESULT RDevice::DoSetViewport(LPD3DVIEWPORT7 vp)
 {
+    if (vp) CallLog("VP %lu %lu %lu %lu", vp->dwX, vp->dwY, vp->dwWidth, vp->dwHeight);
     if (!vp) return DDERR_INVALIDPARAMS;
     m_viewport = *vp;
     if (rvk::ThreadedDevice* dev = g_rvk.device)
@@ -210,6 +281,7 @@ HRESULT RDevice::DoGetViewport(LPD3DVIEWPORT7 vp)
 
 HRESULT RDevice::DoSetMaterial(LPD3DMATERIAL7 m)
 {
+    if (m) CallLog("MAT %08x", Fnv(m, sizeof(*m)));
     if (!m) return DDERR_INVALIDPARAMS;
     m_material = *m;
     if (rvk::ThreadedDevice* dev = g_rvk.device)
@@ -226,6 +298,7 @@ HRESULT RDevice::DoGetMaterial(LPD3DMATERIAL7 m)
 
 HRESULT RDevice::DoSetLight(DWORD i, LPD3DLIGHT7 l)
 {
+    if (l) CallLog("LIGHT %lu %08x", i, Fnv(l, sizeof(*l)));
     if (!l) return DDERR_INVALIDPARAMS;
     if (i >= m_lights.size()) m_lights.resize(i + 1, {D3DLIGHT7{}, FALSE});
     m_lights[i].first = *l;
@@ -243,6 +316,7 @@ HRESULT RDevice::DoGetLight(DWORD i, LPD3DLIGHT7 l)
 
 HRESULT RDevice::DoLightEnable(DWORD i, BOOL enable)
 {
+    CallLog("LEN %lu %d", i, enable ? 1 : 0);
     if (i >= m_lights.size()) m_lights.resize(i + 1, {D3DLIGHT7{}, FALSE});
     m_lights[i].second = enable;
     if (rvk::ThreadedDevice* dev = g_rvk.device)
@@ -259,6 +333,7 @@ HRESULT RDevice::DoGetLightEnable(DWORD i, BOOL* enable)
 
 HRESULT RDevice::DoSetRenderState(D3DRENDERSTATETYPE s, DWORD v)
 {
+    CallLog("RS %d %lu", s, v);
     if (DWORD(s) < 256) m_rs[s] = v;
     if (rvk::ThreadedDevice* dev = g_rvk.device)
         dev->SetRenderState(s, v);
@@ -274,6 +349,7 @@ HRESULT RDevice::DoGetRenderState(D3DRENDERSTATETYPE s, LPDWORD v)
 
 HRESULT RDevice::DoSetTextureStageState(DWORD stage, D3DTEXTURESTAGESTATETYPE t, DWORD v)
 {
+    CallLog("TSS %lu %d %lu", stage, t, v);
     if (stage >= 8 || DWORD(t) >= 32) return DDERR_INVALIDPARAMS;
     m_tss[stage][t] = v;
     if (t == D3DTSS_ADDRESS) m_tss[stage][D3DTSS_ADDRESSU] = m_tss[stage][D3DTSS_ADDRESSV] = v;
@@ -291,6 +367,7 @@ HRESULT RDevice::DoGetTextureStageState(DWORD stage, D3DTEXTURESTAGESTATETYPE t,
 
 HRESULT RDevice::DoSetTexture(DWORD stage, LPDIRECTDRAWSURFACE7 iface)
 {
+    CallLog("TEX %lu %u", stage, LogId(iface));
     if (stage >= 8) return DDERR_INVALIDPARAMS;
     auto* s = static_cast<RSurface*>(iface);
     if (s) s->AddRef();
@@ -308,6 +385,7 @@ HRESULT RDevice::DoGetTexture(DWORD stage, LPDIRECTDRAWSURFACE7* out)
     if (*out) m_textures[stage]->AddRef();
     return D3D_OK;
 }
+
 
 // The game's visual behind the next draws (native scene tracking, [Native] Visuals), when it changes.
 void NoteVisual(rvk::ThreadedDevice* dev)
@@ -340,6 +418,7 @@ void SceneLights(const rnative::scene::SceneLight* lights, size_t count)
 
 HRESULT RDevice::DoDrawPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID verts, DWORD count, DWORD)
 {
+    if (verts) CallLog("DP %d %lx %lu %08x", type, fvf, count, Fnv(verts, size_t(rvk::ThreadedDevice::FvfStride(fvf)) * count));
     CountBackendDraw();
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !verts) return DDERR_INVALIDPARAMS;
@@ -352,6 +431,7 @@ HRESULT RDevice::DoDrawPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID verts,
 HRESULT RDevice::DoDrawIndexedPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID verts, DWORD vcount, LPWORD idx,
                                         DWORD icount, DWORD)
 {
+    if (verts && idx) CallLog("DIP %d %lx %lu %lu %08x %08x", type, fvf, vcount, icount, Fnv(verts, size_t(rvk::ThreadedDevice::FvfStride(fvf)) * vcount), Fnv(idx, size_t(icount) * 2));
     CountBackendDraw();
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !verts || !idx) return DDERR_INVALIDPARAMS;
@@ -363,6 +443,7 @@ HRESULT RDevice::DoDrawIndexedPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID
 
 HRESULT RDevice::DoDrawPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER7 iface, DWORD start, DWORD count, DWORD)
 {
+    CallLog("DPVB %d %u %lu %lu", type, LogId(iface), start, count);
     CountBackendDraw();
     auto* vb = static_cast<RVertexBuffer*>(iface);
     rvk::ThreadedDevice* dev = g_rvk.device;
@@ -381,6 +462,7 @@ HRESULT RDevice::DoDrawPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER
 HRESULT RDevice::DoDrawIndexedPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER7 iface, DWORD start, DWORD vcount,
                                           LPWORD idx, DWORD icount, DWORD)
 {
+    if (idx) CallLog("DIPVB %d %u %lu %lu %lu %08x", type, LogId(iface), start, vcount, icount, Fnv(idx, size_t(icount) * 2));
     CountBackendDraw();
     // D3D7: the indices are relative to start; vcount vertices from there are referenced.
     auto* vb = static_cast<RVertexBuffer*>(iface);

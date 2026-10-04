@@ -21,6 +21,7 @@ unsigned ComIndex(const char* name);              // counter index of "Interface
 void RvkLog(const char* fmt, ...);
 void ParticleFrame();                             // each presented frame (rvk_particles.cpp)
 bool RvkBackend();                                // RANDYVK_DDRAW=rvk installed (com_trace.cpp)
+void CallLogFrame(uint64_t presented);            // each present (rvk_device.cpp: RANDYVK_CALLLOG)
 // Native deferred skinning (proxy/native/cat_skin.cpp): gives a vertex buffer its skin job; false if it can't take it.
 bool AttachSkin(void* d3dVertexBuffer, std::shared_ptr<rvk::skin::Job> job);
 }  // namespace rvkproxy
