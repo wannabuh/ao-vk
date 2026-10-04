@@ -259,6 +259,7 @@ struct CharacterScene {
     void* camera = nullptr;
     std::vector<void*> characters;    // RCATMesh_t
     std::vector<void*> anims;         // CATKeyframeAnim_t, one per character
+    std::vector<void*> statics;       // --static: the loaded objects (RTriMesh_t ...)
 };
 
 // Builds root -> {camera, sun, `count` characters in a grid}, all with the same model and animation (each its own
@@ -450,6 +451,7 @@ bool AddStatics(const std::string& path, int count, CharacterScene& scene)
             return false;
         }
         addChild(scene.root, nullptr, object);
+        scene.statics.push_back(object);
         Vector3 at{12.0f * float(i % columns - (columns - 1) / 2.0f), 0.0f, 12.0f * float(i / columns) + 20.0f};
         setPos(object, nullptr, &at, nullptr);
         ++loaded;
@@ -671,6 +673,7 @@ int main(int argc, char** argv)
     int crowd = 1;
     bool pick = false;
     bool query = false;
+    bool destroy = false;                            // --destroy: delete the characters and statics at the end
     bool still = false;                              // the animation time doesn't advance (static vertex buffers)
     std::string staticMesh;
     int statics = 1;
@@ -687,6 +690,7 @@ int main(int argc, char** argv)
         }
         else if (a == "--pick") pick = true;
         else if (a == "--still") still = true;
+        else if (a == "--destroy") destroy = true;
         else if (a == "--lights" && i + 1 < argc) g_carriedLights = std::atoi(argv[++i]);
         else if (a == "--alpha" && i + 1 < argc) g_alpha = float(std::atof(argv[++i]));
         else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);
@@ -926,6 +930,13 @@ int main(int argc, char** argv)
                 std::printf("no back buffer surface\n");
         }
         flip(randy, nullptr, false);
+    }
+    if (destroy) {                                   // --destroy: their destructors too (as the game deletes them)
+        using DeleteFn = void*(__fastcall*)(void* self, void*, unsigned flags);
+        auto deleting = [](void* o) { reinterpret_cast<DeleteFn>((*static_cast<void***>(o))[0])(o, nullptr, 1); };
+        for (void* o : scene.statics) deleting(o);
+        for (void* c : scene.characters) deleting(c);
+        std::printf("destroyed %zu statics, %zu characters\n", scene.statics.size(), scene.characters.size());
     }
     std::printf("harness done\n");
     std::fflush(stdout);

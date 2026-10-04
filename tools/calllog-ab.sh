@@ -1,6 +1,7 @@
 #!/bin/bash
 # A/B check of a [Native] mode with the call log: runs randy_harness scenes with randy-vk.ini [Native] <Mode>=off and
-# =on (the test client's ini; other modes as they are) and compares every Direct3D call of frame 4.
+# =on (the test client's ini; other modes as they are) and compares every Direct3D call of frame 4; then the scene's
+# objects are deleted (--destroy), and a crash in either run fails the scene.
 # Usage: tools/calllog-ab.sh <Mode> [scene...]     scenes: names below (default all)
 cd "$(dirname "$0")/.." || exit 1
 mode=$1
@@ -36,11 +37,15 @@ for scene in $scenes; do
     esac
     for v in off on; do
         sed -i "s/^$mode=.*/$mode=$v/" "$ini"
+        rm -f "$logs/calllog-$v.txt"                  # a run that writes none must not compare an older one
         RANDYVK_CALLLOG="C:\\linux\\logs\\calllog-$v.txt" RANDYVK_CALLLOG_FRAME=4 \
-            tools/randy-harness.sh build/h-ab --frames 6 $args > "build/h-ab-$v.txt" 2>&1
+            tools/randy-harness.sh build/h-ab --frames 6 $args --destroy > "build/h-ab-$v.txt" 2>&1
     done
-    n=$(wc -l < "$logs/calllog-on.txt")
-    if [ "$n" -lt 10 ]; then
+    n=$(cat "$logs/calllog-on.txt" 2>/dev/null | wc -l)
+    [ -s "$logs/calllog-off.txt" ] || n=0
+    if grep -q "harness crashed" build/h-ab-off.txt build/h-ab-on.txt; then
+        echo "$scene: CRASHED"; grep -h "harness crashed" build/h-ab-off.txt build/h-ab-on.txt; fail=1
+    elif [ "$n" -lt 10 ]; then
         echo "$scene: no call log ($n lines)"; fail=1
     elif tools/calllog-compare.py "$logs/calllog-off.txt" "$logs/calllog-on.txt" >/dev/null &&
          diff -q <(grep -E '^(pick|query|material)' build/h-ab-off.txt) <(grep -E '^(pick|query|material)' build/h-ab-on.txt) >/dev/null; then

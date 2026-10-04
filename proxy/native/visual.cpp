@@ -290,7 +290,7 @@ void __fastcall Destroy(Visual* v)
     if (void* d = Field<void*>(v, kDelta)) orig::RResource_t_ReleaseRResource(d);
     Internal<void(__fastcall*)(void*)>(0x255B5)(v + kBlob);   // StateBlob_c::~StateBlob_c
     Field<uintptr_t>(v, kSubject) = reinterpret_cast<uintptr_t>(g_orig) + kSubjectBaseVtable;
-    Internal<void(__fastcall*)(void*)>(0x5B824)(v + kSubject);   // the observer set
+    Internal<void(__fastcall*)(void*)>(0x5B824)(v + kSubject + 4);   // the observer set (std::set at +0xA8)
     Internal<void(__fastcall*)(void*)>(0x45471)(v);               // RRefFrame_t::~RRefFrame_t
 }
 
