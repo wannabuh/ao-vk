@@ -356,6 +356,31 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
     return true;
 }
 
+// Picking: rays from the camera through a few heights of the first character (RCATMesh_t::IsLineIntersecting, what
+// mouse-over uses), printed - the same answers with and without native skinning.
+void PickCharacter(CharacterScene& scene)
+{
+    using IsLineFn = bool(__fastcall*)(void* self, void*, const Vector3* from, const Vector3* to, float* at, bool flag);
+    auto isLine = Export<IsLineFn>("?IsLineIntersecting@RCATMesh_t@@QBE_NABVVector3_t@@0PAM_N@Z");
+    using WorldFn = const float*(__fastcall*)(const void* self, void*);
+    auto world = Export<WorldFn>("?GetWorldMatrix@RRefFrame_t@@QBEABVTMatrix4_t@@XZ");
+    const float* c = world(scene.camera, nullptr);
+    const float* m = world(static_cast<uint8_t*>(scene.characters[0]) + 0x3C, nullptr);
+    Vector3 from{c[12], c[13], c[14]};
+    std::printf("pick:");
+    for (float h : {0.3f, 0.8f, 1.2f, 1.6f, 2.0f, 2.6f}) {
+        for (float dx : {-0.25f, 0.0f, 0.25f}) {
+            Vector3 to{m[12] + dx, m[13] + h, m[14]};
+            Vector3 end{from.x + (to.x - from.x) * 3.0f, from.y + (to.y - from.y) * 3.0f, from.z + (to.z - from.z) * 3.0f};
+            float at = -1.0f;
+            bool hit = isLine(scene.characters[0], nullptr, &from, &end, &at, false);
+            std::printf(" %s", hit ? "X" : ".");
+            if (hit) std::printf("%.3f", at);
+        }
+    }
+    std::printf("\n");
+}
+
 // One frame of the scene (inside Open / Close): time in ms; each character a bit further along.
 void DrawCharacterScene(CharacterScene& scene, void* viewport, float time)
 {
@@ -379,6 +404,7 @@ int main(int argc, char** argv)
     std::string characterMesh, characterAnim;
     float characterTime = 0.0f;
     int crowd = 1;
+    bool pick = false;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
@@ -386,6 +412,7 @@ int main(int argc, char** argv)
         else if (a == "--character" && i + 2 < argc) { characterMesh = argv[++i]; characterAnim = argv[++i]; }
         else if (a == "--time" && i + 1 < argc) characterTime = float(std::atof(argv[++i]));
         else if (a == "--crowd" && i + 1 < argc) crowd = std::max(1, std::atoi(argv[++i]));
+        else if (a == "--pick") pick = true;
     }
     const unsigned width = 640, height = 480;
 
@@ -512,6 +539,7 @@ int main(int argc, char** argv)
         if (!scene.characters.empty()) {
             QueryPerformanceCounter(&frameStart);
             DrawCharacterScene(scene, viewport, characterTime + 33.0f * float(frame));
+            if (pick) PickCharacter(scene);
             LARGE_INTEGER now;
             QueryPerformanceCounter(&now);
             if (frame > 0) sceneSeconds += double(now.QuadPart - frameStart.QuadPart) / double(frequency.QuadPart);
