@@ -219,3 +219,20 @@
 0x2F042	replaced	proxy/native/material.cpp	RDeltaState vtable slot 5 (restore)
 0x40AA0	replaced	proxy/native/material.cpp	RMaterial_t apply
 0x40AC9	replaced	proxy/native/material.cpp	RMaterial_t unapply
+0x4B0C0	replaced	proxy/native/viewport.cpp	RViewPort_t update (FUN_1004b0c0)
+0x4BA7C	replaced	proxy/native/viewport.cpp	RViewPort_t target (FUN_1004ba7c)
+0x4B199	replaced	proxy/native/viewport.cpp	RViewPort_t::SetMaterial
+0x4B3F6	replaced	proxy/native/viewport.cpp	RViewPort_t::SetD3DMaterial
+0x4B61E	replaced	proxy/native/viewport.cpp	RViewPort_t::SetDefaultMaterial
+0x4B724	replaced	proxy/native/viewport.cpp	RViewPort_t::ResetMaterial
+0x4B744	replaced	proxy/native/viewport.cpp	RViewPort_t::Close
+0x4B75A	replaced	proxy/native/viewport.cpp	RViewPort_t::Clear
+0x4B7D9	replaced	proxy/native/viewport.cpp	RViewPort_t::CalcPickLine
+0x4B95D	replaced	proxy/native/viewport.cpp	RViewPort_t::RealizeRenderStates
+0x4B997	replaced	proxy/native/viewport.cpp	RViewPort_t::SetCamera
+0x4B9A4	replaced	proxy/native/viewport.cpp	RViewPort_t::RViewPort_t
+0x4BAAD	replaced	proxy/native/viewport.cpp	RViewPort_t::Reposition
+0x4BAD6	replaced	proxy/native/viewport.cpp	RViewPort_t::SetViewRect
+0x4BB4D	replaced	proxy/native/viewport.cpp	RViewPort_t::Resize
+0x4BBCA	replaced	proxy/native/viewport.cpp	RViewPort_t::Open
+0x4BD1B	replaced	proxy/native/viewport.cpp	RViewPort_t::TransformPointToScreenSpace

@@ -8,6 +8,7 @@
 #include "native/device.h"
 #include "native/orig_api.gen.h"
 #include "native/scene.h"
+#include "native/viewport.h"
 
 namespace rnative {
 
@@ -27,6 +28,7 @@ void Install(HMODULE orig)
     catmesh::Install(orig);
     catquery::Install(orig);
     device::Install(orig);
+    viewport::Install(orig);
 }
 
 }  // namespace rnative

@@ -78,7 +78,9 @@ Visuals=on    ; tells the renderer exactly what each draw is (character, ground,
 CatRender=on  ; drawing characters
 CatMesh=on    ; characters' per-frame upkeep
 CatQuery=on   ; attach points (weapons, effects), bones and materials by name
-Device=on     ; the device layer: render state, drawing, vertex buffers, state blocks, presenting, surfaces, textures
+Device=on     ; the device layer: render state, drawing, vertex buffers, state blocks, presenting, surfaces, textures,
+              ; materials
+Scene=on      ; the scene layer (so far: viewports - materials, rectangle, camera, starting / ending a frame)
 ```
 
 All of them default to `off` (the original code). They have been played with in game; if something misbehaves,
