@@ -11,7 +11,7 @@ logs=$AO_CLIENT/../logs
 c=$PWD/build/characters
 s=$PWD/build/statics
 character="--character $c/5900.catmesh $c/9386.catanim --crowd 3 --time 400"
-scenes=${*:-"basic dynamic plain blend shadow alpha env sfx1 sfx2 lights statics"}
+scenes=${*:-"basic dynamic materials plain blend shadow alpha env sfx1 sfx2 lights statics"}
 grep -q "^$mode=" "$ini" || printf '%s=off\n' "$mode" >> "$ini"
 before=$(grep "^$mode=" "$ini" | cut -d= -f2)
 fail=0
@@ -19,6 +19,7 @@ for scene in $scenes; do
     case $scene in
         basic) args="" ;;
         dynamic) args="--dynamic" ;;
+        materials) args="--materials" ;;
         plain) args="$character" ;;
         blend) args="$character --blend 0.4 --pick --query" ;;
         shadow) args="$character --shadow" ;;
@@ -39,7 +40,7 @@ for scene in $scenes; do
     if [ "$n" -lt 10 ]; then
         echo "$scene: no call log ($n lines)"; fail=1
     elif cmp -s "$logs/calllog-off.txt" "$logs/calllog-on.txt" &&
-         diff -q <(grep -E '^(pick|query)' build/h-ab-off.txt) <(grep -E '^(pick|query)' build/h-ab-on.txt) >/dev/null; then
+         diff -q <(grep -E '^(pick|query|material)' build/h-ab-off.txt) <(grep -E '^(pick|query|material)' build/h-ab-on.txt) >/dev/null; then
         echo "$scene: same ($n calls)"
     else
         echo "$scene: DIFFERENT"; diff "$logs/calllog-off.txt" "$logs/calllog-on.txt" | head -5; fail=1

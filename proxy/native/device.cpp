@@ -16,6 +16,7 @@
 #include "native/surface.h"
 #include "native/resource.h"
 #include "native/texture.h"
+#include "native/material.h"
 #include "native/state_blob.h"
 #include "native/vc10.h"
 
@@ -540,6 +541,7 @@ void Install(HMODULE orig)
     surface::Install(orig);
     resource::Install(orig);
     texture::Install(orig);
+    material::Install(orig);
 }
 
 }  // namespace rnative::device

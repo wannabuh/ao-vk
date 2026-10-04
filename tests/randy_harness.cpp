@@ -544,6 +544,92 @@ void QueryCharacter(CharacterScene& scene)
     std::printf("query sphere: %.5g at %.5g %.5g %.5g\n", radius(mesh, nullptr), c.x, c.y, c.z);
 }
 
+// Materials through the exported API, every combination of name (plain, "[n]" blend modes, "op1_"), texture (with
+// alpha, without, none), opacity, two-sided and alpha-as-transparency, then changed (texture swapped and removed,
+// opacity, two-sided) and copied; each state printed - flags, D3D material, the delta state's lists - so the original
+// and the native materials can be compared line by line (tools/calllog-ab.sh).
+bool g_materials;
+
+void DumpMaterial(const char* what, void* m, void* alpha, void* opaque)
+{
+    using BoolFn = bool(__fastcall*)(void*, void*);
+    using TexFn = void*(__fastcall*)(void*, void*, unsigned char);
+    using InitFn = void(__fastcall*)(void*, void*, float*);
+    auto* b = static_cast<uint8_t*>(m);
+    auto texName = [&](void* t) { return t == alpha ? "alpha" : t == opaque ? "opaque" : t ? "other" : "-"; };
+    std::printf("material %s: transparent %d two-sided %d alpha-transparency %d op1 %d tex0 %s tex1 %s", what,
+                Export<BoolFn>("?IsTransparent@RMaterial_t@@QBE_NXZ")(m, nullptr),
+                Export<BoolFn>("?IsTwoSided@RMaterial_t@@QBE_NXZ")(m, nullptr), b[0x74], b[0xBC],
+                texName(Export<TexFn>("?GetTexture@RMaterial_t@@QBEPAVRTexture_t@@E@Z")(m, nullptr, 0)),
+                texName(Export<TexFn>("?GetTexture@RMaterial_t@@QBEPAVRTexture_t@@E@Z")(m, nullptr, 1)));
+    float d3d[17] = {};
+    Export<InitFn>("?InitD3DMaterial@RMaterial_t@@QBEXAAU_D3DMATERIAL7@@@Z")(m, nullptr, d3d);
+    std::printf(" d3d");
+    for (float f : d3d) std::printf(" %g", f);
+    uint8_t* delta = *reinterpret_cast<uint8_t**>(b + 0x70);
+    if (delta) {
+        struct Node { Node* next; Node* prev; uint32_t type, value, extra; };
+        std::printf(" | delta textures %u stages %u highest %u rs", *reinterpret_cast<uint32_t*>(delta + 0x6C),
+                    *reinterpret_cast<uint32_t*>(delta + 0xDC), *reinterpret_cast<uint32_t*>(delta + 0xE0));
+        Node* head = *reinterpret_cast<Node**>(delta + 0x70);
+        for (Node* n = head->next; n != head; n = n->next) std::printf(" %u=%u", n->type, n->value);
+        for (int st = 0; st < 8; ++st) {
+            Node* h = *reinterpret_cast<Node**>(delta + 0x7C + st * 0xC);
+            if (h->next == h) continue;
+            std::printf(" tss%d", st);
+            for (Node* n = h->next; n != h; n = n->next) std::printf(" %u=%u", n->type, n->value);
+        }
+        for (int st = 0; st < 8; ++st)
+            if (void* t = *reinterpret_cast<void**>(delta + 0x2C + st * 8)) std::printf(" t%d=%s", st, texName(t));
+    }
+    std::printf("\n");
+}
+
+void TestMaterials()
+{
+    std::vector<uint32_t> px(64, 0x80FF8040);
+    void* alpha = MakeTexture("mt_alpha", 8, 8, D3DX_SF_A8R8G8B8, px.data(), 32);
+    void* opaque = MakeTexture("mt_opaque", 8, 8, D3DX_SF_X8R8G8B8, px.data(), 32);
+    using CtorFn = void*(__fastcall*)(void*, void*, const char*, void*, const float*, const float*, const float*,
+                                      const float*, float, float, float, bool, bool);
+    using CopyFn = void*(__fastcall*)(void*, void*, void*);
+    using SetTexFn = void(__fastcall*)(void*, void*, void*, unsigned char, int);
+    using SetFloatFn = void(__fastcall*)(void*, void*, float);
+    using SetBoolFn = void(__fastcall*)(void*, void*, bool);
+    auto ctor = Export<CtorFn>("??0RMaterial_t@@QAE@PBDPAVRTexture_t@@ABVRGB_t@@222MMM_N3@Z");
+    auto copy = Export<CopyFn>("??0RMaterial_t@@QAE@ABV0@@Z");
+    auto setTex = Export<SetTexFn>("?SetTexture@RMaterial_t@@QAEXPAVRTexture_t@@EH@Z");
+    auto setOpacity = Export<SetFloatFn>("?SetOpacity@RMaterial_t@@QAEXM@Z");
+    auto setTwoSided = Export<SetBoolFn>("?SetTwoSided@RMaterial_t@@QAEX_N@Z");
+    const float diffuse[3] = {0.8f, 0.6f, 0.4f}, specular[3] = {0.5f, 0.5f, 0.5f}, ambient[3] = {0.2f, 0.2f, 0.2f},
+                emissive[3] = {0, 0, 0}, black[3] = {0, 0, 0};
+    const char* names[] = {"plain", "[0]m", "[1]m", "[2]m", "[3]m", "[4]m", "[5]m", "[9]m", "[x]m", "op1_m"};
+    void* textures[] = {alpha, opaque, nullptr};
+    char what[96];
+    for (const char* name : names)
+        for (void* tex : textures)
+            for (float opacity : {1.0f, 0.5f})
+                for (int twoSided = 0; twoSided < 2; ++twoSided)
+                    for (int alphaT = 0; alphaT < 2; ++alphaT) {
+                        std::snprintf(what, sizeof(what), "%s %s %g %d %d", name,
+                                      tex == alpha ? "alpha" : tex ? "opaque" : "-", opacity, twoSided, alphaT);
+                        void* m = ctor(::operator new(0xC0), nullptr, name, tex, diffuse, alphaT ? black : specular,
+                                       ambient, emissive, 8.0f, 0.5f, opacity, twoSided != 0, alphaT != 0);
+                        DumpMaterial(what, m, alpha, opaque);
+                        setTex(m, nullptr, tex == alpha ? opaque : alpha, 0, -1);
+                        DumpMaterial("  swapped", m, alpha, opaque);
+                        setTex(m, nullptr, alpha, 1, 0);
+                        DumpMaterial("  stage 1", m, alpha, opaque);
+                        setTex(m, nullptr, nullptr, 0, -1);
+                        DumpMaterial("  removed", m, alpha, opaque);
+                        setOpacity(m, nullptr, 0.3f);
+                        setTwoSided(m, nullptr, twoSided == 0);
+                        DumpMaterial("  changed", m, alpha, opaque);
+                        void* c = copy(::operator new(0xC0), nullptr, m);
+                        DumpMaterial("  copy", c, alpha, opaque);
+                    }
+}
+
 // One frame of the scene (inside Open / Close): time in ms; each character a bit further along.
 void DrawCharacterScene(CharacterScene& scene, void* viewport, float time, bool setTimes)
 {
@@ -588,6 +674,7 @@ int main(int argc, char** argv)
         else if (a == "--env") g_env = true;
         else if (a == "--shadow") g_shadow = true;
         else if (a == "--dynamic") g_dynamic = true;
+        else if (a == "--materials") g_materials = true;
         else if (a == "--blend" && i + 1 < argc) g_blend = float(std::atof(argv[++i]));
         else if (a == "--query") query = true;
         else if (a == "--static" && i + 1 < argc) staticMesh = argv[++i];
@@ -657,6 +744,7 @@ int main(int argc, char** argv)
     void* texDxt = MakeTexture("harness_dxt1", 8, 8, D3DX_SF_DXT1, dxt1, 16);
     std::printf("textures: checker surface_t %p, dxt1 surface_t %p\n", SurfaceOf(texChecker), SurfaceOf(texDxt));
     TestProcessVertices(render);
+    if (g_materials) TestMaterials();
     {
         auto* device = *static_cast<IDirect3DDevice7**>(render);
         device->EnumTextureFormats([](LPDDPIXELFORMAT pf, LPVOID) -> HRESULT {

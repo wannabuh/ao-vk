@@ -23,7 +23,12 @@ const Api& Get()
             get(a.addInt32, "?AddInt32@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDJ@Z") &&
             get(a.addString, "?AddString@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z") &&
             get(a.findString, "?FindString@Message_c@fun@@QBE?AW4MsgErr_e@12@PBDPAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@H@Z") &&
-            get(a.addObject, "?AddObject@ArchiveStream_c@fun@@QAE?AW4MsgErr_e@Message_c@2@PBDPBVSerializable_c@2@@Z");
+            get(a.addObject, "?AddObject@ArchiveStream_c@fun@@QAE?AW4MsgErr_e@Message_c@2@PBDPBVSerializable_c@2@@Z") &&
+            get(a.findInt32, "?FindInt32@Message_c@fun@@QBE?AW4MsgErr_e@12@PBDPAJH@Z") &&
+            get(a.findFloat, "?FindFloat@Message_c@fun@@QBE?AW4MsgErr_e@12@PBDPAMH@Z") &&
+            get(a.findRgb, "?FindRGB@Message_c@fun@@QBE?AW4MsgErr_e@12@PBDPAVRGB_t@@H@Z") &&
+            get(a.addFloat, "?AddFloat@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDM@Z") &&
+            get(a.addRgb, "?AddRGB@Message_c@fun@@QAE?AW4MsgErr_e@12@PBDABVRGB_t@@@Z");
         return a;
     }();
     return api;

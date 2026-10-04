@@ -83,6 +83,69 @@ struct String {
 };
 static_assert(sizeof(String) == 0x1C, "VS2010 std::string");
 
+// std::list<T> as VS2010 lays it out: a head node (allocated, linked to itself when empty), the size, the allocator.
+template <typename T>
+struct ListNode {
+    ListNode* next;
+    ListNode* prev;
+    T value;
+};
+template <typename T>
+struct List {
+    ListNode<T>* head;
+    uint32_t size;
+    uint32_t allocator;
+    void init()
+    {
+        head = static_cast<ListNode<T>*>(Allocate(sizeof(ListNode<T>)));
+        head->next = head->prev = head;
+        size = 0;
+    }
+    ListNode<T>* begin() const { return head->next; }
+    ListNode<T>* end() const { return head; }
+    void push_back(const T& v)                      // inserted before the head
+    {
+        auto* n = static_cast<ListNode<T>*>(Allocate(sizeof(ListNode<T>)));
+        n->next = head;
+        n->prev = head->prev;
+        std::memcpy(static_cast<void*>(&n->value), &v, sizeof(T));
+        ++size;
+        head->prev = n;
+        n->prev->next = n;
+    }
+    void erase(ListNode<T>* n)
+    {
+        n->prev->next = n->next;
+        n->next->prev = n->prev;
+        Free(n);
+        --size;
+    }
+    void clear()
+    {
+        ListNode<T>* n = head->next;
+        head->next = head->prev = head;
+        size = 0;
+        while (n != head) {
+            ListNode<T>* next = n->next;
+            Free(n);
+            n = next;
+        }
+    }
+    void destroy()
+    {
+        clear();
+        Free(head);
+        head = nullptr;
+    }
+    void assign(const List& other)                  // the other's elements, in order
+    {
+        if (&other == this) return;
+        clear();
+        for (ListNode<T>* n = other.begin(); n != other.end(); n = n->next) push_back(n->value);
+    }
+};
+static_assert(sizeof(List<int>) == 12, "VS2010 std::list");
+
 // A copy of a vtable (`slots` entries, with the RTTI locator before it) whose entries can be replaced; never freed.
 void** CloneVtable(const void* const* vtable, size_t slots);
 

@@ -178,3 +178,39 @@
 0x47633	replaced	proxy/native/texture.cpp	RTexture_t::GetHeight
 0x47693	replaced	proxy/native/texture.cpp	RTexture_t::GetDefault
 0x47730	replaced	proxy/native/texture.cpp	RTexture_t::GetTextureSize
+0x2F44E	replaced	proxy/native/material.cpp	RDeltaState::RDeltaState(name)
+0x2F539	replaced	proxy/native/material.cpp	RDeltaState::RDeltaState(archive) (FUN_1002f539)
+0x2F8A8	replaced	proxy/native/material.cpp	RDeltaState copy (FUN_1002f8a8)
+0x2F870	replaced	proxy/native/material.cpp	RDeltaState::Instantiate
+0x2F4C6	replaced	proxy/native/material.cpp	RDeltaState::~RDeltaState (FUN_1002f4c6)
+0x2F7B0	replaced	proxy/native/material.cpp	RDeltaState::SetRenderState
+0x2F7FB	replaced	proxy/native/material.cpp	RDeltaState::SetTextureStageState
+0x2F0AE	replaced	proxy/native/material.cpp	RDeltaState::SetTexture
+0x2F0A0	replaced	proxy/native/material.cpp	RDeltaState texture (FUN_1002f0a0)
+0x2F356	replaced	proxy/native/material.cpp	RDeltaState render state (FUN_1002f356)
+0x2F412	replaced	proxy/native/material.cpp	RDeltaState remove stage state (FUN_1002f412)
+0x2F3DF	replaced	proxy/native/material.cpp	RDeltaState remove render state (FUN_1002f3df)
+0x2F0F7	replaced	proxy/native/material.cpp	RDeltaState clear texture (FUN_1002f0f7)
+0x2F11C	replaced	proxy/native/material.cpp	RDeltaState count (FUN_1002f11c)
+0x2F13A	replaced	proxy/native/material.cpp	RDeltaState::IsEmpty
+0x2F145	replaced	proxy/native/material.cpp	RDeltaState::Archive
+0x41043	replaced	proxy/native/material.cpp	RMaterial_t::RMaterial_t
+0x41146	replaced	proxy/native/material.cpp	RMaterial_t::RMaterial_t(copy)
+0x4132D	replaced	proxy/native/material.cpp	RMaterial_t::RMaterial_t(archive) (FUN_1004132d)
+0x414A7	replaced	proxy/native/material.cpp	RMaterial_t::Instantiate
+0x408CB	replaced	proxy/native/material.cpp	RMaterial_t::~RMaterial_t (FUN_100408cb)
+0x40916	replaced	proxy/native/material.cpp	RMaterial_t::Archive
+0x409C6	replaced	proxy/native/material.cpp	RMaterial_t::InitD3DMaterial
+0x40A65	replaced	proxy/native/material.cpp	RMaterial_t::SetDeltaState
+0x40A8F	replaced	proxy/native/material.cpp	RMaterial_t::UseAlphaAsTransparency
+0x40ADF	replaced	proxy/native/material.cpp	RMaterial_t::GetTexture
+0x40AFF	replaced	proxy/native/material.cpp	RMaterial_t::IsTwoSided
+0x40BEC	replaced	proxy/native/material.cpp	RMaterial_t::SetTexture
+0x40E5F	replaced	proxy/native/material.cpp	RMaterial_t::SetEnvTexture
+0x40F61	replaced	proxy/native/material.cpp	RMaterial_t::SetOpacity
+0x40FE5	replaced	proxy/native/material.cpp	RMaterial_t::SetTwoSided
+0x40FF8	replaced	proxy/native/material.cpp	RMaterial_t::UpdateSpecular
+0x11AAF	replaced	proxy/native/material.cpp	RMaterial_t::IsTransparent
+0x2EE70	replaced	proxy/native/material.cpp	DefaultMaterial_t::DefaultMaterial_t
+0x2EEDE	replaced	proxy/native/material.cpp	DefaultMaterial_t(archive) (FUN_1002eede)
+0x2EF5F	replaced	proxy/native/material.cpp	DefaultMaterial_t::Instantiate

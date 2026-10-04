@@ -19,6 +19,11 @@ struct Api {
     int32_t(__fastcall* addString)(void* message, void*, const char* name, const vc10::String* value) = nullptr;
     int32_t(__fastcall* findString)(void* message, void*, const char* name, vc10::String* out, int32_t index) = nullptr;
     int32_t(__fastcall* addObject)(void* stream, void*, const char* name, const void* object) = nullptr;
+    int32_t(__fastcall* findInt32)(const void* message, void*, const char* name, int32_t* out, int32_t index) = nullptr;
+    int32_t(__fastcall* findFloat)(const void* message, void*, const char* name, float* out, int32_t index) = nullptr;
+    int32_t(__fastcall* findRgb)(const void* message, void*, const char* name, float* out, int32_t index) = nullptr;
+    int32_t(__fastcall* addFloat)(void* message, void*, const char* name, float value) = nullptr;
+    int32_t(__fastcall* addRgb)(void* message, void*, const char* name, const float* rgb) = nullptr;
     bool complete = false;
 };
 
