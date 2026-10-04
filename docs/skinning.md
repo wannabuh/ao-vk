@@ -46,7 +46,7 @@ normal only.
 For every group, piece and vertex: `VertexBuffer_c::Lock(0, 0)`, then
 
 - rest pose: position = bind, normal = normal;
-- weight <= 0.99 (`_DAT_10095db8`, a double): position = w * (A * posA) + (1 - w) * (B * posB), normal = rot(A) * normal;
+- weight <= 0.99f (`_DAT_10095db8`, the double 0.9900000095): position = w * (A * posA) + (1 - w) * (B * posB), normal = rot(A) * normal;
   vertices whose bones are out of range are left as they were;
 - else (one bone): position = A * posA, normal = rot(A) * normal;
 

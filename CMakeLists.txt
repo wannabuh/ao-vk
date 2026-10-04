@@ -5,13 +5,18 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")   # static CRT: no extra runtime DLL next to the game
 
+# Native Randy: our implementations of randy31_orig's code (proxy/native, docs/native.md), shared with the tests.
+add_library(randy_native STATIC proxy/native/hook.cpp proxy/native/native.cpp proxy/native/skin.cpp)
+target_include_directories(randy_native PUBLIC proxy)
+target_compile_definitions(randy_native PRIVATE _CRT_SECURE_NO_WARNINGS)
+
 # Drop-in randy31.dll. Exports not implemented here forward to the original, renamed randy31_orig.dll.
 add_library(randy31 SHARED proxy/dllmain.cpp proxy/trace.cpp proxy/ddraw/com_trace.cpp proxy/ddraw/com_trace_detail.cpp
             proxy/ddraw/rvk_ddraw.cpp proxy/ddraw/rvk_surface.cpp proxy/ddraw/rvk_device.cpp proxy/ddraw/rvk_settings.cpp proxy/ddraw/rvk_particles.cpp
             proxy/ddraw/rvk_materials.cpp proxy/randy31.def)
 target_include_directories(randy31 PRIVATE proxy third_party)
 target_compile_definitions(randy31 PRIVATE _CRT_SECURE_NO_WARNINGS)
-target_link_libraries(randy31 PRIVATE rvk user32)
+target_link_libraries(randy31 PRIVATE randy_native rvk user32)
 set_target_properties(randy31 PROPERTIES OUTPUT_NAME randy31 PREFIX "")
 target_link_options(randy31 PRIVATE "/MAP:${CMAKE_CURRENT_BINARY_DIR}/randy31.map")   # for profiling: function addresses
 
@@ -53,6 +58,10 @@ target_link_libraries(rvk PUBLIC user32 synchronization)
 
 add_executable(rvk_demo tests/rvk_demo.cpp)
 target_link_libraries(rvk_demo PRIVATE rvk)
+
+# Native replacements against the original code they replace (run with tools/native-check.sh).
+add_executable(native_check tests/native_check.cpp)
+target_link_libraries(native_check PRIVATE randy_native)
 
 # Boots the real randy31 renderer outside the game (run with tools/randy-harness.sh).
 add_executable(randy_harness tests/randy_harness.cpp)

@@ -398,10 +398,11 @@ const std::shared_ptr<const std::vector<uint8_t>>* RVertexBuffer::StaticShared()
     return &shared;
 }
 
-HRESULT RVertexBuffer::DoLock(DWORD, LPVOID* out, LPDWORD size)
+HRESULT RVertexBuffer::DoLock(DWORD flags, LPVOID* out, LPDWORD size)
 {
     if (!out) return DDERR_INVALIDPARAMS;
-    Written();
+    if (!(flags & DDLOCK_READONLY))              // reading (picking, native verify) leaves it unchanged
+        Written();
     *out = Bytes();
     if (size) *size = DWORD(buf->size());
     return D3D_OK;

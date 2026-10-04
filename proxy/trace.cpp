@@ -12,6 +12,9 @@
 // Output: %RANDYVK_LOG%, else randy-vk.log in the current directory (the client folder).
 
 #include "ddraw/com_trace.h"
+#include "ddraw/rvk_backend.h"
+#include "ddraw/rvk_settings.h"
+#include "native/native.h"
 
 #include <windows.h>
 
@@ -262,8 +265,12 @@ void Init()
     char frame[16] = "";
     if (GetEnvironmentVariableA("RANDYVK_CAPTURE_FRAME", frame, sizeof(frame)))
         g_captureFrame = unsigned(std::atoi(frame));
-    if (g_orig)
+    if (g_orig) {
         rvkproxy::InstallDDrawHooks(g_orig);
+        rnative::SetLog(&rvkproxy::RvkLog);
+        rnative::SetIniPath(rvk_settings::IniPath());
+        rnative::Install(g_orig);
+    }
 }
 
 }  // namespace
