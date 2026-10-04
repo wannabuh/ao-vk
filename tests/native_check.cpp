@@ -622,6 +622,89 @@ void CheckAttractors()
     Check(bad == 0, "attractor / bone lookups");
 }
 
+// Blends (CATAnimBlend_t, made by the original's constructor) of keyframe animations with per-bone layer masks, and a
+// blend of a blend: the original hierarchy through their vtables against ours.
+struct FakeKeyframes {
+    TrackSet tracks;
+    std::vector<uint8_t> object, mask;
+};
+
+void MakeKeyframes(FakeKeyframes& k, int bones, float time, float radius)
+{
+    k.tracks = MakeTracks(bones);
+    At<float>(k.tracks.data.data(), 0x30) = radius;
+    k.mask.resize(bones);
+    for (auto& m : k.mask) m = Rand(0, 1) < 0.7f ? 1 : 0;
+    k.object.assign(0x60, 0);
+    At<uintptr_t>(k.object.data(), 0) = reinterpret_cast<uintptr_t>(g_orig) + 0x95BA4;
+    At<void*>(k.object.data(), 0x4C) = k.tracks.data.data();
+    At<float>(k.object.data(), 0x50) = time;
+    At<int32_t>(k.object.data(), 0x58) = bones;
+    At<uint8_t*>(k.object.data(), 0x5C) = k.mask.data();
+    At<int32_t>(k.object.data(), 0x2C) = int32_t(Rand(0, 100));
+}
+
+void CheckBlends()
+{
+    using BlendCtorFn = void*(__fastcall*)(void* self, void*, void* a, void* b, float blend);
+    auto blendCtor = reinterpret_cast<BlendCtorFn>(GetProcAddress(g_orig, "??0CATAnimBlend_t@@QAE@PAVCATAnim_t@@0M@Z"));
+    using HierarchyFn = void(__fastcall*)(void* render, void*, float* parent, int32_t bone, float scale);
+    auto original = reinterpret_cast<HierarchyFn>(reinterpret_cast<uint8_t*>(g_orig) + 0x540A5);
+    using RadiusFn = float(__fastcall*)(void*);
+    using VersionFn = int32_t(__fastcall*)(void*);
+    anim::SetKeyframeVtable(reinterpret_cast<uintptr_t>(g_orig) + 0x95BA4);
+    anim::SetBlendVtable(reinterpret_cast<uintptr_t>(g_orig) + 0x95B40);
+    size_t checked = 0, bad = 0;
+    float worst = 0.0f;
+    for (int round = 0; round < 6; ++round) {
+        const int bones = 40;
+        FakeHierarchy h;
+        BuildHierarchy(h, bones, Rand(0, 2000));
+        static FakeKeyframes k[3];                   // kept: the blends hold references
+        for (int i = 0; i < 3; ++i) MakeKeyframes(k[i], bones, Rand(0, 2000), Rand(0.5f, 3.0f));
+        void* inner = blendCtor(rnative::vc10::Allocate(0x100), nullptr, k[0].object.data(), k[1].object.data(),
+                                Rand(0, 1));
+        void* blend = round % 2 ? blendCtor(rnative::vc10::Allocate(0x100), nullptr, inner, k[2].object.data(), Rand(0, 1))
+                                : inner;
+        At<void*>(h.render.data(), cat::kRenderAnim) = blend;
+        float identity[12] = {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0};
+        original(h.render.data(), nullptr, identity, 0, 1.0f);
+        std::vector<Bone> theirs = h.out;
+        std::fill(h.out.begin(), h.out.end(), Bone{});
+        anim::Hierarchy(h.render.data(), identity, 0, 1.0f);
+        for (int b = 0; b < bones; ++b) {
+            bool same = true;
+            for (int i = 0; i < 12; ++i) same &= Near(h.out[b].m[i], theirs[b].m[i], &worst);
+            ++checked;
+            if (!same && ++bad <= 3)
+                std::printf("  blend round %d bone %d: ours t (%g %g %g) original (%g %g %g)\n", round, b, h.out[b].m[9],
+                            h.out[b].m[10], h.out[b].m[11], theirs[b].m[9], theirs[b].m[10], theirs[b].m[11]);
+        }
+        void** vtable = *static_cast<void***>(blend);
+        float ro = reinterpret_cast<RadiusFn>(vtable[7])(blend), ra = anim::Radius(blend);
+        // The version slot remembers the inner versions (in the blends): from the same state, the same answer and
+        // the same state after; then once more after an inner animation changed.
+        for (int step = 0; step < 2; ++step) {
+            uint8_t before[2][0x70], after[2][0x70];
+            void* objects[2] = {blend, inner};
+            for (int i = 0; i < 2; ++i) std::memcpy(before[i], objects[i], 0x70);
+            int32_t vo = reinterpret_cast<VersionFn>(vtable[8])(blend);
+            for (int i = 0; i < 2; ++i) std::memcpy(after[i], objects[i], 0x70);
+            for (int i = 1; i >= 0; --i) std::memcpy(objects[i], before[i], 0x70);
+            int32_t va = anim::Version(blend);
+            bool same = va == vo;
+            for (int i = 0; i < 2; ++i) same &= std::memcmp(after[i], objects[i], 0x70) == 0;
+            ++checked;
+            if (!same && ++bad <= 6) std::printf("  blend round %d version: ours %d original %d\n", round, va, vo);
+            At<int32_t>(k[step * 2].object.data(), 0x2C) += 3;
+        }
+        ++checked;
+        if (ro != ra && ++bad <= 6) std::printf("  blend round %d radius: ours %g original %g\n", round, ra, ro);
+    }
+    std::printf("blends: %zu bone matrices / radii, %zu differ (largest relative error %.2g)\n", checked, bad, worst);
+    Check(bad == 0, "animation blends");
+}
+
 double Seconds(std::chrono::steady_clock::time_point since)
 {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - since).count();
@@ -674,6 +757,7 @@ int main(int argc, char** argv)
     CheckBounds();
     CheckSampling();
     CheckHierarchy();
+    CheckBlends();
     CheckMath();
     CheckAttractors();
     Time();

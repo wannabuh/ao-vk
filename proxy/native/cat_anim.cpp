@@ -110,7 +110,138 @@ using Controller1Fn = void(__cdecl*)(void* render, float* parent, float* q, floa
 using Controller2Fn = void(__cdecl*)(float* out, void* render, float* parent, float* q, float* position, void* user);
 
 uintptr_t g_keyframeVtable;                         // CATKeyframeAnim_t's: sampled here directly
+uintptr_t g_blendVtable;                            // CATAnimBlend_t's: blended here
 void __fastcall HierarchyHook(void* render, void*, float* parent, int32_t bone, float scale);
+
+// CATKeyframeAnim_t: +0x4C its data (+0x30 radius), +0x50 its time, +0x2C its change counter.
+// CATAnimBlend_t: +0x50 / +0x58 the two animations, +0x4C / +0x54 their last versions, +0x5C bone count, +0x60 per
+// bone which of them it takes (1 the first, 2 the second, 3 both blended, else whichever there is), +0x6C the blend.
+constexpr uint32_t kBlendFirst = 0x50, kBlendSecond = 0x58, kBlendBones = 0x5C, kBlendMasks = 0x60, kBlend = 0x6C;
+
+bool IsKeyframe(const void* anim) { return *static_cast<const uintptr_t*>(anim) == g_keyframeVtable; }
+bool IsBlend(const void* anim) { return *static_cast<const uintptr_t*>(anim) == g_blendVtable; }
+void** Vtable(void* anim) { return *static_cast<void***>(anim); }
+
+void __fastcall BlendRotation(uint8_t* blend, void*, float* out, int32_t bone);
+void __fastcall BlendPosition(uint8_t* blend, void*, float* out, int32_t bone);
+
+void Rotation(void* anim, int32_t bone, float* out)                 // CATAnim_t slot +0x14
+{
+    if (IsKeyframe(anim))
+        SampleRotation(At<const Track*>(At<const void*>(anim, 0x4C), kDataTracks)[bone], At<float>(anim, 0x50), out);
+    else if (IsBlend(anim))
+        BlendRotation(static_cast<uint8_t*>(anim), nullptr, out, bone);
+    else
+        reinterpret_cast<AnimGetFn>(Vtable(anim)[0x14 / 4])(anim, nullptr, out, bone);
+}
+
+void Position(void* anim, int32_t bone, float* out)                 // CATAnim_t slot +0x18
+{
+    if (IsKeyframe(anim))
+        SamplePosition(At<const Track*>(At<const void*>(anim, 0x4C), kDataTracks)[bone], At<float>(anim, 0x50), out);
+    else if (IsBlend(anim))
+        BlendPosition(static_cast<uint8_t*>(anim), nullptr, out, bone);
+    else
+        reinterpret_cast<AnimGetFn>(Vtable(anim)[0x18 / 4])(anim, nullptr, out, bone);
+}
+
+// CATAnimBlend_t slot +0x14 (FUN_10050586).
+void __fastcall BlendRotation(uint8_t* blend, void*, float* out, int32_t bone)
+{
+    if (At<int32_t>(blend, kBlendBones) <= bone) return;
+    void* first = At<void*>(blend, kBlendFirst);
+    void* second = At<void*>(blend, kBlendSecond);
+    switch (At<int32_t*>(blend, kBlendMasks)[bone]) {
+    case 1:
+        if (first) Rotation(first, bone, out);
+        return;
+    case 2:
+        if (second) Rotation(second, bone, out);
+        return;
+    case 3: {
+        float a[4] = {0.0f, 0.0f, 0.0f, 1.0f}, b[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        if (first) Rotation(first, bone, a);
+        if (second) Rotation(second, bone, b);
+        Slerp(a, b, At<float>(blend, kBlend), out);
+        return;
+    }
+    default:
+        if (first) Rotation(first, bone, out);
+        else if (second) Rotation(second, bone, out);
+    }
+}
+
+// CATAnimBlend_t slot +0x18 (FUN_1005063c).
+void __fastcall BlendPosition(uint8_t* blend, void*, float* out, int32_t bone)
+{
+    if (At<int32_t>(blend, kBlendBones) <= bone) return;
+    void* first = At<void*>(blend, kBlendFirst);
+    void* second = At<void*>(blend, kBlendSecond);
+    switch (At<int32_t*>(blend, kBlendMasks)[bone]) {
+    case 1:
+        if (first) Position(first, bone, out);
+        return;
+    case 2:
+        if (second) Position(second, bone, out);
+        return;
+    case 3: {
+        float a[3] = {0.0f, 0.0f, 0.0f}, b[3] = {0.0f, 0.0f, 0.0f};
+        if (first) Position(first, bone, a);
+        if (second) Position(second, bone, b);
+        const float t = At<float>(blend, kBlend), u = 1.0f - t;
+        out[0] = t * b[0] + a[0] * u;
+        out[1] = t * b[1] + a[1] * u;
+        out[2] = a[2] * u + b[2] * t;
+        return;
+    }
+    default:
+        if (first) Position(first, bone, out);
+        else if (second) Position(second, bone, out);
+        else out[0] = out[1] = out[2] = 0.0f;
+    }
+}
+
+float __fastcall BlendRadius(uint8_t* blend);
+int32_t __fastcall BlendVersion(uint8_t* blend);
+
+float RadiusOf(void* anim)                                          // CATAnim_t slot +0x1C
+{
+    if (IsKeyframe(anim)) return At<float>(At<const void*>(anim, 0x4C), 0x30);
+    if (IsBlend(anim)) return BlendRadius(static_cast<uint8_t*>(anim));
+    return reinterpret_cast<float(__fastcall*)(void*)>(Vtable(anim)[0x1C / 4])(anim);
+}
+
+int32_t VersionOf(void* anim)                                       // CATAnim_t slot +0x20
+{
+    if (IsKeyframe(anim)) return At<int32_t>(anim, 0x2C);
+    if (IsBlend(anim)) return BlendVersion(static_cast<uint8_t*>(anim));
+    return reinterpret_cast<int32_t(__fastcall*)(void*)>(Vtable(anim)[0x20 / 4])(anim);
+}
+
+// CATAnimBlend_t slot +0x1C (FUN_10050529): the larger of the two.
+float __fastcall BlendRadius(uint8_t* blend)
+{
+    void* first = At<void*>(blend, kBlendFirst);
+    void* second = At<void*>(blend, kBlendSecond);
+    if (first && second) {
+        const float a = RadiusOf(first), b = RadiusOf(second);
+        return b < a ? a : b;
+    }
+    return first ? RadiusOf(first) : second ? RadiusOf(second) : 0.0f;
+}
+
+// CATAnimBlend_t slot +0x20 (FUN_10050a5f): its own counter and the two animations' versions, now and last time.
+int32_t __fastcall BlendVersion(uint8_t* blend)
+{
+    void* first = At<void*>(blend, kBlendFirst);
+    void* second = At<void*>(blend, kBlendSecond);
+    const int32_t a = first ? VersionOf(first) : 0;
+    const int32_t b = second ? VersionOf(second) : 0;
+    const int32_t lastA = At<int32_t>(blend, 0x4C), lastB = At<int32_t>(blend, 0x54);
+    At<int32_t>(blend, 0x4C) = a;
+    At<int32_t>(blend, 0x54) = b;
+    return At<int32_t>(blend, 0x2C) + lastA + lastB + b + a;
+}
 
 void __fastcall RotationHook(const void* data, void*, float* out, int32_t bone, float time)
 {
@@ -128,17 +259,8 @@ void __fastcall HierarchyHook(void* render, void*, float* parent, int32_t bone, 
 {
     float q[4] = {0.0f, 0.0f, 0.0f, 1.0f}, position[3] = {0.0f, 0.0f, 0.0f};
     void* animation = At<void*>(render, cat::kRenderAnim);
-    void** vtable = *static_cast<void***>(animation);
-    if (reinterpret_cast<uintptr_t>(vtable) == g_keyframeVtable) {
-        const void* data = At<const void*>(animation, 0x4C);
-        const float time = At<float>(animation, 0x50);
-        const Track& track = At<const Track*>(data, kDataTracks)[bone];
-        SampleRotation(track, time, q);
-        SamplePosition(track, time, position);
-    } else {
-        reinterpret_cast<AnimGetFn>(vtable[0x14 / 4])(animation, nullptr, q, bone);
-        reinterpret_cast<AnimGetFn>(vtable[0x18 / 4])(animation, nullptr, position, bone);
-    }
+    Rotation(animation, bone, q);
+    Position(animation, bone, position);
     float* out = At<float*>(render, cat::kRenderBones) + bone * 12;
     auto* controller = At<uint8_t*>(render, 0x20) + bone * 0x10;
     const int32_t type = At<int32_t>(controller, 0);
@@ -171,10 +293,25 @@ void SetKeyframeVtable(uintptr_t vtable)
     g_keyframeVtable = vtable;
 }
 
+void SetBlendVtable(uintptr_t vtable)
+{
+    g_blendVtable = vtable;
+}
+
+float Radius(void* anim)
+{
+    return RadiusOf(anim);
+}
+
+int32_t Version(void* anim)
+{
+    return VersionOf(anim);
+}
+
 namespace {
 
 constexpr uint32_t kRotationRva = 0x51D2A, kPositionRva = 0x51DF4, kHierarchyRva = 0x540A5;
-constexpr uint32_t kKeyframeVtableRva = 0x95BA4;
+constexpr uint32_t kKeyframeVtableRva = 0x95BA4, kBlendVtableRva = 0x95B40;
 constexpr uint8_t kRotationPrologue[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x10};    // sub esp, 10h
 constexpr uint8_t kPositionPrologue[] = {0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x0C};    // mov eax, [ebp+0Ch]
 constexpr uint8_t kHierarchyPrologue[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x48};   // sub esp, 48h
@@ -186,12 +323,20 @@ void Install(HMODULE orig)
     if (GetMode("Anim", Mode::Off) != Mode::On)
         return;
     g_keyframeVtable = reinterpret_cast<uintptr_t>(orig) + kKeyframeVtableRva;
+    g_blendVtable = reinterpret_cast<uintptr_t>(orig) + kBlendVtableRva;
     bool ok = HookEntry(orig, kRotationRva, kRotationPrologue, sizeof(kRotationPrologue),
                         reinterpret_cast<void*>(&RotationHook), "keyframe rotations (FUN_10051d2a)") &&
               HookEntry(orig, kPositionRva, kPositionPrologue, sizeof(kPositionPrologue),
                         reinterpret_cast<void*>(&PositionHook), "keyframe positions (FUN_10051df4)") &&
               HookEntry(orig, kHierarchyRva, kHierarchyPrologue, sizeof(kHierarchyPrologue),
-                        reinterpret_cast<void*>(&HierarchyHook), "bone hierarchy (FUN_100540a5)");
+                        reinterpret_cast<void*>(&HierarchyHook), "bone hierarchy (FUN_100540a5)") &&
+              HookSlot(orig, kBlendVtableRva, 5, 0x50586, reinterpret_cast<void*>(&BlendRotation),
+                       "CATAnimBlend_t rotations") &&
+              HookSlot(orig, kBlendVtableRva, 6, 0x5063C, reinterpret_cast<void*>(&BlendPosition),
+                       "CATAnimBlend_t positions") &&
+              HookSlot(orig, kBlendVtableRva, 7, 0x50529, reinterpret_cast<void*>(&BlendRadius), "CATAnimBlend_t radius") &&
+              HookSlot(orig, kBlendVtableRva, 8, 0x50A5F, reinterpret_cast<void*>(&BlendVersion),
+                       "CATAnimBlend_t version");
     Log("animation: %s", ok ? "on" : "partly installed (unknown client build)");
 }
 

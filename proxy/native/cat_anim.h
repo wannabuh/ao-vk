@@ -1,5 +1,6 @@
 // Character animation: replaces randy31_orig's keyframe sampling (FUN_10051d2a rotations, FUN_10051df4 positions,
-// FUN_10053d0b slerp) and the bone hierarchy (FUN_100540a5), docs/animation.md.
+// FUN_10053d0b slerp), animation blends (CATAnimBlend_t's sampling, radius, version) and the bone hierarchy
+// (FUN_100540a5), docs/animation.md.
 //
 // randy-vk.ini [Native] Anim: off (the original) / on (ours).
 #pragma once
@@ -36,5 +37,9 @@ void Install(HMODULE orig);
 // The hierarchy as installed (tests): needs Install's keyframe vtable or calls the animation's own functions.
 void Hierarchy(void* render, float* parent, int32_t bone, float scale);
 void SetKeyframeVtable(uintptr_t vtable);
+void SetBlendVtable(uintptr_t vtable);
+// An animation's slots +0x1C (bounding radius) and +0x20 (version), keyframes and blends natively.
+float Radius(void* anim);
+int32_t Version(void* anim);
 
 }  // namespace rnative::anim

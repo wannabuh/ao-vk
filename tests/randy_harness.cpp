@@ -268,6 +268,7 @@ float g_alpha = 1.0f;                                // --alpha A: the character
 int g_sfx;                                           // --sfx N: their effect type (1 special light, 2 pulse)
 bool g_env;                                          // --env: their materials get an environment map
 bool g_shadow;                                       // --shadow: the first one also drawn as a projected shadow
+float g_blend = -1.0f;                               // --blend F: each animated by a blend (F) of two keyframe animations
 
 bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath, int count, CharacterScene& scene)
 {
@@ -330,7 +331,17 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
         void* character = Export<FrameCtorFn>("??0RCATMesh_t@@QAE@PAVRRefFrame_t@@@Z")(
             ::operator new(0x438), nullptr, scene.root, nullptr);
         Export<PtrArgFn>("?SetMesh@CATRender_t@@QAEXPBVCATMesh_t@@@Z")(character, nullptr, mesh);
-        Export<PtrArgFn>("?SetAnim@CATRender_t@@QAEXPAVCATAnim_t@@@Z")(character, nullptr, anim);
+        void* second = nullptr;
+        if (g_blend >= 0.0f) {                         // CATAnimBlend_t of this and a second one (its own time), as DisplaySystem
+            second = Export<AnimCtorFn>("??0CATKeyframeAnim_t@@QAE@PBVCATKeyframeAnimData_t@@I@Z")(
+                ::operator new(0x60), nullptr, animSource, 0xFFFFFFFFu);
+            using BlendCtorFn = void*(__fastcall*)(void* self, void*, void* a, void* b, float blend);
+            void* blend = Export<BlendCtorFn>("??0CATAnimBlend_t@@QAE@PAVCATAnim_t@@0M@Z")(::operator new(0x70), nullptr,
+                                                                                           anim, second, g_blend);
+            Export<PtrArgFn>("?SetAnim@CATRender_t@@QAEXPAVCATAnim_t@@@Z")(character, nullptr, blend);
+        } else {
+            Export<PtrArgFn>("?SetAnim@CATRender_t@@QAEXPAVCATAnim_t@@@Z")(character, nullptr, anim);
+        }
         // Each of the mesh's materials gets the character's own copy, as DisplaySystem does (drawing uses those).
         for (int i = 0; i < materials; ++i) {
             void* material = createSubst(character, nullptr, i);
@@ -377,6 +388,7 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
         }
         scene.characters.push_back(character);
         scene.anims.push_back(anim);
+        if (second) scene.anims.push_back(second);
     }
     // The camera: close for one character, back and up for a crowd.
     float back = count == 1 ? 4.0f : 2.0f + 1.6f * float(columns);
@@ -574,6 +586,7 @@ int main(int argc, char** argv)
         else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);
         else if (a == "--env") g_env = true;
         else if (a == "--shadow") g_shadow = true;
+        else if (a == "--blend" && i + 1 < argc) g_blend = float(std::atof(argv[++i]));
         else if (a == "--query") query = true;
         else if (a == "--static" && i + 1 < argc) staticMesh = argv[++i];
         else if (a == "--statics" && i + 1 < argc) statics = std::max(1, std::atoi(argv[++i]));

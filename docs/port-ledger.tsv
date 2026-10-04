@@ -32,3 +32,7 @@
 0x56741	replaced	proxy/native/cat_query.cpp	RCATMesh_t::GetBoundingSpherePos
 0x577D3	replaced	proxy/native/cat_query.cpp	RCATMesh_t::ProcessAttractorChilds
 0x55EA2	dead	-	RCATMesh_t vtable slot 14: only called from FUN_1004c630, which nothing calls
+0x50586	replaced	proxy/native/cat_anim.cpp	CATAnimBlend_t rotations (vtable slot 5)
+0x5063C	replaced	proxy/native/cat_anim.cpp	CATAnimBlend_t positions (vtable slot 6)
+0x50529	replaced	proxy/native/cat_anim.cpp	CATAnimBlend_t radius (vtable slot 7)
+0x50A5F	replaced	proxy/native/cat_anim.cpp	CATAnimBlend_t version (vtable slot 8)

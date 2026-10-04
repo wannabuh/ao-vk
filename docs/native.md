@@ -25,7 +25,7 @@ from the decompiles (`re/`, not in the repository) and written down in `docs/`.
 | piece | original | `[Native]` | notes |
 | --- | --- | --- | --- |
 | character skinning | FUN_1005470d | `Skin` = off / cpu / on / verify | docs/skinning.md |
-| character animation | FUN_10051d2a, FUN_10051df4, FUN_100540a5 | `Anim` = off / on | docs/animation.md; same results (native_check), crowd's game thread -10% |
+| character animation | FUN_10051d2a, FUN_10051df4, FUN_100540a5, CATAnimBlend_t's sampling / radius / version | `Anim` = off / on | docs/animation.md; same results (native_check, blends of blends included; harness `--blend F` call log identical), crowd's game thread -10% |
 | character drawing | FUN_10056ed6 (+ FUN_10055dba) | `CatRender` = off / on | `proxy/native/cat_render.cpp`: materials, overrides, environment map, special light, pulsing glow; identical call log to the original in every path (randy_harness --alpha / --env / --sfx 1 / --sfx 2); also the projected shadow an RShadow draws (FUN_1005604b, vtable slot 20; `--shadow`) |
 | character upkeep | FUN_1005798b (Process), FUN_10055d52, FUN_10055c1c, FUN_10055a23 | `CatMesh` = off / on | `proxy/native/cat_mesh.cpp`: visibility, attachments, when bones and skinning are redone; identical call log |
 | character queries | HasAttractor, GetAttractor (FUN_10054df1), GetBoneMatrix (FUN_10054f4f), ProcessAttractorChilds, GetMaterialIndex, Get/Set/CreateSubstMaterial, SetSfxType, GetBoundingSphereRadius/Pos | `CatQuery` = off / on | `proxy/native/cat_query.cpp`, with the D3DX7 matrix / quaternion helpers in `proxy/native/xmath.h`: where weapons and effects attach, bones by name, per-character materials; same results as the original (native_check on random input, `randy_harness --query` on a real character) |
@@ -72,7 +72,7 @@ through `proxy/native/orig_api.gen.h` (tools/gen_orig_api.py), and lives in the 
   offline; prints the game thread's time per frame. AO_CLIENT=linux/testclient keeps the game's folder alone.
 - Harness checks of the character code: `--pick` (line tests), `--query` (attractors, bones, materials, sphere of
   the first character), `--shadow` (it also drawn as an RShadow's projected shadow), `--alpha A`, `--env`,
-  `--sfx N`, `--lights N`, `--static <file> [--statics N]`.
+  `--sfx N`, `--blend F` (animated by a CATAnimBlend_t of two keyframe animations), `--lights N`, `--static <file> [--statics N]`.
 - `tools/profile-harness.sh <harness args>`: perf profile of the harness by module and function
   (`tools/profile-report.py`; `--thread` for another thread than the busiest).
 
