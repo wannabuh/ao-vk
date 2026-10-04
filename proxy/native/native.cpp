@@ -19,6 +19,7 @@
 #include "native/cat_pick.h"
 #include "native/cat_data.h"
 #include "native/cat_anim_data.h"
+#include "native/bvolume.h"
 
 namespace rnative {
 
@@ -49,6 +50,7 @@ void Install(HMODULE orig)
     catpick::Install(orig);
     catdata::Install(orig);
     cat_anim_data::Install(orig);
+    bvolume::Install(orig);
 }
 
 }  // namespace rnative

@@ -555,3 +555,14 @@
 0x5050A	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t bone count (FUN_1005050a)
 0x50A9D	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t skeleton (FUN_10050a9d)
 0x50ABC	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t rest pose (FUN_10050abc)
+0x29A70	replaced	proxy/native/bvolume.cpp	BVolume_t extreme points (FUN_10029a70)
+0x29B7E	replaced	proxy/native/bvolume.cpp	BVolume_t sphere and box (FUN_10029b7e)
+0x299E0	replaced	proxy/native/bvolume.cpp	BVolume_t::BVolume_t
+0x17FEE	replaced	proxy/native/bvolume.cpp	BVolume_t::BVolume_t(points) (FUN_10017fee)
+0x29E51	replaced	proxy/native/bvolume.cpp	BVolume_t::Init
+0x29A13	replaced	proxy/native/bvolume.cpp	BVolume_t::BVolume_t(copy) (FUN_10029a13)
+0x29E82	replaced	proxy/native/bvolume.cpp	BVolume_t::BVolume_t(archive) (FUN_10029e82)
+0x29F97	replaced	proxy/native/bvolume.cpp	BVolume_t::Instantiate
+0x29F2D	replaced	proxy/native/bvolume.cpp	BVolume_t::Archive
+0x29E76	replaced	proxy/native/bvolume.cpp	BVolume_t::~BVolume_t
+0x12B1F	replaced	proxy/native/bvolume.cpp	BVolume_t deleting destructor (FUN_10012b1f)

@@ -352,6 +352,7 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
                 mix(a2 + 0x1C, 0x24);
             }
         }
+        if (const uint8_t* v = at(m, 0x5C)) mix(v + 8, 0x28);   // its bounding volume
         std::printf("meshdata %08x\n", h);
     }
     void* animSource = Export<DataCtorFn>("??0CATKeyframeAnimData_t@@QAE@PAVDataIO_t@fun@@@Z")(
