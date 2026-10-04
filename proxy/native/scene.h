@@ -46,4 +46,10 @@ VisualInfo Describe(const void* visual);
 void Install(HMODULE orig);
 bool Installed();
 
+// With the viewport layer native ([Native] Scene=on), scene.cpp hooks nothing: viewport.cpp's Render /
+// RenderRefraction / Process call these (no-ops while Visuals is off).
+void* EnterRender(void* viewport);                 // returns the previous viewport, for LeaveRender
+void LeaveRender(void* previous);
+void AfterProcess();
+
 }  // namespace rnative::scene

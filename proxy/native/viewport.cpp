@@ -1,6 +1,11 @@
-// RViewPort_t natively, first part (randy-vk.ini [Native] Scene=on): materials on the device, the viewport rectangle
-// and camera transforms, Open / Clear / Close of a frame, picking and projection helpers. Process / Render (the scene
-// walk and the render lists) are still the original's (wrapped by scene.cpp).
+// RViewPort_t natively (randy-vk.ini [Native] Scene=on): materials on the device, the viewport rectangle and camera
+// transforms, Open / Clear / Close of a frame, picking and projection helpers, and the frame itself: Process (the
+// camera, the scene's update, its lights onto the device) and Render / RenderRefraction (the render lists' visuals,
+// list by list, bucket by bucket). With Visuals on, scene.cpp learns which visual draws through these.
+//
+// Render lists (0x101CEDE8): 11 lists x 0x708 buckets of visuals, chained through RVisual_t +0xE8; filled while the
+// scene updates, emptied after a Render with type flag 4. Lights (0x1017D290): std::vector<RLight_t*>, filled while
+// the scene updates.
 //
 // RViewPort_t (0x178 bytes; DisplaySystem allocates them): +0x08 DeviceState, +0x0C RCamera_t, +0x10 the material
 // set, +0x18 a pixel's size at distance 1, +0x1C x, +0x20 y, +0x24 / +0x2C width / height (clamped to the target),
@@ -9,6 +14,7 @@
 // current, +0x164 the visual being drawn, +0x170 rectangle changed.
 #include "native/viewport.h"
 #include "native/orig_api.gen.h"
+#include "native/scene.h"
 #include "native/xmath.h"
 
 #include <cstring>
@@ -338,6 +344,157 @@ void __fastcall SetTarget(uint8_t* vp, void*, void* surface)
     Update(vp);
 }
 
+// ---- the frame ----
+
+constexpr uint32_t kRenderLists = 0x1CEDE8, kBucketsPerList = 0x708, kListBytes = 0x13560;
+constexpr uint32_t kLightsBegin = 0x17D290, kLightsEnd = 0x17D294;
+
+void SetCurrentList(int32_t list) { Field<int32_t>(Render(), 0x288) = list; }   // FUN_1002381a
+
+// Every visual in lists `listFrom` to `listTo`, buckets `from` to `to` (either direction), drawn through its vtable
+// `slot` (13 Render, 15 RenderRefraction); the visual being drawn kept at +0x164.
+void Walk(uint8_t* vp, int32_t listFrom, int32_t listTo, uint32_t from, uint32_t to, uint32_t slot)
+{
+    const int32_t lists = (listFrom < listTo ? listTo - listFrom : listFrom - listTo) + 1;
+    const uint32_t buckets = (from < to ? to - from : from - to) + 1;
+    const int32_t listStep = listFrom < listTo ? 1 : -1;
+    const int32_t bucketStep = from < to ? 1 : -1;
+    void** base = &Global<void*>(kRenderLists);
+    int32_t list = listFrom;
+    for (int32_t i = 0; i < lists; ++i, list += listStep) {
+        SetCurrentList(list);
+        void** bucket = base + list * int32_t(kBucketsPerList) + int32_t(from);
+        for (uint32_t j = 0; j < buckets; ++j, bucket += bucketStep) {
+            void* visual = *bucket;
+            while ((Field<void*>(vp, 0x164) = visual) != nullptr) {
+                reinterpret_cast<void(__fastcall*)(void*, void*, void*)>((*static_cast<void***>(visual))[slot])(visual,
+                                                                                                         nullptr, vp);
+                visual = Field<void*>(Field<void*>(vp, 0x164), 0xE8);
+            }
+        }
+    }
+}
+
+void DebuggerDraw(uint8_t* vp)                       // type flag 8
+{
+    void* debugger = orig::Debugger_t_Get();
+    Internal<void(__fastcall*)(void*, void*, void*)>(0x2C082)(debugger, nullptr, vp);
+}
+
+// After a pass (type flag 4): the lights off, the render lists emptied.
+void EndPass(uint8_t* vp)
+{
+    Global<uint8_t>(0xB7728) = 0;
+    if (Field<void*>(vp, 0xC))
+        for (void** l = Global<void**>(kLightsBegin); l != Global<void**>(kLightsEnd); ++l)
+            orig::RLight_t_Enable(*l, false);
+    std::memset(&Global<uint8_t>(kRenderLists), 0, kListBytes);
+}
+
+// Debugger mode 0x8000 (with 0x10000, set by Flip): a degenerate triangle drawn into render target 6 or 5 in turn,
+// with fixed states, to keep them in use.
+void DebugTargetTouch(uint8_t* vp)
+{
+    void* randy = Randy();
+    const bool even = (Field<uint32_t>(randy, 0x274) & 1) == 0;
+    if (!orig::Randy_t_SetRenderTarget(randy, vp, even ? 6 : 5)) return;
+    uint32_t& made = Global<uint32_t>(0x1CEDDC);
+    uint8_t& filled = Global<uint8_t>(even ? 0x1CED74 : 0x1CEDA8);
+    float* vertices = &Global<float>(even ? 0x1CED78 : 0x1CEDAC);   // 3 x {x, y, z, rhw}
+    const uint32_t bit = even ? 2 : 1;
+    if (!(made & bit)) {
+        made |= bit;
+        for (int v = 0; v < 3; ++v) vertices[v * 4] = vertices[v * 4 + 1] = vertices[v * 4 + 2] = 0.0f;
+    }
+    if (!filled) {
+        filled = 1;
+        for (int v = 0; v < 3; ++v) {
+            vertices[v * 4] = -1.0f;
+            vertices[v * 4 + 1] = -1.0f;
+            vertices[v * 4 + 2] = 0.1f;
+            vertices[v * 4 + 3] = 10.0f;
+        }
+    }
+    void* ds = Field<void*>(Randy(), 0x27C);
+    struct Saved {
+        uint32_t state, old;
+        bool set;
+    } saved[6];
+    const uint32_t states[6][2] = {{0x16, 1}, {0x17, 8}, {0x0E, 0}, {0x1B, 0}, {0x1C, 0}, {0x89, 0}};
+    for (int i = 0; i < 6; ++i) {
+        saved[i] = {states[i][0], Field<uint32_t>(ds, 0x4C8 + states[i][0] * 4), false};
+        saved[i].set = orig::DeviceState_SetRenderState(ds, int32_t(states[i][0]), states[i][1], 10);
+    }
+    void* dynamic = orig::DynamicVB_c_Get();
+    void* out = nullptr;
+    const uint32_t start = orig::DynamicVB_c_GetVertices(orig::DynamicVB_c_Get(), 4, 0x10, 3, &out);   // XYZRHW
+    std::memcpy(out, vertices, 0x30);
+    RealizeRenderStates(vp);
+    orig::render_t_RenderTriangleList_407(Render(), orig::DynamicVB_c_GetVB(dynamic, 4), start, 3, 0);
+    orig::Randy_t_SetRenderTarget(randy, vp, 0);
+    for (int i = 5; i >= 0; --i)
+        if (saved[i].set) orig::DeviceState_SetRenderState(ds, int32_t(saved[i].state), saved[i].old, 2);
+}
+
+void __fastcall RenderLists(uint8_t* vp, void*, int32_t listFrom, int32_t listTo, uint32_t type, uint32_t from,
+                            uint32_t to)
+{
+    void* previous = scene::EnterRender(vp);
+    if (Field<void*>(vp, 0xC)) {
+        Update(vp);
+        Walk(vp, listFrom, listTo, from, to, 13);
+        if (type & 8) DebuggerDraw(vp);
+    }
+    if (type & 4) {
+        EndPass(vp);
+        if ((*g_debuggerMode & 0x8000) && (*g_debuggerMode & 0x10000)) DebugTargetTouch(vp);
+        RealizeRenderStates(vp);
+    }
+    scene::LeaveRender(previous);
+}
+
+void __fastcall RenderRefraction(uint8_t* vp, void*, int32_t listFrom, int32_t listTo, uint32_t type, uint32_t from,
+                                 uint32_t to)
+{
+    void* previous = scene::EnterRender(vp);
+    if (Field<void*>(vp, 0xC)) {
+        Update(vp);                                 // FUN_1004b0c0
+        Walk(vp, listFrom, listTo, from, to, 15);
+        if (type & 8) DebuggerDraw(vp);
+    }
+    if (type & 4) {
+        EndPass(vp);
+        RealizeRenderStates(vp);
+    }
+    scene::LeaveRender(previous);
+}
+
+// The frame's scene update: camera transforms and frustum, the lights cleared, the scene processed (lights register
+// themselves), each light onto the device.
+void __fastcall Process(uint8_t* vp, void*, void* root)
+{
+    Field<float>(vp, 0x168) = 1000.0f;
+    Field<uint32_t>(vp, 0x16C) = 0;
+    Field<uint32_t>(Randy(), 0x288) &= 7;
+    void* camera = Field<void*>(vp, 0xC);
+    if (!camera) return;
+    orig::RCamera_t_GetViewMatrix(camera, g_viewMatrix);
+    orig::render_t_SetTransformMatrix(Render(), 2, g_viewMatrix);
+    Field<float>(vp, 0x18) =
+        (Field<float>(camera, 0xAC) - Field<float>(camera, 0xA4)) / ToFloat(Field<uint32_t>(vp, 0x24)) * 0.5f;
+    orig::RCamera_t_GetTransformationMatrix(camera, g_projectionMatrix);
+    orig::render_t_SetTransformMatrix(Render(), 3, g_projectionMatrix);
+    Internal<void(__fastcall*)(void*, void*, void*)>(0x2ADF7)(camera, nullptr, vp);   // its frustum
+    orig::RandyShadowlandsData_s_SetCameraMatrix(orig::RRefFrame_t_GetWorldMatrix(camera));
+    Global<void**>(kLightsEnd) = Global<void**>(kLightsBegin);   // FUN_1003ff5e: no lights yet
+    Global<uint32_t>(0x17D28C) = 0;
+    Global<void*>(0x1CEDE0) = nullptr;               // FUN_1004ccfa: the sun among them (none yet)
+    reinterpret_cast<void(__fastcall*)(void*)>((*static_cast<void***>(root))[8])(root);   // Process
+    for (void** l = Global<void**>(kLightsBegin); l != Global<void**>(kLightsEnd); ++l)
+        orig::render_t_SetLight(Render(), Field<uint32_t>(*l, 0x110), static_cast<uint8_t*>(*l) + 0xA4);
+    scene::AfterProcess();
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -378,6 +535,9 @@ void Install(HMODULE orig)
         {0x4BB4D, FN(Resize), "RViewPort_t::Resize"},
         {0x4BBCA, FN(Open), "RViewPort_t::Open"},
         {0x4BD1B, FN(TransformPointToScreenSpace), "RViewPort_t::TransformPointToScreenSpace"},
+        {0x4BF39, FN(Process), "RViewPort_t::Process"},
+        {0x4BFFF, FN(RenderLists), "RViewPort_t::Render"},
+        {0x4C4EA, FN(RenderRefraction), "RViewPort_t::RenderRefraction"},
     };
 #undef FN
     int installed = 0;

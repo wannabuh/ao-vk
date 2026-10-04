@@ -18,11 +18,19 @@ uint32_t g_renders;                                // Render calls so far (cache
 constexpr uint32_t kCurrentVisual = 0x164;         // RViewPort_t: the visual being rendered
 constexpr uint32_t kParent = 0x14;                 // RRefFrame_t: its parent frame
 
-void __fastcall RenderHook(void* viewport, void*, int listFrom, int listTo, int type, uint32_t from, uint32_t to)
+bool g_active;                                     // Visuals on (hooked here, or driven by viewport.cpp)
+
+void* Enter(void* viewport)
 {
     void* previous = g_viewport;
     g_viewport = viewport;
     ++g_renders;
+    return previous;
+}
+
+void __fastcall RenderHook(void* viewport, void*, int listFrom, int listTo, int type, uint32_t from, uint32_t to)
+{
+    void* previous = Enter(viewport);
     g_render(viewport, nullptr, listFrom, listTo, type, from, to);
     g_viewport = previous;
 }
@@ -30,9 +38,7 @@ void __fastcall RenderHook(void* viewport, void*, int listFrom, int listTo, int 
 void __fastcall RenderRefractionHook(void* viewport, void*, int listFrom, int listTo, int type, uint32_t from,
                                      uint32_t to)
 {
-    void* previous = g_viewport;
-    g_viewport = viewport;
-    ++g_renders;
+    void* previous = Enter(viewport);
     g_renderRefraction(viewport, nullptr, listFrom, listTo, type, from, to);
     g_viewport = previous;
 }
@@ -176,10 +182,17 @@ const void* const* g_lightsBegin;                  // randy31 0x1017D290: std::v
 constexpr uint32_t kLightListRva = 0x17D290;
 constexpr uint32_t kLightData = 0xA4;              // RLight_t: its D3DLIGHT7 (world space after Process)
 
+void Lights();
+
 void __fastcall ProcessHook(void* viewport, void*, void* root)
 {
-    ForgetPages();
     g_process(viewport, nullptr, root);
+    Lights();
+}
+
+void Lights()
+{
+    ForgetPages();
     if (!g_lightSink)
         return;
     static std::vector<SceneLight> lights;
@@ -235,13 +248,31 @@ VisualInfo Describe(const void* visual)
 
 bool Installed()
 {
-    return g_render != nullptr;
+    return g_active;
+}
+
+void* EnterRender(void* viewport) { return g_active ? Enter(viewport) : nullptr; }
+
+void LeaveRender(void* previous)
+{
+    if (g_active) g_viewport = previous;
+}
+
+void AfterProcess()
+{
+    if (g_active) Lights();
 }
 
 void Install(HMODULE orig)
 {
     if (GetMode("Visuals", Mode::Off) != Mode::On)
         return;
+    g_lightsBegin = reinterpret_cast<const void* const*>(reinterpret_cast<uint8_t*>(orig) + kLightListRva);
+    if (GetMode("Scene", Mode::Off) == Mode::On) {  // viewport.cpp's native Render / Process call in
+        g_active = true;
+        Log("visuals: on, lights from the scene (through the native viewport)");
+        return;
+    }
     // RViewPort_t::Render: mov eax, <handler> (absolute); call _EH_prolog (relative).
     static const uint8_t kRender[] = {0xB8, 0xBC, 0x78, 0x08, 0x10, 0xE8, 0xB7, 0xC7, 0x02, 0x00};
     static const size_t kRenderAbs[] = {1}, kRenderRel[] = {6};
@@ -262,10 +293,10 @@ void Install(HMODULE orig)
     HookFixups processFixups;
     processFixups.abs32 = kProcessAbs;
     processFixups.abs32Count = 1;
-    g_lightsBegin = reinterpret_cast<const void* const*>(reinterpret_cast<uint8_t*>(orig) + kLightListRva);
     g_process = reinterpret_cast<ProcessFn>(HookEntry(orig, 0x4BF39, kProcess, sizeof(kProcess),
                                                       reinterpret_cast<void*>(&ProcessHook), "RViewPort_t::Process",
                                                       processFixups));
+    g_active = g_render != nullptr;
     Log("visuals: %s%s", g_render && g_renderRefraction ? "on" : "not installed (unknown client build)",
         g_process ? ", lights from the scene" : "");
 }

@@ -8,9 +8,6 @@
 0x540A5	replaced	proxy/native/cat_anim.cpp	bone hierarchy
 0x56786	wrapped	proxy/native/cat_skin.cpp	RCATMesh_t::IsLineIntersecting (exact skinning first)
 0x5632D	wrapped	proxy/native/cat_skin.cpp	RCATMesh_t line test (vtable slot 12)
-0x4BFFF	wrapped	proxy/native/scene.cpp	RViewPort_t::Render (current viewport)
-0x4C4EA	wrapped	proxy/native/scene.cpp	RViewPort_t::RenderRefraction
-0x4BF39	wrapped	proxy/native/scene.cpp	RViewPort_t::Process (lights after the scene update)
 0x56ED6	replaced	proxy/native/cat_render.cpp	RCATMesh_t render (RVisual_t vtable slot 13)
 0x55D52	replaced	proxy/native/cat_mesh.cpp	RCATMesh_t bones update
 0x55C1C	replaced	proxy/native/cat_mesh.cpp	RCATMesh_t skinning update
@@ -236,3 +233,6 @@
 0x4BB4D	replaced	proxy/native/viewport.cpp	RViewPort_t::Resize
 0x4BBCA	replaced	proxy/native/viewport.cpp	RViewPort_t::Open
 0x4BD1B	replaced	proxy/native/viewport.cpp	RViewPort_t::TransformPointToScreenSpace
+0x4BF39	replaced	proxy/native/viewport.cpp	RViewPort_t::Process
+0x4BFFF	replaced	proxy/native/viewport.cpp	RViewPort_t::Render
+0x4C4EA	replaced	proxy/native/viewport.cpp	RViewPort_t::RenderRefraction

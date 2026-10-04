@@ -645,10 +645,22 @@ void DrawCharacterScene(CharacterScene& scene, void* viewport, float time, bool 
     if (g_shadow) DrawShadow(scene, viewport);
 }
 
+// A crash ends the harness with a line on its output instead of Wine's crash dialog on the desktop.
+LONG WINAPI Crashed(EXCEPTION_POINTERS* e)
+{
+    std::printf("harness crashed: exception %08lx at %p\n", (unsigned long)e->ExceptionRecord->ExceptionCode,
+                e->ExceptionRecord->ExceptionAddress);
+    std::fflush(stdout);
+    TerminateProcess(GetCurrentProcess(), 3);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
 {
+    SetUnhandledExceptionFilter(&Crashed);
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
     int frames = 3;
     std::string shot = "randy_harness.bmp";
     std::string characterMesh, characterAnim;
