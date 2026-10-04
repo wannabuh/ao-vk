@@ -476,3 +476,47 @@
 0x58382	replaced	proxy/native/cat_pick.cpp	distance (FUN_10058382)
 0x56786	replaced	proxy/native/cat_pick.cpp	RCATMesh_t::IsLineIntersecting
 0x5632D	replaced	proxy/native/cat_pick.cpp	RCATMesh_t ray test (FUN_1005632d)
+0x52D75	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t::CATTriPolyList_t
+0x52B91	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t::~CATTriPolyList_t
+0x11B40	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t::operator=
+0x11B57	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t::GetNeighbour
+0x11B70	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t::SetNeighbour
+0x11D2B	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t::GetTriVertex
+0x52B0F	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t::FindTriangleIndex
+0x52B42	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t::FindVertexIndex
+0x52B77	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t::GetVertexIndex
+0x11C58	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t array deleting (FUN_10011c58)
+0x11CA2	replaced	proxy/native/cat_data.cpp	CATGroup_t pieces resize (FUN_10011ca2)
+0x53A87	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t vertices resize (FUN_10053a87)
+0x53A1C	replaced	proxy/native/cat_data.cpp	CATTriPolyList_t indices resize (FUN_10053a1c)
+0x52816	replaced	proxy/native/cat_data.cpp	int array resize (FUN_10052816)
+0x11DA1	replaced	proxy/native/cat_data.cpp	collision spheres resize (FUN_10011da1)
+0x11FB9	replaced	proxy/native/cat_data.cpp	CATAttractor_t (0x10011fb9)
+0x178FE	replaced	proxy/native/cat_data.cpp	CATAttractor_t destructor (FUN_100178fe)
+0x12048	replaced	proxy/native/cat_data.cpp	CATAttractor_t array deleting (FUN_10012048)
+0x12096	replaced	proxy/native/cat_data.cpp	CATGroup_t attractors resize (FUN_10012096)
+0x121DB	replaced	proxy/native/cat_data.cpp	CATGroup_t::CATGroup_t
+0x12234	replaced	proxy/native/cat_data.cpp	CATGroup_t::~CATGroup_t
+0x1228D	replaced	proxy/native/cat_data.cpp	CATGroup_t::CATGroup_t(copy)
+0x122C9	replaced	proxy/native/cat_data.cpp	CATGroup_t::operator=
+0x11D3F	replaced	proxy/native/cat_data.cpp	CATGroup_t::GetColSphere
+0x11D4F	replaced	proxy/native/cat_data.cpp	CATGroup_t::GetAttractor
+0x11D63	replaced	proxy/native/cat_data.cpp	CATGroup_t::GetTriPolyList
+0x52BEE	replaced	proxy/native/cat_data.cpp	CATGroup_t::GetTotalVertexCount
+0x52C06	replaced	proxy/native/cat_data.cpp	CATGroup_t::GetTotalTriangleCount
+0x52C30	replaced	proxy/native/cat_data.cpp	CATGroup_t::GetActiveVertexCount
+0x52C48	replaced	proxy/native/cat_data.cpp	CATGroup_t::GetActiveTriangleCount
+0x53C0E	replaced	proxy/native/cat_data.cpp	CATGroup_t array deleting (FUN_10053c0e)
+0x53C67	replaced	proxy/native/cat_data.cpp	CATMesh_t groups resize (FUN_10053c67)
+0x53AEA	replaced	proxy/native/cat_data.cpp	CATMesh_t bone (FUN_10053aea)
+0x53B17	replaced	proxy/native/cat_data.cpp	CATMesh_t bone destructor (FUN_10053b17)
+0x53B30	replaced	proxy/native/cat_data.cpp	CATMesh_t bones deleting (FUN_10053b30)
+0x53B89	replaced	proxy/native/cat_data.cpp	CATMesh_t bones resize (FUN_10053b89)
+0x52FF8	replaced	proxy/native/cat_data.cpp	CATMesh_t::CATMesh_t (the loader)
+0x52E15	replaced	proxy/native/cat_data.cpp	CATMesh_t::~CATMesh_t (FUN_10052e15)
+0x53CEC	replaced	proxy/native/cat_data.cpp	CATMesh_t deleting destructor (FUN_10053cec)
+0x52C99	replaced	proxy/native/cat_data.cpp	CATMesh_t::SetMaterial
+0x52CDD	replaced	proxy/native/cat_data.cpp	CATMesh_t::GetTotalVertexCount
+0x52D29	replaced	proxy/native/cat_data.cpp	CATMesh_t active vertices (FUN_10052d29)
+0x52D4F	replaced	proxy/native/cat_data.cpp	CATMesh_t active triangles (FUN_10052d4f)
+0x52F16	replaced	proxy/native/cat_data.cpp	CATMesh_t::CalcBoundingVolume

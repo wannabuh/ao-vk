@@ -309,6 +309,51 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
     static const void* noTextures[3] = {};                  // std::vector<std::string>: empty
     void* mesh = Export<MeshCtorFn>("??0CATMesh_t@@QAE@PAVDataIO_t@fun@@ABV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z")(
         ::operator new(0x64), nullptr, meshIo, noTextures);
+    {                                                // what the loader made, as one checksum
+        const uint8_t* m = static_cast<const uint8_t*>(mesh);
+        uint32_t h = 2166136261u;
+        auto mix = [&](const void* p, size_t n) {
+            for (size_t i = 0; i < n; ++i) h = (h ^ static_cast<const uint8_t*>(p)[i]) * 16777619u;
+        };
+        auto at = [&](const uint8_t* o, int off) { return *reinterpret_cast<const uint8_t* const*>(o + off); };
+        auto num = [&](const uint8_t* o, int off) { return *reinterpret_cast<const int*>(o + off); };
+        auto str = [&](const uint8_t* o) {
+            const unsigned cap = *reinterpret_cast<const unsigned*>(o + 0x14);
+            const char* c = cap < 16 ? reinterpret_cast<const char*>(o) : *reinterpret_cast<const char* const*>(o);
+            mix(c, *reinterpret_cast<const unsigned*>(o + 0x10));
+        };
+        mix(m + 0x2C, 12);
+        mix(m + 0x58, 4);
+        for (int i = 0; i < num(m, 0x38); ++i)          // the materials' power (+0x60)
+            mix(reinterpret_cast<const uint8_t* const*>(at(m, 0x3C))[i] + 0x60, 4);
+        mix(at(m, 0x54), size_t(num(m, 0x50)) * 0x14);
+        for (int i = 0; i < num(m, 0x40); ++i) {
+            const uint8_t* b = at(m, 0x44) + i * 0x28;
+            str(b);
+            mix(b + 0x1C, 8);
+            mix(at(b, 0x24), size_t(num(b, 0x20)) * 4);
+        }
+        for (int g = 0; g < num(m, 0x48); ++g) {
+            const uint8_t* gr = at(m, 0x4C) + g * 0x34;
+            str(gr);
+            for (int k = 0; k < num(gr, 0x1C); ++k) {
+                const uint8_t* pc = at(gr, 0x20) + k * 0x34;
+                mix(pc + 0x08, 4);
+                mix(pc + 0x10, 4);
+                mix(pc + 0x28, 12);
+                mix(at(pc, 0x0C), size_t(num(pc, 0x08)) * 0x44);
+                mix(at(pc, 0x14), size_t(num(pc, 0x10)) * 2);
+                mix(at(pc, 0) + 0x60, 4);                 // its material's power (scaled by the loader)
+            }
+            mix(at(gr, 0x28), size_t(num(gr, 0x24)) * 0x14);
+            for (int k = 0; k < num(gr, 0x2C); ++k) {
+                const uint8_t* a2 = at(gr, 0x30) + k * 0x40;
+                str(a2);
+                mix(a2 + 0x1C, 0x24);
+            }
+        }
+        std::printf("meshdata %08x\n", h);
+    }
     void* animSource = Export<DataCtorFn>("??0CATKeyframeAnimData_t@@QAE@PAVDataIO_t@fun@@@Z")(
         ::operator new(0x48), nullptr, animIo);
     auto frameCtor = Export<FrameCtorFn>("??0RRefFrame_t@@QAE@PAV0@PAVRAnimation_t@@@Z");

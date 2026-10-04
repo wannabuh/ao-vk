@@ -17,6 +17,7 @@
 #include "native/occluder.h"
 #include "native/cat_life.h"
 #include "native/cat_pick.h"
+#include "native/cat_data.h"
 
 namespace rnative {
 
@@ -45,6 +46,7 @@ void Install(HMODULE orig)
     occluder::Install(orig);
     catlife::Install(orig);
     catpick::Install(orig);
+    catdata::Install(orig);
 }
 
 }  // namespace rnative
