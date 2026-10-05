@@ -768,23 +768,11 @@ private:
         uint64_t lastFrame = 0;
     };
     std::unordered_map<const std::vector<uint8_t>*, StaticGeometry> m_staticGeometry;
-    // The index halves of static meshes too (D3D7 has no index buffers: the game passes a pointer), so a static draw
-    // doesn't copy its indices into the ring every frame. Keyed by that pointer.
-    struct StaticIndices {
-        VkBuffer buffer = VK_NULL_HANDLE;
-        VmaAllocation_T* allocation = nullptr;
-        uint32_t count = 0;
-        uint64_t lastFrame = 0;
-    };
-    std::unordered_map<const void*, StaticIndices> m_staticIndices;
-    VkDeviceSize m_staticIndexBytes = 0;
     bool m_staticResident = true;                // RANDYVK_STATIC_GPU=0: copied into the ring per draw as before
     VkDeviceSize m_staticBytes = 0;              // on the GPU now
     VkBuffer m_drawStaticBuffer = VK_NULL_HANDLE;   // the current draw's vertices are in this buffer, at this offset
     VkDeviceSize m_drawStaticOffset = 0;
-    VkBuffer m_drawStaticIb = VK_NULL_HANDLE;    // ...and its indices are in this one (else the ring)
     VkBuffer StaticBufferFor(const std::shared_ptr<const std::vector<uint8_t>>& data);
-    VkBuffer StaticIndexBufferFor(const uint16_t* indices, uint32_t indexCount);
     void BeginStaticFrame();
     void DestroyStaticGeometry();
     SkinOutput* m_drawGpu = nullptr;             // the current draw is skinned on the GPU, here
