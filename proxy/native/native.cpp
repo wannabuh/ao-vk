@@ -23,6 +23,7 @@
 #include "native/gone_trap.h"
 #include "native/keyframe.h"
 #include "native/sprite.h"
+#include "native/shadowlands.h"
 
 namespace rnative {
 
@@ -56,6 +57,7 @@ void Install(HMODULE orig)
     bvolume::Install(orig);
     keyframe::Install(orig);
     sprite::Install(orig);
+    shadowlands::Install(orig);
     gonetrap::Install(orig);                        // last: over what the replacements left
 }
 

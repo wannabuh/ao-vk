@@ -814,3 +814,33 @@
 0x13E71	replaced	proxy/native/sprite.cpp	RVisual_t observers: material (FUN_10013e71)
 0x13EBB	replaced	proxy/native/sprite.cpp	RVisual_t observers: after the material (FUN_10013ebb)
 0x13F00	replaced	proxy/native/sprite.cpp	RVisual_t observers: after drawing (FUN_10013f00)
+0x46E5D	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetCameraMatrix
+0x46E84	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetGroundLightTexture
+0x46EAE	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetGroundLightParameters
+0x46ED4	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetGroundLightIntensity
+0x46F06	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::EnableGroundLight
+0x46F13	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetStatelLightTexture
+0x46F3D	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetStatelLightParameters
+0x46F63	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetStatelLightIntensity
+0x46F95	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::EnableStatelLight
+0x46FA2	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetCATLightTexture
+0x46FCC	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetCATLightParameters
+0x46FF2	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetCATLightIntensity
+0x47024	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetCATLightDirection
+0x47038	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetStatelLightDirection
+0x4704C	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::SetGroundLightDirection
+0x47060	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::EnableCATLight
+0x4706D	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::GetGroundLightMatrix
+0x470F5	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::GetStatelLightMatrix
+0x4717D	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::GetCATLightMatrix
+0x47205	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::FreeAllTextures
+0x4721E	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::PriCheck
+0x47238	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::GetGroundLightIntensity
+0x4723F	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::GetGroundLightTexture
+0x4724B	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::GetStatelLightIntensity
+0x47252	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::GetStatelLightTexture
+0x4725E	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::GetCATLightIntensity
+0x47265	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::GetCATLightTexture
+0x47271	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::IsGroundLightUsed
+0x472A2	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::IsStatelLightUsed
+0x472D3	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::IsCATLightUsed

@@ -7,6 +7,8 @@
 #include "native/cat_skin.h"
 #include "native/dxerror.h"
 #include "native/keyframe.h"
+#include "native/orig_api.gen.h"
+#include "native/shadowlands.h"
 #include "native/vc10.h"
 #include "native/xmath.h"
 
@@ -883,6 +885,158 @@ void CheckKeyframes()
     Check(mismatches == 0, "keyframe: evaluation");
 }
 
+// RandyShadowlandsData_s against ours: the three lights' setters and getters on random input, the class's static data
+// compared, and the matrix each light builds from the camera. The textures are a fake object (its refcount high, so
+// AddRef / Release never reach its destructor).
+template <typename F>
+F Orig(uint32_t rva) { return reinterpret_cast<F>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
+
+void CheckShadowlands()
+{
+    shadowlands::SetModule(g_orig);
+    uint8_t* base = reinterpret_cast<uint8_t*>(g_orig);
+    auto at = [base](uint32_t rva) { return base + rva; };
+
+    struct Args {
+        float matrix[16], scale[3], offset[3], direction[3], intensity;
+    };
+
+    alignas(16) static uint8_t fakeTexture[0x100];
+    alignas(16) static uint8_t fakeRender[0x400];
+    *reinterpret_cast<uint32_t*>(fakeTexture + 0x24) = 100000;   // RResource_t's refcount: never reaches zero
+
+    // Everything the class owns (the caller's textures excepted): scales, directions, the camera, the matrices, the
+    // flags, textures, intensities and offsets.
+    struct Span { uint32_t rva, size; };
+    const Span spans[] = {{0xB7788, 0xB78D0 - 0xB7788}, {0x17D44C, 0x17D490 - 0x17D44C}};
+    std::vector<uint8_t> a, b;
+    auto snap = [&](std::vector<uint8_t>& out) {
+        out.clear();
+        for (const Span& s : spans) out.insert(out.end(), at(s.rva), at(s.rva) + s.size);
+    };
+    std::mt19937 rng(1234);
+    auto seed = [&](uint32_t s) {
+        std::mt19937 r(s);
+        for (const Span& sp : spans)
+            for (uint32_t i = 0; i < sp.size; i += 4) *reinterpret_cast<uint32_t*>(at(sp.rva) + i) = r();
+        void* texture = (r() & 1) ? static_cast<void*>(fakeTexture) : nullptr;
+        *reinterpret_cast<void**>(at(0x17D450)) = texture;
+        *reinterpret_cast<void**>(at(0x17D458)) = (r() & 1) ? static_cast<void*>(fakeTexture) : nullptr;
+        *reinterpret_cast<void**>(at(0x17D460)) = (r() & 1) ? static_cast<void*>(fakeTexture) : nullptr;
+        at(0x17D44C)[0] = uint8_t(r() & 1), at(0x17D44D)[0] = uint8_t(r() & 1), at(0x17D44E)[0] = uint8_t(r() & 1);
+        at(0x17D44F)[0] = uint8_t(r() & 1), at(0x17D468)[0] = uint8_t(r() & 1), at(0x17D469)[0] = uint8_t(r() & 1);
+        *reinterpret_cast<uint8_t**>(at(0x16BED0)) = fakeRender;
+        *reinterpret_cast<uint32_t*>(fakeRender + 0x288) = r() % 10;
+    };
+    auto bits = [](auto v) {
+        uint64_t out = 0;
+        std::memcpy(&out, &v, sizeof(v) > 8 ? 8 : sizeof(v));
+        return out;
+    };
+    int mismatches = 0;
+    auto diffV = [&](const char* what, uint32_t s, auto original, auto native) {
+        seed(s);
+        original();
+        snap(a);
+        seed(s);
+        native();
+        snap(b);
+        if (a != b) {
+            if (mismatches < 5) std::printf("shadowlands: %s differs\n", what);
+            ++mismatches;
+        }
+    };
+    auto diffR = [&](const char* what, uint32_t s, auto original, auto native) {
+        seed(s);
+        const uint64_t ra = bits(original());
+        snap(a);
+        seed(s);
+        const uint64_t rb = bits(native());
+        snap(b);
+        if (a != b || ra != rb) {
+            if (mismatches < 5) std::printf("shadowlands: %s differs (%llx/%llx)\n", what, (unsigned long long)ra,
+                                            (unsigned long long)rb);
+            ++mismatches;
+        }
+    };
+
+    using SetParamsFn = void(__cdecl*)(const float*, const float*);
+    using SetDirectionFn = void(__cdecl*)(const float*);
+    using SetTextureFn = void(__cdecl*)(void*);
+    using EnableFn = void(__cdecl*)(bool);
+    using SetIntensityFn = void(__cdecl*)(float);
+    using GetFloatFn = float(__cdecl*)();
+    using GetTextureFn = void*(__cdecl*)();
+    using GetMatrixFn = const float*(__cdecl*)();
+    using GetBoolFn = bool(__cdecl*)();
+    const uint32_t paramsRva[] = {0x46EAE, 0x46F3D, 0x46FCC}, directionRva[] = {0x4704C, 0x47038, 0x47024};
+    const uint32_t textureRva[] = {0x46E84, 0x46F13, 0x46FA2}, enableRva[] = {0x46F06, 0x46F95, 0x47060};
+    const uint32_t intensityRva[] = {0x46ED4, 0x46F63, 0x46FF2}, matrixRva[] = {0x4706D, 0x470F5, 0x4717D};
+    const uint32_t getIntensityRva[] = {0x47238, 0x4724B, 0x4725E}, getTextureRva[] = {0x4723F, 0x47252, 0x47265};
+    const uint32_t usedRva[] = {0x47271, 0x472A2, 0x472D3};
+    SetParamsFn nParams[] = {shadowlands::SetGroundLightParameters, shadowlands::SetStatelLightParameters,
+                             shadowlands::SetCATLightParameters};
+    SetDirectionFn nDirections[] = {shadowlands::SetGroundLightDirection, shadowlands::SetStatelLightDirection,
+                                    shadowlands::SetCATLightDirection};
+    SetTextureFn nTextures[] = {shadowlands::SetGroundLightTexture, shadowlands::SetStatelLightTexture,
+                                shadowlands::SetCATLightTexture};
+    EnableFn nEnables[] = {shadowlands::EnableGroundLight, shadowlands::EnableStatelLight, shadowlands::EnableCATLight};
+    SetIntensityFn nIntensities[] = {shadowlands::SetGroundLightIntensity, shadowlands::SetStatelLightIntensity,
+                                     shadowlands::SetCATLightIntensity};
+    GetFloatFn nGetIntensities[] = {shadowlands::GetGroundLightIntensity, shadowlands::GetStatelLightIntensity,
+                                    shadowlands::GetCATLightIntensity};
+    GetTextureFn nGetTextures[] = {shadowlands::GetGroundLightTexture, shadowlands::GetStatelLightTexture,
+                                   shadowlands::GetCATLightTexture};
+    GetMatrixFn nMatrices[] = {shadowlands::GetGroundLightMatrix, shadowlands::GetStatelLightMatrix,
+                               shadowlands::GetCATLightMatrix};
+    GetBoolFn nUseds[] = {shadowlands::IsGroundLightUsed, shadowlands::IsStatelLightUsed, shadowlands::IsCATLightUsed};
+    const char* names[] = {"ground", "statel", "CAT"};
+
+    for (int trial = 0; trial < 200; ++trial) {
+        Args args;
+        for (float& f : args.matrix) f = float(rng()) / float(rng() | 1);
+        for (float& f : args.scale) f = float(int(rng() % 21) - 10);
+        for (float& f : args.offset) f = float(int(rng() % 21) - 10);
+        for (float& f : args.direction) f = float(int(rng() % 21) - 10);
+        const uint32_t special[] = {0u, 0x3F800000u, 0xBF800000u, 0x40000000u, 0x40490FDBu, 0x7FC00000u, 0x80000000u};
+        args.intensity = reinterpret_cast<const float&>(special[rng() % (sizeof(special) / sizeof(special[0]))]);
+        const uint32_t s = uint32_t(trial) * 131 + 7;
+        char what[64];
+
+        diffV("SetCameraMatrix", s, [&] { Orig<void(__cdecl*)(const float*)>(0x46E5D)(args.matrix); },
+              [&] { shadowlands::SetCameraMatrix(args.matrix); });
+        for (int i = 0; i < 3; ++i) {
+            std::snprintf(what, sizeof(what), "%s parameters", names[i]);
+            diffV(what, s, [&] { Orig<SetParamsFn>(paramsRva[i])(args.scale, args.offset); },
+                  [&] { nParams[i](args.scale, args.offset); });
+            std::snprintf(what, sizeof(what), "%s direction", names[i]);
+            diffV(what, s, [&] { Orig<SetDirectionFn>(directionRva[i])(args.direction); },
+                  [&] { nDirections[i](args.direction); });
+            std::snprintf(what, sizeof(what), "%s intensity", names[i]);
+            diffV(what, s, [&] { Orig<SetIntensityFn>(intensityRva[i])(args.intensity); },
+                  [&] { nIntensities[i](args.intensity); });
+            std::snprintf(what, sizeof(what), "%s enable", names[i]);
+            diffV(what, s, [&] { Orig<EnableFn>(enableRva[i])(args.intensity > 0.0f); },
+                  [&] { nEnables[i](args.intensity > 0.0f); });
+            std::snprintf(what, sizeof(what), "%s texture", names[i]);
+            diffV(what, s, [&] { Orig<SetTextureFn>(textureRva[i])(static_cast<void*>(fakeTexture)); },
+                  [&] { nTextures[i](static_cast<void*>(fakeTexture)); });
+            std::snprintf(what, sizeof(what), "%s get intensity", names[i]);
+            diffR(what, s, [&] { return Orig<GetFloatFn>(getIntensityRva[i])(); }, [&] { return nGetIntensities[i](); });
+            std::snprintf(what, sizeof(what), "%s get texture", names[i]);
+            diffR(what, s, [&] { return Orig<GetTextureFn>(getTextureRva[i])(); }, [&] { return nGetTextures[i](); });
+            std::snprintf(what, sizeof(what), "%s matrix", names[i]);
+            diffR(what, s, [&] { return Orig<GetMatrixFn>(matrixRva[i])(); }, [&] { return nMatrices[i](); });
+            std::snprintf(what, sizeof(what), "%s used", names[i]);
+            diffR(what, s, [&] { return Orig<GetBoolFn>(usedRva[i])(); }, [&] { return nUseds[i](); });
+        }
+        diffV("FreeAllTextures", s, [&] { Orig<void(__cdecl*)()>(0x47205)(); }, [&] { shadowlands::FreeAllTextures(); });
+        diffR("PriCheck", s, [&] { return Orig<GetBoolFn>(0x4721E)(); }, [&] { return shadowlands::PriCheck(); });
+    }
+    std::printf("shadowlands: %d trials, %d differ\n", 200, mismatches);
+    Check(mismatches == 0, "shadowlands: state and matrices");
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -894,6 +1048,7 @@ int main(int argc, char** argv)
         return 2;
     }
     g_orig = orig;
+    rnative::orig::Init(orig);                       // the orig:: bindings the replacements call through
     if (argc > 2 && std::strcmp(argv[2], "--dump-dxerrors") == 0) {   // the original's HRESULT table (FUN_1001d619)
         DumpDxErrors();
         return 0;
@@ -920,6 +1075,7 @@ int main(int argc, char** argv)
     CheckAttractors();
     CheckDxErrors();
     CheckKeyframes();
+    CheckShadowlands();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;
