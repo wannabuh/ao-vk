@@ -87,7 +87,8 @@ bytes, and refuses entries that can't take a 5-byte jump (`proxy/native/entry_gu
 `tools/gen_entry_guard.py`: functions shorter than that, or with a branch into their first bytes).
 `tools/port-status.py` reports progress against `docs/port-ledger.tsv`; native code calls what isn't ported yet
 through `proxy/native/orig_api.gen.h` (tools/gen_orig_api.py), and lives in the game's heap / containers via
-`proxy/native/vc10.h`.
+`proxy/native/vc10.h`. A call the call graph cannot see never runs - its block is guarded by a constant
+(`DEAD_CALLS` in port-status.py) - so it doesn't keep its callee live: the caller is live, its dead calls aren't.
 
 ## Tools
 

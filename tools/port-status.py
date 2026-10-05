@@ -8,6 +8,9 @@ default the installed client; build/profile/client-imports.txt caches the list),
 binding or its name), serialize.dll finds it by name (every ?Instantiate@<class>@@SAPAV1@PAVObjectArchive_c@fun@@@Z:
 GetProcAddress for the class an archive names), or something other than the export table references it.
 
+A call whose call site never runs doesn't keep its callee live either: the call graph cannot see a block a constant
+guard keeps from executing, so those edges (DEAD_CALLS) are dropped. The caller stays live - it does run to its guard.
+
 Usage: tools/port-status.py [--classes N] [--list CLASS] [--write-gone FILE]   (--list: the functions of CLASS left to
 port; --write-gone: the unreachable functions' rvas, one per line, for the proxy's RANDYVK_GONE_TRAP check)
 """
@@ -150,16 +153,36 @@ def called_natively():
     return rvas
 
 
+# Calls whose call site never runs, so they don't keep their callee live even though the caller is: the call graph
+# cannot see a block a constant guard keeps from executing. The caller stays live (it runs to its guard); only these
+# edges are dropped. FUN_10011ba0 enters the block 0x10011bb9-0x10011c50 only when its second argument is 1 and global
+# 0x100b6088 != 1. That global is 1 at load and only ever incremented inside the block, so the block - and every call
+# in it - is dead. dd_GetErrorString's only live-looking call (0x10011c45) is in it; so is FUN_10025e17's only call.
+DEAD_CALLS = {
+    (0x11BA0, 0x14275),   # DynamicVB_c::Get
+    (0x11BA0, 0x14177),   # DynamicVB_c::GetVertices
+    (0x11BA0, 0x47271),   # RandyShadowlandsData_s::IsGroundLightUsed
+    (0x11BA0, 0x787B4),   # operator new
+    (0x11BA0, 0x135F1),   # RSprite construction
+    (0x11BA0, 0x508D3),   # CATAnimBlend_t construction
+    (0x11BA0, 0x51FB2),   # CATKeyframeAnim_t construction
+    (0x11BA0, 0x25E17),   # FUN_10025e17 (mov eax, ecx; ret)
+    (0x11BA0, 0x1AA09),   # dd_GetErrorString
+}
+
+
 def unreachable(graph, vtables, done, dead):
     """Functions nothing live reaches any more. Live, from the roots (used exports, references that lead nowhere
-    traceable, functions our native code calls by address, vtables of static objects): what a live function calls,
-    takes the address of or names in its exception tables, the vtables it references (it makes or destroys such
-    objects) and every function in a live vtable. Replaced and dead functions run no original code: they pass nothing
-    on, except that a replaced one still makes its objects (its vtables stay live)."""
+    traceable, functions our native code calls by address, vtables of static objects): what a live function calls
+    (except a dead call site, DEAD_CALLS), takes the address of or names in its exception tables, the vtables it
+    references (it makes or destroys such objects) and every function in a live vtable. Replaced and dead functions
+    run no original code: they pass nothing on, except that a replaced one still makes its objects (its vtables stay
+    live)."""
     callees, owned, members, uses = {}, {}, {}, {}
     for rva, (_, callers, holders, owners) in graph.items():
         for c in callers:
-            callees.setdefault(c, set()).add(rva)
+            if (c, rva) not in DEAD_CALLS:
+                callees.setdefault(c, set()).add(rva)
         for o in owners:
             owned.setdefault(o, set()).add(rva)
         for v in holders:
