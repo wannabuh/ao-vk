@@ -14,6 +14,7 @@
 #include "native/device.h"
 #include "native/orig_api.gen.h"
 #include "native/dynamic_vb.h"
+#include "native/dxerror.h"
 #include "native/randy.h"
 #include "native/surface.h"
 #include "native/resource.h"
@@ -647,6 +648,7 @@ void Install(HMODULE orig)
     resource::Install(orig);
     texture::Install(orig);
     material::Install(orig);
+    dxerror::Install(orig);
 }
 
 }  // namespace rnative::device

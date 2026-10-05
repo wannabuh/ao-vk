@@ -569,3 +569,4 @@
 0x1BD36	replaced	proxy/native/device.cpp	DeviceState read back from the device (FUN_1001bd36)
 0x1BDF2	replaced	proxy/native/device.cpp	DeviceState instance, made on first use (FUN_1001bdf2)
 0x1BD14	replaced	proxy/native/device.cpp	DeviceState shutdown (FUN_1001bd14)
+0x1E51A	replaced	proxy/native/dxerror.cpp	fun::DXError::GetErrorString (its HRESULT table FUN_1001d619 in dxerror.gen.h)

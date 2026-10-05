@@ -5,6 +5,7 @@
 #include "native/cat_anim.h"
 #include "native/cat_query.h"
 #include "native/cat_skin.h"
+#include "native/dxerror.h"
 #include "native/vc10.h"
 #include "native/xmath.h"
 
@@ -729,6 +730,70 @@ void Time()
                 original * 1e9 / (double(vertices) * reps), native * 1e9 / (double(vertices) * reps), original / native);
 }
 
+// FUN_1001d619: an HRESULT's description and name (false: unknown).
+using DxErrorFn = bool(__cdecl*)(int32_t hr, const char** description, const char** name);
+
+// Every value the original knows (all 2^32 tried): hr, name, description (tab separated).
+void DumpDxErrors()
+{
+    auto original = reinterpret_cast<DxErrorFn>(reinterpret_cast<uint8_t*>(g_orig) + 0x1D619);
+    for (uint64_t v = 0; v < 0x100000000ull; ++v) {
+        const char *description = nullptr, *name = nullptr;
+        if (original(int32_t(uint32_t(v)), &description, &name))
+            std::printf("%08X\t%s\t%s\n", uint32_t(v), name, description);
+    }
+}
+
+// Our HRESULT table against the original's switch, over the 64K blocks its comparisons fall in (the full 2^32 is
+// --dump-dxerrors); GetErrorString on DXErrors made by the original's constructor.
+void CheckDxErrors()
+{
+    auto original = reinterpret_cast<DxErrorFn>(reinterpret_cast<uint8_t*>(g_orig) + 0x1D619);
+    int differ = 0, known = 0;
+    for (uint32_t high : {0x0000u, 0x8000u, 0x8007u, 0x8876u, 0x8877u, 0xC877u, 0xFFFFu})
+        for (uint32_t low = 0; low < 0x10000; ++low) {
+            const int32_t hr = int32_t(high << 16 | low);
+            const char *d0 = nullptr, *n0 = nullptr, *d1 = nullptr, *n1 = nullptr;
+            const bool a = original(hr, &d0, &n0), b = dxerror::Describe(hr, &d1, &n1);
+            known += a;
+            if (a != b || (a && (std::strcmp(d0, d1) || std::strcmp(n0, n1)))) ++differ;
+        }
+    std::printf("dxerror: %d known, %d different\n", known, differ);
+    Check(differ == 0 && known == 169, "dxerror: HRESULT table");
+
+    using CtorFn = void*(__fastcall*)(void*, void*, int32_t, const vc10::String*, const vc10::String*, int);
+    using TextFn = vc10::String*(__fastcall*)(const void*, void*, vc10::String*);
+    auto ctor = reinterpret_cast<CtorFn>(GetProcAddress(g_orig,
+        "??0DXError@fun@@QAE@JABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0H@Z"));
+    auto text = reinterpret_cast<TextFn>(GetProcAddress(g_orig,
+        "?GetErrorString@DXError@fun@@UBE?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ"));
+    if (!ctor || !text) {
+        Check(false, "dxerror: DXError exports");
+        return;
+    }
+    const char* messages[] = {"", "short", "render_t::SetRenderState failed in a long enough message"};
+    const int32_t hrs[] = {0, int32_t(0x887601AE), int32_t(0x8876017C), int32_t(0xC8770BDB), 12345, -1};
+    int bad = 0;
+    for (const char* m : messages)
+        for (int32_t hr : hrs) {
+            vc10::String message, file;
+            message.init();
+            file.init();
+            message.assign(m, std::strlen(m));
+            file.assign("render.cpp", 10);
+            alignas(8) uint8_t error[0x4C];
+            ctor(error, nullptr, hr, &message, &file, 42);
+            vc10::String a, b;
+            text(error, nullptr, &a);
+            dxerror::GetErrorString(error, nullptr, &b);
+            if (a.size != b.size || std::strcmp(a.c_str(), b.c_str())) {
+                if (!bad) std::printf("dxerror: '%s' vs '%s'\n", a.c_str(), b.c_str());
+                ++bad;
+            }
+        }
+    Check(bad == 0, "dxerror: GetErrorString");
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -740,6 +805,10 @@ int main(int argc, char** argv)
         return 2;
     }
     g_orig = orig;
+    if (argc > 2 && std::strcmp(argv[2], "--dump-dxerrors") == 0) {   // the original's HRESULT table (FUN_1001d619)
+        DumpDxErrors();
+        return 0;
+    }
     g_original = reinterpret_cast<OriginalFn>(reinterpret_cast<uint8_t*>(orig) + 0x5470D);
     g_lock = reinterpret_cast<skin::LockFn>(GetProcAddress(orig, "?Lock@VertexBuffer_c@@QAEPAXII@Z"));
     g_unlock = reinterpret_cast<skin::UnlockFn>(GetProcAddress(orig, "?Unlock@VertexBuffer_c@@QAEXXZ"));
@@ -760,6 +829,7 @@ int main(int argc, char** argv)
     CheckBlends();
     CheckMath();
     CheckAttractors();
+    CheckDxErrors();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;
