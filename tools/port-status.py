@@ -136,8 +136,10 @@ STL_MAP = {0x47E91, 0x47F15, 0x47FB1, 0x47FF6, 0x48244, 0x4849B, 0x485B7, 0x485D
 
 # The game's serialize library's fun::FindObjectFor<T> instantiations: ArchiveStream_c::DoFindObject then an
 # __RTDynamicCast to the wanted class. Statically linked and unnamed, like the STL (every DoFindObject caller here
-# carries the Serializable_c RTTI check).
-FUN_FIND = {0x13D19, 0x2BDDC, 0x46DB0, 0x47ECC, 0x48BBE, 0x49E12, 0x4AF4F, 0x4F8AB}
+# carries the Serializable_c RTTI check). 0x4D6D3 (RVisual_t's archive constructor, 0x100 bytes) also finds objects
+# but is Randy's own, so it is not here.
+FUN_FIND = {0x13D19, 0x13D62, 0x2BDDC, 0x2F989, 0x414DF, 0x460B8, 0x46101, 0x46DB0, 0x47ECC, 0x48BBE, 0x49E12, 0x4AF4F,
+            0x4F8AB}
 
 
 def call_graph():

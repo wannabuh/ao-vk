@@ -236,6 +236,8 @@
 0x4C4EA	replaced	proxy/native/viewport.cpp	RViewPort_t::RenderRefraction
 0x44CC8	replaced	proxy/native/refframe.cpp	RRefFrame_t::RRefFrame_t(parent, animation)
 0x45471	replaced	proxy/native/refframe.cpp	RRefFrame_t::~RRefFrame_t
+0x461CD	replaced	proxy/native/refframe.cpp	RRefFrame_t deleting destructor (FUN_100461cd)
+0x4514B	replaced	proxy/native/refframe.cpp	RRefFrame_t::SetConnector (FUN_1004514b)
 0x44ED1	replaced	proxy/native/refframe.cpp	RRefFrame_t::AddChild
 0x44F10	replaced	proxy/native/refframe.cpp	RRefFrame_t::RemoveChild
 0x44F79	replaced	proxy/native/refframe.cpp	RRefFrame_t::Process

@@ -111,6 +111,29 @@ void __fastcall Destroy(Frame* f)
     serialize::Get().destroy(f, nullptr);
 }
 
+void* __fastcall Delete(Frame* f, void*, uint8_t flags)   // FUN_100461cd (vtable slot 0)
+{
+    if (!(flags & 2)) {
+        Destroy(f);
+        if (flags & 1) vc10::Free(f);
+        return f;
+    }
+    Frame* block = f - 4;
+    for (uint32_t i = *reinterpret_cast<uint32_t*>(block); i-- > 0;)
+        Destroy(reinterpret_cast<Frame*>(reinterpret_cast<uint8_t*>(f) + i * 0xA4));
+    if (flags & 1) vc10::Free(block);
+    return block;
+}
+
+// FUN_1004514b: the connector attached to this frame (an RRefFrameConnector's SetOriginator calls it - the frame's
+// side of the attachment point).
+void __fastcall SetConnector(Frame* f, void*, void* connector)
+{
+    if (connector) orig::RResource_t_AddRefRResource(connector);
+    if (void* old = Field<void*>(f, kConnector)) orig::RResource_t_ReleaseRResource(old);
+    Field<void*>(f, kConnector) = connector;
+}
+
 void __fastcall AddChild(Frame* f, void*, Frame* child)
 {
     if (Frame* old = Parent(child)) Virtual(old, 5, static_cast<void*>(child));
@@ -655,6 +678,8 @@ void Install(HMODULE orig)
     const Entry entries[] = {
         {0x44CC8, FN(Construct), "RRefFrame_t::RRefFrame_t(parent, animation)"},
         {0x45471, FN(Destroy), "RRefFrame_t::~RRefFrame_t"},
+        {0x461CD, FN(Delete), "RRefFrame_t deleting destructor (FUN_100461cd)"},
+        {0x4514B, FN(SetConnector), "RRefFrame_t::SetConnector (FUN_1004514b)"},
         {0x44ED1, FN(AddChild), "RRefFrame_t::AddChild"},
         {0x44F10, FN(RemoveChild), "RRefFrame_t::RemoveChild"},
         {0x44F79, FN(Process), "RRefFrame_t::Process"},
