@@ -513,6 +513,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
     dep.imageMemoryBarrierCount = 1;
     dep.pImageMemoryBarriers = &b;
     vkCmdPipelineBarrier2(cmd, &dep);
+    BindShadowRecords(cmd);                       // M4: the casters' records (binding 1)
 
     std::vector<uint32_t> inRange;               // casters within the current light's range
     ShadowBind bind;
@@ -596,6 +597,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
                 DrawShadowItem(cmd, bind, it, vp);
                 ++m_pointShadowDraws;
             }
+            FlushShadowGroup(cmd);               // this face's batch (M4)
             vkCmdEndRendering(cmd);
         }
         pointDrawMs += ProfileCpu() - drawStart;

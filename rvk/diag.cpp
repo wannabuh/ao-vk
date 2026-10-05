@@ -42,9 +42,10 @@ void Device::EndFrameDump()
                              " forgotten since start: %u in view but not drawn, %u far away\n",
                  m_dumpDraw, m_casters.size(), m_casterCache.size(), m_cachedCastersDrawn, m_forgottenInView, m_forgottenFar);
     std::fprintf(m_dumpFile, "# sun shadow pass: %u items (%u static, %u animated); drew %u item-cascades (%u static,"
-                             " %u animated), culled %u; %.2f ms collect, %.2f cull, %.2f draw\n",
+                             " %u animated), culled %u; %.2f ms collect, %.2f cull, %.2f draw; M4 %u calls\n",
                  m_shadowItemsCount, m_shadowStaticItems, m_shadowAnimatedItems, m_shadowDrawn, m_shadowStaticDrawn,
-                 m_shadowAnimatedDrawn, m_shadowCulled, m_shadowCollectMs, m_shadowCullMs, m_shadowDrawMs);
+                 m_shadowAnimatedDrawn, m_shadowCulled, m_shadowCollectMs, m_shadowCullMs, m_shadowDrawMs,
+                 m_shadowGroupCalls);
     std::fprintf(m_dumpFile, "# instancing: %u runs of >=2 identical static draws; %u draws could merge away (longest run"
                              " %u)\n", m_batchRuns, m_batchMerged, m_batchMaxRun);
     std::fprintf(m_dumpFile, "# M3 batching: %u indirect calls for %u draws (%u single); %u indexed draws left direct\n",

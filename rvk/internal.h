@@ -57,6 +57,17 @@ struct DrawRecord {
 static_assert(sizeof(DrawRecord) == 16 + sizeof(DrawTransform), "record layout");
 static_assert(sizeof(DrawRecord) % 16 == 0, "record stride");
 
+// One shadow caster's per-draw data (shadow.cpp; shadow.vert reads it by gl_InstanceIndex). Same shape as the old
+// push constant, so the shader's math is unchanged.
+struct ShadowRecord {
+    d3d::Matrix worldLightViewProj;
+    float alpha[4];
+    float sway[4];       // plants: model y of the base, 1 / model height, tip sway, on
+    float windModel[4];  // the wind in model space
+    float origin[4];     // world x, z of the object; wind time
+};
+static_assert(sizeof(ShadowRecord) == 128, "shadow record");
+
 enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE = 8, F_FOG = 16, F_RANGEFOG = 32,
                   F_LOCALVIEWER = 64, F_TEX0 = 128, F_TEX1 = 256, F_ALPHATEST = 512,
                   F_PERPIXEL = 1024, F_DEBUGLIGHT = 2048, F_LIGHTOVERRIDE = 4096,

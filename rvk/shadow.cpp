@@ -27,15 +27,6 @@ const uint32_t kShadowFragSpirv[] = {
 #include "shadow.frag.inc"
 };
 
-struct ShadowPush {
-    d3d::Matrix worldLightViewProj;
-    float alpha[4];
-    float sway[4];                       // plants (shadow.vert, sway.glsl)
-    float windModel[4];                  // the wind in model space
-    float origin[4];                     // world x, z of the object; wind time
-};
-static_assert(sizeof(ShadowPush) <= 128, "push constant range");
-
 d3d::Matrix Mul(const d3d::Matrix& a, const d3d::Matrix& b) { return MulMatrix(a, b); }
 
 
@@ -247,20 +238,19 @@ bool Device::CreateShadowResources(std::string* error)
         return false;
 
     // Pass pipelines: depth only (opaque casters) and with an alpha-testing fragment shader.
-    VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-                                         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    VkDescriptorSetLayoutBinding bindings[2] = {
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},   // M4: the caster records
+    };
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 1;
-    sl.pBindings = &binding;
+    sl.bindingCount = 2;
+    sl.pBindings = bindings;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_shadowSetLayout), "shadow set layout", error))
         return false;
-    VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ShadowPush)};
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pl.setLayoutCount = 1;
     pl.pSetLayouts = &m_shadowSetLayout;
-    pl.pushConstantRangeCount = 1;
-    pl.pPushConstantRanges = &push;
     if (!Check(vkCreatePipelineLayout(m_device, &pl, nullptr, &m_shadowPipelineLayout), "shadow pipeline layout", error))
         return false;
 
@@ -838,8 +828,24 @@ void Device::GroupShadowItems(const std::vector<uint32_t>& drawOf)
     }
 }
 
-// Draws one caster into the shadow map being rendered (the shadow pipelines, depth only).
-void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowItem& item, const d3d::Matrix& lightViewProj)
+// Pushes the record array (binding 1) for the shadow pipeline. Once at the start of each shadow pass.
+void Device::BindShadowRecords(VkCommandBuffer cmd)
+{
+    if (m_shadowArenaBound || !m_shadowArenaCapacity)
+        return;
+    VkDescriptorBufferInfo records{m_frames[m_frameIndex].ring, m_shadowRecordBase,
+                                   VkDeviceSize(m_shadowArenaCapacity) * sizeof(ShadowRecord)};
+    VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    w.dstBinding = 1;
+    w.descriptorCount = 1;
+    w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    w.pBufferInfo = &records;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelineLayout, 0, 1, &w);
+    m_shadowArenaBound = true;
+}
+
+// Binds the pipeline, vertex layout, texture and buffers a caster needs (the group's shared state).
+void Device::BindShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowItem& item)
 {
     int pipeline = item.texture ? 1 : 0;
     if (pipeline != bind.pipeline) {
@@ -851,7 +857,7 @@ void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowI
         bind.primitive = item.primitive;
     }
     if (item.stride != bind.stride || item.texOffset != bind.texOffset) {
-        VkVertexInputBindingDescription2EXT bindings[2] = {
+        VkVertexInputBindingDescription2EXT vbind[2] = {
             {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 0, item.stride, VK_VERTEX_INPUT_RATE_VERTEX, 1},
             {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 1, 0, VK_VERTEX_INPUT_RATE_VERTEX, 1},
         };
@@ -860,7 +866,7 @@ void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowI
             {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT, nullptr, 1, 1, VK_FORMAT_R32G32_SFLOAT, 0},
         };
         if (item.texOffset >= 0) { attrs[1].binding = 0; attrs[1].offset = uint32_t(item.texOffset); }
-        vkCmdSetVertexInputEXT(cmd, 2, bindings, 2, attrs);
+        vkCmdSetVertexInputEXT(cmd, 2, vbind, 2, attrs);
         bind.stride = item.stride;
         bind.texOffset = item.texOffset;
     }
@@ -884,28 +890,7 @@ void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowI
         vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
         bind.vb = vb;
     }
-    ShadowPush push;
-    push.worldLightViewProj = Mul(item.world, lightViewProj);
-    push.alpha[0] = item.alphaRef;
-    push.alpha[1] = push.alpha[2] = push.alpha[3] = 0.0f;
-    // A swaying plant (only with its texture bound - sway.glsl reads it): the wind in model space, so the combined
-    // matrix can stay; world displacement d = m * W (3x3), so m = d * inverse(W).
-    std::memset(push.sway, 0, sizeof(push.sway) + sizeof(push.windModel) + sizeof(push.origin));
-    d3d::Matrix inverse;
-    if (item.sway[3] > 0.5f && item.texture && m_sway > 0.0f && InvertMatrix(item.world, &inverse)) {
-        float wind[4];
-        Wind(wind);
-        std::memcpy(push.sway, item.sway, sizeof(push.sway));
-        for (int j = 0; j < 3; ++j) push.windModel[j] = wind[0] * inverse.m[0][j] + wind[1] * inverse.m[2][j];
-        push.origin[0] = item.world.m[3][0];
-        push.origin[1] = item.world.m[3][2];
-        push.origin[2] = wind[2];
-    }
-    vkCmdPushConstants(cmd, m_shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                       sizeof(push), &push);
     if (item.indexCount) {
-        // Cached casters: vertices and indices in their own buffer (indices bound at their offset); ring and
-        // GPU-skinned ones: addressed by first index / vertex offset (the latter's indices in their mesh's buffer).
         bool cached = item.buffer && !item.ibBuffer;
         VkBuffer ib = item.ibBuffer ? item.ibBuffer : vb;
         VkDeviceSize ibOffset = cached ? item.ibOffset : 0;
@@ -914,11 +899,120 @@ void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowI
             bind.ib = ib;
             bind.ibOffset = ibOffset;
         }
-        vkCmdDrawIndexed(cmd, item.indexCount, 1, cached ? 0 : uint32_t(item.ibOffset / 2),
-                         int32_t(item.vbOffset / item.stride), 0);
-    } else {
-        vkCmdDraw(cmd, item.vertexCount, 1, uint32_t(item.vbOffset / item.stride), 0);
     }
+}
+
+uint32_t Device::AppendShadowRecord(const ShadowRecord& r)
+{
+    if (m_shadowRecordCount >= m_shadowArenaCapacity)
+        return ~0u;
+    uint32_t index = m_shadowRecordCount++;
+    std::memcpy(m_frames[m_frameIndex].ringData + m_shadowRecordBase + VkDeviceSize(index) * sizeof(ShadowRecord),
+                &r, sizeof(r));
+    return index;
+}
+
+// One caster's indirect command: its geometry, with the record index in firstInstance (gl_InstanceIndex). A key
+// change issues the pending group first, since the pipeline/layout/texture/buffers change with it.
+void Device::ShadowCommand(VkCommandBuffer cmd, const ShadowItem& item, uint32_t recordIndex, uint64_t key)
+{
+    Frame& f = m_frames[m_frameIndex];
+    bool indexed = item.indexCount != 0;
+    if (m_shadowGroup.active && (m_shadowGroup.key != key || m_shadowGroup.indexed != indexed))
+        FlushShadowGroup(cmd);
+    if (m_shadowCmdCount >= m_shadowArenaCapacity)
+        return;
+    auto* cmds = reinterpret_cast<VkDrawIndexedIndirectCommand*>(f.ringData + m_shadowCmdBase);
+    VkDrawIndexedIndirectCommand& c = cmds[m_shadowCmdCount++];
+    if (indexed) {
+        c.indexCount = item.indexCount;
+        c.instanceCount = 1;
+        c.firstIndex = (item.buffer && !item.ibBuffer) ? 0 : uint32_t(item.ibOffset / 2);
+        c.vertexOffset = int32_t(item.vbOffset / item.stride);
+        c.firstInstance = recordIndex;
+    } else {
+        c.indexCount = item.vertexCount;
+        c.instanceCount = 1;
+        c.firstIndex = uint32_t(item.vbOffset / item.stride);
+        c.vertexOffset = int32_t(recordIndex);    // VkDrawIndirectCommand.firstInstance is at offset 12
+        c.firstInstance = 0;
+    }
+    if (m_shadowGroup.active && m_shadowGroup.key == key && m_shadowGroup.indexed == indexed) {
+        ++m_shadowGroup.count;
+    } else {
+        m_shadowGroup.active = true;
+        m_shadowGroup.key = key;
+        m_shadowGroup.indexed = indexed;
+        m_shadowGroup.first = m_shadowCmdCount - 1;
+        m_shadowGroup.count = 1;
+    }
+}
+
+void Device::FlushShadowGroup(VkCommandBuffer cmd)
+{
+    if (!m_shadowGroup.active)
+        return;
+    m_shadowGroup.active = false;
+    if (!m_shadowGroup.count)
+        return;
+    Frame& f = m_frames[m_frameIndex];
+    VkDeviceSize offset = m_shadowCmdBase + VkDeviceSize(m_shadowGroup.first) * sizeof(VkDrawIndexedIndirectCommand);
+    if (m_shadowGroup.indexed)
+        vkCmdDrawIndexedIndirect(cmd, f.ring, offset, m_shadowGroup.count, sizeof(VkDrawIndexedIndirectCommand));
+    else
+        vkCmdDrawIndirect(cmd, f.ring, offset, m_shadowGroup.count, sizeof(VkDrawIndexedIndirectCommand));
+    ++m_shadowGroupCalls;
+    m_shadowGroupDraws += m_shadowGroup.count;
+    m_shadowGroup.count = 0;
+}
+
+// Records one caster into the shadow map being rendered (the shadow pipelines, depth only).
+void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowItem& item,
+                            const d3d::Matrix& lightViewProj)
+{
+    // A group's key: what every draw in it shares. The per-caster transform, alpha and sway live in the record.
+    uint64_t key = 0x9E3779B97F4A7C15ull;
+    auto mix = [&key](uint64_t x) { key = (key ^ x) * 0xFF51AFD7ED558CCDull; key ^= key >> 32; };
+    bool indexed = item.indexCount != 0;
+    bool cached = item.buffer && !item.ibBuffer;
+    mix(item.texture ? 1u : 0u);
+    mix(item.primitive);
+    mix(item.stride);
+    mix(uint32_t(item.texOffset) + 1u);
+    mix(reinterpret_cast<uintptr_t>(item.texture));
+    mix(uint64_t(item.buffer));
+    mix(uint64_t(item.ibBuffer));
+    mix(indexed ? 1u : 0u);
+    mix(cached ? 1u : 0u);
+    if (cached) mix(item.ibOffset);
+    if (!key) key = 1;
+    if (m_shadowGroup.active && (m_shadowGroup.key != key || m_shadowGroup.indexed != indexed))
+        FlushShadowGroup(cmd);
+    BindShadowItem(cmd, bind, item);
+    ShadowRecord r;
+    r.worldLightViewProj = Mul(item.world, lightViewProj);
+    r.alpha[0] = item.alphaRef;
+    r.alpha[1] = r.alpha[2] = r.alpha[3] = 0.0f;
+    // A swaying plant (only with its texture bound - sway.glsl reads it): the wind in model space, so the combined
+    // matrix can stay; world displacement d = m * W (3x3), so m = d * inverse(W).
+    std::memset(r.sway, 0, sizeof(r.sway) + sizeof(r.windModel) + sizeof(r.origin));
+    d3d::Matrix inverse;
+    if (item.sway[3] > 0.5f && item.texture && m_sway > 0.0f && InvertMatrix(item.world, &inverse)) {
+        float wind[4];
+        Wind(wind);
+        std::memcpy(r.sway, item.sway, sizeof(r.sway));
+        for (int j = 0; j < 3; ++j) r.windModel[j] = wind[0] * inverse.m[0][j] + wind[1] * inverse.m[2][j];
+        r.origin[0] = item.world.m[3][0];
+        r.origin[1] = item.world.m[3][2];
+        r.origin[2] = wind[2];
+    }
+    uint32_t rec = AppendShadowRecord(r);
+    if (rec == ~0u) {                            // the arena is full: skip (very rare; the map loses this caster)
+        static bool logged = false;
+        if (!logged) { logged = true; Log("shadow record arena full (%u)\n", m_shadowArenaCapacity); }
+        return;
+    }
+    ShadowCommand(cmd, item, rec, key);
 }
 
 // End of frame, after the main pass: render this frame's casters from the sun into the map for the next frame.
@@ -982,6 +1076,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     VkRect2D scissor{{0, 0}, {m_shadowSize, m_shadowSize}};
     m_cachedCastersDrawn = 0;
     ++m_cascadeFrame;
+    BindShadowRecords(cmd);
     for (uint32_t c = 0; c < count; ++c) {
         // The two widest cascades take turns (their shadows are far away, a frame's lag doesn't show).
         bool alternate = count >= 3 && c >= count - 2;
@@ -1054,6 +1149,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
             if (item.animated) ++m_shadowAnimatedDrawn;
             DrawShadowItem(cmd, bind, item, lightViewProj);
         }
+        FlushShadowGroup(cmd);                   // the cascade's last batch (M4)
         m_shadowDrawMs += ProfileCpu() - drawStart;
         ProfileCpuAdd("shadow draw", drawStart);
         vkCmdEndRendering(cmd);

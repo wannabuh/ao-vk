@@ -1031,15 +1031,26 @@ void Device::PrepareDrawArenas()
     m_constCapacity = m_constWanted;
     m_recordCapacity = m_recordWanted;
     VkDeviceSize align = std::max<VkDeviceSize>(16, m_props.limits.minStorageBufferOffsetAlignment);
+    VkDeviceSize shadowBytes = (m_shadows || m_pointShadows) ? VkDeviceSize(kShadowRecordCapacity) *
+                                               (sizeof(ShadowRecord) + sizeof(VkDrawIndexedIndirectCommand))
+                                         : 0;
     VkDeviceSize bytes = VkDeviceSize(m_constCapacity) * sizeof(DrawConstants) +
                          VkDeviceSize(m_recordCapacity) * sizeof(DrawRecord) +
-                         VkDeviceSize(m_recordCapacity) * sizeof(VkDrawIndexedIndirectCommand) + 64;
+                         VkDeviceSize(m_recordCapacity) * sizeof(VkDrawIndexedIndirectCommand) + shadowBytes + 64;
     EnsureRingSpace(bytes);          // the caller reserved for it, but a flush may have restarted the ring since
     void* cpu;
     m_constsBase = Allocate(VkDeviceSize(m_constCapacity) * sizeof(DrawConstants), align, &cpu);
     m_recordsBase = Allocate(VkDeviceSize(m_recordCapacity) * sizeof(DrawRecord), align, &cpu);
     m_indirectBase = Allocate(VkDeviceSize(m_recordCapacity) * sizeof(VkDrawIndexedIndirectCommand), 4, &cpu);
+    m_shadowArenaCapacity = (m_shadows || m_pointShadows) ? kShadowRecordCapacity : 0;
+    if (m_shadowArenaCapacity) {
+        m_shadowRecordBase = Allocate(VkDeviceSize(m_shadowArenaCapacity) * sizeof(ShadowRecord), align, &cpu);
+        m_shadowCmdBase = Allocate(VkDeviceSize(m_shadowArenaCapacity) * sizeof(VkDrawIndexedIndirectCommand), 4, &cpu);
+    }
     m_constCount = m_recordCount = m_indirectCount = 0;
+    m_shadowRecordCount = m_shadowCmdCount = 0;
+    m_shadowGroup = ShadowGroup{};
+    m_shadowArenaBound = false;
     m_group = DrawGroup{};
     m_constIndex = 0;
     m_constantsDirty = true;
@@ -1219,6 +1230,7 @@ void Device::BeginFrame()
     m_meshStaticDraws = m_meshHashedDraws = 0;
     m_bindlessBound = false;                     // the frame's command buffer starts with set 1 unbound
     m_arenaBound = false;                        // ... and with the draw arenas unbound
+    m_shadowArenaBound = false;                  // ... and the shadow record array unbound
     if (m_swapchainStale) {
         vkDeviceWaitIdle(m_device);
         DestroySwapchain();
@@ -1277,6 +1289,7 @@ void Device::BeginFrame()
     m_casters.clear();
     m_frameDraw = 0;
     m_groupCalls = m_groupDraws = m_singleDraws = 0;
+    m_shadowGroupCalls = m_shadowGroupDraws = 0;
     m_casterViews.clear();
     m_frameLightsDirty = true;
     m_constantsDirty = true;                     // shadow receiving depends on last frame's map

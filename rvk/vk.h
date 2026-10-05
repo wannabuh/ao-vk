@@ -107,6 +107,7 @@
     X(vkCmdDraw) \
     X(vkCmdDrawIndexed) \
     X(vkCmdDrawIndexedIndirect) \
+    X(vkCmdDrawIndirect) \
     X(vkCmdDispatch) \
     X(vkCmdFillBuffer) \
     X(vkCmdCopyBufferToImage) \

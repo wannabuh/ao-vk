@@ -1686,7 +1686,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     bool reserveArenas = m_arenaGeneration != m_ringGeneration;
     VkDeviceSize arenaBytes = reserveArenas ? VkDeviceSize(m_constWanted) * sizeof(DrawConstants) +
                                                   VkDeviceSize(m_recordWanted) * sizeof(DrawRecord) +
-                                                  VkDeviceSize(m_recordWanted) * sizeof(VkDrawIndexedIndirectCommand) + 64
+                                                  VkDeviceSize(m_recordWanted) * sizeof(VkDrawIndexedIndirectCommand) +
+                                                  ((m_shadows || m_pointShadows) ? VkDeviceSize(kShadowRecordCapacity) *
+                                                                   (sizeof(ShadowRecord) +
+                                                                    sizeof(VkDrawIndexedIndirectCommand))
+                                                             : 0) + 64
                                             : 0;
     EnsureRingSpace(arenaBytes + sizeof(FrameLights) + geometryBytes + 3 * uboAlign +
                     layout.stride + 32 + (motion ? 12ull * vertexCount + 256 : 0) +

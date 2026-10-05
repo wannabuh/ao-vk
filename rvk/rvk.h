@@ -22,7 +22,7 @@
 struct VmaAllocator_T;
 struct VmaAllocation_T;
 
-namespace rvk::detail { struct FrameLights; struct FvfLayout; struct DrawConstants; struct DrawTransform; }
+namespace rvk::detail { struct FrameLights; struct FvfLayout; struct DrawConstants; struct DrawTransform; struct ShadowRecord; }
 
 namespace rvk {
 
@@ -558,6 +558,12 @@ private:
     void CollectShadowItems();
     void GroupShadowItems(const std::vector<uint32_t>& drawOf);
     void DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowItem& item, const d3d::Matrix& lightViewProj);
+    // M4: shadow casters are batched like the scene's draws - one record per caster (read by gl_InstanceIndex) and
+    // one indirect call per group of casters that share their bindings.
+    void BindShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowItem& item);
+    void BindShadowRecords(VkCommandBuffer cmd);          // binding 1 (the records array), once a shadow pass
+    void ShadowCommand(VkCommandBuffer cmd, const ShadowItem& item, uint32_t recordIndex, uint64_t key);
+    void FlushShadowGroup(VkCommandBuffer cmd);
     void FinishShadowFrame();
     // The cameras casters were drawn with this frame; the shadow map follows the one most casters share (the
     // world's), so 3D interface elements drawn with their own camera neither move the map nor cast into it.
@@ -1189,6 +1195,15 @@ private:
     static constexpr uint32_t kMaxDrawConstCapacity = 8192, kMaxDrawRecordCapacity = 131072;
     uint32_t m_constWanted = kDrawConstCapacity, m_recordWanted = kDrawRecordCapacity;
     uint32_t m_arenaFlushes = 0;                 // mid-frame arena overflows (logged, throttled)
+    // M4: the sun/point shadow passes' caster records and indirect commands, also slices of the frame's ring.
+    // Reserved with the draw arenas; `m_shadowRecordCount` is shared by both passes (they append, not reset).
+    static constexpr uint32_t kShadowRecordCapacity = 65536;
+    VkDeviceSize m_shadowRecordBase = 0, m_shadowCmdBase = 0;
+    uint32_t m_shadowRecordCount = 0, m_shadowCmdCount = 0, m_shadowArenaCapacity = 0;
+    bool m_shadowArenaBound = false;
+    struct ShadowGroup { bool active = false, indexed = false; uint64_t key = 0; uint32_t first = 0, count = 0; } m_shadowGroup;
+    uint32_t m_shadowGroupCalls = 0, m_shadowGroupDraws = 0;   // M4 stats (per frame)
+    uint32_t AppendShadowRecord(const detail::ShadowRecord& r);
     bool CreateRing(Frame& f, VkDeviceSize size, std::string* error);
 
     VkDescriptorSetLayout m_setLayout = VK_NULL_HANDLE;
