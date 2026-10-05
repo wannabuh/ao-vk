@@ -1108,6 +1108,7 @@ private:
     void ProfileMark(const char* name);
     double ProfileCpu() const;
     void ProfileCpuAdd(const char* name, double since);
+    void ProfileCpuAddMs(const char* name, double ms) { ProfileAdd(m_profileCpu, name, ms); }   // an already-measured duration
     static void ProfileAdd(std::vector<std::pair<const char*, double>>& sums, const char* name, double ms);
     void ProfileLog(const char* label);
     bool m_profileManual = false;

@@ -429,6 +429,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
     m_pointShadowDraws = 0;
     if (!m_pointShadows || !m_lightOverride || !m_pixelLighting || !m_frameViewProjValid || m_shadowItems.empty())
         return;
+    double pointScanMs = 0.0, pointDrawMs = 0.0;    // profile: caster selection vs recording the faces' draws
 
     // Candidates: lights whose sphere of influence reaches into the view, nearest the camera first - by the distance
     // to the light itself. (Not to its sphere: every light whose range covers the camera would tie at 0, and big
@@ -529,6 +530,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
         // each frame) - if only still things are around it. Moving lights (carried) render every frame.
         // Not while anything animated is in its range: a character's body moves every frame, and against last frame's
         // map its own limbs and torso shadow it in the wrong places - dark patches flickering on bodies in crowds.
+        double scanStart = ProfileCpu();
         bool animatedNear = false;
         for (uint32_t i : m_animatedItems) {     // only animated casters can answer yes (m_animatedItems)
             const ShadowItem& it = m_shadowItems[i];
@@ -543,6 +545,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
                 // This frame's position (the game's lamps wobble in the last bits): PointShadowLayer matches exactly.
                 std::memcpy(s.position, pos, sizeof(pos));
                 s.fade = fade;
+                pointScanMs += ProfileCpu() - scanStart;
                 continue;
             }
         }
@@ -563,6 +566,8 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
                 continue;
             inRange.push_back(i);
         }
+        pointScanMs += ProfileCpu() - scanStart;
+        double drawStart = ProfileCpu();
         for (int face = 0; face < 6; ++face) {
             VkRenderingAttachmentInfo depthAtt{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
             depthAtt.imageView = m_cubeFaceViews[k * 6 + face];
@@ -593,11 +598,14 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             }
             vkCmdEndRendering(cmd);
         }
+        pointDrawMs += ProfileCpu() - drawStart;
         std::memcpy(s.position, pos, sizeof(pos));
         s.range = l.range;
         s.fade = fade;                           // newly shadowed lights fade their shadow in instead of popping in
     }
     m_pointShadowCount = count;
+    ProfileCpuAddMs("point scan", pointScanMs);
+    ProfileCpuAddMs("point draw", pointDrawMs);
 
     b.srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
     b.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
