@@ -20,6 +20,7 @@
 #include "native/cat_data.h"
 #include "native/cat_anim_data.h"
 #include "native/bvolume.h"
+#include "native/gone_trap.h"
 
 namespace rnative {
 
@@ -51,6 +52,7 @@ void Install(HMODULE orig)
     catdata::Install(orig);
     cat_anim_data::Install(orig);
     bvolume::Install(orig);
+    gonetrap::Install(orig);                        // last: over what the replacements left
 }
 
 }  // namespace rnative

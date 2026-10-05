@@ -8,7 +8,8 @@ default the installed client; build/profile/client-imports.txt caches the list),
 binding or its name), serialize.dll finds it by name (every ?Instantiate@<class>@@SAPAV1@PAVObjectArchive_c@fun@@@Z:
 GetProcAddress for the class an archive names), or something other than the export table references it.
 
-Usage: tools/port-status.py [--classes N] [--list CLASS]   (--list: the functions of CLASS left to port)
+Usage: tools/port-status.py [--classes N] [--list CLASS] [--write-gone FILE]   (--list: the functions of CLASS left to
+port; --write-gone: the unreachable functions' rvas, one per line, for the proxy's RANDYVK_GONE_TRAP check)
 """
 import os
 import pathlib
@@ -114,22 +115,30 @@ LIB = re.compile(r"^(png_|inflate|deflate|zlib|adler|crc|_|std::|`|operator|Catc
 
 
 def call_graph():
-    """{rva: (is a root, set of caller rvas)} (CallGraph.java): a root is referenced other than by calls and the export
-    table, or exported and used (client_imports, native_uses)."""
+    """{rva: (is a root, caller rvas, vtable rvas holding it)} and {vtable rva: (function rvas referencing it, other data
+    references it)} (CallGraph.java). A root is referenced other than by calls, the export table and vtables, or exported
+    and used (client_imports, native_uses, serialize.dll's ?Instantiate@ lookups)."""
     table, (directory, size) = exports()
     if not GRAPH.exists():
         subprocess.run([str(ROOT / "tools/ghidra-run.sh"), "randy31.dll", "CallGraph.java", str(GRAPH),
                         f"{directory:x}", f"{size:x}"], cwd=ROOT, capture_output=True)
     used = client_imports() | native_uses()
-    graph = {}
+
+    def rvas(field):
+        value = field.split("=", 1)[1]
+        return {int(v, 16) for v in value.split(",")} if value else set()
+    graph, vtables = {}, {}
     for line in open(GRAPH):
         parts = line.split()
+        if parts[0] == "vtable":
+            vtables[int(parts[1], 16)] = (rvas(parts[2]), parts[3] == "data=1")
+            continue
         rva = int(parts[0], 16)
-        callers = {int(c, 16) for c in parts[2].split(",")} if len(parts) > 2 else set()
-        root = "d" in parts[1] or ("e" in parts[1] and any(n in used or n.startswith("?Instantiate@")
-                                                            for n in table.get(rva, [])))
-        graph[rva] = (root, callers)
-    return graph
+        named = table.get(rva, [])
+        root = "d" in parts[1] or ("e" in parts[1] and (not named or any(n in used or n.startswith("?Instantiate@")
+                                                                          for n in named)))   # (not named: DllMain)
+        graph[rva] = (root, rvas(parts[2]), rvas(parts[3]), rvas(parts[4]))
+    return graph, vtables
 
 
 def called_natively():
@@ -141,21 +150,56 @@ def called_natively():
     return rvas
 
 
-def unreachable(graph, done):
-    """Functions nothing live reaches any more: not a root, not called by native code, and every caller native (or
-    itself unreachable)."""
-    live = called_natively()
-    gone = set()
-    changed = True
-    while changed:
-        changed = False
-        for rva, (root, callers) in graph.items():
-            if rva in done or rva in gone or root or rva in live:
-                continue
-            if all(c in done or c in gone for c in callers):
-                gone.add(rva)
-                changed = True
-    return gone
+def unreachable(graph, vtables, done, dead):
+    """Functions nothing live reaches any more. Live, from the roots (used exports, references that lead nowhere
+    traceable, functions our native code calls by address, vtables of static objects): what a live function calls,
+    takes the address of or names in its exception tables, the vtables it references (it makes or destroys such
+    objects) and every function in a live vtable. Replaced and dead functions run no original code: they pass nothing
+    on, except that a replaced one still makes its objects (its vtables stay live)."""
+    callees, owned, members, uses = {}, {}, {}, {}
+    for rva, (_, callers, holders, owners) in graph.items():
+        for c in callers:
+            callees.setdefault(c, set()).add(rva)
+        for o in owners:
+            owned.setdefault(o, set()).add(rva)
+        for v in holders:
+            members.setdefault(v, set()).add(rva)
+    for v, (users, _) in vtables.items():
+        for u in users:
+            uses.setdefault(u, set()).add(v)
+    live, live_vtables, stack = set(), set(), []
+
+    def mark(f):
+        if f not in live:
+            live.add(f)
+            stack.append(f)
+
+    def mark_vtable(v):
+        if v not in live_vtables:
+            live_vtables.add(v)
+            for f in members.get(v, ()):
+                mark(f)
+    for v, (_, data) in vtables.items():
+        if data:
+            mark_vtable(v)
+    natively = called_natively()
+    for rva, (root, _, _, _) in graph.items():
+        if root or rva in natively:
+            mark(rva)
+    for rva in done - dead:
+        for v in uses.get(rva, ()):
+            mark_vtable(v)
+    while stack:
+        f = stack.pop()
+        if f in done:
+            continue
+        for c in callees.get(f, ()):
+            mark(c)
+        for o in owned.get(f, ()):
+            mark(o)
+        for v in uses.get(f, ()):
+            mark_vtable(v)
+    return {rva for rva in graph if rva not in live and rva not in done}
 
 
 def main():
@@ -168,7 +212,11 @@ def main():
         rva, status = line.split("\t")[:2]
         ledger[int(rva, 16)] = status
     done = {rva for rva, status in ledger.items() if status in ("replaced", "dead")}
-    gone = unreachable(call_graph(), done)
+    dead = {rva for rva, status in ledger.items() if status == "dead"}
+    gone = unreachable(*call_graph(), done, dead)
+    if "--write-gone" in sys.argv:
+        out = pathlib.Path(sys.argv[sys.argv.index("--write-gone") + 1])
+        out.write_text("".join(f"{rva:x}\n" for rva in sorted(gone | dead)))
     groups = {}
     current = "?"
     for rva, size, name in functions():

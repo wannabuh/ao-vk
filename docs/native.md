@@ -95,6 +95,9 @@ through `proxy/native/orig_api.gen.h` (tools/gen_orig_api.py), and lives in the 
 - Harness checks of the character code: `--pick` (line tests), `--query` (attractors, bones, materials, sphere of
   the first character), `--shadow` (it also drawn as an RShadow's projected shadow), `--alpha A`, `--env`,
   `--sfx N`, `--dynamic` (the 2D scene also draws through DynamicVB_c), `--materials` (materials in every combination, their states printed), `--blend F` (animated by a CATAnimBlend_t of two keyframe animations), `--lights N`, `--static <file> [--statics N]`.
+- `tools/port-status.py --write-gone build/gone.txt`, then RANDYVK_GONE_TRAP=<that file, Windows path> (and
+  RANDYVK_GONE_TRAP_OUT=<file> to collect hits across runs): every function port-status calls unreachable gets a
+  breakpoint; one that runs anyway is logged ("gone function ran"). With every mode on, no harness scene hits one.
 - `tools/profile-harness.sh <harness args>`: perf profile of the harness by module and function
   (`tools/profile-report.py`; `--thread` for another thread than the busiest).
 
