@@ -172,11 +172,15 @@ def main():
     groups = {}
     current = "?"
     for rva, size, name in functions():
-        # Below 0x11380: libpng (its static functions unnamed); 0x58200-0x787AE: statically linked D3DX7 (texture
-        # loading); past it the CRT glue.
-        if (LIB.match(name) or rva < 0x11380 or (0x58200 <= rva < 0x787AE and name.startswith("FUN_"))
+        # Below 0x11380: libpng (its static functions unnamed); 0x5C1D0-0x6E06A: zlib 1.2.5 and statically linked D3DX7
+        # (texture loading); past 0x787AE the CRT glue. 0x6E06A-0x787AE is Funcom's own code linked in - the FAF scene
+        # reader (FC_*), streams (SL_*), config lines (LineItem*), matrix helpers - to port like Randy's (it calls
+        # Randy's code; the libraries above never do).
+        if (LIB.match(name) or rva < 0x11380 or (0x5C1D0 <= rva < 0x6E06A and name.startswith("FUN_"))
                 or rva >= 0x787AE):
             cls = "(library)"
+        elif 0x6E06A <= rva < 0x787AE:
+            cls = "(Funcom FC/SL libraries)"
         elif name.startswith("FUN_"):
             cls = current
         else:
