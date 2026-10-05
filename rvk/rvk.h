@@ -525,6 +525,7 @@ private:
         float sway[4];                           // a plant's sway (DrawTransform sway), 0 = still
         bool animated;                           // its vertices changed since last frame (a character's body)
         uint32_t owner;                          // the character it belongs to (SetDrawVisual), 0: unknown
+        uint32_t kind;                           // VisualKind of the visual that drew it (m_drawVisualKind)
     };
     // One caster as the shadow passes draw it: from this frame's ring or from the caster cache (own buffer).
     struct ShadowItem {
@@ -542,6 +543,7 @@ private:
         float sway[4];                           // a plant's sway, 0 = still
         bool animated;                           // ShadowCaster animated
         uint32_t owner;                          // ShadowCaster owner
+        uint32_t kind;                           // ShadowCaster kind (VisualKind)
     };
     std::vector<ShadowItem> m_shadowItems;       // EndFrame: what the shadow passes draw
     // What a shadow pass has bound, so unchanged state isn't re-issued.
@@ -615,6 +617,7 @@ private:
         std::vector<d3d::Matrix> sway;
         double lastSwaySample;
         float plantSway[4];                      // a plant's wind sway (as ShadowCaster sway)
+        uint32_t kind;                           // ShadowCaster kind (VisualKind)
     };
     static constexpr double kSwayStep = 0.05;
     static constexpr size_t kSwaySamples = 80;
@@ -630,6 +633,12 @@ private:
                        const uint16_t* indices, uint32_t indexCount, float boundsMin[3], float boundsMax[3]) const;
     uint32_t m_cachedCastersDrawn = 0;           // last shadow pass: remembered casters drawn (frame dumps)
     uint32_t m_forgottenInView = 0, m_forgottenFar = 0;   // remembered casters forgotten so far (frame dumps)
+    // Last sun pass (frame dumps): the items it considered and the item-cascade pairs it culled / drew, split by
+    // VisualKind::Static and by the animated flag (a character's body changes vertices every frame).
+    uint32_t m_shadowItemsCount = 0, m_shadowStaticItems = 0, m_shadowAnimatedItems = 0;
+    uint32_t m_shadowDrawn = 0, m_shadowCulled = 0;
+    uint32_t m_shadowStaticDrawn = 0, m_shadowAnimatedDrawn = 0;
+    std::vector<uint32_t> m_cascadeVisible;      // scratch: indices into m_shadowItems for one cascade
     void UpdateCasterCache();
     void ForgetCachedCaster(std::unordered_map<uint64_t, CachedCaster>::iterator it);
     void ForgetCasterTexture(Texture* texture);

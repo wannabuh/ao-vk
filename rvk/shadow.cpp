@@ -432,6 +432,7 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     c.draw = m_frameDraw;
     c.animated = m_drawMesh && !m_drawMeshStatic;
     c.owner = m_drawOwner;
+    c.kind = m_drawVisualKind;
     m_casters.push_back(c);
     auto cached = m_casterCache.find(key);
     if (cached != m_casterCache.end()) {
@@ -531,6 +532,7 @@ void Device::CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertic
     e.texture = c.texture;
     e.texOffset = c.texOffset;
     e.alphaRef = c.alphaRef;
+    e.kind = c.kind;
     std::memcpy(e.plantSway, c.sway, sizeof(e.plantSway));
     e.lastSeen = m_frameNumber;
     e.lastSeenTime = SwayClock();
@@ -766,6 +768,7 @@ void Device::CollectShadowItems()
         it.group = 0;
         it.animated = c.animated;
         it.owner = c.owner;
+        it.kind = c.kind;
         std::memcpy(it.sway, c.sway, sizeof(it.sway));
         m_shadowItems.push_back(it);
         drawOf.push_back(c.draw);
@@ -793,6 +796,7 @@ void Device::CollectShadowItems()
         it.cached = true;
         it.animated = false;
         it.group = ~0u;
+        it.kind = e.kind;
         std::memcpy(it.sway, e.plantSway, sizeof(it.sway));
         m_shadowItems.push_back(it);
     }
@@ -910,6 +914,8 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
 {
     bool haveSun = m_sunLuminance > 0.0f && m_sunDir[1] < -0.05f;   // below the horizon / grazing: none
     m_shadowValid = false;
+    m_shadowItemsCount = m_shadowStaticItems = m_shadowAnimatedItems = 0;
+    m_shadowDrawn = m_shadowCulled = m_shadowStaticDrawn = m_shadowAnimatedDrawn = 0;
     // The sun for effects that don't need the shadow map (light through leaves, contact shadows).
     if (haveSun) std::memcpy(m_frameSunDir, m_sunDir, sizeof(m_sunDir));
     for (int i = 0; i < 3; ++i) m_frameSunColor[i] = haveSun ? m_sunColor[i] : 0.0f;
@@ -934,7 +940,14 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         m_shadowItems.clear();
         return;
     }
+    double collectStart = ProfileCpu();
     CollectShadowItems();
+    ProfileCpuAdd("shadow collect", collectStart);
+    m_shadowItemsCount = uint32_t(m_shadowItems.size());
+    for (const ShadowItem& it : m_shadowItems) {
+        if (uint32_t(it.kind) == uint32_t(VisualKind::Static)) ++m_shadowStaticItems;
+        if (it.animated) ++m_shadowAnimatedItems;
+    }
     if (!m_shadows || !haveSun)
         return;
 
@@ -998,22 +1011,39 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         // Bias in depth units grows with the cascade's depth range; slope bias per texel stays the same.
         vkCmdSetDepthBias(cmd, 2.0f * 600.0f / depth, 0.0f, 2.5f);
         ShadowBind bind;
-        for (const ShadowItem& item : m_shadowItems) {
+        bool last = c == count - 1;
+        double cullStart = ProfileCpu();
+        m_cascadeVisible.clear();
+        for (uint32_t i = 0; i < m_shadowItems.size(); ++i) {
+            const ShadowItem& item = m_shadowItems[i];
             // Only casters reaching into this cascade's square (the widest takes every one the game drew).
-            bool last = c == count - 1;
-            if ((item.cached || !last) && BoxInClip(item.boundsMin, item.boundsMax, lightViewProj, false) == -1)
+            if ((item.cached || !last) && BoxInClip(item.boundsMin, item.boundsMax, lightViewProj, false) == -1) {
+                ++m_shadowCulled;
                 continue;
+            }
             // Beyond the nearest cascade, casters a few texels across leave no shadow worth drawing (they still
             // cast in the sharper cascades nearer the camera).
             if (c > 0) {
                 float extent = std::max({item.boundsMax[0] - item.boundsMin[0], item.boundsMax[1] - item.boundsMin[1],
                                          item.boundsMax[2] - item.boundsMin[2]});
-                if (extent < 4.0f * texel)
+                if (extent < 4.0f * texel) {
+                    ++m_shadowCulled;
                     continue;
+                }
             }
+            m_cascadeVisible.push_back(i);
+        }
+        ProfileCpuAdd("shadow cull", cullStart);
+        double drawStart = ProfileCpu();
+        for (uint32_t i : m_cascadeVisible) {
+            const ShadowItem& item = m_shadowItems[i];
             if (item.cached) ++m_cachedCastersDrawn;
+            ++m_shadowDrawn;
+            if (uint32_t(item.kind) == uint32_t(VisualKind::Static)) ++m_shadowStaticDrawn;
+            if (item.animated) ++m_shadowAnimatedDrawn;
             DrawShadowItem(cmd, bind, item, lightViewProj);
         }
+        ProfileCpuAdd("shadow draw", drawStart);
         vkCmdEndRendering(cmd);
         m_cascadeViewProj[c] = lightViewProj;
         m_cascadeTexel[c] = texel;
