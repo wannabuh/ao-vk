@@ -11,8 +11,9 @@ GetProcAddress for the class an archive names), or something other than the expo
 A call whose call site never runs doesn't keep its callee live either: the call graph cannot see a block a constant
 guard keeps from executing, so those edges (DEAD_CALLS) are dropped. The caller stays live - it does run to its guard.
 
-The statically linked VS2010 std::basic_string counts as library (STL_STRING): its named members already match the
-library pattern, and these unnamed ones are the same code Ghidra's library matcher missed, not Randy's own to port.
+The statically linked VS2010 std::basic_string and std::map / std::set count as library (STL_STRING / STL_MAP): their
+named members already match the library pattern, and these unnamed ones are the same code Ghidra's matcher missed,
+not Randy's own to port.
 
 Usage: tools/port-status.py [--classes N] [--list CLASS] [--write-gone FILE]   (--list: the functions of CLASS left to
 port; --write-gone: the unreachable functions' rvas, one per line, for the proxy's RANDYVK_GONE_TRAP check)
@@ -127,6 +128,11 @@ LIB = re.compile(r"^(png_|inflate|deflate|zlib|adler|crc|_|std::|`|operator|Catc
 # strlen wrapper.
 STL_STRING = {0x11E08, 0x11EC6, 0x11F52, 0x11FE3, 0x1211B, 0x1468C, 0x178AD, 0x17908, 0x17969, 0x1798F, 0x17A41,
               0x17A6F, 0x17B42, 0x19794, 0x19826}
+
+# VS2010's std::map / std::set red-black tree, also statically linked and unnamed (its node's colour is at +0x2C / +0x2D
+# and its header at +4): _Lbound, the two rotations, the header, _Erase, the recursive and range erases and the map
+# destructor. Same treatment as the string ones.
+STL_MAP = {0x47E91, 0x47F15, 0x47FB1, 0x47FF6, 0x48244, 0x4849B, 0x485B7, 0x485DE, 0x48631}
 
 
 def call_graph():
@@ -259,8 +265,8 @@ def main():
         # (texture loading); past 0x787AE the CRT glue. 0x6E06A-0x787AE is Funcom's own code linked in - the FAF scene
         # reader (FC_*), streams (SL_*), config lines (LineItem*), matrix helpers - to port like Randy's (it calls
         # Randy's code; the libraries above never do).
-        if (LIB.match(name) or rva in STL_STRING or rva < 0x11380 or (0x5C1D0 <= rva < 0x6E06A and name.startswith("FUN_"))
-                or rva >= 0x787AE):
+        if (LIB.match(name) or rva in STL_STRING or rva in STL_MAP or rva < 0x11380
+                or (0x5C1D0 <= rva < 0x6E06A and name.startswith("FUN_")) or rva >= 0x787AE):
             cls = "(library)"
         elif 0x6E06A <= rva < 0x787AE:
             cls = "(Funcom FC/SL libraries)"
