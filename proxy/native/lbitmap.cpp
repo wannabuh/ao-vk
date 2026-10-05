@@ -7,6 +7,9 @@
 
 #include "native/vc10.h"
 
+#include "stb/stb_image.h"
+
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 
@@ -235,6 +238,99 @@ Bitmap* __fastcall Create(Bitmap* self, void*, Stream* stream, int32_t flags)
     return object;
 }
 
+// ---- the PNG and JPEG loaders (stb_image) ----
+//
+// The loader objects register themselves like the BMP one; a load finds one by its vtable slot 3 (the extension) and
+// calls its slot 4 (the factory), which decodes the stream into a new LBitmap_t. stb expands a palette / greyscale
+// PNG to RGB(A), so the result is 24-bit BGR, or 32-bit BGRA when the file had alpha; a JPEG is always 24-bit (or
+// 32-bit if stb reports alpha). `flags` == 1 reads only the header (size and format, no pixels).
+
+constexpr uint32_t kPngVtable = 0x8AA10, kJpegVtable = 0x8A4D0;
+
+int32_t StreamSize(Stream* s) { return reinterpret_cast<int32_t(__fastcall*)(void*, void*)>(s->vtable[19])(s, nullptr); }
+
+void DecodeImage(Bitmap* self, Stream* stream, bool headerOnly)
+{
+    const int32_t size = StreamSize(stream);
+    if (size <= 0) {
+        self->state = 2;
+        return;
+    }
+    uint8_t* bytes = static_cast<uint8_t*>(vc10::AllocateArray(size_t(size)));
+    Read(stream, bytes, size);
+    int width = 0, height = 0, channels = 0;
+    if (!stbi_info_from_memory(bytes, size, &width, &height, &channels)) {
+        vc10::FreeArray(bytes);
+        self->state = 2;
+        return;
+    }
+    self->width = uint32_t(width);
+    self->height = uint32_t(height);
+    const bool alpha = channels == 2 || channels == 4;
+    const int wanted = alpha ? 4 : 3;
+    self->bitsPerPixel = alpha ? 0x20 : 0x18;
+    if (headerOnly) {
+        vc10::FreeArray(bytes);
+        return;
+    }
+    stbi_uc* pixels = stbi_load_from_memory(bytes, size, &width, &height, &channels, wanted);
+    vc10::FreeArray(bytes);
+    if (!pixels) {
+        self->state = 2;
+        return;
+    }
+    const size_t count = size_t(width) * size_t(height);
+    uint8_t* out = static_cast<uint8_t*>(vc10::Allocate(count * size_t(wanted)));
+    self->data = out;
+    for (size_t i = 0; i < count; ++i) {                 // stb's RGB(A) to the game's BGR(A)
+        out[i * wanted + 0] = pixels[i * wanted + 2];
+        out[i * wanted + 1] = pixels[i * wanted + 1];
+        out[i * wanted + 2] = pixels[i * wanted + 0];
+        if (wanted == 4) out[i * wanted + 3] = pixels[i * wanted + 3];
+    }
+    stbi_image_free(pixels);
+}
+
+Bitmap* __fastcall PNGCreate(Bitmap* self, void*, Stream* stream, int32_t flags)   // FUN_10019154 (vtable slot 4)
+{
+    (void)self;
+    Bitmap* object = static_cast<Bitmap*>(vc10::Allocate(0x124));
+    if (!object) return nullptr;
+    Init(object, nullptr, 1);
+    object->vtable = reinterpret_cast<uint8_t*>(g_orig) + kPngVtable;
+    DecodeImage(object, stream, flags == 1);
+    return object;
+}
+
+Bitmap* __fastcall JPEGCreate(Bitmap* self, void*, Stream* stream, int32_t flags)   // FUN_10018b7c (vtable slot 4)
+{
+    (void)self;
+    Bitmap* object = static_cast<Bitmap*>(vc10::Allocate(0x124));
+    if (!object) return nullptr;
+    Init(object, nullptr, 1);
+    object->vtable = reinterpret_cast<uint8_t*>(g_orig) + kJpegVtable;
+    DecodeImage(object, stream, flags == 1);
+    return object;
+}
+
+const char* __fastcall NamePNG(void*) { return "png"; }    // FUN_10019191 (vtable slot 3)
+const char* __fastcall NameJPEG(void*) { return "jpg"; }   // FUN_10011b94
+const char* __fastcall NameBMP(void*) { return "bmp"; }    // FUN_10011b9a
+
+void* __fastcall BitmapDelete(Bitmap* self, void*, uint8_t flags)   // FUN_10011d73 (every bitmap vtable's slot 0)
+{
+    Destroy(self, nullptr);
+    if (flags & 1) vc10::Free(self);
+    return self;
+}
+
+void* __fastcall PNGLoaderCtor(Bitmap* self, void*)   // FUN_10018d11: the registered PNG loader object
+{
+    BaseCtor(self, nullptr);
+    self->vtable = reinterpret_cast<uint8_t*>(g_orig) + kPngVtable;
+    return self;
+}
+
 Bitmap* __cdecl Load(Stream* stream, const char* name, int32_t flags)
 {
     if (!name) {
@@ -270,6 +366,13 @@ void Install(HMODULE orig)
         {0x15228, FN(BaseCtor), "LBitmap_t constructor (FUN_10015228)"},
         {0x1526B, FN(BMPCtor), "the BMP stream loader (FUN_1001526b)"},
         {0x1553D, FN(Create), "the loader's factory (FUN_1001553d)"},
+        {0x19154, FN(PNGCreate), "the PNG loader's factory (FUN_10019154)"},
+        {0x18B7C, FN(JPEGCreate), "the JPEG loader's factory (FUN_10018b7c)"},
+        {0x19191, FN(NamePNG), "the PNG loader's extension (FUN_10019191)"},
+        {0x11B94, FN(NameJPEG), "the JPEG loader's extension (FUN_10011b94)"},
+        {0x11B9A, FN(NameBMP), "the BMP loader's extension (FUN_10011b9a)"},
+        {0x11D73, FN(BitmapDelete), "LBitmap_t deleting destructor (FUN_10011d73)"},
+        {0x18D11, FN(PNGLoaderCtor), "the PNG loader (FUN_10018d11)"},
         {0x155C5, FN(NotEqual), "Vector3 compare (FUN_100155c5)"},
     };
 #undef FN

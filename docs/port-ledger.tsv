@@ -911,6 +911,13 @@
 0x151E5	replaced	proxy/native/lbitmap.cpp	LBitmap_t::Load
 0x1526B	replaced	proxy/native/lbitmap.cpp	the BMP stream loader (FUN_1001526b)
 0x1553D	replaced	proxy/native/lbitmap.cpp	the loader's factory (FUN_1001553d)
+0x19154	replaced	proxy/native/lbitmap.cpp	the PNG loader's factory (FUN_10019154; stb_image)
+0x18B7C	replaced	proxy/native/lbitmap.cpp	the JPEG loader's factory (FUN_10018b7c; stb_image)
+0x19191	replaced	proxy/native/lbitmap.cpp	the PNG loader's extension (FUN_10019191)
+0x11B94	replaced	proxy/native/lbitmap.cpp	the JPEG loader's extension (FUN_10011b94)
+0x11B9A	replaced	proxy/native/lbitmap.cpp	the BMP loader's extension (FUN_10011b9a)
+0x11D73	replaced	proxy/native/lbitmap.cpp	LBitmap_t deleting destructor (FUN_10011d73)
+0x18D11	replaced	proxy/native/lbitmap.cpp	the PNG loader (FUN_10018d11)
 0x1B63B	replaced	proxy/native/helpers.cpp	a Type* debug descriptor store (FUN_1001b63b)
 0x1B662	replaced	proxy/native/helpers.cpp	a Type* debug descriptor size (FUN_1001b662)
 0x2A358	replaced	proxy/native/helpers.cpp	Vector3 cross product (FUN_1002a358)
