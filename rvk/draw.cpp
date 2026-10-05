@@ -327,9 +327,13 @@ uint64_t Device::TerrainChunkKey(const void* vertices, uint32_t vertexCount, uin
     uint64_t h = 1469598103934665603ull ^ (uint64_t(vertexCount) << 32) ^ indexCount;
     const uint8_t* v = static_cast<const uint8_t*>(vertices);
     uint32_t step = vertexCount > 32 ? vertexCount / 32 : 1;
-    for (uint32_t i = 0; i < vertexCount; i += step)
-        for (uint32_t b = 0; b < 12; ++b)
-            h = (h ^ v[size_t(i) * stride + b]) * 1099511628211ull;
+    for (uint32_t i = 0; i < vertexCount; i += step) {   // the position as three words, not twelve bytes
+        uint32_t w[3];
+        std::memcpy(w, v + size_t(i) * stride, sizeof(w));
+        h = (h ^ w[0]) * 1099511628211ull;
+        h = (h ^ w[1]) * 1099511628211ull;
+        h = (h ^ w[2]) * 1099511628211ull;
+    }
     return h;
 }
 
