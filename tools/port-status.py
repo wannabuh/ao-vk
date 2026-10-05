@@ -90,7 +90,7 @@ def client_imports():
 def native_uses():
     """Exported names our code calls: orig:: bindings (g_fn[i] = kExports[i]) and names looked up by string."""
     gen = (ROOT / "proxy/native/orig_api.gen.cpp").read_text()
-    table = re.findall(r'^\s*\{"([^"]+)"\}', gen, re.M)
+    table = re.findall(r'^\s*\{"([^"]+)"', gen, re.M)
     header = (ROOT / "proxy/native/orig_api.gen.h").read_text()
     binding = {m.group(1): int(m.group(2)) for m in re.finditer(r"inline [^\n]*? (\w+)\([^\n]*g_fn\[(\d+)\]", header)}
     used = set()
