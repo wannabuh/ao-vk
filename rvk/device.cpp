@@ -1071,7 +1071,6 @@ void Device::BeginFrame()
     m_batchKey = 0;
     m_batchRun = 0;
     m_meshStaticDraws = m_meshHashedDraws = 0;
-    m_descFrameValid = false;                    // the frame's command buffer starts with no descriptors pushed
     if (m_swapchainStale) {
         vkDeviceWaitIdle(m_device);
         DestroySwapchain();

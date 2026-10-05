@@ -418,14 +418,6 @@ private:
         uint32_t albedoEnable = ~0u, albedoSrc = ~0u, albedoDst = ~0u;   // attachment 4 (surface colour)
         uint32_t writeMask[5] = {~0u, ~0u, ~0u, ~0u, ~0u};   // dynamic colour write masks (m_dynamicWriteMask)
     };
-    // The frame-constant descriptors (frame lights, the shadow map and its depths, the point-light cubes) are pushed
-    // once per frame instead of per draw. Anything that changes their contents - the ring restarting, the shadow maps
-    // being recreated, a resolution change - is in these, and forces a re-push.
-    bool m_descFrameValid = false;
-    uint32_t m_descRing = ~0u;
-    VkDeviceSize m_descFrameLightsOffset = ~0;
-    VkImageView m_descShadowView = VK_NULL_HANDLE;
-    VkImageView m_descCubeView = VK_NULL_HANDLE;
 
     bool CreateInstance(std::string* error);
     bool PickDevice(std::string* error);

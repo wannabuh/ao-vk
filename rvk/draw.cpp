@@ -2047,23 +2047,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[10].pBufferInfo = &smoothNormals;
     writes[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[11].pImageInfo = &normal;
-    // Per-draw bindings every time: 0 constants, 1/2 textures, 3 transform, 7 bump, 8 last positions, 10 smooth
-    // normals, 11 normal map.
-    const VkWriteDescriptorSet perDraw[8] = {writes[0], writes[1], writes[2], writes[3],
-                                             writes[7], writes[8], writes[10], writes[11]};
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 8, perDraw);
-    // Frame-constant bindings, pushed once and re-pushed only when their contents change: 4 frame lights, 5 the
-    // shadow map, 6 the point-light cubes, 9 its depths.
-    if (!m_descFrameValid || m_ringGeneration != m_descRing || frameLightsOffset != m_descFrameLightsOffset ||
-        m_shadowView != m_descShadowView || m_cubeArrayView != m_descCubeView) {
-        const VkWriteDescriptorSet frameConst[4] = {writes[4], writes[5], writes[6], writes[9]};
-        vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 4, frameConst);
-        m_descFrameValid = true;
-        m_descRing = m_ringGeneration;
-        m_descFrameLightsOffset = frameLightsOffset;
-        m_descShadowView = m_shadowView;
-        m_descCubeView = m_cubeArrayView;
-    }
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 12, writes);
 
     // Would an instanced batch cover this draw together with the one before it? Only static snapshots share their
     // vertex data across draws; ring copies are unique per draw, so those never merge.
