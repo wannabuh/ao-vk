@@ -641,6 +641,12 @@ private:
     double m_shadowCollectMs = 0.0, m_shadowCullMs = 0.0, m_shadowDrawMs = 0.0;   // last pass (frame dumps)
     std::vector<uint32_t> m_cascadeVisible;      // scratch: indices into m_shadowItems for one cascade
     std::vector<uint32_t> m_animatedItems;       // indices of the animated items (characters' bodies)
+    // Frame dump: how much the main pass could merge into instanced draws - consecutive static draws with the same
+    // snapshot, vertex / index range, format, textures and geometry, differing only in their world / per-draw block.
+    uint32_t m_batchRuns = 0, m_batchMerged = 0, m_batchMaxRun = 0;
+    uint64_t m_batchKey = 0;
+    uint32_t m_batchRun = 0;
+    void NoteBatch(uint64_t key);
     void UpdateCasterCache();
     void ForgetCachedCaster(std::unordered_map<uint64_t, CachedCaster>::iterator it);
     void ForgetCasterTexture(Texture* texture);

@@ -45,6 +45,8 @@ void Device::EndFrameDump()
                              " %u animated), culled %u; %.2f ms collect, %.2f cull, %.2f draw\n",
                  m_shadowItemsCount, m_shadowStaticItems, m_shadowAnimatedItems, m_shadowDrawn, m_shadowStaticDrawn,
                  m_shadowAnimatedDrawn, m_shadowCulled, m_shadowCollectMs, m_shadowCullMs, m_shadowDrawMs);
+    std::fprintf(m_dumpFile, "# instancing: %u runs of >=2 identical static draws; %u draws could merge away (longest run"
+                             " %u)\n", m_batchRuns, m_batchMerged, m_batchMaxRun);
     if (m_hdr)
         std::fprintf(m_dumpFile, "# hdr: scene phase ended at draw %u (fvf 0x%X)%s; %u additive draws fed the glow\n",
                      m_sceneEndDraw, m_sceneEndFvf,

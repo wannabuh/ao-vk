@@ -1460,6 +1460,21 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     }
 }
 
+// A fingerprint of everything an instanced batch must share (geometry, format, textures, state); 0 = not mergeable.
+// Consecutive equal keys are draws one instanced draw could cover (their world / per-draw block differs per instance).
+void Device::NoteBatch(uint64_t key)
+{
+    if (key && key == m_batchKey) {
+        ++m_batchRun;
+        ++m_batchMerged;
+        if (m_batchRun == 2) ++m_batchRuns;
+        if (m_batchRun > m_batchMaxRun) m_batchMaxRun = m_batchRun;
+    } else {
+        m_batchKey = key;
+        m_batchRun = key ? 1 : 0;
+    }
+}
+
 void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
                   const uint16_t* indices, uint32_t indexCount)
 {
@@ -1945,6 +1960,21 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     writes[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[11].pImageInfo = &normal;
     vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 12, writes);
+
+    // Would an instanced batch cover this draw together with the one before it? Only static snapshots share their
+    // vertex data across draws; ring copies are unique per draw, so those never merge.
+    uint64_t batchKey = 0;
+    if (m_drawStaticBuffer && !m_external && !m_drawGpu) {
+        uint64_t k = 0x9E3779B97F4A7C15ull;
+        auto mix = [&k](uint64_t x) { k = (k ^ x) * 0xFF51AFD7ED558CCDull; k ^= k >> 32; };
+        mix(uint64_t(m_drawStaticBuffer));
+        mix(vbOffset); mix(vertexCount); mix(ibOffset); mix(indexCount);
+        mix(fvf); mix(primitive); mix(layout.stride);
+        mix(reinterpret_cast<uintptr_t>(m_textures[0]));
+        mix(reinterpret_cast<uintptr_t>(m_textures[1]));
+        batchKey = k;
+    }
+    NoteBatch(batchKey);
 
     if (m_external) {
         VkBuffer buffers[2] = {m_external->vertices, m_nullBuffer};

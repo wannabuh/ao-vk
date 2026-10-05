@@ -1067,6 +1067,9 @@ void Device::SetRenderTarget(Texture* target)
 
 void Device::BeginFrame()
 {
+    m_batchRuns = m_batchMerged = m_batchMaxRun = 0;
+    m_batchKey = 0;
+    m_batchRun = 0;
     if (m_swapchainStale) {
         vkDeviceWaitIdle(m_device);
         DestroySwapchain();
