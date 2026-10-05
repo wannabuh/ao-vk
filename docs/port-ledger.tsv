@@ -870,3 +870,6 @@
 0x14F53	replaced	proxy/native/lbitmap.cpp	LBitmap_t::Scale
 0x15228	replaced	proxy/native/lbitmap.cpp	LBitmap_t constructor (FUN_10015228)
 0x155C5	replaced	proxy/native/lbitmap.cpp	a Vector3 compare (FUN_100155c5)
+0x151E5	replaced	proxy/native/lbitmap.cpp	LBitmap_t::Load
+0x1526B	replaced	proxy/native/lbitmap.cpp	the BMP stream loader (FUN_1001526b)
+0x1553D	replaced	proxy/native/lbitmap.cpp	the loader's factory (FUN_1001553d)

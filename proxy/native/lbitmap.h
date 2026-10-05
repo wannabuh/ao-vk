@@ -25,6 +25,11 @@ struct Bitmap {
 };
 static_assert(sizeof(Bitmap) == 0x124, "LBitmap_t");
 
+// fun::PositionIO_t's head: its vtable (slots 0 Read(buf,size), 5 ReadDword, 7 ReadWord, 18 Seek(offset,origin)).
+struct Stream {
+    void** vtable;
+};
+
 void Install(HMODULE orig);
 void SetModule(HMODULE orig);
 
@@ -37,5 +42,9 @@ void* __cdecl Find(const char* extension);                                      
 void __fastcall Scale(Bitmap* self, void*, uint32_t width, uint32_t height);         // 0x14f53
 void __fastcall BaseCtor(Bitmap* self, void*);                                       // 0x15228
 uint32_t __fastcall NotEqual(const float* self, void*, const float* other);          // 0x155c5 (a Vector3 compare)
+
+Bitmap* __fastcall BMPCtor(Bitmap* self, void*, Stream* stream, int32_t flags);      // 0x1526b (the BMP stream loader)
+Bitmap* __fastcall Create(Bitmap* self, void*, Stream* stream, int32_t flags);       // 0x1553d (the loader's factory)
+Bitmap* __cdecl Load(Stream* stream, const char* name, int32_t flags);               // 0x151e5 (find a loader, create)
 
 }  // namespace rnative::lbitmap

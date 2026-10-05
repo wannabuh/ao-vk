@@ -1340,6 +1340,158 @@ void CheckLBitmap()
     Check(mism == 0, "lbitmap: LBitmap_t");
 }
 
+// ---- a fake fun::PositionIO_t over a memory buffer (vtable slots 0 Read, 5 ReadDword, 7 ReadWord, 18 Seek) ----
+struct FakeStream {
+    void** vtable;
+    const uint8_t* data;
+    size_t size, pos;
+};
+uint16_t __fastcall FakeReadWord(void* self, void*)
+{
+    FakeStream* s = static_cast<FakeStream*>(self);
+    uint16_t v = 0;
+    if (s->pos + 2 <= s->size) std::memcpy(&v, s->data + s->pos, 2);
+    s->pos += 2;
+    return v;
+}
+uint32_t __fastcall FakeReadDword(void* self, void*)
+{
+    FakeStream* s = static_cast<FakeStream*>(self);
+    uint32_t v = 0;
+    if (s->pos + 4 <= s->size) std::memcpy(&v, s->data + s->pos, 4);
+    s->pos += 4;
+    return v;
+}
+void __fastcall FakeRead(void* self, void*, void* buf, int32_t size)
+{
+    FakeStream* s = static_cast<FakeStream*>(self);
+    if (s->pos + size_t(size) <= s->size && size > 0) std::memcpy(buf, s->data + s->pos, size);
+    s->pos += size_t(size);
+}
+void __fastcall FakeSeek(void* self, void*, int32_t offset, int32_t origin)
+{
+    FakeStream* s = static_cast<FakeStream*>(self);
+    s->pos = origin == 0 ? size_t(offset) : origin == 1 ? s->pos + size_t(offset) : s->size + size_t(offset);
+}
+void* __fastcall FakeCreate(void*, void*, void*, int32_t) { return reinterpret_cast<void*>(0x1234); }
+
+// LBitmap_t's BMP stream loader against the original, over a fake fun::PositionIO_t.
+void CheckLBitmapStream()
+{
+    using namespace rnative::lbitmap;
+    lbitmap::SetModule(g_orig);
+    using BMPCtorFn = void*(__fastcall*)(void*, void*, void*, int32_t);
+    using CreateFn = void*(__fastcall*)(void*, void*, void*, int32_t);
+    using LoadFn = void*(__cdecl*)(void*, const char*, int32_t);
+    int mism = 0;
+    auto eql = [&](const char* what, uint64_t x, uint64_t y) {
+        if (x != y && mism++ < 6) std::printf("lbitmap stream: %s differs\n", what);
+    };
+    void* streamVt[19] = {};
+    streamVt[0] = reinterpret_cast<void*>(&FakeRead);
+    streamVt[5] = reinterpret_cast<void*>(&FakeReadDword);
+    streamVt[7] = reinterpret_cast<void*>(&FakeReadWord);
+    streamVt[18] = reinterpret_cast<void*>(&FakeSeek);
+    std::mt19937 rng(2718);
+    alignas(16) uint8_t memA[0x124], memB[0x124];
+    for (int trial = 0; trial < 300; ++trial) {
+        const uint16_t bpp = (rng() & 1) ? 8 : 24;
+        const uint32_t w = 1 + rng() % 20, h = 1 + rng() % 20;
+        const bool badSignature = rng() % 20 == 0;
+        const uint32_t compression = (rng() % 20 == 0) ? 1 : 0;
+        const int32_t flags = (rng() % 10 == 0) ? 1 : 0;
+        std::vector<uint8_t> bmp;
+        auto put16 = [&](uint16_t v) { bmp.push_back(uint8_t(v)), bmp.push_back(uint8_t(v >> 8)); };
+        auto put32 = [&](uint32_t v) { for (int i = 0; i < 4; ++i) bmp.push_back(uint8_t(v >> (8 * i))); };
+        const uint32_t paletteBytes = bpp == 8 ? 256 * 4 : 0;
+        const uint32_t rowBytes = bpp == 8 ? w : w * 3;
+        const uint32_t pad = (4 - (rowBytes & 3)) & 3;
+        const uint32_t pixelBytes = h * (rowBytes + pad);
+        const uint32_t dataOffset = 54 + paletteBytes;
+        put16(badSignature ? 0x1234 : 0x4d42);
+        put32(dataOffset + pixelBytes);
+        put16(0), put16(0), put32(dataOffset);
+        put32(40), put32(w), put32(h), put16(1), put16(bpp), put32(compression), put32(pixelBytes), put32(2835),
+            put32(2835), put32(bpp == 8 ? 256 : 0), put32(0);
+        while (bmp.size() < dataOffset + pixelBytes) bmp.push_back(uint8_t(rng()));
+        FakeStream sa{streamVt, bmp.data(), bmp.size(), 0}, sb{streamVt, bmp.data(), bmp.size(), 0};
+        std::memset(memA, 0xAA, sizeof(memA));
+        std::memset(memB, 0xAA, sizeof(memB));
+        Orig<BMPCtorFn>(0x1526B)(memA, nullptr, &sa, flags);
+        BMPCtor(reinterpret_cast<Bitmap*>(memB), nullptr, reinterpret_cast<Stream*>(&sb), flags);
+        Bitmap* a = reinterpret_cast<Bitmap*>(memA);
+        Bitmap* b = reinterpret_cast<Bitmap*>(memB);
+        eql("state", uint32_t(a->state), uint32_t(b->state));
+        eql("bpp", uint32_t(a->bitsPerPixel), uint32_t(b->bitsPerPixel));
+        eql("width", a->width, b->width);
+        eql("height", a->height, b->height);
+        eql("flag", a->flag, b->flag);
+        eql("stream pos", sa.pos, sb.pos);
+        if (a->data && b->data) {
+            const size_t n = size_t(w) * h * (bpp == 8 ? 1 : 3);
+            if (std::memcmp(a->data, b->data, n) != 0 && mism++ < 6) std::printf("lbitmap stream: data differs\n");
+        } else {
+            eql("data null", a->data == nullptr, b->data == nullptr);
+        }
+        if (bpp == 8 && a->palette && b->palette && std::memcmp(a->palette, b->palette, 256 * 4) != 0 && mism++ < 6)
+            std::printf("lbitmap stream: palette differs\n");
+        vc10::Free(a->data);
+        vc10::Free(a->palette);
+        vc10::Free(b->data);
+        vc10::Free(b->palette);
+    }
+    // the factory: a fresh object from the stream, compared
+    {
+        std::vector<uint8_t> bmp;
+        auto put16 = [&](uint16_t v) { bmp.push_back(uint8_t(v)), bmp.push_back(uint8_t(v >> 8)); };
+        auto put32 = [&](uint32_t v) { for (int i = 0; i < 4; ++i) bmp.push_back(uint8_t(v >> (8 * i))); };
+        const uint32_t w = 8, h = 8, rowBytes = w, pad = (4 - (rowBytes & 3)) & 3, pixelBytes = h * (rowBytes + pad);
+        const uint32_t dataOffset = 54 + 256 * 4;
+        put16(0x4d42), put32(dataOffset + pixelBytes), put16(0), put16(0), put32(dataOffset);
+        put32(40), put32(w), put32(h), put16(1), put16(8), put32(0), put32(pixelBytes), put32(2835), put32(2835),
+            put32(256), put32(0);
+        while (bmp.size() < dataOffset + pixelBytes) bmp.push_back(uint8_t(rng()));
+        FakeStream sa{streamVt, bmp.data(), bmp.size(), 0}, sb{streamVt, bmp.data(), bmp.size(), 0};
+        Bitmap* a = reinterpret_cast<Bitmap*>(Orig<CreateFn>(0x1553D)(nullptr, nullptr, &sa, 0));
+        Bitmap* b = Create(nullptr, nullptr, reinterpret_cast<Stream*>(&sb), 0);
+        eql("create null", a == nullptr, b == nullptr);
+        if (a && b) {
+            eql("create bpp", uint32_t(a->bitsPerPixel), uint32_t(b->bitsPerPixel));
+            eql("create data", std::memcmp(a->data, b->data, w * h) == 0, 1);
+            vc10::Free(a->data);
+            vc10::Free(a->palette);
+            vc10::Free(b->data);
+            vc10::Free(b->palette);
+            vc10::Free(a);
+            vc10::Free(b);
+        }
+    }
+    // Load: a registered fake loader, found by extension and asked to create
+    {
+        void* loaderVt[5] = {nullptr, nullptr, nullptr, reinterpret_cast<void*>(&FakeBitmapName),
+                             reinterpret_cast<void*>(&FakeCreate)};
+        alignas(8) uint8_t loader[16] = {};
+        *reinterpret_cast<void**>(loader) = loaderVt;
+        std::memcpy(loader + 4, "bmp", 4);
+        auto registry = [g = g_orig]() { return reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(g) + 0xB92E0); };
+        auto list = [g = g_orig](uint32_t i) -> void*& { return reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(g) + 0xB9150)[i]; };
+        registry()[0] = 1;
+        list(0) = loader;
+        void* fakeStream = streamVt;
+        eql("load bmp", reinterpret_cast<uint64_t>(Orig<LoadFn>(0x151E5)(fakeStream, "foo.bmp", 0)),
+            reinterpret_cast<uint64_t>(Load(static_cast<Stream*>(fakeStream), "foo.bmp", 0)));
+        eql("load BMP", reinterpret_cast<uint64_t>(Orig<LoadFn>(0x151E5)(fakeStream, "x/y.BMP", 0)),
+            reinterpret_cast<uint64_t>(Load(static_cast<Stream*>(fakeStream), "x/y.BMP", 0)));
+        eql("load null name", reinterpret_cast<uint64_t>(Orig<LoadFn>(0x151E5)(fakeStream, nullptr, 0)),
+            reinterpret_cast<uint64_t>(Load(static_cast<Stream*>(fakeStream), nullptr, 0)));
+        eql("load unknown", reinterpret_cast<uint64_t>(Orig<LoadFn>(0x151E5)(fakeStream, "foo.tga", 0)),
+            reinterpret_cast<uint64_t>(Load(static_cast<Stream*>(fakeStream), "foo.tga", 0)));
+        registry()[0] = 0;
+    }
+    std::printf("lbitmap stream: 300 BMP loads, the factory and Load; %d differ\n", mism);
+    Check(mism == 0, "lbitmap stream: BMP loader");
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -1382,6 +1534,7 @@ int main(int argc, char** argv)
     CheckColor();
     CheckPixelFormat();
     CheckLBitmap();
+    CheckLBitmapStream();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;
