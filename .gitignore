@@ -5,3 +5,5 @@ compile_commands.json
 /logs
 /re
 /proxy/native/private/
+
+__pycache__/

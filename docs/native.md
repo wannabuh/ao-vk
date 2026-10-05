@@ -94,6 +94,8 @@ bytes, and refuses entries that can't take a 5-byte jump (`proxy/native/entry_gu
 through `proxy/native/orig_api.gen.h` (tools/gen_orig_api.py), and lives in the game's heap / containers via
 `proxy/native/vc10.h`. A call the call graph cannot see never runs - its block is guarded by a constant
 (`DEAD_CALLS` in port-status.py) - so it doesn't keep its callee live: the caller is live, its dead calls aren't.
+The statically linked VS2010 `std::basic_string` is library, not Randy's own (its named members always matched;
+`STL_STRING` in port-status.py is the unnamed half Ghidra's library matcher missed).
 
 ## Tools
 
