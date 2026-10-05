@@ -15,9 +15,14 @@ layout(triangles, equal_spacing, ccw) in;
 #define LERP(type, name, loc) name = gl_TessCoord.x * t_##name[0] + gl_TessCoord.y * t_##name[1] + gl_TessCoord.z * t_##name[2];
 FFP_VARYINGS(IN)
 FFP_VARYINGS(OUT)
+// The draw's record index: one patch value from the control stage, passed flat to the fragment shader.
+layout(location = 15) patch in uint tRecord;
+layout(location = 15) flat out uint vRecord;
 
 void main()
 {
+    gRecord = tRecord;
+    vRecord = tRecord;
     FFP_VARYINGS(LERP)
     vec3 b = gl_TessCoord;
     vec3 p = vPosW, pull = vec3(0.0);

@@ -55,6 +55,7 @@ layout(location = 10) in vec2 vSet0;
 layout(location = 11) in vec4 vClip;
 layout(location = 12) in vec4 vPrevClip;
 layout(location = 13) in float vCutout;
+layout(location = 15) flat in uint vRecord;    // the draw's record index (from the vertex shader)
 
 // Lit vertex colours: the interpolated ones, or computed here for per-pixel lighting.
 vec4 gDiffuse, gSpecular;
@@ -319,6 +320,7 @@ bool AlphaPass(float a)
 
 void main()
 {
+    gRecord = vRecord;
     gDiffuse = vDiffuse;
     gSpecular = vSpecular;
     // Cut-out pixels (alpha test, F_CUTOUT) dropped before the lighting and shadows, not after: most of a plant's quad

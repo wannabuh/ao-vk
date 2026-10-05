@@ -2069,10 +2069,6 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     write(4, 9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[4].pImageInfo = &shadowDepths;
     write(5, 10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);         writes[5].pBufferInfo = &smoothNormals;
     vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 6, writes);
-    VkShaderStageFlags pushStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    if (m_tessSupported)
-        pushStages |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-    vkCmdPushConstants(cmd, m_pipelineLayout, pushStages, 0, sizeof(recordIndex), &recordIndex);
     if (!m_bindlessBound) {                       // set 1, once per frame's command buffer
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 1, 1, &m_bindlessSet, 0, nullptr);
         m_bindlessBound = true;
@@ -2098,7 +2094,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         VkDeviceSize offsets[2] = {0, 0};
         vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
         vkCmdBindIndexBuffer(cmd, m_external->indices, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdDrawIndexed(cmd, indexCount, 1, 0, m_external->baseVertex, 0);
+        vkCmdDrawIndexed(cmd, indexCount, 1, 0, m_external->baseVertex, recordIndex);
         m_cache.buffersBound = false;            // the next draw binds the ring again
         return;
     }
@@ -2108,9 +2104,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
         if (indices) {
             vkCmdBindIndexBuffer(cmd, f.ring, 0, VK_INDEX_TYPE_UINT16);
-            vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);
+            vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), recordIndex);
         } else {
-            vkCmdDraw(cmd, vertexCount, 1, uint32_t(vbOffset / layout.stride), 0);
+            vkCmdDraw(cmd, vertexCount, 1, uint32_t(vbOffset / layout.stride), recordIndex);
         }
         m_cache.buffersBound = false;            // the next draw binds the ring again
         return;
@@ -2120,14 +2116,14 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         VkDeviceSize offsets[2] = {0, 0};
         vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
         vkCmdBindIndexBuffer(cmd, m_drawGpu->mesh->buffer, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);
+        vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), recordIndex);
         m_cache.buffersBound = false;            // the next draw binds the ring again
         return;
     }
     if (indices)
-        vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);
+        vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), recordIndex);
     else
-        vkCmdDraw(cmd, vertexCount, 1, uint32_t(vbOffset / layout.stride), 0);
+        vkCmdDraw(cmd, vertexCount, 1, uint32_t(vbOffset / layout.stride), recordIndex);
 
     // A particle effect's sprites (ParticleEmitter): its particles follow, with the same state.
     if (m_particlePending && fvf == kParticleFvf) {

@@ -692,10 +692,6 @@ bool Device::CreatePipelines(std::string* error)
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pl.setLayoutCount = m_bindless ? 2 : 1;
     pl.pSetLayouts = setLayouts;
-    // M2: the draw picks its DrawRecord with a push constant (M3 will use gl_DrawID).
-    VkPushConstantRange drawPush{vsfstess, 0, sizeof(uint32_t)};
-    pl.pushConstantRangeCount = 1;
-    pl.pPushConstantRanges = &drawPush;
     if (!Check(vkCreatePipelineLayout(m_device, &pl, nullptr, &m_pipelineLayout), "vkCreatePipelineLayout", error))
         return false;
 

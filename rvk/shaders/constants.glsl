@@ -48,12 +48,12 @@ struct DrawRecord {
 
 layout(set = 0, binding = 12, std430) readonly buffer DrawRecords { DrawRecord records[]; } gRecords;
 layout(set = 0, binding = 0, std430) readonly buffer DrawConstantArray { DrawConstants consts[]; } gConsts;
-layout(push_constant) uniform DrawPush { uint record; } pc;
 
-// The record and constants the shader is drawing: selected by the push constant. Kept spelled C./D. as when they
-// were uniform blocks, so the body below is unchanged.
-#define D (gRecords.records[pc.record].d)
-#define C (gConsts.consts[gRecords.records[pc.record].constIndex])
+// The draw's record, selected by the GPU: gl_InstanceIndex in the vertex shader (the draw sets firstInstance to
+// the record's index), passed to the tess/fragment stages as a varying. M3 batches draws into one indirect call.
+uint gRecord;
+#define D (gRecords.records[gRecord].d)
+#define C (gConsts.consts[gRecords.records[gRecord].constIndex])
 
 // Bindless textures (M1): one array of every texture and one of every sampler; a draw names the four it uses by
 // index. TEX0/TEX1 are the game's two texture stages, BUMPTEX the ground's base texture, NORMALTEX its normal map.

@@ -30,6 +30,7 @@ layout(location = 13) out float vCutout;     // F_CUTOUT: alpha below which the 
 layout(location = 14) out vec3 vSmoothN;     // tessellated draws (D.tess.x): the normal averaged over the vertices at
                                              // this position (world), which the Phong shape follows - no cracks at
                                              // hard edges, where a position has several normals
+layout(location = 15) flat out uint vRecord; // the draw's record index (M3: gl_InstanceIndex), for the later stages
 // Tessellated draws: per vertex the averaged normal (model space, 3 floats), from the draw's base vertex D.tess.z.
 layout(set = 0, binding = 10, std430) readonly buffer SmoothNormals { float smoothN[]; } SN;
 // Last frame's vertex positions of an animated (CPU-skinned) mesh, model space, 3 floats a vertex (D.motion.y).
@@ -134,6 +135,8 @@ vec4 TexCoord(uint stage, uint fvf, vec3 posV, vec3 normalV)
 
 void main()
 {
+    gRecord = uint(gl_InstanceIndex);            // the draw sets firstInstance to its record index (M3)
+    vRecord = gRecord;
     uint fvf = C.vtx.x;
     bool rhw = (fvf & 0xEu) == 4u;
     bool hasNormal = (fvf & 0x10u) != 0u;

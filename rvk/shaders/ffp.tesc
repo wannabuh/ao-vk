@@ -11,9 +11,14 @@ layout(vertices = 3) out;
 #define COPY(type, name, loc) t_##name[gl_InvocationID] = name[gl_InvocationID];
 FFP_VARYINGS(IN)
 FFP_VARYINGS(OUT)
+// The draw's record index: the vertex shader's per-vertex flat output, handed to the eval stage as one patch value.
+layout(location = 15) flat in uint vRecord[];
+layout(location = 15) patch out uint tRecord;
 
 void main()
 {
+    gRecord = vRecord[0];                        // every vertex of a draw shares it
+    tRecord = vRecord[0];
     FFP_VARYINGS(COPY)
     if (gl_InvocationID == 0) {
         // One level for every edge of the draw: an edge shared by two triangles is split alike on both (no cracks).
