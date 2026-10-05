@@ -233,6 +233,10 @@
 0x4BD1B	replaced	proxy/native/viewport.cpp	RViewPort_t::TransformPointToScreenSpace
 0x4BF39	replaced	proxy/native/viewport.cpp	RViewPort_t::Process
 0x4BFFF	replaced	proxy/native/viewport.cpp	RViewPort_t::Render
+0x4B045	replaced	proxy/native/viewport.cpp	RViewPort_t::~RViewPort_t (FUN_1004b045)
+0x4C7C8	replaced	proxy/native/viewport.cpp	RViewPort_t deleting destructor (FUN_1004c7c8)
+0x298AC	replaced	proxy/native/viewport.cpp	RViewPort_t render pools (FUN_100298ac)
+0x298FB	replaced	proxy/native/viewport.cpp	RViewPort_t render pools free (FUN_100298fb)
 0x4C4EA	replaced	proxy/native/viewport.cpp	RViewPort_t::RenderRefraction
 0x44CC8	replaced	proxy/native/refframe.cpp	RRefFrame_t::RRefFrame_t(parent, animation)
 0x45471	replaced	proxy/native/refframe.cpp	RRefFrame_t::~RRefFrame_t

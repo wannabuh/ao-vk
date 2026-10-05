@@ -15,6 +15,7 @@
 #include "native/viewport.h"
 #include "native/orig_api.gen.h"
 #include "native/scene.h"
+#include "native/vc10.h"
 #include "native/xmath.h"
 
 #include <cstring>
@@ -495,6 +496,47 @@ void __fastcall Process(uint8_t* vp, void*, void* root)
     scene::AfterProcess();
 }
 
+// The render lists' vertex / index pools (FUN_100298ac / FUN_100298fb): one global copy, made by the first
+// viewport and freed by its destructor. RViewPort_t's own destructor (FUN_1004b045) and deleting destructor
+// (FUN_1004c7c8).
+constexpr uint32_t kPoolVertices = 0x17BEF8, kPoolIndices = 0x17BF10, kPoolVerticesBytes = 0x17BF00,
+                   kPoolIndicesBytes = 0x17BF0C, kPoolUse1 = 0x17BEFC, kPoolUse2 = 0x17BF08, kPoolUse3 = 0x17BF04,
+                   kPoolUse4 = 0x17BF14, kPoolsExist = 0x1BB4E8, kViewportVtable = 0x958EC;
+
+void __cdecl ScratchInit(int32_t vertices, int32_t indices)
+{
+    Global<void*>(kPoolIndices) = vc10::AllocateArray(size_t(indices) * 0xC);
+    Global<void*>(kPoolVertices) = vc10::AllocateArray(size_t(vertices) * 0x28);
+    Global<uint32_t>(kPoolVerticesBytes) = uint32_t(vertices) * 0x28;
+    Global<uint32_t>(kPoolIndicesBytes) = uint32_t(indices) * 0xC;
+    Global<uint32_t>(kPoolUse1) = 0;
+    Global<uint32_t>(kPoolUse2) = 0;
+    Global<uint32_t>(kPoolUse3) = 0;
+    Global<uint32_t>(kPoolUse4) = 0;
+}
+
+void __cdecl ScratchFree()
+{
+    vc10::FreeArray(Global<void*>(kPoolIndices));
+    vc10::FreeArray(Global<void*>(kPoolVertices));
+}
+
+void __fastcall Destroy(void* vp)   // FUN_1004b045
+{
+    Field<uintptr_t>(vp, 0) = reinterpret_cast<uintptr_t>(g_orig) + kViewportVtable;
+    if (Global<uint8_t>(kPoolsExist) == 1) {
+        ScratchFree();
+        Global<uint8_t>(kPoolsExist) = 0;
+    }
+}
+
+void* __fastcall Delete(void* vp, void*, uint8_t flags)   // FUN_1004c7c8
+{
+    Destroy(vp);
+    if (flags & 1) vc10::Free(vp);
+    return vp;
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -538,6 +580,10 @@ void Install(HMODULE orig)
         {0x4BF39, FN(Process), "RViewPort_t::Process"},
         {0x4BFFF, FN(RenderLists), "RViewPort_t::Render"},
         {0x4C4EA, FN(RenderRefraction), "RViewPort_t::RenderRefraction"},
+        {0x4B045, FN(Destroy), "RViewPort_t::~RViewPort_t (FUN_1004b045)"},
+        {0x4C7C8, FN(Delete), "RViewPort_t deleting destructor (FUN_1004c7c8)"},
+        {0x298AC, FN(ScratchInit), "RViewPort_t render pools (FUN_100298ac)"},
+        {0x298FB, FN(ScratchFree), "RViewPort_t render pools free (FUN_100298fb)"},
     };
 #undef FN
     int installed = 0;
