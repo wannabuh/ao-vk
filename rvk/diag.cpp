@@ -49,6 +49,8 @@ void Device::EndFrameDump()
                              " %u)\n", m_batchRuns, m_batchMerged, m_batchMaxRun);
     std::fprintf(m_dumpFile, "# mesh info: %u draws identified by static snapshot, %u by a content hash\n",
                  m_meshStaticDraws, m_meshHashedDraws);
+    if (m_lightMaskVerify)
+        std::fprintf(m_dumpFile, "# light mask verify: %u differences from every-light\n", m_lightMaskDiff);
     if (m_hdr)
         std::fprintf(m_dumpFile, "# hdr: scene phase ended at draw %u (fvf 0x%X)%s; %u additive draws fed the glow\n",
                      m_sceneEndDraw, m_sceneEndFvf,

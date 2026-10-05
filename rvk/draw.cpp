@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -316,6 +317,7 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
         }
         std::fprintf(m_dumpFile, "\n");
     }
+    BuildLightGrid();
 }
 
 // Identity of a ground chunk within a frame: its sizes and a sample of its vertices (base and lighting passes draw
@@ -909,6 +911,38 @@ void Device::Wind(float out[4]) const
     out[3] = m_sway;
 }
 
+namespace {
+uint64_t LightCellKey(int32_t cx, int32_t cz)
+{
+    return (uint64_t(uint32_t(cx)) << 32) | uint64_t(uint32_t(cz));
+}
+}  // namespace
+
+// The frame lights into a coarse x/z grid: each light's slot into every cell its sphere covers. FrameLightMask then
+// tests a draw's few cells instead of all kFrameLights (a busy scene captures up to 40). A light covering more than
+// 256 cells (a very large range) is tested by every draw instead (m_lightGridAlways).
+void Device::BuildLightGrid()
+{
+    m_lightGrid.clear();
+    m_lightGridAlways.clear();
+    for (uint32_t slot = 0; slot < m_frameLightSpheres.size(); ++slot) {
+        const LightSphere& s = m_frameLightSpheres[slot];
+        float r = std::sqrt(std::max(0.0f, s.r2));
+        int32_t cx0 = int32_t(std::floor((s.x - r) / kLightGridCell));
+        int32_t cx1 = int32_t(std::floor((s.x + r) / kLightGridCell));
+        int32_t cz0 = int32_t(std::floor((s.z - r) / kLightGridCell));
+        int32_t cz1 = int32_t(std::floor((s.z + r) / kLightGridCell));
+        if (int64_t(cx1 - cx0 + 1) * int64_t(cz1 - cz0 + 1) > 256) {
+            m_lightGridAlways.push_back(slot);
+            continue;
+        }
+        for (int32_t cz = cz0; cz <= cz1; ++cz)
+            for (int32_t cx = cx0; cx <= cx1; ++cx)
+                m_lightGrid.push_back({LightCellKey(cx, cz), slot});
+    }
+    std::sort(m_lightGrid.begin(), m_lightGrid.end());
+}
+
 // The frame lights (light override) whose sphere reaches the draw's world bounding box, as a 64-bit mask for the
 // shader - instead of every pixel trying all of them. All set when the box is unknown (external geometry).
 void Device::FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, uint32_t out[4])
@@ -949,14 +983,50 @@ void Device::FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices,
     }
     const LightSphere* spheres = m_frameLightSpheres.data();
     count = std::min<uint32_t>(count, uint32_t(m_frameLightSpheres.size()));
-    for (uint32_t k = 0; k < count; ++k) {
+    uint64_t hits = 0;
+    auto Test = [&](uint32_t k) {
+        if (hits >> k & 1)
+            return;
         const LightSphere& l = spheres[k];
         float dx = std::max(std::max(wmn[0] - l.x, l.x - wmx[0]), 0.0f);
         float dy = std::max(std::max(wmn[1] - l.y, l.y - wmx[1]), 0.0f);
         float dz = std::max(std::max(wmn[2] - l.z, l.z - wmx[2]), 0.0f);
         if (dx * dx + dy * dy + dz * dz <= l.r2)
-            out[k >> 5] |= 1u << (k & 31);
+            hits |= uint64_t(1) << k;
+    };
+    int32_t cx0 = int32_t(std::floor(wmn[0] / kLightGridCell)), cx1 = int32_t(std::floor(wmx[0] / kLightGridCell));
+    int32_t cz0 = int32_t(std::floor(wmn[2] / kLightGridCell)), cz1 = int32_t(std::floor(wmx[2] / kLightGridCell));
+    if (int64_t(cx1 - cx0 + 1) * int64_t(cz1 - cz0 + 1) > 256) {
+        for (uint32_t k = 0; k < count; ++k) Test(k);        // a box wider than the grid's cells: all of them
+    } else {
+        for (uint32_t k : m_lightGridAlways)
+            if (k < count) Test(k);
+        for (int32_t cz = cz0; cz <= cz1; ++cz)
+            for (int32_t cx = cx0; cx <= cx1; ++cx) {
+                uint64_t key = LightCellKey(cx, cz);
+                auto it = std::lower_bound(m_lightGrid.begin(), m_lightGrid.end(), std::make_pair(key, 0u));
+                for (; it != m_lightGrid.end() && it->first == key; ++it)
+                    if (it->second < count) Test(it->second);
+            }
     }
+    if (m_lightMaskVerify < 0) {
+        const char* v = std::getenv("RANDYVK_LIGHTMASK_VERIFY");
+        m_lightMaskVerify = v && *v == '1' ? 1 : 0;
+    }
+    if (m_lightMaskVerify) {                     // the same mask from every light: a check while bringing the grid up
+        uint64_t brute = 0;
+        for (uint32_t k = 0; k < count; ++k) {
+            const LightSphere& l = spheres[k];
+            float dx = std::max(std::max(wmn[0] - l.x, l.x - wmx[0]), 0.0f);
+            float dy = std::max(std::max(wmn[1] - l.y, l.y - wmx[1]), 0.0f);
+            float dz = std::max(std::max(wmn[2] - l.z, l.z - wmx[2]), 0.0f);
+            if (dx * dx + dy * dy + dz * dz <= l.r2) brute |= uint64_t(1) << k;
+        }
+        if (brute != hits) ++m_lightMaskDiff;
+        hits = brute;
+    }
+    out[0] = uint32_t(hits);
+    out[1] = uint32_t(hits >> 32);
 }
 
 // The current draw's mesh info (m_drawMesh): from the cache when its fingerprint was seen before, else one pass over
