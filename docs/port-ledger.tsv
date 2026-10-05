@@ -630,3 +630,7 @@
 0x25E84	replaced	proxy/native/randy.cpp	RenderTarget_t::RenderTarget_t (FUN_10025e84)
 0x25F39	replaced	proxy/native/randy.cpp	RenderTarget_t destroy (FUN_10025f39)
 0x25F5C	replaced	proxy/native/randy.cpp	RenderTarget_t Z-buffer (FUN_10025f5c)
+0x43F0C	replaced	proxy/native/devices.cpp	Randy_t::GetDevices
+0x43CE4	replaced	proxy/native/devices.cpp	Randy_t::GetDevices adapter (FUN_10043ce4)
+0x41693	replaced	proxy/native/devices.cpp	Randy_t::GetDevices display mode (FUN_10041693)
+0x43545	replaced	proxy/native/devices.cpp	Randy_t::GetDevices Direct3D device (FUN_10043545)

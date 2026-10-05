@@ -95,6 +95,46 @@ void MakeRenderTargets(void* randy)
     }
 }
 
+// Randy_t::GetDevices into a VS2010 std::vector<DeviceDesc_t> (0x834-byte records): each adapter's names, display
+// modes and Direct3D devices printed (`adapter` lines; the vector is left to the process's end).
+void PrintAdapters()
+{
+    struct { uint8_t* first; uint8_t* last; uint8_t* end; uint32_t allocator; } devices{};
+    Export<void(__cdecl*)(void*)>(
+        "?GetDevices@Randy_t@@SAXAAV?$vector@UDeviceDesc_t@Randy_t@@V?$allocator@UDeviceDesc_t@Randy_t@@@std@@@std@@@Z")(
+        &devices);
+    auto text = [](const uint8_t* s) {               // a VS2010 std::string
+        const uint32_t capacity = *reinterpret_cast<const uint32_t*>(s + 0x14);
+        return capacity > 15 ? *reinterpret_cast<const char* const*>(s) : reinterpret_cast<const char*>(s);
+    };
+    const size_t count = size_t(devices.last - devices.first) / 0x834;
+    std::printf("adapter count %zu, capacity %zu\n", count, size_t(devices.end - devices.first) / 0x834);
+    for (size_t i = 0; i < count; ++i) {
+        const uint8_t* d = devices.first + i * 0x834;
+        uint32_t sum = 0;
+        auto add = [&](const uint8_t* p, size_t n) {
+            for (size_t k = 0; k < n; ++k) sum = sum * 31 + p[k];
+        };
+        add(d, 16);                                  // GUID
+        add(d + 0x48, 4 + 0x17C + 3);                // monitor, DDCAPS, flags
+        const uint8_t modes = d[0x4CC], devs = d[0x830];
+        for (int m = 0; m < modes; ++m) add(d + 0x1CC + m * 6, 5);
+        for (int k = 0; k < devs; ++k) {
+            const uint8_t* dev = d + 0x4D0 + k * 0x6C;
+            add(dev, 0x15);                           // GUID, level, W-buffer
+            for (int s3 = 0; s3 < 3; ++s3) {
+                const char* t = text(dev + 0x18 + s3 * 0x1C);
+                add(reinterpret_cast<const uint8_t*>(t), std::strlen(t) + 1);
+            }
+        }
+        std::printf("adapter %zu: '%s' '%s', %u modes, %u devices", i, text(d + 0x10), text(d + 0x2C), modes, devs);
+        for (int k = 0; k < devs; ++k)
+            std::printf(" ['%s' level %d]", text(d + 0x4D0 + k * 0x6C + 0x18),
+                        *reinterpret_cast<const int*>(d + 0x4D0 + k * 0x6C + 0x10));
+        std::printf(", sum %08x\n", sum);
+    }
+}
+
 // Layout of the VS2010 std::string Randy reports errors into (release build: 16-byte buffer, size, capacity).
 struct Vc10String {
     union { char buf[16]; char* ptr; };
@@ -918,6 +958,7 @@ int main(int argc, char** argv)
         viewportStorage, nullptr, 0, 0, width, height, Export<void*>("?white@RGB_t@@2V1@A"));   // clear colour
     void* deviceState = *reinterpret_cast<void**>(static_cast<uint8_t*>(viewport) + 8);   // RViewPort_t+8
     PrintDeviceState("devicestate (new viewport)", deviceState);
+    PrintAdapters();
     if (g_targets) MakeRenderTargets(randy);
 
     auto open = Export<OpenFn>("?Open@RViewPort_t@@QAE_NPA_N@Z");
