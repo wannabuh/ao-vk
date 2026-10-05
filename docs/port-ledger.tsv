@@ -893,3 +893,5 @@
 0x19852	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator destructor (FUN_10019852)
 0x19870	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator deleting destructor (FUN_10019870)
 0x19960	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator vtable Process (FUN_10019960)
+0x1988F	replaced	proxy/native/texture_stream.cpp	format into a std::string (FUN_1001988f)
+0x1994C	replaced	proxy/native/texture_stream.cpp	format with varargs (FUN_1001994c)

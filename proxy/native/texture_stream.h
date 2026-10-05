@@ -6,6 +6,7 @@
 #include "native/native.h"
 #include "native/vc10.h"
 
+#include <cstdarg>
 #include <cstdint>
 
 namespace rnative::texturestream {
@@ -51,5 +52,9 @@ void* __fastcall DeletingDtor(Creator* self, void*, uint8_t flags);             
 void* __fastcall DeletingDtorBase(Creator* self, void*, uint8_t flags);                                // 0x19774
 void* __fastcall NameAccessor(Creator* self, void*);                                                   // 0x1984a
 uint8_t __fastcall FlagAccessor(Creator* self, void*);                                                 // 0x1984e
+
+// The shared error-message formatting: vsnprintf into a VS2010 std::string.
+void __fastcall FormatInto(vc10::String* self, void*, const char* format, va_list ap);                 // 0x1988f
+void __cdecl Format(void* out, const char* format, ...);                                               // 0x1994c
 
 }  // namespace rnative::texturestream

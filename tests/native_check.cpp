@@ -13,6 +13,7 @@
 #include "native/orig_api.gen.h"
 #include "native/pixfmt.h"
 #include "native/shadowlands.h"
+#include "native/texture_stream.h"
 #include "native/vc10.h"
 #include "native/xmath.h"
 
@@ -1565,6 +1566,38 @@ void CheckHelpers()
     Check(mism == 0, "helpers: shared helpers");
 }
 
+// The vsnprintf-into-a-VS2010-std::string helpers against the original.
+void CheckFormat()
+{
+    texturestream::SetModule(g_orig);
+    using FormatFn = void(__cdecl*)(void*, const char*, ...);
+    int mism = 0;
+    auto run = [&](const char* format, auto... args) {
+        vc10::String a, b;
+        a.init();
+        b.init();
+        Orig<FormatFn>(0x1994C)(&a, format, args...);
+        texturestream::Format(&b, format, args...);
+        if (a.size != b.size || std::strcmp(a.c_str(), b.c_str()) != 0) {
+            if (mism++ < 5) std::printf("format: '%s' -> '%s' / '%s'\n", format, a.c_str(), b.c_str());
+        }
+        a.release();
+        b.release();
+    };
+    run("plain");
+    run("n=%d", 42);
+    run("s=%s end", "hello");
+    run("mix %d %s %c", 7, "xy", 'Z');
+    run("%f", 3.5);
+    run("%08x-%08x", 0xdeadbeefu, 0x12345678u);
+    std::string long255(255, 'a'), long300(300, 'b'), huge(3000, 'c');
+    run("255=%s", long255.c_str());
+    run("300=%s", long300.c_str());
+    run("3000=%s", huge.c_str());
+    std::printf("format: %d differ\n", mism);
+    Check(mism == 0, "format: std::string formatting");
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -1609,6 +1642,7 @@ int main(int argc, char** argv)
     CheckLBitmap();
     CheckLBitmapStream();
     CheckHelpers();
+    CheckFormat();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;

@@ -8,6 +8,9 @@
 #include "native/orig_api.gen.h"
 #include "native/serialize.h"
 
+#include <cstdarg>
+#include <cstdio>
+
 namespace rnative::texturestream {
 
 namespace {
@@ -27,6 +30,7 @@ constexpr uint32_t kVtable = 0x8AA44;                 // TextureStreamCreator::v
 // VS2010 std::string (library): assign(const char*), find(const char*, pos) and _Tidy.
 constexpr uint32_t kAssign = 0x1468C, kFind = 0x19826, kTidy = 0x11E82, kFormat = 0x1994C;
 constexpr uint32_t kAssignOwn = 0x17B42;              // the std::string assign the ctors use
+constexpr uint32_t kStlGrow = 0x1798F, kStlResize = 0x17969;
 // FUN_100416f6 (compression supported) and FUN_10041e93 (the format-support flag).
 constexpr uint32_t kCompressionSupported = 0x416F6, kFormatSupport = 0x41E93;
 
@@ -219,6 +223,47 @@ void* __fastcall DeletingDtorBase(Creator* self, void*, uint8_t flags)
 void* __fastcall NameAccessor(Creator* self, void*) { return &self->name; }
 uint8_t __fastcall FlagAccessor(Creator* self, void*) { return self->flag38; }
 
+// vsnprintf into a std::string (0x1988f): a 256- then 512-byte stack buffer, and if both truncate, the string grown
+// in 0x800 steps (FUN_1001798f / FUN_10017969) up to four times; the result assigned with the string's own assign.
+void __fastcall FormatInto(vc10::String* self, void*, const char* format, va_list ap)
+{
+    char stack256[256], stack512[512];
+    const int inSmall = _vsnprintf(stack256, 0xff, format, ap);
+    if (inSmall >= 0) {
+        stack256[inSmall] = 0;
+        Internal<void(__cdecl*)(void*, const char*)>(kAssignOwn)(self, stack256);
+        return;
+    }
+    const int inMedium = _vsnprintf(stack512, 0x1ff, format, ap);
+    if (inMedium >= 0) {
+        stack512[inMedium] = 0;
+        Internal<void(__cdecl*)(void*, const char*)>(kAssignOwn)(self, stack512);
+        return;
+    }
+    int remaining = 4;
+    uint32_t size = 0xa00;
+    do {
+        char* buffer = static_cast<char*>(
+            Internal<void*(__fastcall*)(void*, void*, uint32_t)>(kStlGrow)(self, nullptr, size + 1));
+        const int written = _vsnprintf(buffer, size, format, ap);
+        if (written >= 0) {
+            Internal<void(__fastcall*)(void*, void*, uint32_t, uint8_t)>(kStlResize)(self, nullptr, uint32_t(written),
+                                                                                    0);
+            return;
+        }
+        --remaining;
+        size += 0x800;
+    } while (remaining > 0);
+}
+
+void __cdecl Format(void* out, const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    FormatInto(static_cast<vc10::String*>(out), nullptr, format, ap);
+    va_end(ap);
+}
+
 void Install(HMODULE orig)
 {
     if (GetMode("Device", Mode::Off) != Mode::On) return;
@@ -244,6 +289,8 @@ void Install(HMODULE orig)
         {0x1984E, FN(FlagAccessor), "TextureStreamCreator flag (FUN_1001984e)"},
         {0x19852, FN(Dtor), "TextureStreamCreator destructor (FUN_10019852)"},
         {0x19870, FN(DeletingDtor), "TextureStreamCreator deleting destructor (FUN_10019870)"},
+        {0x1988F, FN(FormatInto), "format into a std::string (FUN_1001988f)"},
+        {0x1994C, FN(Format), "format with varargs (FUN_1001994c)"},
         {0x19960, FN(Process), "TextureStreamCreator vtable Process (FUN_10019960)"},
     };
 #undef FN
