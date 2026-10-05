@@ -3,16 +3,98 @@
 named functions by their class, unnamed ones by the named function before them (MSVC keeps a source file's functions
 together) - against docs/port-ledger.tsv. Library code (CRT, STL, libpng, zlib, statically linked D3DX7) is counted apart.
 
+An exported function counts as live only if something uses it: a module of the client imports it (AO_CLIENT_DIR,
+default the installed client; build/profile/client-imports.txt caches the list), our native code calls it (an orig::
+binding or its name), serialize.dll finds it by name (every ?Instantiate@<class>@@SAPAV1@PAVObjectArchive_c@fun@@@Z:
+GetProcAddress for the class an archive names), or something other than the export table references it.
+
 Usage: tools/port-status.py [--classes N] [--list CLASS]   (--list: the functions of CLASS left to port)
 """
+import os
 import pathlib
 import re
+import struct
 import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FUNCS = ROOT / "build/profile/orig-functions.txt"
 GRAPH = ROOT / "build/profile/orig-callgraph.txt"
+IMPORTS = ROOT / "build/profile/client-imports.txt"
+ORIG = ROOT / "orig/randy31.dll"
+CLIENT = pathlib.Path(os.environ.get("AO_CLIENT_DIR", pathlib.Path.home() / ".wine-prk/drive_c/linux/client"))
+
+
+def pe_sections(data):
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    count, optional = struct.unpack_from("<H", data, pe + 6)[0], struct.unpack_from("<H", data, pe + 20)[0]
+    sections = []
+    for i in range(count):
+        o = pe + 24 + optional + 40 * i
+        size, va, _, raw = struct.unpack_from("<IIII", data, o + 8)
+        sections.append((va, size, raw))
+    return pe, sections
+
+
+def exports():
+    """{rva: [names]} of randy31_orig.dll's export table, and the export directory (rva, size)."""
+    data = ORIG.read_bytes()
+    pe, sections = pe_sections(data)
+
+    def at(rva):
+        for va, size, raw in sections:
+            if va <= rva < va + size:
+                return raw + rva - va
+        raise ValueError(hex(rva))
+    directory, size = struct.unpack_from("<II", data, pe + 24 + 96)
+    d = at(directory)
+    names_count, functions, names, ordinals = struct.unpack_from("<IIII", data, d + 24)
+    out = {}
+    for i in range(names_count):
+        name_rva = struct.unpack_from("<I", data, at(names) + 4 * i)[0]
+        end = data.index(b"\0", at(name_rva))
+        name = data[at(name_rva):end].decode()
+        ordinal = struct.unpack_from("<H", data, at(ordinals) + 2 * i)[0]
+        rva = struct.unpack_from("<I", data, at(functions) + 4 * ordinal)[0]
+        out.setdefault(rva, []).append(name)
+    return out, (directory, size)
+
+
+def client_imports():
+    """Names the client's modules import from randy31.dll (objdump over the client folder)."""
+    if not IMPORTS.exists():
+        names = set()
+        for f in sorted(CLIENT.rglob("*")):
+            if f.suffix.lower() not in (".dll", ".exe") or f.name.lower().startswith("randy31"):
+                continue
+            listing = subprocess.run(["objdump", "-p", str(f)], capture_output=True, text=True).stdout
+            inside = False
+            for line in listing.splitlines():
+                if "DLL Name:" in line:
+                    inside = line.split("DLL Name:")[1].strip().lower() == "randy31.dll"
+                elif inside and re.match(r"\t[0-9a-f]+ ", line):
+                    names.add(line.split()[-1])
+        IMPORTS.parent.mkdir(parents=True, exist_ok=True)
+        IMPORTS.write_text("".join(n + "\n" for n in sorted(names)))
+    return set(IMPORTS.read_text().split())
+
+
+def native_uses():
+    """Exported names our code calls: orig:: bindings (g_fn[i] = kExports[i]) and names looked up by string."""
+    gen = (ROOT / "proxy/native/orig_api.gen.cpp").read_text()
+    table = re.findall(r'^\s*\{"([^"]+)"\}', gen, re.M)
+    header = (ROOT / "proxy/native/orig_api.gen.h").read_text()
+    binding = {m.group(1): int(m.group(2)) for m in re.finditer(r"inline [^\n]*? (\w+)\([^\n]*g_fn\[(\d+)\]", header)}
+    used = set()
+    for f in list((ROOT / "proxy").rglob("*.cpp")) + list((ROOT / "proxy").rglob("*.h")):
+        if f.name.startswith("orig_api.gen"):
+            continue
+        text = f.read_text(errors="replace")
+        for name in re.findall(r"orig::(\w+)\(", text):
+            if name in binding:
+                used.add(table[binding[name]])
+        used.update(re.findall(r'"(\?[^"\s]+@@[^"\s]*)"', text))
+    return used
 
 
 def functions():
@@ -32,15 +114,21 @@ LIB = re.compile(r"^(png_|inflate|deflate|zlib|adler|crc|_|std::|`|operator|Catc
 
 
 def call_graph():
-    """{rva: (is a root - exported or referenced other than by calls, set of caller rvas)} (CallGraph.java)."""
+    """{rva: (is a root, set of caller rvas)} (CallGraph.java): a root is referenced other than by calls and the export
+    table, or exported and used (client_imports, native_uses)."""
+    table, (directory, size) = exports()
     if not GRAPH.exists():
-        subprocess.run([str(ROOT / "tools/ghidra-run.sh"), "randy31.dll", "CallGraph.java", str(GRAPH)], cwd=ROOT,
-                       capture_output=True)
+        subprocess.run([str(ROOT / "tools/ghidra-run.sh"), "randy31.dll", "CallGraph.java", str(GRAPH),
+                        f"{directory:x}", f"{size:x}"], cwd=ROOT, capture_output=True)
+    used = client_imports() | native_uses()
     graph = {}
     for line in open(GRAPH):
         parts = line.split()
+        rva = int(parts[0], 16)
         callers = {int(c, 16) for c in parts[2].split(",")} if len(parts) > 2 else set()
-        graph[int(parts[0], 16)] = (parts[1] != "-", callers)
+        root = "d" in parts[1] or ("e" in parts[1] and any(n in used or n.startswith("?Instantiate@")
+                                                            for n in table.get(rva, [])))
+        graph[rva] = (root, callers)
     return graph
 
 

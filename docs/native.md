@@ -106,3 +106,6 @@ through `proxy/native/orig_api.gen.h` (tools/gen_orig_api.py), and lives in the 
    emulated DirectDraw / Direct3D 7.
 3. The scene graph, viewports, lights, meshes and materials.
 4. The rest; then randy31_orig.dll is no longer loaded.
+   Every export must still exist then: tools/port-status.py counts an export unused when no module of the client imports
+   it, our code doesn't call it and serialize.dll can't look it up (`?Instantiate@...`) - unused for the game, but
+   cheap stubs keep the proxy's export table whole.
