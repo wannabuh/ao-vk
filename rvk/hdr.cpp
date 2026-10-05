@@ -414,6 +414,10 @@ void Device::EndScene()
     ProfileMark("motion blur");
     ProfileCpuAdd("post passes", cpu);
     m_cache = StateCache{};                      // pipeline, viewport and scissor changed
+    // The post passes pushed set 0 with their own pipeline layouts, so the scene's pushed draw bindings are no
+    // longer valid for the interface draws that follow: the first one pushes them again (M2: bindings 0 and 12).
+    m_arenaBound = false;
+    m_bindlessBound = false;
     m_main = m_ldrMain;
     if (wasMain)
         m_target = m_ldrMain;
