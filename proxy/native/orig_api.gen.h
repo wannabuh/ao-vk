@@ -10,9 +10,9 @@ namespace rnative::orig {
 
 constexpr unsigned kExportCount = 498;
 extern void* g_fn[kExportCount];
-bool Init(HMODULE orig);                // false if one is missing (logged)
+bool Init();                             // resolve the table through the rva registry; false if one is missing
 
-struct ExportName { const char* mangled; };
+struct ExportName { const char* mangled; uint32_t rva; };
 extern const ExportName kExports[kExportCount];
 
 // public: __thiscall BVolume_t::BVolume_t(void)

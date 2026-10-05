@@ -1633,7 +1633,7 @@ int main(int argc, char** argv)
     }
     g_orig = orig;
     rnative::SetOriginal(orig);                      // AddressFor's fallback (the replacements resolve through it)
-    rnative::orig::Init(orig);                       // the orig:: bindings the replacements call through
+    rnative::orig::Init();                           // the orig:: bindings the replacements call through
     if (argc > 2 && std::strcmp(argv[2], "--dump-dxerrors") == 0) {   // the original's HRESULT table (FUN_1001d619)
         DumpDxErrors();
         return 0;

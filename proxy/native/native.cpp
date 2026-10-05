@@ -47,8 +47,6 @@ void Install(HMODULE orig)
     done = true;
     SetOriginal(orig);
     InstallCrashLog();
-    if (!orig::Init(orig))
-        Log("some of randy31_orig's exports are missing - unknown client build");
     skin::Install(orig);
     anim::Install(orig);
     scene::Install(orig);
@@ -83,6 +81,10 @@ void Install(HMODULE orig)
     rgrid::Install(orig);
     timer::Install(orig);
     funcom::Install(orig);
+    // After the installs, so each rva resolves to our function (else the original's): orig:: is then independent of
+    // the original's export table.
+    if (!orig::Init())
+        Log("some of randy31_orig's exports are missing - unknown client build");
     gonetrap::Install(orig);                        // last: over what the replacements left
 }
 
