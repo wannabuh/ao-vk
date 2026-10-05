@@ -17,6 +17,7 @@
 #include "native/devices.h"
 #include "native/dxerror.h"
 #include "native/randy.h"
+#include "native/randy_init.h"
 #include "native/surface.h"
 #include "native/resource.h"
 #include "native/texture.h"
@@ -651,6 +652,7 @@ void Install(HMODULE orig)
     material::Install(orig);
     dxerror::Install(orig);
     devices::Install(orig);
+    randyinit::Install(orig);
 }
 
 }  // namespace rnative::device

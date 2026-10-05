@@ -634,3 +634,11 @@
 0x43CE4	replaced	proxy/native/devices.cpp	Randy_t::GetDevices adapter (FUN_10043ce4)
 0x41693	replaced	proxy/native/devices.cpp	Randy_t::GetDevices display mode (FUN_10041693)
 0x43545	replaced	proxy/native/devices.cpp	Randy_t::GetDevices Direct3D device (FUN_10043545)
+0x43F20	replaced	proxy/native/randy_init.cpp	Randy_t::Initialize (DisplaySystem's)
+0x435E3	replaced	proxy/native/randy_init.cpp	Randy_t frame buffer and Z-buffer (FUN_100435e3)
+0x41D6E	replaced	proxy/native/randy_init.cpp	Randy_t DXT texture formats (FUN_10041d6e)
+0x4379F	dead	-	Randy_t::Initialize (the older overload): exported, but no module of the client imports it
+0x43365	replaced	proxy/native/randy_init.cpp	Randy_t::Randy_t (FUN_10043365)
+0x43484	replaced	proxy/native/randy_init.cpp	Randy_t::~Randy_t (FUN_10043484)
+0x44757	replaced	proxy/native/randy_init.cpp	Randy_t deleting destructor (FUN_10044757)
+0x43C48	replaced	proxy/native/randy_init.cpp	Randy_t frame buffer resized (FUN_10043c48)

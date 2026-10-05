@@ -169,6 +169,19 @@ void __cdecl GetDevices(vc10::Vector<DeviceDesc>* out)
 
 }  // namespace
 
+int32_t BestHardwareLevel()
+{
+    vc10::Vector<DeviceDesc> list{};
+    GetDevices(&list);
+    int32_t best = 0;
+    for (size_t k = 0; k < list.size(); ++k)
+        for (int i = 0; i < list[k].deviceCount; ++i)
+            if (list[k].devices[i].level > best) best = list[k].devices[i].level;
+    for (size_t k = 0; k < list.size(); ++k) Destroy(list[k]);   // (the original's FUN_100448a6)
+    list.release();
+    return best;
+}
+
 void Install(HMODULE orig)
 {
     g_orig = orig;

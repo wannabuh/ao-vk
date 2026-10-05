@@ -17,4 +17,8 @@ bool Describe(int32_t hr, const char** description, const char** name);
 // message, "\r\n", then "NAME:description" or "0x%08X: unknown". `out` is the caller's uninitialised return slot.
 vc10::String* __fastcall GetErrorString(const uint8_t* error, void*, vc10::String* out);
 
+// Throws the original's fun::DXError (made by its constructor, thrown with its ThrowInfo), as render_t does when a
+// D3D call fails: DisplaySystem catches it.
+[[noreturn]] void Throw(int32_t hr, const char* message, const char* file, int line);
+
 }  // namespace rnative::dxerror

@@ -16,6 +16,8 @@ namespace rnative::dxerror {
 
 namespace {
 
+HMODULE g_orig;
+
 void Append(vc10::String& s, const char* text)
 {
     const size_t n = std::strlen(text);
@@ -60,8 +62,30 @@ bool Describe(int32_t hr, const char** description, const char** name)
     return true;
 }
 
+[[noreturn]] void Throw(int32_t hr, const char* message, const char* file, int line)
+{
+    vc10::String text, where;
+    text.init();
+    where.init();
+    text.assign(message, std::strlen(message));
+    where.assign(file, std::strlen(file));
+    alignas(8) uint8_t error[0x4C];
+    using CtorFn = void*(__fastcall*)(void*, void*, int32_t, const vc10::String*, const vc10::String*, int);
+    reinterpret_cast<CtorFn>(GetProcAddress(
+        g_orig, "??0DXError@fun@@QAE@JABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0H@Z"))(
+        error, nullptr, hr, &text, &where, line);
+    text.release();
+    where.release();
+    using ThrowFn = void(__stdcall*)(void*, void*);
+    static const auto cxxThrow =
+        reinterpret_cast<ThrowFn>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "_CxxThrowException"));
+    cxxThrow(error, reinterpret_cast<uint8_t*>(g_orig) + 0xA45D4);
+    __builtin_unreachable();
+}
+
 void Install(HMODULE orig)
 {
+    g_orig = orig;
     Replace(orig, 0x1E51A, reinterpret_cast<void*>(&GetErrorString), "fun::DXError::GetErrorString");
 }
 

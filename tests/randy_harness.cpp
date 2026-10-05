@@ -51,6 +51,45 @@ void PrintDeviceState(const char* what, const void* deviceState)
     std::printf("%s %08x\n", what, sum);
 }
 
+// surface_t*: its IDirectDrawSurface7's description.
+std::string DescribeSurface(void* surface)
+{
+    if (!surface || !*static_cast<IDirectDrawSurface7**>(surface)) return std::string("-");
+    DDSURFACEDESC2 d{};
+    d.dwSize = sizeof(d);
+    (*static_cast<IDirectDrawSurface7**>(surface))->GetSurfaceDesc(&d);
+    char text[160];
+    std::snprintf(text, sizeof(text), "%lux%lu caps %lx pf %lx/%lu/%lx", d.dwWidth, d.dwHeight, d.ddsCaps.dwCaps,
+                  d.ddpfPixelFormat.dwFlags, d.ddpfPixelFormat.dwRGBBitCount, d.ddpfPixelFormat.dwRBitMask);
+    return std::string(text);
+}
+
+// What Randy_t::Initialize set up (`init` lines): hardware level, the hardware checks, buffer depths, the window's
+// rectangle, render_t's interfaces, the primary surface and render target 0.
+void PrintInit()
+{
+    const uint8_t* orig = reinterpret_cast<uint8_t*>(GetModuleHandleA("randy31_orig.dll"));
+    auto g = [&](uint32_t rva) { return *reinterpret_cast<const uint32_t*>(orig + rva); };
+    auto b = [&](uint32_t rva) { return unsigned(orig[rva]); };
+    const uint8_t* render = *reinterpret_cast<uint8_t* const*>(orig + 0x16BED0);
+    std::printf("init level %u fullscreen %u 3dfx %u kyro %u dxt %u%u nvidia %u clearfix %u bits %u/%u/%u "
+                "rect %d %d %d %d\n",
+                g(0xB772C), b(0x17D31C), b(0x17D31D), b(0x17D31E), b(0x17D31F), b(0x17D330), b(0x17D331),
+                b(0x17D332), g(0x17D324), g(0x17D328), g(0x17D32C), int(g(0x17D2A4)), int(g(0x17D2A8)),
+                int(g(0x17D2AC)), int(g(0x17D2B0)));
+    std::printf("init render %d%d%d (globals %d%d%d) rect %d %d %d %d +288 %x\n",
+                *reinterpret_cast<void* const*>(render) != nullptr, *reinterpret_cast<void* const*>(render + 4) != nullptr,
+                *reinterpret_cast<void* const*>(render + 8) != nullptr, g(0x17D318) != 0, g(0x17D314) != 0,
+                g(0x17D2F0) != 0, *reinterpret_cast<const int*>(render + 0x278), *reinterpret_cast<const int*>(render + 0x27C),
+                *reinterpret_cast<const int*>(render + 0x280), *reinterpret_cast<const int*>(render + 0x284),
+                *reinterpret_cast<const uint32_t*>(render + 0x288));
+    void* primary = *reinterpret_cast<void* const*>(orig + 0x17D2F4);
+    void* const* rt0 = *reinterpret_cast<void* const* const*>(orig + 0x17D2F8);
+    std::printf("init primary %s, target 0 colour %s, Z %s, failed %u\n", DescribeSurface(primary).c_str(),
+                rt0 ? DescribeSurface(rt0[0]).c_str() : "none", rt0 ? DescribeSurface(rt0[1]).c_str() : "none",
+                rt0 ? unsigned(reinterpret_cast<const uint8_t*>(rt0)[8]) : 0u);
+}
+
 // --targets: the user allows every emulated feature and the scene asks for all of them (Randy_t::SetFeatureUsage),
 // so Randy makes its offscreen render targets; what it got printed (`rendertarget` lines).
 void MakeRenderTargets(void* randy)
@@ -75,16 +114,7 @@ void MakeRenderTargets(void* randy)
                 *Export<uint32_t*>("?m_nRandyEmulationCap@Randy_t@@0IA"), *user,
                 *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(randy) + 0x288),
                 *reinterpret_cast<const int*>(orig + 0x17D328), *reinterpret_cast<const int*>(orig + 0x17D32C));
-    auto describe = [](void* surface) {             // surface_t*: its IDirectDrawSurface7's description
-        if (!surface || !*static_cast<IDirectDrawSurface7**>(surface)) return std::string("-");
-        DDSURFACEDESC2 d{};
-        d.dwSize = sizeof(d);
-        (*static_cast<IDirectDrawSurface7**>(surface))->GetSurfaceDesc(&d);
-        char text[160];
-        std::snprintf(text, sizeof(text), "%lux%lu caps %lx pf %lx/%lu/%lx", d.dwWidth, d.dwHeight, d.ddsCaps.dwCaps,
-                      d.ddpfPixelFormat.dwFlags, d.ddpfPixelFormat.dwRGBBitCount, d.ddpfPixelFormat.dwRBitMask);
-        return std::string(text);
-    };
+    auto describe = DescribeSurface;
     for (int i = 1; i < 7; ++i) {
         void** rt = static_cast<void**>(target(i));
         std::printf("rendertarget %d: %s", i, rt ? "" : "none");
@@ -372,6 +402,11 @@ float g_terrain;                                      // --terrain H: a heightma
 int g_playfield;
 int g_attach;                                         // --attach N: N attractor children a character, half removed
 bool g_restore;                                       // --restore: a lost device's restore at frame 2
+bool g_fullscreen;                                    // --fullscreen: Randy_t::Initialize in full screen
+int g_format = 1;                                     // --format N: its Randy_t::BufferFormat_e
+bool g_anyDevice;                                     // --any-device: no Direct3D device asked for
+int g_resize[2];                                      // --resize W H: the viewport resized (forced) at frame 3
+bool g_shutdown;                                      // --shutdown: Randy_t deleted at the end (as the game quits)
 bool g_targets;                                       // --targets: every offscreen feature asked for (render targets)
 bool g_defaults;                                      // --defaults: the device's default states (FUN_10041ede) at
                                                       // frame 3, once per texture filter caps branch
@@ -911,6 +946,14 @@ int main(int argc, char** argv)
         else if (a == "--restore") g_restore = true;
         else if (a == "--defaults") g_defaults = true;
         else if (a == "--targets") g_targets = true;
+        else if (a == "--shutdown") g_shutdown = true;
+        else if (a == "--resize" && i + 2 < argc) {
+            g_resize[0] = std::atoi(argv[++i]);
+            g_resize[1] = std::atoi(argv[++i]);
+        }
+        else if (a == "--fullscreen") g_fullscreen = true;
+        else if (a == "--format" && i + 1 < argc) g_format = std::atoi(argv[++i]);
+        else if (a == "--any-device") g_anyDevice = true;
         else if (a == "--lights" && i + 1 < argc) g_carriedLights = std::atoi(argv[++i]);
         else if (a == "--alpha" && i + 1 < argc) g_alpha = float(std::atof(argv[++i]));
         else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);
@@ -945,13 +988,15 @@ int main(int argc, char** argv)
     Vc10String error{};
     error.capacity = 15;
     GUID device = kTnLHalDevice;
-    void* randy = initialize(width, height, &error, nullptr, &device, true, hwnd, 1);   // windowed, 32-bit
+    void* randy = initialize(width, height, &error, nullptr, g_anyDevice ? nullptr : &device, !g_fullscreen, hwnd,
+                             g_format);           // default: windowed, 32-bit, Z32
     if (!randy) {
         std::printf("Randy_t::Initialize failed: %s\n", error.c_str());
         return 1;
     }
     void* render = *Export<void**>("?m_pcInstance@render_t@@0PAV1@A");
     std::printf("Randy_t %p, render_t %p, IDirect3DDevice7 %p\n", randy, render, *static_cast<void**>(render));
+    PrintInit();
 
     alignas(16) static uint8_t viewportStorage[0x178];    // sizeof(RViewPort_t), as DisplaySystem allocates
     void* viewport = Export<ViewPortCtorFn>("??0RViewPort_t@@QAE@IIIIABVRGB_t@@@Z")(
@@ -1048,6 +1093,11 @@ int main(int argc, char** argv)
     double sceneSeconds = 0.0;
     for (int frame = 0; frame < frames; ++frame) {
         if (g_restore && frame == 2) ++*Export<unsigned*>("?s_nRestoreCount@Randy_t@@0IA");
+        if (g_resize[0] && frame == 3) {
+            Export<void(__fastcall*)(void*, void*, unsigned, unsigned, bool)>("?Resize@RViewPort_t@@QAEXII_N@Z")(
+                viewport, nullptr, unsigned(g_resize[0]), unsigned(g_resize[1]), true);
+            PrintInit();
+        }
         if (g_defaults && frame == 3) {
             auto* orig = reinterpret_cast<uint8_t*>(GetModuleHandleA("randy31_orig.dll"));
             uint32_t& caps = *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(randy) + 0x1E8);
@@ -1184,6 +1234,17 @@ int main(int argc, char** argv)
         for (void* o : scene.statics) deleting(o);
         for (void* c : scene.characters) deleting(c);
         std::printf("destroyed %zu statics, %zu characters\n", scene.statics.size(), scene.characters.size());
+    }
+    if (g_shutdown) {                                // Randy_t's deleting destructor (vtable slot 0), then what is left
+        using DeleteFn = void*(__fastcall*)(void* self, void*, unsigned flags);
+        reinterpret_cast<DeleteFn>((*static_cast<void***>(randy))[0])(randy, nullptr, 1);
+        const uint8_t* orig = reinterpret_cast<uint8_t*>(GetModuleHandleA("randy31_orig.dll"));
+        auto set = [&](uint32_t rva) { return *reinterpret_cast<void* const*>(orig + rva) != nullptr ? 1 : 0; };
+        std::printf("shutdown: render_t %d Randy_t %d DeviceState %d Debugger_t %d primary %d default texture %d%d "
+                    "targets", set(0x16BED0), set(0x17D2EC), set(0x168FEC), set(0x17D23C), set(0x17D2F4),
+                    set(0x17D498), set(0x17D49C));
+        for (uint32_t i = 0; i < 7; ++i) std::printf(" %d", set(0x17D2F8 + i * 4));
+        std::printf(", emulated %x\n", *reinterpret_cast<const uint32_t*>(orig + 0xB7730));
     }
     std::printf("harness done\n");
     std::fflush(stdout);
