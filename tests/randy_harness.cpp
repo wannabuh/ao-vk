@@ -51,6 +51,50 @@ void PrintDeviceState(const char* what, const void* deviceState)
     std::printf("%s %08x\n", what, sum);
 }
 
+// --targets: the user allows every emulated feature and the scene asks for all of them (Randy_t::SetFeatureUsage),
+// so Randy makes its offscreen render targets; what it got printed (`rendertarget` lines).
+void MakeRenderTargets(void* randy)
+{
+    auto setUsage = Export<void(__fastcall*)(void*, void*, unsigned)>("?SetFeatureUsage@Randy_t@@QAEXI@Z");
+    uint8_t* offscreen = Export<uint8_t*>("?m_bUseOffscreenTechnology@Randy_t@@0_NA");
+    auto target = Export<void*(__cdecl*)(int)>("?GetRenderTarget@Randy_t@@SAPAVRenderTarget_t@@H@Z");
+    std::printf("rendertarget before:");
+    for (int i = 1; i < 7; ++i) std::printf(" %d", target(i) ? 1 : 0);
+    std::printf("\n");
+    *offscreen = 0;                                  // targets 1..4 dropped
+    setUsage(randy, nullptr, 0x3F8);
+    *offscreen = 1;
+    uint32_t* user = Export<uint32_t*>("?m_nRandyEmulationCapUserDefined@Randy_t@@0IA");
+    *user = 0x7B;
+    setUsage(randy, nullptr, 0x3F8);
+    setUsage(randy, nullptr, 0x3F8);                 // (all there already)
+    const float* widths = Export<float*>("?m_avRenderTargetWidth@Randy_t@@0PAMA");
+    const float* heights = Export<float*>("?m_avRenderTargetHeight@Randy_t@@0PAMA");
+    const uint8_t* orig = reinterpret_cast<uint8_t*>(GetModuleHandleA("randy31_orig.dll"));
+    std::printf("rendertarget caps %x user %x used %x z %d stencil %d\n",
+                *Export<uint32_t*>("?m_nRandyEmulationCap@Randy_t@@0IA"), *user,
+                *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(randy) + 0x288),
+                *reinterpret_cast<const int*>(orig + 0x17D328), *reinterpret_cast<const int*>(orig + 0x17D32C));
+    auto describe = [](void* surface) {             // surface_t*: its IDirectDrawSurface7's description
+        if (!surface || !*static_cast<IDirectDrawSurface7**>(surface)) return std::string("-");
+        DDSURFACEDESC2 d{};
+        d.dwSize = sizeof(d);
+        (*static_cast<IDirectDrawSurface7**>(surface))->GetSurfaceDesc(&d);
+        char text[160];
+        std::snprintf(text, sizeof(text), "%lux%lu caps %lx pf %lx/%lu/%lx", d.dwWidth, d.dwHeight, d.ddsCaps.dwCaps,
+                      d.ddpfPixelFormat.dwFlags, d.ddpfPixelFormat.dwRGBBitCount, d.ddpfPixelFormat.dwRBitMask);
+        return std::string(text);
+    };
+    for (int i = 1; i < 7; ++i) {
+        void** rt = static_cast<void**>(target(i));
+        std::printf("rendertarget %d: %s", i, rt ? "" : "none");
+        if (rt)
+            std::printf("colour %s, Z %s, failed %d, size %g x %g", describe(rt[0]).c_str(), describe(rt[1]).c_str(),
+                        reinterpret_cast<uint8_t*>(rt)[8], widths[i], heights[i]);
+        std::printf("\n");
+    }
+}
+
 // Layout of the VS2010 std::string Randy reports errors into (release build: 16-byte buffer, size, capacity).
 struct Vc10String {
     union { char buf[16]; char* ptr; };
@@ -288,6 +332,7 @@ float g_terrain;                                      // --terrain H: a heightma
 int g_playfield;
 int g_attach;                                         // --attach N: N attractor children a character, half removed
 bool g_restore;                                       // --restore: a lost device's restore at frame 2
+bool g_targets;                                       // --targets: every offscreen feature asked for (render targets)
 bool g_defaults;                                      // --defaults: the device's default states (FUN_10041ede) at
                                                       // frame 3, once per texture filter caps branch
 int g_preprocess;                                     // --preprocess N: PreProcessPlayfield(N) on a 256 x 256 map
@@ -825,6 +870,7 @@ int main(int argc, char** argv)
         else if (a == "--attach" && i + 1 < argc) g_attach = std::atoi(argv[++i]);
         else if (a == "--restore") g_restore = true;
         else if (a == "--defaults") g_defaults = true;
+        else if (a == "--targets") g_targets = true;
         else if (a == "--lights" && i + 1 < argc) g_carriedLights = std::atoi(argv[++i]);
         else if (a == "--alpha" && i + 1 < argc) g_alpha = float(std::atof(argv[++i]));
         else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);
@@ -872,6 +918,7 @@ int main(int argc, char** argv)
         viewportStorage, nullptr, 0, 0, width, height, Export<void*>("?white@RGB_t@@2V1@A"));   // clear colour
     void* deviceState = *reinterpret_cast<void**>(static_cast<uint8_t*>(viewport) + 8);   // RViewPort_t+8
     PrintDeviceState("devicestate (new viewport)", deviceState);
+    if (g_targets) MakeRenderTargets(randy);
 
     auto open = Export<OpenFn>("?Open@RViewPort_t@@QAE_NPA_N@Z");
     auto close = Export<CloseFn>("?Close@RViewPort_t@@QAEXXZ");

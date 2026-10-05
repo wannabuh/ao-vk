@@ -62,6 +62,150 @@ void DropRenderTarget(int index)
     }
 }
 
+// RenderTarget_t (0xC bytes): +0 its colour surface_t, +4 its Z-buffer surface_t, +8 the colour surface failed.
+struct RenderTarget {
+    void* color;
+    void* z;
+    bool failed;
+};
+static_assert(sizeof(RenderTarget) == 0xC, "RenderTarget_t");
+
+void SetDesc(uint8_t* desc, uint32_t flags, uint32_t caps, uint32_t width, uint32_t height)   // a DDSURFACEDESC2
+{
+    std::memset(desc, 0, 0x7C);
+    Field<uint32_t>(desc, 0) = 0x7C;
+    Field<uint32_t>(desc, 4) = flags;
+    Field<uint32_t>(desc, 8) = height;
+    Field<uint32_t>(desc, 0xC) = width;
+    Field<uint32_t>(desc, 0x68) = caps;
+}
+
+// FUN_10025e84: its colour surface ("BackBuffer"): DDSURFACEDESC2 flags and caps, size.
+RenderTarget* __fastcall RtConstruct(RenderTarget* rt, void*, uint32_t flags, uint32_t caps, uint32_t width,
+                                     uint32_t height)
+{
+    rt->color = rt->z = nullptr;
+    rt->failed = false;
+    uint8_t desc[0x7C];
+    SetDesc(desc, flags, caps, width, height);
+    rt->color = orig::surface_t_surface_t(vc10::Allocate(0x88), rt->color, const_cast<char*>("BackBuffer"));
+    rt->failed =
+        orig::render_t_CreateSurface(*g_render, desc, orig::surface_t_GetSurfacePointer(rt->color), nullptr) != 0;
+    return rt;
+}
+
+// FUN_10025f39: both surfaces let go.
+void __fastcall RtDestroy(RenderTarget* rt)
+{
+    if (rt->z) {
+        orig::surface_t_ReleaseDXSurface(rt->z);
+        rt->z = nullptr;
+    }
+    if (rt->color) {
+        orig::surface_t_ReleaseDXSurface(rt->color);
+        rt->color = nullptr;
+    }
+}
+
+// FUN_10025f5c: its Z-buffer ("Z-Buffer"), attached to the colour surface. 32 bits unless both the colour and the Z
+// depth asked are 16; failing that 24 with 8 stencil bits, then 16. `zBits` / `stencilBits` say what it got.
+HRESULT __fastcall RtCreateZ(RenderTarget* rt, void*, uint32_t flags, uint32_t caps, uint32_t formatFlags,
+                             uint32_t width, uint32_t height, int32_t* zBits, int32_t* stencilBits, int32_t colorBits)
+{
+    if (rt->failed) return E_INVALIDARG;
+    uint8_t desc[0x7C];
+    SetDesc(desc, flags, caps, width, height);
+    Field<uint32_t>(desc, 0x48) = 0x20;             // its DDPIXELFORMAT
+    Field<uint32_t>(desc, 0x4C) = formatFlags;
+    auto attempt = [&](int32_t format) {            // D3DX_SURFACEFORMAT: 0x100 Z16, 0x101 Z32, 0x103 Z24S8
+        orig::render_t_D3DXMakeDDPixelFormat(*g_render, format, desc + 0x48);
+        rt->z = orig::surface_t_surface_t(vc10::Allocate(0x88), rt->z, const_cast<char*>("Z-Buffer"));
+        const HRESULT hr =
+            orig::render_t_CreateSurface(*g_render, desc, orig::surface_t_GetSurfacePointer(rt->z), nullptr);
+        if (hr) {
+            orig::surface_t_ReleaseDXSurface(rt->z);
+            rt->z = nullptr;
+        }
+        return hr;
+    };
+    if (*zBits == 24 || colorBits != 16) *zBits = 32;
+    HRESULT hr = attempt(*zBits == 32 ? 0x101 : *zBits == 24 ? 0x103 : 0x100);
+    if (hr) {
+        bool done = false;
+        if (*zBits == 32) {
+            done = attempt(0x103) == 0;
+            if (done) *stencilBits = 8;
+            *zBits = 24;
+        }
+        if (!done) {
+            if (*zBits != 24) return hr;            // (the original attaches no Z-buffer here, and faults)
+            if ((hr = attempt(0x100)) != 0) return hr;
+            *zBits = 16;
+            *stencilBits = 0;
+        }
+    }
+    // render_t::AddAttachedSurface (FUN_100240a8); the original throws a DXError if refused (but busy).
+    void* color = *static_cast<void**>(rt->color);
+    void* z = *static_cast<void**>(rt->z);
+    hr = reinterpret_cast<HRESULT(__stdcall*)(void*, void*)>((*static_cast<void***>(color))[0xC / 4])(color, z);
+    if (hr && hr != HRESULT(0x887601AE)) Log("render_t::AddAttachedSurface: D3D call failed (%08lx)", (unsigned long)hr);
+    return 0;
+}
+
+int32_t PowerOfTwoAtMost(int32_t v)                 // 1 below 2
+{
+    int32_t r = 1;
+    for (int32_t i = 2; i <= v; i *= 2) r = i;
+    return r;
+}
+
+int32_t PowerOfTwoBelow(int32_t v)                  // (heights: strictly below, as the original counts)
+{
+    int32_t r = 1;
+    for (int32_t i = 2; i < v; i *= 2) r = i;
+    return r;
+}
+
+// FUN_10042732: makes render target `index` (1..6) if the user allows its feature and it isn't there: 1 and 2 the
+// window's size (powers of two; 1 exact if the device takes any size), 3 and 4 256x256, 5 and 6 8x8. On success its
+// feature is emulated and its size kept (Randy_t::m_avRenderTargetWidth / Height); else the user's bit goes.
+void __cdecl CreateRenderTarget(int index)
+{
+    static const uint32_t kCapBits[7] = {0, 1, 2, 8, 0x10, 0x20, 0x40};
+    if (index < 1 || index > 6) return;
+    const uint32_t bit = kCapBits[index];
+    void*& slot = RenderTargets()[index];
+    if (slot || !(Global<uint32_t>(kEmulationCapUser) & bit)) return;
+    Internal<void(__fastcall*)(void*)>(0x23E14)(*g_render);   // render_t: EvictManagedTextures
+    const RECT& window = Global<RECT>(kWindowRect);
+    int32_t width, height;
+    if (index == 1 && (Field<uint32_t>(Global<void*>(0x17D2EC), 0x1E4) & 0x100)) {   // s_pcRandy: any size
+        width = window.right - window.left;
+        height = window.bottom - window.top;
+    } else if (index <= 2) {
+        width = PowerOfTwoAtMost(window.right - window.left);
+        height = PowerOfTwoBelow(window.bottom - window.top);
+    } else {
+        width = height = index <= 4 ? 256 : 8;
+    }
+    // DDSCAPS: video memory on hardware (else system memory), 3D device + offscreen plain / Z-buffer.
+    const uint32_t memory = (Global<int32_t>(kHardwareLevel) ? 0x3800u : 0u) + 0x800u;
+    auto* rt = static_cast<RenderTarget*>(vc10::Allocate(sizeof(RenderTarget)));
+    RtConstruct(rt, nullptr, 7, memory | 0x3000, uint32_t(width), uint32_t(height));
+    slot = rt;
+    if (RtCreateZ(rt, nullptr, 0x1007, memory | 0x20000, 0x400, uint32_t(width), uint32_t(height),
+                  &Global<int32_t>(0x17D328), &Global<int32_t>(0x17D32C), Global<int32_t>(0x17D324)) == 0) {
+        Global<uint32_t>(kEmulationCap) |= bit;
+        Global<float>(0x17D2D0 + uint32_t(index) * 4) = float(width);
+        Global<float>(0x17D2B4 + uint32_t(index) * 4) = float(height);
+    } else {
+        RtDestroy(rt);
+        vc10::Free(rt);
+        slot = nullptr;
+    }
+    if (!slot) Global<uint32_t>(kEmulationCapUser) &= ~bit;
+}
+
 void* __fastcall GetBackBuffer(void* randy)
 {
     void* target = RenderTargets()[Field<int32_t>(randy, 0x280)];
@@ -327,7 +471,6 @@ void __fastcall SetFeatureUsage(void* randy, void*, uint32_t features)
         for (int i = 1; i < 5; ++i) DropRenderTarget(i);
         return;
     }
-    auto make = Internal<void(__cdecl*)(int)>(0x42732);   // FUN_10042732: creates render target n
     const uint32_t caps = Global<uint32_t>(kEmulationCapUser) & Global<uint32_t>(kEmulationCap);
     uint32_t& used = Field<uint32_t>(randy, 0x288);
     struct Feature {
@@ -340,7 +483,7 @@ void __fastcall SetFeatureUsage(void* randy, void*, uint32_t features)
     for (const Feature& f : kFeatures) {
         if (!(features & f.bit)) continue;
         for (int t : f.targets)
-            if (t) make(t);
+            if (t) CreateRenderTarget(t);
         if ((caps & f.needs) == f.needs) used |= f.bit;
     }
 }
@@ -412,6 +555,10 @@ void Install(HMODULE orig)
     const Entry entries[] = {
         {0x4170C, FN(EnableWBuffer), "Randy_t::EnableWBuffer"},
         {0x41EDE, FN(DeviceDefaults), "Randy_t: the device's default states (FUN_10041ede)"},
+        {0x42732, FN(CreateRenderTarget), "Randy_t: makes render target n (FUN_10042732)"},
+        {0x25E84, FN(RtConstruct), "RenderTarget_t::RenderTarget_t (FUN_10025e84)"},
+        {0x25F39, FN(RtDestroy), "RenderTarget_t destroy (FUN_10025f39)"},
+        {0x25F5C, FN(RtCreateZ), "RenderTarget_t Z-buffer (FUN_10025f5c)"},
         {0x41755, FN(SetAmbientLight), "Randy_t::SetAmbientLight"},
         {0x4177F, FN(EnableFog), "Randy_t::EnableFog"},
         {0x41876, FN(SetFogParameters), "Randy_t::SetFogParameters"},

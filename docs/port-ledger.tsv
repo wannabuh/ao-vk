@@ -626,3 +626,7 @@
 0x1D5D9	dead	-	ostream manipulator used only by FUN_1001e5bb (the Randy assert text), which only FUN_1001e7bd calls, which nothing calls
 0x1D5F3	dead	-	ostream manipulator used only by FUN_1001e5bb (the Randy assert text), which only FUN_1001e7bd calls, which nothing calls
 0x41EDE	replaced	proxy/native/randy.cpp	Randy_t device default states (FUN_10041ede)
+0x42732	replaced	proxy/native/randy.cpp	Randy_t makes render target n (FUN_10042732)
+0x25E84	replaced	proxy/native/randy.cpp	RenderTarget_t::RenderTarget_t (FUN_10025e84)
+0x25F39	replaced	proxy/native/randy.cpp	RenderTarget_t destroy (FUN_10025f39)
+0x25F5C	replaced	proxy/native/randy.cpp	RenderTarget_t Z-buffer (FUN_10025f5c)
