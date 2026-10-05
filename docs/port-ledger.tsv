@@ -992,3 +992,16 @@
 0x46DF9	replaced	proxy/native/rshadow.cpp	RShadow deleting destructor, RRefFrame_t part (FUN_10046df9)
 0x46E04	replaced	proxy/native/rshadow.cpp	RShadow copy into a fresh object (FUN_10046e04)
 0x46E3E	replaced	proxy/native/rshadow.cpp	RShadow deleting destructor (FUN_10046e3e)
+0x1242A	replaced	proxy/native/rgrid.cpp	RGrid::~RGrid (FUN_1001242a)
+0x1248F	replaced	proxy/native/rgrid.cpp	RGrid::Archive (FUN_1001248f)
+0x12501	replaced	proxy/native/rgrid.cpp	RGrid::Render (FUN_10012501)
+0x125D7	replaced	proxy/native/rgrid.cpp	RGrid::SetColor
+0x12634	replaced	proxy/native/rgrid.cpp	RGrid::Build (FUN_10012634)
+0x128A1	replaced	proxy/native/rgrid.cpp	RGrid::RGrid
+0x1298E	replaced	proxy/native/rgrid.cpp	RGrid::RGrid(archive) (FUN_1001298e)
+0x12A4A	replaced	proxy/native/rgrid.cpp	RGrid::Instantiate
+0x12A82	replaced	proxy/native/rgrid.cpp	RVisual_t::Clone (FUN_10012a82)
+0x12ABC	replaced	proxy/native/rgrid.cpp	RVisual_t vtable slot 12 default (FUN_10012abc)
+0x12AC1	replaced	proxy/native/rgrid.cpp	BVolume_t from points (FUN_10012ac1)
+0x12B69	replaced	proxy/native/rgrid.cpp	RGrid subject deleting destructor (FUN_10012b69)
+0x12B74	replaced	proxy/native/rgrid.cpp	RGrid deleting destructor (FUN_10012b74)

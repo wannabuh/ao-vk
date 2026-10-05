@@ -1188,6 +1188,48 @@ void TestConnector(CharacterScene& scene, int frame)
     }
 }
 
+// --grid: an RGrid (the reference grid) built by its exported constructor, attached to the scene, coloured and drawn
+// (render_t::RenderLineList) - its geometry, SetColor and draw are the same with and without the native grid.
+bool g_grid;
+void* g_gridObject;
+void TestGrid(CharacterScene& scene, void* viewport, int frame)
+{
+    using CtorFn = void*(__fastcall*)(void*, void*, unsigned, unsigned, float, float, void*, void*);
+    using AddChildFn = void(__fastcall*)(void*, void*, void*);
+    using SetColorFn = void(__fastcall*)(void*, void*, const void*);
+    using RenderFn = void(__fastcall*)(void*, void*, void*);
+    if (!g_gridObject) {
+        auto ctor = Export<CtorFn>("??0RGrid@@QAE@IIMMPAVRRefFrame_t@@PAVRAnimation_t@@@Z");
+        auto addChild = Export<AddChildFn>("?AddChild@RRefFrame_t@@UAEXPAV1@@Z");
+        auto setPos = Export<SetPosFn>("?SetRelativePosition@RRefFrame_t@@QAEXABVVector3_t@@PBV1@@Z");
+        void* object = ctor(::operator new(0x19C), nullptr, 4, 3, 2.0f, 2.5f, nullptr, nullptr);
+        addChild(scene.root, nullptr, object);
+        Vector3 at{0.0f, 0.5f, 4.0f};
+        setPos(object, nullptr, &at, nullptr);
+        g_gridObject = object;
+    }
+    if (frame == 1) {
+        const float colour[3] = {0.125f, 0.75f, 1.0f};
+        Export<SetColorFn>("?SetColor@RGrid@@QAEXABVRGB_t@@@Z")(g_gridObject, nullptr, colour);
+    }
+    if (frame == 3) {
+        auto* g = static_cast<const uint8_t*>(g_gridObject);
+        const uint32_t lines = *reinterpret_cast<const uint32_t*>(g + 0x188);
+        const uint32_t indices = *reinterpret_cast<const uint32_t*>(g + 0x18C);
+        const uint8_t* vertices = *reinterpret_cast<const uint8_t* const*>(g + 0x194);
+        const uint8_t* indexData = *reinterpret_cast<const uint8_t* const*>(g + 0x190);
+        const uint8_t* bounds = *reinterpret_cast<const uint8_t* const*>(g + 0x198);
+        uint32_t sum = 2166136261u;
+        for (uint32_t i = 0; i < lines * 0x10; ++i) sum = (sum ^ vertices[i]) * 16777619u;
+        for (uint32_t i = 0; i < indices * 4; ++i) sum = (sum ^ indexData[i]) * 16777619u;
+        const float* centre = reinterpret_cast<const float*>(bounds + 0x08);
+        const float radius = *reinterpret_cast<const float*>(bounds + 0x14);
+        std::printf("grid: %u lines, %u indices, checksum %08x, bounds %.5g %.5g %.5g r %.5g\n", lines, indices, sum,
+                    centre[0], centre[1], centre[2], radius);
+    }
+    reinterpret_cast<RenderFn>((*reinterpret_cast<void***>(g_gridObject))[13])(g_gridObject, nullptr, viewport);
+}
+
 // The first character's projected shadow (RVisual_t vtable slot 20, as RShadow draws its caster): a fake RShadow
 // with its matrix (+0x1AC, flattening onto y = 0.01; +0x1EC 0 = up to date) and material (+0x178).
 void DrawShadow(CharacterScene& scene, void* viewport)
@@ -1424,6 +1466,7 @@ int main(int argc, char** argv)
         else if (a == "--status") g_status = true;
         else if (a == "--lightmap") g_lightmap = true;
         else if (a == "--connector") g_connector = true;
+        else if (a == "--grid") g_grid = true;
         else if (a == "--blend" && i + 1 < argc) g_blend = float(std::atof(argv[++i]));
         else if (a == "--query") query = true;
         else if (a == "--static" && i + 1 < argc) staticMesh = argv[++i];
@@ -1589,6 +1632,7 @@ int main(int argc, char** argv)
             if (pick) PickCharacter(scene);
             if (pick && !scene.statics.empty()) PickStatics(scene);
             if (g_connector) TestConnector(scene, frame);
+            if (g_grid) TestGrid(scene, viewport, frame);
             if (query && frame + 1 == frames) QueryCharacter(scene);
             LARGE_INTEGER now;
             QueryPerformanceCounter(&now);

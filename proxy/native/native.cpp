@@ -33,6 +33,7 @@
 #include "native/rshadow.h"
 #include "native/connector.h"
 #include "native/cat_status.h"
+#include "native/rgrid.h"
 
 namespace rnative {
 
@@ -76,6 +77,7 @@ void Install(HMODULE orig)
     rshadow::Install(orig);
     connector::Install(orig);
     catstatus::Install(orig);
+    rgrid::Install(orig);
     gonetrap::Install(orig);                        // last: over what the replacements left
 }
 
