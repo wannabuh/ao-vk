@@ -642,3 +642,106 @@
 0x43484	replaced	proxy/native/randy_init.cpp	Randy_t::~Randy_t (FUN_10043484)
 0x44757	replaced	proxy/native/randy_init.cpp	Randy_t deleting destructor (FUN_10044757)
 0x43C48	replaced	proxy/native/randy_init.cpp	Randy_t frame buffer resized (FUN_10043c48)
+0x263D2	dead	-	D3DFormatAccess*_c vtable slot (DXT1, DXT3, DXT5): its objects are made only by FUN_100262dc, which nothing references
+0x263D7	dead	-	D3DFormatAccess*_c vtable slot (DXT1, DXT3, DXT5): its objects are made only by FUN_100262dc, which nothing references
+0x263DF	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, A4R4G4B4, DXT1, ...): its objects are made only by FUN_100262dc, which nothing references
+0x263E2	dead	-	D3DFormatAccess*_c vtable slot (DXT1, DXT5): its objects are made only by FUN_100262dc, which nothing references
+0x263E8	dead	-	D3DFormatAccess*_c vtable slot (DXT1): its objects are made only by FUN_100262dc, which nothing references
+0x26626	dead	-	D3DFormatAccess*_c vtable slot (DXT1): its objects are made only by FUN_100262dc, which nothing references
+0x268D2	dead	-	D3DFormatAccess*_c vtable slot (DXT1): its objects are made only by FUN_100262dc, which nothing references
+0x26927	dead	-	D3DFormatAccess*_c vtable slot (DXT1): its objects are made only by FUN_100262dc, which nothing references
+0x26976	dead	-	D3DFormatAccess*_c vtable slot (DXT3): its objects are made only by FUN_100262dc, which nothing references
+0x2697C	dead	-	D3DFormatAccess*_c vtable slot (DXT3): its objects are made only by FUN_100262dc, which nothing references
+0x26B4B	dead	-	D3DFormatAccess*_c vtable slot (DXT3): its objects are made only by FUN_100262dc, which nothing references
+0x26DAC	dead	-	D3DFormatAccess*_c vtable slot (DXT3): its objects are made only by FUN_100262dc, which nothing references
+0x26DF7	dead	-	D3DFormatAccess*_c vtable slot (DXT3): its objects are made only by FUN_100262dc, which nothing references
+0x26E59	dead	-	D3DFormatAccess*_c vtable slot (DXT3): its objects are made only by FUN_100262dc, which nothing references
+0x26E9A	dead	-	D3DFormatAccess*_c vtable slot (DXT3): its objects are made only by FUN_100262dc, which nothing references
+0x26EEC	dead	-	D3DFormatAccess*_c vtable slot (DXT5): its objects are made only by FUN_100262dc, which nothing references
+0x27268	dead	-	D3DFormatAccess*_c vtable slot (DXT5): its objects are made only by FUN_100262dc, which nothing references
+0x27534	dead	-	D3DFormatAccess*_c vtable slot (DXT5): its objects are made only by FUN_100262dc, which nothing references
+0x27700	dead	-	D3DFormatAccess*_c vtable slot (DXT5): its objects are made only by FUN_100262dc, which nothing references
+0x27854	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x2786B	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27878	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27887	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x278A3	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x278B8	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, A4R4G4B4, R5G6B5, ...): its objects are made only by FUN_100262dc, which nothing references
+0x278CF	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, A4R4G4B4, R5G6B5, ...): its objects are made only by FUN_100262dc, which nothing references
+0x278DC	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, A4R4G4B4, R5G6B5, ...): its objects are made only by FUN_100262dc, which nothing references
+0x278F8	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, A4R4G4B4, R5G6B5, ...): its objects are made only by FUN_100262dc, which nothing references
+0x27909	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, A4R4G4B4, R5G6B5, ...): its objects are made only by FUN_100262dc, which nothing references
+0x27926	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, A4R4G4B4, R5G6B5, ...): its objects are made only by FUN_100262dc, which nothing references
+0x27938	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x2793E	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27958	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x2797E	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27999	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x279BD	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x279D6	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27A0D	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27A39	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27A65	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27A86	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27AB0	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27ACF	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27AEA	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27AFA	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27B17	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27B29	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27B90	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27BEA	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27C4A	dead	-	D3DFormatAccess*_c vtable slot (A8R8G8B8, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27C9F	dead	-	D3DFormatAccess*_c vtable slot (X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27CA5	dead	-	D3DFormatAccess*_c vtable slot (X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27CD1	dead	-	D3DFormatAccess*_c vtable slot (X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27CF2	dead	-	D3DFormatAccess*_c vtable slot (X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27D2F	dead	-	D3DFormatAccess*_c vtable slot (X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27D61	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5, X1R5G5B5, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27D6F	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5, X1R5G5B5, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x27D7D	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x27DC5	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x27E02	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x27E63	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x27EB9	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x27F30	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x27F9C	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x28018	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x28089	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x280CB	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x28103	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x28133	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x28158	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x28190	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x281BB	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x281EC	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x28212	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5, X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x28216	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x2825D	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x28299	dead	-	D3DFormatAccess*_c vtable slot (X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x282F2	dead	-	D3DFormatAccess*_c vtable slot (X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x28340	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x283BA	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x28429	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x2849A	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5, X1R5G5B5, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x284A7	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5): its objects are made only by FUN_100262dc, which nothing references
+0x284E2	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5): its objects are made only by FUN_100262dc, which nothing references
+0x28512	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5): its objects are made only by FUN_100262dc, which nothing references
+0x28577	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5): its objects are made only by FUN_100262dc, which nothing references
+0x285D1	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5): its objects are made only by FUN_100262dc, which nothing references
+0x28643	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5): its objects are made only by FUN_100262dc, which nothing references
+0x286AA	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5): its objects are made only by FUN_100262dc, which nothing references
+0x2872A	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5): its objects are made only by FUN_100262dc, which nothing references
+0x2879F	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5, X1R5G5B5, X8R8G8B8): its objects are made only by FUN_100262dc, which nothing references
+0x287AC	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
+0x287B2	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x28817	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x28871	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x288ED	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x28929	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x2895B	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x28985	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x289A4	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x289DC	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x28A07	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x28A2E	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
