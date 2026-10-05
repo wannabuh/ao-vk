@@ -4,8 +4,9 @@
 // for all of them, released and the surface_t freed with the last), +0x08 a DDSURFACEDESC2 filled on first ask
 // (+0x84: still to fill). render_t: +0x00 IDirect3DDevice7, +0x04 IDirect3D7, +0x08 IDirectDraw7, +0x10 its DDCAPS,
 // +0x278 the monitor's rectangle (multi-monitor offset for windowed presents).
-// The D3DX texture functions (D3DXCreateTexture, D3DXLoadTextureFromMemory, the format conversions) stay in the original
-// for now: they are D3DX7 itself, statically linked.
+// D3DXCreateTexture and the format conversions are native (d3dx.cpp); the loaders (D3DXLoadTextureFromMemory /
+// D3DXLoadTextureFromSurface) and their conversion core stay in the original for now: they are D3DX7 itself,
+// statically linked.
 #include "native/surface.h"
 #include "native/vc10.h"
 

@@ -1093,3 +1093,5 @@
 0x638BE	replaced	proxy/native/d3dx.cpp	D3DXMakeSurfaceFormat (FUN_100638be)
 0x21541	replaced	proxy/native/d3dx.cpp	render_t::D3DXMakeDDPixelFormat (FUN_10021541)
 0x23DB3	replaced	proxy/native/d3dx.cpp	render_t::D3DXMakeSurfaceFormat (FUN_10023db3)
+0x63DF8	replaced	proxy/native/d3dx.cpp	D3DXCreateTexture (FUN_10063df8)
+0x63D5D	replaced	proxy/native/d3dx.cpp	D3DX texture image info (FUN_10063d5d)
