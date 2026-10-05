@@ -916,3 +916,8 @@
 0x16CEF	replaced	proxy/native/faf.cpp	FAFDirectionalLight_t::Archive (FUN_10016cef)
 0x16D07	replaced	proxy/native/faf.cpp	FAFDirectionalLight_t::Instantiate
 0x17DF5	replaced	proxy/native/faf.cpp	RMaterial_t copy into a fresh object (FUN_10017df5)
+0x12CF0	replaced	proxy/native/helpers.cpp	Vector3 subtract (FUN_10012cf0)
+0x18833	replaced	proxy/native/helpers.cpp	Vector3 normalize and scale (FUN_10018833)
+0x18864	replaced	proxy/native/helpers.cpp	Vector3 normalize and scale to (FUN_10018864)
+0x2CDB2	replaced	proxy/native/helpers.cpp	a matrix's origin plus a Vector3 (FUN_1002cdb2)
+0x46518	replaced	proxy/native/helpers.cpp	a matrix moved along its axes (FUN_10046518)

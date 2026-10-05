@@ -1498,6 +1498,7 @@ void CheckLBitmapStream()
 void CheckHelpers()
 {
     using namespace rnative::helpers;
+    helpers::SetModule(g_orig);
     using CrossFn = void(__fastcall*)(void*, void*, const void*);
     using ScaleFn = void(__fastcall*)(void*, void*, void*, float);
     using CrossToFn = void(__fastcall*)(void*, void*, void*, const void*);
@@ -1530,6 +1531,28 @@ void CheckHelpers()
         Identity(m2, nullptr);
         if (std::memcmp(m1, m2, sizeof(m1)) != 0 && mism++ < 6) std::printf("helpers: identity differs\n");
         (void)oc;
+        // normalize and scale (0x18833 / 0x18864), the matrix origin add (0x2cdb2), the matrix move (0x46518) and
+        // the Vector3 subtract (0x12cf0).
+        std::memcpy(x, a, sizeof(a));
+        std::memcpy(y, a, sizeof(a));
+        Orig<void(__fastcall*)(void*, void*, float)>(0x18833)(x, nullptr, scale);
+        NormalizeScale(y, nullptr, scale);
+        if (std::memcmp(x, y, sizeof(x)) != 0 && mism++ < 6) std::printf("helpers: normalizeScale differs\n");
+        Orig<void(__fastcall*)(void*, void*, void*, float)>(0x18864)(a, nullptr, oa, scale);
+        NormalizeScaleTo(a, nullptr, ob, scale);
+        if (std::memcmp(oa, ob, sizeof(oa)) != 0 && mism++ < 6) std::printf("helpers: normalizeScaleTo differs\n");
+        for (float& v : m1) v = uf(rng);
+        std::memcpy(m2, m1, sizeof(m1));
+        Orig<void(__fastcall*)(void*, void*, const void*)>(0x2CDB2)(m1, nullptr, b);
+        TranslateAdd(m2, nullptr, b);
+        if (std::memcmp(m1, m2, sizeof(m1)) != 0 && mism++ < 6) std::printf("helpers: translateAdd differs\n");
+        std::memcpy(m2, m1, sizeof(m1));
+        Orig<void(__fastcall*)(void*, void*, float, float)>(0x46518)(m1, nullptr, a[0], a[1]);
+        MatrixMove(m2, nullptr, a[0], a[1]);
+        if (std::memcmp(m1, m2, sizeof(m1)) != 0 && mism++ < 6) std::printf("helpers: matrixMove differs\n");
+        Orig<void(__fastcall*)(void*, void*, void*, const void*)>(0x12CF0)(a, nullptr, oa, b);
+        Subtract(a, nullptr, ob, b);
+        if (std::memcmp(oa, ob, sizeof(oa)) != 0 && mism++ < 6) std::printf("helpers: subtract differs\n");
     }
     // the frame-hierarchy walk: a fixed forest (node i's parent is below it, its sibling above it; end is the root)
     uint8_t nodes[8][0x20] = {};
