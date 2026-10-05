@@ -2082,7 +2082,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     }
     if (m_group.active && (groupKey == 0 || groupKey != m_group.key))
         FlushGroup();                                // the pending group's state is about to change
-    ApplyDynamicState(primitive, fvf, layout.stride);
+    // A draw that extends the pending group shares its pipeline, dynamic state, descriptors and buffers, so only
+    // its record and indirect command are added - the expensive per-draw setup is skipped.
+    bool extending = m_group.active && groupKey != 0 && groupKey == m_group.key;
 
     // Bindless textures (set 1, M1): the draw's four textures and four samplers by index, so nothing per-draw is
     // bound as an image descriptor. The indices live in the draw's record (constants.glsl D.texIdx/sampIdx).
@@ -2101,6 +2103,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // GPU-driven M2: this draw's record, and the frame's two arrays (bindings 0 = constants, 12 = records) pushed
     // once per frame's command buffer. The record index travels in firstInstance (gl_InstanceIndex).
     uint32_t recordIndex = AppendRecord(constIndex, dt);
+    if (!extending) {
+    ApplyDynamicState(primitive, fvf, layout.stride);
     if (!m_arenaBound) {
         VkDescriptorBufferInfo consts{f.ring, m_constsBase, VkDeviceSize(m_constCapacity) * sizeof(DrawConstants)};
         VkDescriptorBufferInfo records{f.ring, m_recordsBase, VkDeviceSize(m_recordCapacity) * sizeof(DrawRecord)};
@@ -2147,6 +2151,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 1, 1, &m_bindlessSet, 0, nullptr);
         m_bindlessBound = true;
     }
+    }
 
     // Would an instanced batch cover this draw together with the one before it? Only static snapshots share their
     // vertex data across draws; ring copies are unique per draw, so those never merge.
@@ -2173,11 +2178,13 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         return;
     }
     if (m_drawStaticBuffer) {
-        VkBuffer buffers[2] = {m_drawStaticBuffer, m_nullBuffer};
-        VkDeviceSize offsets[2] = {0, 0};
-        vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
-        if (indices)
-            vkCmdBindIndexBuffer(cmd, f.ring, 0, VK_INDEX_TYPE_UINT16);
+        if (!extending) {
+            VkBuffer buffers[2] = {m_drawStaticBuffer, m_nullBuffer};
+            VkDeviceSize offsets[2] = {0, 0};
+            vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
+            if (indices)
+                vkCmdBindIndexBuffer(cmd, f.ring, 0, VK_INDEX_TYPE_UINT16);
+        }
         if (groupKey) {
             RecordIndirect(indexCount, ibOffset, vbOffset, layout.stride, recordIndex, groupKey);
         } else if (indices) {
@@ -2189,10 +2196,12 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         return;
     }
     if (m_drawGpu) {
-        VkBuffer buffers[2] = {m_frames[m_frameIndex].skinArena, m_nullBuffer};
-        VkDeviceSize offsets[2] = {0, 0};
-        vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
-        vkCmdBindIndexBuffer(cmd, m_drawGpu->mesh->buffer, 0, VK_INDEX_TYPE_UINT16);
+        if (!extending) {
+            VkBuffer buffers[2] = {m_frames[m_frameIndex].skinArena, m_nullBuffer};
+            VkDeviceSize offsets[2] = {0, 0};
+            vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
+            vkCmdBindIndexBuffer(cmd, m_drawGpu->mesh->buffer, 0, VK_INDEX_TYPE_UINT16);
+        }
         if (groupKey)
             RecordIndirect(indexCount, ibOffset, vbOffset, layout.stride, recordIndex, groupKey);
         else
