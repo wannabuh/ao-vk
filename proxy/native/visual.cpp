@@ -332,6 +332,30 @@ void* __fastcall Delete(Visual* v, void*, uint8_t flags)
     return block;
 }
 
+// SubjectImpl<VisualEvents::Rendering> (RVisual_t +0xA4): its constructor (FUN_1004e3b6), its deleting destructor
+// (FUN_1004e3ea) and the subobject's deleting destructor thunk (FUN_1004e45f), which adjusts to the RVisual_t.
+void* __fastcall SubjectConstruct(void* s)
+{
+    Field<uintptr_t>(s, 0) = reinterpret_cast<uintptr_t>(g_orig) + kSubjectBaseVtable;
+    // The observer set's constructor takes two stack arguments (it cleans 8 bytes); it uses only ECX.
+    Internal<void(__fastcall*)(void*, void*, void*, void*)>(0x5B0B4)(static_cast<uint8_t*>(s) + 4, nullptr, nullptr,
+                                                                    nullptr);
+    return s;
+}
+
+void* __fastcall SubjectDelete(void* s, void*, uint8_t flags)
+{
+    Field<uintptr_t>(s, 0) = reinterpret_cast<uintptr_t>(g_orig) + kSubjectBaseVtable;
+    Internal<void(__fastcall*)(void*)>(0x5B824)(static_cast<uint8_t*>(s) + 4);
+    if (flags & 1) vc10::Free(s);
+    return s;
+}
+
+void* __fastcall SubjectDeleteThunk(Visual* v, void*, uint8_t flags)
+{
+    return Delete(v - kSubject, nullptr, flags);
+}
+
 void __fastcall Archive(Visual* v, void*, void* archive)
 {
     orig::RRefFrame_t_Archive(v, archive);
@@ -365,6 +389,9 @@ void Install(HMODULE orig)
         {0x4D7D3, FN(Destroy), "RVisual_t::~RVisual_t"},
         {0x4D6D3, FN(ConstructFrom), "RVisual_t::RVisual_t(archive) (FUN_1004d6d3)"},
         {0x4E412, FN(Delete), "RVisual_t deleting destructor (FUN_1004e412)"},
+        {0x4E3B6, FN(SubjectConstruct), "SubjectImpl ctor (FUN_1004e3b6)"},
+        {0x4E3EA, FN(SubjectDelete), "SubjectImpl deleting destructor (FUN_1004e3ea)"},
+        {0x4E45F, FN(SubjectDeleteThunk), "SubjectImpl deleting destructor thunk (FUN_1004e45f)"},
         {0x4C947, FN(Archive), "RVisual_t::Archive"},
         {0x4C9A8, FN(SetMaxActiveLightCount), "RVisual_t::SetMaxActiveLightCount"},
         {0x4C9C2, FN(AddToRenderList), "RVisual_t::AddToRenderList"},

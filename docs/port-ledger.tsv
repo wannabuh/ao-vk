@@ -381,6 +381,9 @@
 0x49867	replaced	proxy/native/mesh.cpp	RTriMesh_t::IsRayIntersecting
 0x4D6D3	replaced	proxy/native/visual.cpp	RVisual_t::RVisual_t(archive) (FUN_1004d6d3)
 0x4E412	replaced	proxy/native/visual.cpp	RVisual_t deleting destructor (FUN_1004e412)
+0x4E3B6	replaced	proxy/native/visual.cpp	SubjectImpl constructor (FUN_1004e3b6)
+0x4E3EA	replaced	proxy/native/visual.cpp	SubjectImpl deleting destructor (FUN_1004e3ea)
+0x4E45F	replaced	proxy/native/visual.cpp	SubjectImpl deleting destructor thunk (FUN_1004e45f)
 0x188FB	replaced	proxy/native/mesh_data.cpp	TriList deleting destructor (FUN_100188fb)
 0x1FD2A	replaced	proxy/native/mesh_data.cpp	TriList::Archive
 0x1FE9D	replaced	proxy/native/mesh_data.cpp	TriList::AddTriangle
