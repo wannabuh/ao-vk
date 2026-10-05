@@ -16,9 +16,9 @@ float* __fastcall NormalizeScale(float* self, void*, float scale);              
 void __fastcall NormalizeScaleTo(const float* self, void*, float* out, float scale);         // FUN_10018864
 void __fastcall TranslateAdd(float* self, void*, const float* v);                            // FUN_1002cdb2
 void __fastcall MatrixMove(float* self, void*, float a, float b);                            // FUN_10046518
-void __fastcall Subtract(const float* self, void*, float* out, const float* other);          // FUN_10012cf0
+float* __fastcall Subtract(const float* self, void*, float* out, const float* other);        // FUN_10012cf0
 void __fastcall CrossProduct(float* self, void*, const float* other);                        // FUN_1002a358
-void __fastcall ScaleVector(const float* self, void*, float* out, float scale);              // FUN_1002a39f
+float* __fastcall ScaleVector(const float* self, void*, float* out, float scale);            // FUN_1002a39f
 void __fastcall CrossProductTo(const float* self, void*, float* out, const float* other);    // FUN_1002a3db
 void __fastcall Identity(void* self, void*);                                                 // FUN_1002a406
 void __cdecl NextNode(void** node, const void* end);                                         // NextNode

@@ -30,6 +30,7 @@
 #include "native/helpers.h"
 #include "native/texture_stream.h"
 #include "native/faf.h"
+#include "native/rshadow.h"
 
 namespace rnative {
 
@@ -70,6 +71,7 @@ void Install(HMODULE orig)
     helpers::Install(orig);
     texturestream::Install(orig);
     faf::Install(orig);
+    rshadow::Install(orig);
     gonetrap::Install(orig);                        // last: over what the replacements left
 }
 

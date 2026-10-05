@@ -60,11 +60,12 @@ void __fastcall MatrixMove(float* self, void*, float a, float b)   // FUN_100465
     self[14] = float(double(b) * self[13] + self[14]);
 }
 
-void __fastcall Subtract(const float* self, void*, float* out, const float* other)   // FUN_10012cf0
+float* __fastcall Subtract(const float* self, void*, float* out, const float* other)   // FUN_10012cf0
 {
     out[0] = self[0] - other[0];
     out[1] = self[1] - other[1];
     out[2] = self[2] - other[2];
+    return out;
 }
 
 void __fastcall CrossProduct(float* self, void*, const float* other)
@@ -77,11 +78,12 @@ void __fastcall CrossProduct(float* self, void*, const float* other)
     self[2] = float(other[1] * a0 - other[0] * a1);
 }
 
-void __fastcall ScaleVector(const float* self, void*, float* out, float scale)
+float* __fastcall ScaleVector(const float* self, void*, float* out, float scale)
 {
     out[0] = self[0] * scale;
     out[1] = self[1] * scale;
     out[2] = self[2] * scale;
+    return out;
 }
 
 void __fastcall CrossProductTo(const float* self, void*, float* out, const float* other)
