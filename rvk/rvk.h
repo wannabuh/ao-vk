@@ -1168,6 +1168,9 @@ private:
     void RegisterBindlessTexture(Texture* t);
     void UnregisterBindlessTexture(Texture* t);
     uint32_t RegisterBindlessSampler(VkSampler s);
+    uint32_t BindlessImage(Texture* t);          // its slot, registering it on first use (main targets predate the set)
+    uint32_t BindlessSampler(VkSampler s);       // its slot, registering it on first use
+    bool m_bindlessBound = false;                // set 1 bound in this frame's command buffer
     std::array<VkPipeline, 3> m_pipelines{};   // per topology class: points, lines, triangles
     VkBuffer m_nullBuffer = VK_NULL_HANDLE;    // zeros, bound at stride 0 for attributes a format lacks
     VmaAllocation_T* m_nullAllocation = nullptr;

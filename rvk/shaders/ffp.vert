@@ -34,7 +34,8 @@ layout(location = 14) out vec3 vSmoothN;     // tessellated draws (D.tess.x): th
 layout(set = 0, binding = 10, std430) readonly buffer SmoothNormals { float smoothN[]; } SN;
 // Last frame's vertex positions of an animated (CPU-skinned) mesh, model space, 3 floats a vertex (D.motion.y).
 layout(set = 0, binding = 8, std430) readonly buffer PrevPositions { float prevPos[]; } PP;
-layout(set = 0, binding = 1) uniform sampler2D swayTex;    // texture 0: plants' sway (how much of it is holes)
+// The plants' sway reads texture stage 0, bindless now (TEX0 in constants.glsl): swayTex is that sampler.
+#define swayTex TEX0
 #include "sway.glsl"
 
 // Plants bending out of the way of characters (FL.pushers: where they are and the trail behind them, w = seconds since

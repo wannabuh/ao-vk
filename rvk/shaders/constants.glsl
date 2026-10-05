@@ -11,7 +11,18 @@ layout(set = 0, binding = 3, std140) uniform DrawTransform {
     vec4 sway;                  // plants: model y of the base, 1 / model height, tip sway (world units), 1 = on
     uvec4 lightMask;            // frame lights (bits 0-63 of x, y) that reach the draw's bounding box; z: pushers near it
     vec4 tess;                  // characters' Phong tessellation: level (0 = off), shape (0..1), base vertex (binding 10)
+    uvec4 texIdx;               // bindless (set 1): image slots for stage 0, stage 1, bump base, normal map
+    uvec4 sampIdx;              // bindless (set 1): sampler slots for stage 0, stage 1, bump, normal
 } D;
+
+// Bindless textures (M1): one array of every texture and one of every sampler; a draw names the four it uses by
+// index. TEX0/TEX1 are the game's two texture stages, BUMPTEX the ground's base texture, NORMALTEX its normal map.
+layout(set = 1, binding = 0) uniform texture2D texImages[4096];
+layout(set = 1, binding = 1) uniform sampler bindlessSamplers[256];
+#define TEX0 sampler2D(texImages[D.texIdx.x], bindlessSamplers[D.sampIdx.x])
+#define TEX1 sampler2D(texImages[D.texIdx.y], bindlessSamplers[D.sampIdx.y])
+#define BUMPTEX sampler2D(texImages[D.texIdx.z], bindlessSamplers[D.sampIdx.z])
+#define NORMALTEX sampler2D(texImages[D.texIdx.w], bindlessSamplers[D.sampIdx.w])
 
 layout(set = 0, binding = 0, std140) uniform DrawConstants {
     mat4 view, proj;

@@ -2,13 +2,10 @@
 #extension GL_KHR_shader_subgroup_quad : require
 #include "constants.glsl"
 
-layout(set = 0, binding = 1) uniform sampler2D tex0;
-layout(set = 0, binding = 2) uniform sampler2D tex1;
+// tex0 / tex1 / bumpBase / normalMap are bindless now (TEX0 / TEX1 / BUMPTEX / NORMALTEX in constants.glsl).
 layout(set = 0, binding = 5) uniform sampler2DArrayShadow shadowMap;   // sun shadow cascades
 layout(set = 0, binding = 6) uniform samplerCubeArrayShadow pointShadowMaps;
-layout(set = 0, binding = 7) uniform sampler2D bumpBase;   // F_BUMPBASE: the ground's base texture, for its relief
 layout(set = 0, binding = 9) uniform sampler2DArray shadowDepths;   // the sun cascades' depths (soft shadows' blockers)
-layout(set = 0, binding = 11) uniform sampler2D normalMap;  // F_NORMALMAP: the stage 0 texture's tangent-space normals
 
 // Visibility of a frame light with a cube shadow map (l.spot.z = cube + 1): 1 = lit. Must match
 // Device::RenderPointShadowMaps (pointshadow.cpp): depth along the face's axis, near kPointShadowNear, far = range.
@@ -116,7 +113,7 @@ vec4 Sample(uint stage)
     }
     bool bound = (C.flags.x & (stage == 0u ? F_TEX0 : F_TEX1)) != 0u;
     if (!bound) return vec4(0.0, 0.0, 0.0, 1.0);
-    return stage == 0u ? texture(tex0, tc.xy) : texture(tex1, tc.xy);
+    return stage == 0u ? texture(TEX0, tc.xy) : texture(TEX1, tc.xy);
 }
 
 // A point of a Vogel (golden angle) disk of n points, radius 1, rotated.
@@ -183,12 +180,12 @@ float CascadeVisibility(int c, vec3 posW, vec3 n, float nl, out float edge)
 // The texture's mean alpha around a point (~16 texels across): a coarse mip, or without mips a ring of taps.
 float NeighbourhoodAlpha(vec2 uv)
 {
-    if (textureQueryLevels(tex0) > 4) return textureLod(tex0, uv, 4.0).a;
-    vec2 step = 8.0 / vec2(textureSize(tex0, 0));
-    float sum = textureLod(tex0, uv, 0.0).a;
+    if (textureQueryLevels(TEX0) > 4) return textureLod(TEX0, uv, 4.0).a;
+    vec2 step = 8.0 / vec2(textureSize(TEX0, 0));
+    float sum = textureLod(TEX0, uv, 0.0).a;
     for (int i = 0; i < 8; ++i) {
         float a = float(i) * 0.7853982;
-        sum += textureLod(tex0, uv + vec2(cos(a), sin(a)) * step, 0.0).a;
+        sum += textureLod(TEX0, uv + vec2(cos(a), sin(a)) * step, 0.0).a;
     }
     return sum / 9.0;
 }
@@ -268,13 +265,17 @@ vec3 BendNormal(vec3 n, vec3 px, vec3 py, float dBs, float dBt)
     return normalize(abs(det) * nu - grad) * length(n);
 }
 
-vec3 BumpNormal(sampler2D tex, vec3 n, vec3 posW, vec2 uv)
+// The bindless texture (image + sampler): a constructed sampler2D can only appear as a texture call's argument, so
+// the two are passed separately and joined at each use.
+vec3 BumpNormal(texture2D img, sampler smp, vec3 n, vec3 posW, vec2 uv)
 {
-    vec2 size = vec2(textureSize(tex, 0));
-    float lod = max(textureQueryLod(tex, uv).y, 0.0);
+    vec2 size = vec2(textureSize(sampler2D(img, smp), 0));
+    float lod = max(textureQueryLod(sampler2D(img, smp), uv).y, 0.0);
     vec2 step = exp2(lod) / size;                          // one texel at the sampled mip level, in uv
-    float hl = Luma(textureLod(tex, uv - vec2(step.x, 0.0), lod).rgb), hr = Luma(textureLod(tex, uv + vec2(step.x, 0.0), lod).rgb);
-    float hd = Luma(textureLod(tex, uv - vec2(0.0, step.y), lod).rgb), hu = Luma(textureLod(tex, uv + vec2(0.0, step.y), lod).rgb);
+    float hl = Luma(textureLod(sampler2D(img, smp), uv - vec2(step.x, 0.0), lod).rgb),
+          hr = Luma(textureLod(sampler2D(img, smp), uv + vec2(step.x, 0.0), lod).rgb);
+    float hd = Luma(textureLod(sampler2D(img, smp), uv - vec2(0.0, step.y), lod).rgb),
+          hu = Luma(textureLod(sampler2D(img, smp), uv + vec2(0.0, step.y), lod).rgb);
     vec2 slope = vec2(hr - hl, hu - hd) * 0.5;             // height per texel of this level, along u and v
     vec2 uvx = dFdx(uv) / step, uvy = dFdy(uv) / step;     // screen pixel -> texels of this level
     vec3 px = dFdx(posW), py = dFdy(posW);
@@ -289,7 +290,7 @@ vec3 BumpNormal(sampler2D tex, vec3 n, vec3 posW, vec2 uv)
 // normals above, so it needs no tangents. C.misc.w = strength.
 vec3 NormalMapNormal(vec3 n, vec3 posW, vec2 uv)
 {
-    vec3 t = texture(normalMap, uv).xyz * 2.0 - 1.0;
+    vec3 t = texture(NORMALTEX, uv).xyz * 2.0 - 1.0;
     t.z = max(t.z, 0.05);
     vec2 slope = vec2(-t.x, t.y) / t.z * C.misc.w;     // height per world unit along u, v
     vec2 uvx = dFdx(uv), uvy = dFdy(uv);
@@ -369,7 +370,8 @@ void main()
             if ((C.flags.x & F_NORMALMAP) != 0u)
                 n = NormalMapNormal(n, vPosW, base ? vSet0 : vTex0.xy);
             else
-                n = base ? BumpNormal(bumpBase, n, vPosW, vSet0) : BumpNormal(tex0, n, vPosW, vTex0.xy);
+                n = base ? BumpNormal(texImages[D.texIdx.z], bindlessSamplers[D.sampIdx.z], n, vPosW, vSet0)
+                         : BumpNormal(texImages[D.texIdx.x], bindlessSamplers[D.sampIdx.x], n, vPosW, vTex0.xy);
             // The ground's sunlight is baked into its lightmap (the live sun is kept off it): the relief scales the
             // lightmap by how much more or less the bumped surface faces the sun than the flat one.
             if (base && dot(FL.sunDir.xyz, FL.sunDir.xyz) > 0.0) {

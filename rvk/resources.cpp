@@ -315,6 +315,27 @@ void Device::UnregisterBindlessTexture(Texture* t)
     t->m_bindless = ~0u;
 }
 
+uint32_t Device::BindlessImage(Texture* t)
+{
+    if (!m_bindless)
+        return 0;
+    if (!t)
+        t = m_blackTexture;
+    if (t && t->m_bindless == ~0u)
+        RegisterBindlessTexture(t);
+    if (t && t->m_bindless != ~0u)
+        return t->m_bindless;
+    return m_blackTexture ? m_blackTexture->m_bindless : 0u;
+}
+
+uint32_t Device::BindlessSampler(VkSampler s)
+{
+    if (!m_bindless)
+        return 0;
+    uint32_t index = RegisterBindlessSampler(s);
+    return index == ~0u ? 0u : index;
+}
+
 uint32_t Device::RegisterBindlessSampler(VkSampler s)
 {
     if (!m_bindless || !s || m_bindlessSet == VK_NULL_HANDLE)

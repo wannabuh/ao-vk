@@ -43,6 +43,8 @@ struct DrawTransform {
     uint32_t lightMask[4];         // frame lights (bits 0-63 of x, y) that reach the draw's bounding box; z: pushers
                                    // (FrameLights.pushers) near it
     float tess[4];                 // Phong tessellation (characters): level (0 = off), shape, base vertex of binding 10
+    uint32_t texIdx[4];            // bindless (M1): image slots for stage 0, stage 1, bump base, normal map
+    uint32_t sampIdx[4];           // bindless (M1): sampler slots for stage 0, stage 1, bump, normal
 };
 
 enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE = 8, F_FOG = 16, F_RANGEFOG = 32,

@@ -1999,55 +1999,50 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 
     VkDescriptorBufferInfo ubo{f.ring, uboOffset, sizeof(DrawConstants)};
     VkDescriptorBufferInfo transform{f.ring, transformOffset, sizeof(DrawTransform)};
-    VkDescriptorImageInfo images[2];
-    for (uint32_t s = 0; s < 2; ++s) {
-        Texture* t = m_textures[s] ? m_textures[s] : m_blackTexture;
-        images[s] = {SamplerFor(s), t->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    }
+    // Bindless textures (set 1, M1): the draw's four textures and four samplers by index, so nothing per-draw is
+    // bound as an image descriptor. The indices live in the draw's transform block (constants.glsl D.texIdx/sampIdx).
+    Texture* texStage0 = m_textures[0] ? m_textures[0] : m_blackTexture;
+    Texture* texStage1 = m_textures[1] ? m_textures[1] : m_blackTexture;
+    Texture* bumpBase = m_drawBumpBase ? m_drawBumpBase : m_blackTexture;
+    Texture* normalTex = normalMap ? normalMap : m_flatNormal;
+    drawTransform->texIdx[0] = BindlessImage(texStage0);
+    drawTransform->texIdx[1] = BindlessImage(texStage1);
+    drawTransform->texIdx[2] = BindlessImage(bumpBase);
+    drawTransform->texIdx[3] = BindlessImage(normalTex);
+    drawTransform->sampIdx[0] = BindlessSampler(SamplerFor(0));
+    drawTransform->sampIdx[1] = BindlessSampler(SamplerFor(1));
+    drawTransform->sampIdx[2] = BindlessSampler(m_bumpSampler);
+    drawTransform->sampIdx[3] = BindlessSampler(m_normalSampler);
     VkDescriptorBufferInfo frameLights{f.ring, frameLightsOffset, sizeof(FrameLights)};
     VkDescriptorImageInfo shadow{m_shadowSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     VkDescriptorImageInfo cubes{m_cubeSampler, m_cubeArrayView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    Texture* bumpBase = m_drawBumpBase ? m_drawBumpBase : m_blackTexture;
-    VkDescriptorImageInfo bump{m_bumpSampler, bumpBase->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     // Binding 8: an animated mesh's last positions, else any small part of the ring (unread).
     VkDescriptorBufferInfo prevPositions{prevPositionsBuffer, prevPositionsOffset, prevPositionsBytes ? prevPositionsBytes : 16};
     // Binding 9: the sun shadow cascades' depths, read without comparison (soft shadows' blocker search).
     VkDescriptorImageInfo shadowDepths{m_shadowDepthSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     // Binding 10: a tessellated draw's averaged normals, else any small part of the ring (unread).
     VkDescriptorBufferInfo smoothNormals{smoothBuffer, smoothOffset, smoothBytes ? smoothBytes : 16};
-    // Binding 11: the surface's normal map (F_NORMALMAP), else a flat one (unread).
-    VkDescriptorImageInfo normal{m_normalSampler, (normalMap ? normalMap : m_flatNormal)->m_view,
-                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet writes[12] = {};
-    for (int i = 0; i < 12; ++i) {
+    // The textures (bindings 1, 2, 7, 11) are bindless now; the rest of the push set is unchanged.
+    VkWriteDescriptorSet writes[8] = {};
+    auto write = [&](int i, uint32_t binding, VkDescriptorType type) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[i].dstBinding = uint32_t(i);
+        writes[i].dstBinding = binding;
         writes[i].descriptorCount = 1;
+        writes[i].descriptorType = type;
+    };
+    write(0, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);          writes[0].pBufferInfo = &ubo;
+    write(1, 3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);          writes[1].pBufferInfo = &transform;
+    write(2, 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);          writes[2].pBufferInfo = &frameLights;
+    write(3, 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[3].pImageInfo = &shadow;
+    write(4, 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[4].pImageInfo = &cubes;
+    write(5, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);          writes[5].pBufferInfo = &prevPositions;
+    write(6, 9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[6].pImageInfo = &shadowDepths;
+    write(7, 10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);         writes[7].pBufferInfo = &smoothNormals;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 8, writes);
+    if (!m_bindlessBound) {                       // set 1, once per frame's command buffer
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 1, 1, &m_bindlessSet, 0, nullptr);
+        m_bindlessBound = true;
     }
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[0].pBufferInfo = &ubo;
-    writes[1].descriptorType = writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].pImageInfo = &images[0];
-    writes[2].pImageInfo = &images[1];
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[3].pBufferInfo = &transform;
-    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[4].pBufferInfo = &frameLights;
-    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[5].pImageInfo = &shadow;
-    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[6].pImageInfo = &cubes;
-    writes[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[7].pImageInfo = &bump;
-    writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[8].pBufferInfo = &prevPositions;
-    writes[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[9].pImageInfo = &shadowDepths;
-    writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[10].pBufferInfo = &smoothNormals;
-    writes[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[11].pImageInfo = &normal;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 12, writes);
 
     // Would an instanced batch cover this draw together with the one before it? Only static snapshots share their
     // vertex data across draws; ring copies are unique per draw, so those never merge.

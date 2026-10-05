@@ -360,6 +360,11 @@ bool Device::CreateLogicalDevice(std::string* error)
     m_bindless = descIdx.shaderSampledImageArrayNonUniformIndexing && descIdx.descriptorBindingSampledImageUpdateAfterBind &&
                  descIdx.descriptorBindingPartiallyBound && rob2.nullDescriptor;
     Log("bindless textures: %s", m_bindless ? "yes" : "no");
+    if (!m_bindless) {
+        // The scene shaders read their textures through set 1 now; there is no non-bindless path.
+        if (error) *error = "required Vulkan features missing (descriptor indexing, robustness2 nullDescriptor)";
+        return false;
+    }
     // Enable only what is used.
     VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT enVertexInput{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT};
@@ -1125,6 +1130,7 @@ void Device::BeginFrame()
     m_batchKey = 0;
     m_batchRun = 0;
     m_meshStaticDraws = m_meshHashedDraws = 0;
+    m_bindlessBound = false;                     // the frame's command buffer starts with set 1 unbound
     if (m_swapchainStale) {
         vkDeviceWaitIdle(m_device);
         DestroySwapchain();
