@@ -1075,3 +1075,4 @@
 0x25E1B	replaced	proxy/native/device.cpp	RenderStats_t::Reset (too short to patch: entry_guard)
 0x25E22	replaced	proxy/native/device.cpp	RenderStats_t::GetGroupName
 0x25E2A	replaced	proxy/native/device.cpp	RenderStats_t::GetNameName
+0x5C270	replaced	proxy/native/cat_anim_data.cpp	zlib uncompress (FUN_1005c270)

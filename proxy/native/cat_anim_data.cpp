@@ -14,6 +14,7 @@
 #include "native/cat_anim_data.h"
 #include "native/orig_api.gen.h"
 #include "native/vc10.h"
+#include "stb/stb_image.h"
 
 #include <cmath>
 #include <cstdio>
@@ -575,6 +576,17 @@ bool __fastcall ReturnTrue(void*, void*) { return true; }                       
 
 }  // namespace
 
+// FUN_1005c270: zlib's uncompress (the original's statically linked copy), the compressed animation channels. Any
+// correct inflate gives the same bytes, so stb_image's does (STBI_ONLY_PNG leaves it compiled in).
+int __cdecl Uncompress(void* dest, uint32_t* destLen, const void* src, int32_t srcLen)
+{
+    const int n =
+        stbi_zlib_decode_buffer(static_cast<char*>(dest), int(*destLen), static_cast<const char*>(src), srcLen);
+    if (n < 0) return -3;                               // Z_DATA_ERROR
+    *destLen = uint32_t(n);
+    return 0;                                           // Z_OK
+}
+
 void Install(HMODULE orig)
 {
     if (GetMode("Scene", Mode::Off) != Mode::On) return;
@@ -626,6 +638,7 @@ void Install(HMODULE orig)
         {0x50FF4, FN(BlendClear), "CATAnimBlend_t clear (FUN_10050ff4)"},
         {0x52A5E, FN(DataAt58), "CATKeyframeAnimData_t field (FUN_10052a5e)"},
         {0x52A69, FN(ReturnTrue), "CATKeyframeAnimData_t flag (FUN_10052a69)"},
+        {0x5C270, FN(Uncompress), "zlib uncompress (FUN_1005c270)"},
     };
 #undef FN
     int installed = 0;
