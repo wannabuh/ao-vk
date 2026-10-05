@@ -1637,7 +1637,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     bool motion = !m_external && MotionVectorDraw(fvf);   // reads the last frame's camera from the frame block
     VkDeviceSize geometryBytes = m_external || m_drawGpu ? 0
                                  : (m_drawStaticBuffer ? 0 : VkDeviceSize(layout.stride) * vertexCount) +
-                                       VkDeviceSize(indexCount) * 2;
+                                       (m_drawStaticIb ? 0 : VkDeviceSize(indexCount) * 2);
     m_drawIsCharacter = CharacterDraw(fvf, vertexCount);
     float tessLevel = TessellateDraw(primitive, fvf, vertexCount);
     EnsureRingSpace(sizeof(DrawConstants) + sizeof(DrawTransform) + sizeof(FrameLights) + geometryBytes + 3 * uboAlign +
@@ -1944,15 +1944,16 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         RecordShadowCaster(primitive, fvf, layout.stride, nullptr, vertexCount, vbOffset, indices, indices ? indexCount : 0,
                            ibOffset, m_frames[m_frameIndex].skinArena, m_drawGpu->mesh->buffer);
     } else if (m_drawStaticBuffer) {
-        // Static geometry on the GPU: the vertices stay where they are, the indices come through the ring.
+        // Static geometry on the GPU: the vertices (and, when the mesh's indices are kept too, the indices) stay put.
         vbOffset = m_drawStaticOffset;
         drawTransform->motion[2] = float(vbOffset / layout.stride);
-        if (indices) {
+        if (indices && !m_drawStaticIb) {
             ibOffset = Allocate(VkDeviceSize(indexCount) * 2, 2, &cpu);
             std::memcpy(cpu, indices, size_t(indexCount) * 2);
         }
         RecordShadowCaster(primitive, fvf, layout.stride, vertices, vertexCount, vbOffset, indices,
-                           indices ? indexCount : 0, ibOffset, m_drawStaticBuffer, f.ring);
+                           indices ? indexCount : 0, ibOffset, m_drawStaticBuffer,
+                           m_drawStaticIb ? m_drawStaticIb : f.ring);
     } else if (!m_external) {
         VkDeviceSize vbBytes = VkDeviceSize(layout.stride) * vertexCount;
         vbOffset = Allocate(vbBytes, layout.stride, &cpu);
@@ -2078,7 +2079,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         VkDeviceSize offsets[2] = {0, 0};
         vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
         if (indices) {
-            vkCmdBindIndexBuffer(cmd, f.ring, 0, VK_INDEX_TYPE_UINT16);
+            vkCmdBindIndexBuffer(cmd, m_drawStaticIb ? m_drawStaticIb : f.ring, 0, VK_INDEX_TYPE_UINT16);
             vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), 0);
         } else {
             vkCmdDraw(cmd, vertexCount, 1, uint32_t(vbOffset / layout.stride), 0);

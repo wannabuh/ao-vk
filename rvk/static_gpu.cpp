@@ -56,6 +56,44 @@ VkBuffer Device::StaticBufferFor(const std::shared_ptr<const std::vector<uint8_t
     return g.buffer;
 }
 
+// The indices of a static mesh (D3D7 has no index buffers: the game passes a pointer), uploaded once and kept while
+// the mesh is drawn, so a static draw doesn't copy them into the ring every frame.
+VkBuffer Device::StaticIndexBufferFor(const uint16_t* indices, uint32_t indexCount)
+{
+    if (!m_staticResident || !indices || !indexCount || !m_inFrame)
+        return VK_NULL_HANDLE;
+    StaticIndices& s = m_staticIndices[indices];
+    s.lastFrame = m_frameNumber;
+    if (s.buffer && s.count == indexCount)
+        return s.buffer;
+    if (s.buffer) {                                  // another, differently sized range at the same address
+        m_deadBuffers.push_back({DeathTag(), {s.buffer, s.allocation}});
+        m_staticIndexBytes -= VkDeviceSize(s.count) * 2;
+        s.buffer = VK_NULL_HANDLE;
+    }
+    VkDeviceSize bytes = (VkDeviceSize(indexCount) * 2 + 15) & ~VkDeviceSize(15);
+    VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bi.size = bytes;
+    bi.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VmaAllocationCreateInfo ac{};
+    ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    if (vmaCreateBuffer(m_allocator, &bi, &ac, &s.buffer, &s.allocation, nullptr) != VK_SUCCESS) {
+        s.buffer = VK_NULL_HANDLE;
+        return VK_NULL_HANDLE;
+    }
+    s.count = indexCount;
+    m_staticIndexBytes += VkDeviceSize(indexCount) * 2;
+    EnsureRingSpace(bytes + 64);
+    void* cpu;
+    VkDeviceSize staging = Allocate(bytes, 16, &cpu);
+    std::memcpy(cpu, indices, size_t(indexCount) * 2);
+    VkCommandBuffer cmd = UploadCommands();
+    VkBufferCopy region{staging, 0, bytes};
+    vkCmdCopyBuffer(cmd, m_frames[m_frameIndex].ring, s.buffer, 1, &region);
+    m_skinUploadsPending = true;
+    return s.buffer;
+}
+
 void Device::BeginStaticFrame()
 {
     if ((m_frameNumber & 63) != 0)
@@ -72,8 +110,19 @@ void Device::BeginStaticFrame()
             ++it;
         }
     }
+    for (auto it = m_staticIndices.begin(); it != m_staticIndices.end();) {
+        StaticIndices& s = it->second;
+        if (s.lastFrame + 1200 < m_frameNumber) {
+            if (s.buffer) m_deadBuffers.push_back({DeathTag(), {s.buffer, s.allocation}});
+            m_staticIndexBytes -= VkDeviceSize(s.count) * 2;
+            it = m_staticIndices.erase(it);
+        } else {
+            ++it;
+        }
+    }
     if ((m_frameNumber & 4095) == 0)
-        Log("static geometry on the GPU: %zu buffers, %.1f MB", m_staticGeometry.size(), double(m_staticBytes) / 1048576.0);
+        Log("static geometry on the GPU: %zu buffers, %.1f MB; %zu index buffers, %.1f MB", m_staticGeometry.size(),
+            double(m_staticBytes) / 1048576.0, m_staticIndices.size(), double(m_staticIndexBytes) / 1048576.0);
 }
 
 void Device::DestroyStaticGeometry()
@@ -82,6 +131,10 @@ void Device::DestroyStaticGeometry()
         if (g.buffer) vmaDestroyBuffer(m_allocator, g.buffer, g.allocation);
     m_staticGeometry.clear();
     m_staticBytes = 0;
+    for (auto& [key, s] : m_staticIndices)
+        if (s.buffer) vmaDestroyBuffer(m_allocator, s.buffer, s.allocation);
+    m_staticIndices.clear();
+    m_staticIndexBytes = 0;
 }
 
 void Device::DrawShared(uint32_t primitive, uint32_t fvf, const std::shared_ptr<const std::vector<uint8_t>>& data,
@@ -95,9 +148,12 @@ void Device::DrawShared(uint32_t primitive, uint32_t fvf, const std::shared_ptr<
     if (stride && byteOffset % stride == 0 && (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ) {
         m_drawStaticBuffer = StaticBufferFor(data);
         m_drawStaticOffset = byteOffset;
+        if (m_drawStaticBuffer && indices && indexCount)
+            m_drawStaticIb = StaticIndexBufferFor(indices, indexCount);
     }
     Draw(primitive, fvf, data->data() + byteOffset, vertexCount, indices, indexCount);
     m_drawStaticBuffer = VK_NULL_HANDLE;
+    m_drawStaticIb = VK_NULL_HANDLE;
 }
 
 }  // namespace rvk
