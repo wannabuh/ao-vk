@@ -910,3 +910,9 @@
 0x17D99	replaced	proxy/native/faf.cpp	FAFMaterial_t::Archive (FUN_10017d99)
 0x17DB1	replaced	proxy/native/faf.cpp	FAFMaterial_t destructor (FUN_10017db1)
 0x17E85	replaced	proxy/native/faf.cpp	FAFMaterial_t deleting destructor (FUN_10017e85)
+0x16AA1	replaced	proxy/native/faf.cpp	FAFCollisionBox_c deleting destructor (FUN_10016aa1)
+0x16C5E	replaced	proxy/native/faf.cpp	the collision classes' destructor (FUN_10016c5e)
+0x16CB2	replaced	proxy/native/faf.cpp	FAFDirectionalLight_t(archive) ctor (FUN_10016cb2)
+0x16CEF	replaced	proxy/native/faf.cpp	FAFDirectionalLight_t::Archive (FUN_10016cef)
+0x16D07	replaced	proxy/native/faf.cpp	FAFDirectionalLight_t::Instantiate
+0x17DF5	replaced	proxy/native/faf.cpp	RMaterial_t copy into a fresh object (FUN_10017df5)

@@ -124,6 +124,55 @@ void* __cdecl InstantiateMaterial(void* archive)
     return self ? CtorMaterial(self, nullptr, archive) : nullptr;
 }
 
+// ---- FAFDirectionalLight_t (RLight_t) ----
+
+constexpr uint32_t kDirectionalLightVtable = 0x8A940;
+
+void* __fastcall CtorDirectionalLight(void* self, void*, void* archive)
+{
+    Internal<void(__fastcall*)(void*, void*, void*)>(0x3FE81)(self, nullptr, archive);   // RLight_t(archive)
+    SetVtable(self, kDirectionalLightVtable);
+    serialize::Get().getStream(archive, nullptr);
+    return self;
+}
+
+void __fastcall ArchiveDirectionalLight(void* self, void*, void* archive)
+{
+    Internal<void(__fastcall*)(void*, void*, void*)>(0x3FBD8)(self, nullptr, archive);   // RLight_t::Archive
+    serialize::Get().getStream(archive, nullptr);
+}
+
+void* __cdecl InstantiateDirectionalLight(void* archive)
+{
+    uint8_t* self = static_cast<uint8_t*>(vc10::Allocate(0x11C));
+    return self ? CtorDirectionalLight(self, nullptr, archive) : nullptr;
+}
+
+// ---- the collision classes' destructors ----
+
+void __fastcall DtorCollision(void* self, void*)
+{
+    Internal<void(__fastcall*)(void*, void*, uint8_t, uint32_t)>(0x11E82)(static_cast<uint8_t*>(self) + 0xA4, nullptr, 1,
+                                                                        0);   // ~std::string
+    Internal<void(__fastcall*)(void*, void*)>(kFrameDtor)(self, nullptr);       // ~RRefFrame_t
+}
+
+void* __fastcall DeletingDtorBox(void* self, void*, uint8_t flags)
+{
+    DtorCollision(self, nullptr);
+    if (flags & 1) vc10::Free(self);
+    return self;
+}
+
+// ---- 0x17DF5: an RMaterial_t copy into a fresh object (the source is in ECX) ----
+
+void* __fastcall CopyMaterial(const void* source, void*)
+{
+    void* object = vc10::Allocate(0xC0);
+    if (object) Internal<void(__fastcall*)(void*, void*, const void*)>(0x41146)(object, nullptr, source);
+    return object;
+}
+
 // ---- FAFTexture_t (RTexture_t) ----
 
 void* __cdecl InstantiateTexture(void* archive)
@@ -159,9 +208,15 @@ void Install(HMODULE orig)
         {0x168D6, FN(ArchiveAttractor), "FAFAttractor_t::Archive (FUN_100168d6)"},
         {0x168EE, FN(CtorBox), "FAFCollisionBox_c(archive) ctor (FUN_100168ee)"},
         {0x16946, FN(InstantiateBox), "FAFCollisionBox_c::Instantiate"},
+        {0x16AA1, FN(DeletingDtorBox), "FAFCollisionBox_c deleting destructor (FUN_10016aa1)"},
+        {0x16C5E, FN(DtorCollision), "the collision classes' destructor (FUN_10016c5e)"},
+        {0x16CB2, FN(CtorDirectionalLight), "FAFDirectionalLight_t(archive) ctor (FUN_10016cb2)"},
+        {0x16CEF, FN(ArchiveDirectionalLight), "FAFDirectionalLight_t::Archive (FUN_10016cef)"},
+        {0x16D07, FN(InstantiateDirectionalLight), "FAFDirectionalLight_t::Instantiate"},
         {0x16AD8, FN(CtorSphere), "FAFCollisionSphere_c(archive) ctor (FUN_10016ad8)"},
         {0x16B30, FN(InstantiateSphere), "FAFCollisionSphere_c::Instantiate"},
         {0x17D1D, FN(CtorMaterial), "FAFMaterial_t(archive) ctor (FUN_10017d1d)"},
+        {0x17DF5, FN(CopyMaterial), "RMaterial_t copy into a fresh object (FUN_10017df5)"},
         {0x17D61, FN(InstantiateMaterial), "FAFMaterial_t::Instantiate"},
         {0x17D99, FN(ArchiveMaterial), "FAFMaterial_t::Archive (FUN_10017d99)"},
         {0x17DB1, FN(DtorMaterial), "FAFMaterial_t destructor (FUN_10017db1)"},
