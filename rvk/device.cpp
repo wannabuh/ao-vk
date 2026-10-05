@@ -1070,6 +1070,7 @@ void Device::BeginFrame()
     m_batchRuns = m_batchMerged = m_batchMaxRun = 0;
     m_batchKey = 0;
     m_batchRun = 0;
+    m_meshStaticDraws = m_meshHashedDraws = 0;
     if (m_swapchainStale) {
         vkDeviceWaitIdle(m_device);
         DestroySwapchain();

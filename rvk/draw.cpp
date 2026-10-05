@@ -990,26 +990,43 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
         m_drawMesh = &it->second;
         return;
     }
-    const uint8_t* v = static_cast<const uint8_t*>(vertices);
-    // Word-wise mixing (positions as three 32-bit words), not byte by byte: this runs for every draw.
-    uint64_t key = 0x9E3779B97F4A7C15ull ^ (uint64_t(fvf) << 40) ^ (uint64_t(stride) << 32) ^ vertexCount;
-    auto mix = [&key](uint64_t x) { key = (key ^ x) * 0xFF51AFD7ED558CCDull; key ^= key >> 32; };
-    mix(indexCount);
-    uint32_t step = vertexCount > 16 ? vertexCount / 16 : 1;
-    for (uint32_t i = 0; i < vertexCount; i += step) {
-        uint32_t p[3];
-        std::memcpy(p, v + size_t(i) * stride, 12);
-        mix(uint64_t(p[0]) | uint64_t(p[1]) << 32);
-        mix(p[2]);
-    }
-    uint32_t last[3];
-    std::memcpy(last, v + size_t(vertexCount - 1) * stride, 12);
-    mix(uint64_t(last[0]) | uint64_t(last[1]) << 32);
-    mix(last[2]);
-    if (indices && indexCount) {
-        uint32_t istep = indexCount > 16 ? indexCount / 16 : 1;
-        for (uint32_t i = 0; i < indexCount; i += istep)
-            mix(indices[i] | uint64_t(i) << 16);
+    uint64_t key;
+    if (m_drawStaticBuffer) {
+        // A static snapshot's vertices never change, so identify the sub-mesh by where it sits in the snapshot and
+        // skip the pass over the vertices. (The ring path below must hash the content: a dynamic buffer's pointer
+        // can stay while its data changes.) CachedMeshInfo then makes CasterKey and FrameLightMask cheap too.
+        ++m_meshStaticDraws;
+        key = 0x51ED270F9E3779B9ull;
+        auto mixStatic = [&key](uint64_t x) { key = (key ^ x) * 0xFF51AFD7ED558CCDull; key ^= key >> 32; };
+        mixStatic(uint64_t(m_drawStaticBuffer));
+        mixStatic(reinterpret_cast<uintptr_t>(vertices));
+        mixStatic(vertexCount);
+        mixStatic(indexCount);
+        mixStatic(fvf);
+        mixStatic(stride);
+    } else {
+        ++m_meshHashedDraws;
+        const uint8_t* v = static_cast<const uint8_t*>(vertices);
+        // Word-wise mixing (positions as three 32-bit words), not byte by byte: this runs for every draw.
+        key = 0x9E3779B97F4A7C15ull ^ (uint64_t(fvf) << 40) ^ (uint64_t(stride) << 32) ^ vertexCount;
+        auto mix = [&key](uint64_t x) { key = (key ^ x) * 0xFF51AFD7ED558CCDull; key ^= key >> 32; };
+        mix(indexCount);
+        uint32_t step = vertexCount > 16 ? vertexCount / 16 : 1;
+        for (uint32_t i = 0; i < vertexCount; i += step) {
+            uint32_t p[3];
+            std::memcpy(p, v + size_t(i) * stride, 12);
+            mix(uint64_t(p[0]) | uint64_t(p[1]) << 32);
+            mix(p[2]);
+        }
+        uint32_t last[3];
+        std::memcpy(last, v + size_t(vertexCount - 1) * stride, 12);
+        mix(uint64_t(last[0]) | uint64_t(last[1]) << 32);
+        mix(last[2]);
+        if (indices && indexCount) {
+            uint32_t istep = indexCount > 16 ? indexCount / 16 : 1;
+            for (uint32_t i = 0; i < indexCount; i += istep)
+                mix(indices[i] | uint64_t(i) << 16);
+        }
     }
     m_drawMeshKey = key;
     auto it = m_meshInfo.find(key);
@@ -1021,9 +1038,10 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
     }
     MeshInfo info{};
     for (int j = 0; j < 3; ++j) { info.boundsMin[j] = 1e30f; info.boundsMax[j] = -1e30f; }
+    const uint8_t* verts = static_cast<const uint8_t*>(vertices);
     for (uint32_t i = 0; i < vertexCount; ++i) {
         float p[3];
-        std::memcpy(p, v + size_t(i) * stride, 12);
+        std::memcpy(p, verts + size_t(i) * stride, 12);
         for (int j = 0; j < 3; ++j) {
             info.boundsMin[j] = std::min(info.boundsMin[j], p[j]);
             info.boundsMax[j] = std::max(info.boundsMax[j], p[j]);

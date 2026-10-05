@@ -647,6 +647,7 @@ private:
     uint64_t m_batchKey = 0;
     uint32_t m_batchRun = 0;
     void NoteBatch(uint64_t key);
+    uint32_t m_meshStaticDraws = 0, m_meshHashedDraws = 0;   // frame dump: DrawMeshInfo by snapshot vs by content hash
     void UpdateCasterCache();
     void ForgetCachedCaster(std::unordered_map<uint64_t, CachedCaster>::iterator it);
     void ForgetCasterTexture(Texture* texture);
