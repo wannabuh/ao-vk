@@ -8,6 +8,7 @@
 #include "native/color.h"
 #include "native/dxerror.h"
 #include "native/keyframe.h"
+#include "native/lbitmap.h"
 #include "native/orig_api.gen.h"
 #include "native/pixfmt.h"
 #include "native/shadowlands.h"
@@ -1175,6 +1176,170 @@ void CheckPixelFormat()
     Check(mism == 0, "pixfmt: PixelFormat_t");
 }
 
+// A fake registered bitmap for the registry: its vtable's slot 3 names it.
+const char* __fastcall FakeBitmapName(void* self, void*) { return static_cast<const char*>(self) + 4; }
+
+// LBitmap_t against ours: the registry, init / size / destroy / make-24-bit / scale / base ctor / the Vector3 compare,
+// on random bitmaps. The stream (BMP) loader is still the original's and is not tested here.
+void CheckLBitmap()
+{
+    using namespace rnative::lbitmap;
+    lbitmap::SetModule(g_orig);
+    using InitFn = void(__fastcall*)(void*, void*, int32_t);
+    using DestroyFn = void(__fastcall*)(void*, void*);
+    using SizeFn = int32_t(__fastcall*)(const void*, void*);
+    using Make24Fn = void(__fastcall*)(void*, void*);
+    using RegisterFn = void(__cdecl*)(void*);
+    using FindFn = void*(__cdecl*)(const char*);
+    using ScaleFn = void(__fastcall*)(void*, void*, uint32_t, uint32_t);
+    using BaseCtorFn = void(__fastcall*)(void*, void*);
+    using NotEqualFn = uint32_t(__fastcall*)(const float*, void*, const float*);
+    int mism = 0;
+    auto bad = [&](const char* what, const void* x, const void* y, size_t n) {
+        if (std::memcmp(x, y, n) && mism++ < 6) std::printf("lbitmap: %s differs\n", what);
+    };
+    std::mt19937 rng(99);
+
+    void* fakeVt[4] = {nullptr, nullptr, nullptr, reinterpret_cast<void*>(&FakeBitmapName)};
+    alignas(8) uint8_t obj1[16] = {}, obj2[16] = {};
+    *reinterpret_cast<void**>(obj1) = fakeVt;
+    std::memcpy(obj1 + 4, "bmp", 4);
+    *reinterpret_cast<void**>(obj2) = fakeVt;
+    std::memcpy(obj2 + 4, "tga", 4);
+    auto registry = [g = g_orig]() { return reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(g) + 0xB92E0); };
+    auto list = [g = g_orig](uint32_t i) { return reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(g) + 0xB9150)[i]; };
+    registry()[0] = 0;
+    Orig<RegisterFn>(0x14EBC)(obj1);
+    const uint32_t countOriginal = registry()[0];
+    const void* slot0Original = list(0);
+    registry()[0] = 0;
+    Register(obj2);
+    const uint32_t countNative = registry()[0];
+    const void* slot0Native = list(0);
+    if (countOriginal != countNative || slot0Original != reinterpret_cast<void*>(obj1) || slot0Native != reinterpret_cast<void*>(obj2))
+        ++mism;
+    registry()[0] = 0;
+    Register(obj1);
+    Register(obj2);
+    void* foundA = Orig<FindFn>(0x14ED7)("bmp");
+    void* foundB = Find("bmp");
+    if (foundA != foundB) ++mism;
+    if (Orig<FindFn>(0x14ED7)("tga") != Find("tga")) ++mism;
+    if (Orig<FindFn>(0x14ED7)("png") != Find("png")) ++mism;
+
+    alignas(16) uint8_t memA[0x124], memB[0x124];
+    for (int trial = 0; trial < 200; ++trial) {
+        // init
+        std::memset(memA, 0xAA, sizeof(memA));
+        std::memset(memB, 0xAA, sizeof(memB));
+        Orig<InitFn>(0x14C9B)(memA, nullptr, int32_t(rng()));
+        Init(reinterpret_cast<Bitmap*>(memB), nullptr, int32_t(rng()) ^ int32_t(rng()));   // the arg is ignored
+        bad("init", memA, memB, sizeof(memA));
+        std::memset(memB, 0xAA, sizeof(memB));
+        Init(reinterpret_cast<Bitmap*>(memB), nullptr, 0);
+        // size
+        Bitmap* a = reinterpret_cast<Bitmap*>(memA);
+        Bitmap* b = reinterpret_cast<Bitmap*>(memB);
+        a->bitsPerPixel = int32_t(rng() % 40);
+        b->bitsPerPixel = a->bitsPerPixel;
+        a->width = b->width = rng() % 64;
+        a->height = b->height = rng() % 64;
+        if (Orig<SizeFn>(0x14CFF)(a, nullptr) != Size(b, nullptr)) ++mism;
+        // not equal
+        float v1[3], v2[3];
+        for (int i = 0; i < 3; ++i) v1[i] = float(int(rng() % 5) - 2), v2[i] = (rng() % 4 == 0) ? v1[i] : float(int(rng() % 5) - 2);
+        if (Orig<NotEqualFn>(0x155C5)(v1, nullptr, v2) != NotEqual(v1, nullptr, v2)) ++mism;
+    }
+
+    // make 24-bit (a paletted 8-bit bitmap): random indices and palette, compared after the call.
+    for (int trial = 0; trial < 200; ++trial) {
+        const uint32_t w = 1 + rng() % 16, h = 1 + rng() % 16;
+        std::vector<uint8_t> indices(w * h);
+        for (uint8_t& v : indices) v = uint8_t(rng());
+        std::vector<uint32_t> pal(256);
+        for (uint32_t& v : pal) v = rng();
+        auto setup = [&](uint8_t* mem) {
+            Bitmap* b = reinterpret_cast<Bitmap*>(mem);
+            std::memset(mem, 0, 0x124);
+            b->bitsPerPixel = 8;
+            b->width = w, b->height = h;
+            b->data = static_cast<uint8_t*>(vc10::Allocate(w * h));
+            std::memcpy(b->data, indices.data(), w * h);
+            b->palette = static_cast<uint32_t*>(vc10::Allocate(256 * 4));
+            std::memcpy(b->palette, pal.data(), 256 * 4);
+        };
+        setup(memA);
+        setup(memB);
+        Orig<Make24Fn>(0x14DA8)(memA, nullptr);
+        Make24Bit(reinterpret_cast<Bitmap*>(memB), nullptr);
+        Bitmap* a = reinterpret_cast<Bitmap*>(memA);
+        Bitmap* b = reinterpret_cast<Bitmap*>(memB);
+        if (a->bitsPerPixel != b->bitsPerPixel || std::memcmp(a->data, b->data, w * h * 3) != 0) {
+            if (mism++ < 6) std::printf("lbitmap: make24 differs\n");
+        }
+        vc10::Free(a->data);
+        vc10::Free(a->palette);
+        vc10::Free(b->data);
+        vc10::Free(b->palette);
+        if (a->data) { }   // (the originals' pointers were freed; the objects are re-used next trial)
+    }
+
+    // scale: a fake Randy_t with the texture size limits.
+    alignas(8) uint8_t randy[0x220] = {};
+    *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(g_orig) + 0x17D2EC) = randy;
+    *reinterpret_cast<uint32_t*>(randy + 0x204) = 1;
+    *reinterpret_cast<uint32_t*>(randy + 0x208) = 1;
+    *reinterpret_cast<uint32_t*>(randy + 0x20C) = 1u << 20;
+    *reinterpret_cast<uint32_t*>(randy + 0x210) = 1u << 20;
+    for (int trial = 0; trial < 500; ++trial) {
+        const uint32_t w = 1 + rng() % 32, h = 1 + rng() % 32;
+        const int32_t bpp = (rng() & 1) ? 0x18 : 0x20;
+        const uint32_t nw = 1 + rng() % (w + 2), nh = 1 + rng() % (h + 2);
+        *reinterpret_cast<uint32_t*>(randy + 0x218) = (rng() % 3 == 0) ? uint32_t(2 + rng() % 8) : 0;
+        const uint32_t bytes = uint32_t(bpp == 0x18 ? 3 : 4);
+        std::vector<uint8_t> pixels(size_t(w) * h * bytes);
+        for (uint8_t& v : pixels) v = uint8_t(rng());
+        auto setup = [&](uint8_t* mem) {
+            Bitmap* b = reinterpret_cast<Bitmap*>(mem);
+            std::memset(mem, 0, 0x124);
+            b->bitsPerPixel = bpp;
+            b->width = w, b->height = h;
+            b->data = static_cast<uint8_t*>(vc10::Allocate(pixels.size()));
+            std::memcpy(b->data, pixels.data(), pixels.size());
+        };
+        setup(memA);
+        setup(memB);
+        Orig<ScaleFn>(0x14F53)(memA, nullptr, nw, nh);
+        Scale(reinterpret_cast<Bitmap*>(memB), nullptr, nw, nh);
+        Bitmap* a = reinterpret_cast<Bitmap*>(memA);
+        Bitmap* b = reinterpret_cast<Bitmap*>(memB);
+        bool same = a->width == b->width && a->height == b->height && a->bitsPerPixel == b->bitsPerPixel;
+        if (same) {
+            const uint32_t bytes = uint32_t(a->bitsPerPixel == 0x18 ? 3 : (a->bitsPerPixel == 0x20 ? 4 : 0));
+            if (bytes) same = std::memcmp(a->data, b->data, size_t(a->width) * a->height * bytes) == 0;
+        }
+        if (!same && mism++ < 6) std::printf("lbitmap: scale %ux%u -> %ux%u (aspect %u) differs\n", w, h, nw, nh,
+                                             *reinterpret_cast<uint32_t*>(randy + 0x218));
+        vc10::Free(a->data);
+        vc10::Free(b->data);
+    }
+
+    // base ctor registers: the struct and the registry count compared.
+    registry()[0] = 0;
+    std::memset(memA, 0xAA, sizeof(memA));
+    Orig<BaseCtorFn>(0x15228)(memA, nullptr);
+    const uint32_t countA = registry()[0];
+    registry()[0] = 0;
+    std::memset(memB, 0xAA, sizeof(memB));
+    BaseCtor(reinterpret_cast<Bitmap*>(memB), nullptr);
+    const uint32_t countB = registry()[0];
+    bad("base ctor", memA, memB, sizeof(memA));
+    if (countA != countB) ++mism;
+
+    std::printf("lbitmap: registry, init, size, make24, scale, base ctor, vector compare; %d differ\n", mism);
+    Check(mism == 0, "lbitmap: LBitmap_t");
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -1216,6 +1381,7 @@ int main(int argc, char** argv)
     CheckShadowlands();
     CheckColor();
     CheckPixelFormat();
+    CheckLBitmap();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;

@@ -861,3 +861,12 @@
 0x1FAE3	replaced	proxy/native/pixfmt.cpp	PixelFormat_t::ConvertColorPacked
 0x1FC3E	replaced	proxy/native/pixfmt.cpp	PixelFormat_t init from a pixel format (FUN_1001fc3e)
 0x1FD01	replaced	proxy/native/pixfmt.cpp	PixelFormat_t::PixelFormat_t
+0x14C9B	replaced	proxy/native/lbitmap.cpp	LBitmap_t init (FUN_10014c9b)
+0x14CC0	replaced	proxy/native/lbitmap.cpp	LBitmap_t destroy (FUN_10014cc0)
+0x14CFF	replaced	proxy/native/lbitmap.cpp	LBitmap_t data size (FUN_10014cff)
+0x14DA8	replaced	proxy/native/lbitmap.cpp	LBitmap_t make 24-bit (FUN_10014da8, vtable slot 2)
+0x14EBC	replaced	proxy/native/lbitmap.cpp	LBitmap_t register (FUN_10014ebc)
+0x14ED7	replaced	proxy/native/lbitmap.cpp	LBitmap_t find by extension (FUN_10014ed7)
+0x14F53	replaced	proxy/native/lbitmap.cpp	LBitmap_t::Scale
+0x15228	replaced	proxy/native/lbitmap.cpp	LBitmap_t constructor (FUN_10015228)
+0x155C5	replaced	proxy/native/lbitmap.cpp	a Vector3 compare (FUN_100155c5)

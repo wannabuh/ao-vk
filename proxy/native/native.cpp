@@ -26,6 +26,7 @@
 #include "native/shadowlands.h"
 #include "native/color.h"
 #include "native/pixfmt.h"
+#include "native/lbitmap.h"
 
 namespace rnative {
 
@@ -62,6 +63,7 @@ void Install(HMODULE orig)
     shadowlands::Install(orig);
     color::Install(orig);
     pixfmt::Install(orig);
+    lbitmap::Install(orig);
     gonetrap::Install(orig);                        // last: over what the replacements left
 }
 
