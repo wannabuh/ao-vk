@@ -19,7 +19,10 @@ template <typename F>
 F Export(const char* name) { return reinterpret_cast<F>(GetProcAddress(g_orig, name)); }
 
 constexpr uint32_t kTextureVtable = 0x8A9DC, kAttractorVtable = 0x8A834, kBoxVtable = 0x8A868, kSphereVtable = 0x8A89C;
+constexpr uint32_t kMaterialVtable = 0x8A9C8;
 constexpr uint32_t kTextureDtor = 0x477FE, kFrameDtor = 0x45471;
+// RMaterial_t (already native): its archive ctor, Archive, destructor, and the FAFMaterial_t's extra vector's dtor.
+constexpr uint32_t kRMaterialCtor = 0x4132D, kRMaterialArchive = 0x40916, kRMaterialDtor = 0x408CB, kVectorDtor = 0x17E2F;
 const char* const kRTextureCtor = "??0RTexture_t@@QAE@PAVObjectArchive_c@fun@@@Z";
 const char* const kRRefFrameCtor = "??0RRefFrame_t@@QAE@PAVObjectArchive_c@fun@@@Z";
 
@@ -83,6 +86,44 @@ void* __fastcall CtorSphere(void* self, void*, void* archive)
 void* __cdecl InstantiateBox(void* archive) { return NewCollision(kBoxVtable, 0xCC, archive); }
 void* __cdecl InstantiateSphere(void* archive) { return NewCollision(kSphereVtable, 0xC4, archive); }
 
+// ---- FAFMaterial_t (RMaterial_t, its own vector of extra data at +0xCC) ----
+
+void* __fastcall CtorMaterial(void* self, void*, void* archive)
+{
+    Internal<void(__fastcall*)(void*, void*, void*)>(kRMaterialCtor)(self, nullptr, archive);
+    SetVtable(self, kMaterialVtable);
+    serialize::Get().getStream(archive, nullptr);
+    *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(self) + 0xCC) = 0;
+    return self;
+}
+
+void __fastcall ArchiveMaterial(void* self, void*, void* archive)
+{
+    Internal<void(__fastcall*)(void*, void*, void*)>(kRMaterialArchive)(self, nullptr, archive);
+    serialize::Get().getStream(archive, nullptr);
+}
+
+void __fastcall DtorMaterial(void* self, void*)
+{
+    SetVtable(self, kMaterialVtable);
+    if (void* extra = *reinterpret_cast<void**>(static_cast<uint8_t*>(self) + 0xCC))
+        Internal<int*(__fastcall*)(void*, void*, uint8_t)>(kVectorDtor)(extra, nullptr, 3);
+    Internal<void(__fastcall*)(void*, void*)>(kRMaterialDtor)(self, nullptr);
+}
+
+void* __fastcall DeletingDtorMaterial(void* self, void*, uint8_t flags)
+{
+    DtorMaterial(self, nullptr);
+    if (flags & 1) vc10::Free(self);
+    return self;
+}
+
+void* __cdecl InstantiateMaterial(void* archive)
+{
+    uint8_t* self = static_cast<uint8_t*>(vc10::Allocate(0xD0));
+    return self ? CtorMaterial(self, nullptr, archive) : nullptr;
+}
+
 // ---- FAFTexture_t (RTexture_t) ----
 
 void* __cdecl InstantiateTexture(void* archive)
@@ -120,6 +161,11 @@ void Install(HMODULE orig)
         {0x16946, FN(InstantiateBox), "FAFCollisionBox_c::Instantiate"},
         {0x16AD8, FN(CtorSphere), "FAFCollisionSphere_c(archive) ctor (FUN_10016ad8)"},
         {0x16B30, FN(InstantiateSphere), "FAFCollisionSphere_c::Instantiate"},
+        {0x17D1D, FN(CtorMaterial), "FAFMaterial_t(archive) ctor (FUN_10017d1d)"},
+        {0x17D61, FN(InstantiateMaterial), "FAFMaterial_t::Instantiate"},
+        {0x17D99, FN(ArchiveMaterial), "FAFMaterial_t::Archive (FUN_10017d99)"},
+        {0x17DB1, FN(DtorMaterial), "FAFMaterial_t destructor (FUN_10017db1)"},
+        {0x17E85, FN(DeletingDtorMaterial), "FAFMaterial_t deleting destructor (FUN_10017e85)"},
         {0x17EC8, FN(InstantiateTexture), "FAFTexture_t::Instantiate"},
         {0x17F0C, FN(DeletingDtorTexture), "FAFTexture_t deleting destructor (FUN_10017f0c)"},
     };

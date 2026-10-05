@@ -905,3 +905,8 @@
 0x16B30	replaced	proxy/native/faf.cpp	FAFCollisionSphere_c::Instantiate
 0x17EC8	replaced	proxy/native/faf.cpp	FAFTexture_t::Instantiate
 0x17F0C	replaced	proxy/native/faf.cpp	FAFTexture_t deleting destructor (FUN_10017f0c)
+0x17D1D	replaced	proxy/native/faf.cpp	FAFMaterial_t(archive) ctor (FUN_10017d1d)
+0x17D61	replaced	proxy/native/faf.cpp	FAFMaterial_t::Instantiate
+0x17D99	replaced	proxy/native/faf.cpp	FAFMaterial_t::Archive (FUN_10017d99)
+0x17DB1	replaced	proxy/native/faf.cpp	FAFMaterial_t destructor (FUN_10017db1)
+0x17E85	replaced	proxy/native/faf.cpp	FAFMaterial_t deleting destructor (FUN_10017e85)
