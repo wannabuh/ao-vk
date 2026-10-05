@@ -20,7 +20,7 @@ HMODULE g_orig;
 float g_noRadius;                                   // _DAT_10095e5c: a mesh without a bounding sphere
 
 template <typename F>
-F Internal(uint32_t rva) { return reinterpret_cast<F>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
+F Internal(uint32_t rva) { return reinterpret_cast<F>(AddressFor(rva)); }
 
 constexpr uint32_t kBoneState = 0x218;
 constexpr uint32_t kSubstMaterials = 0x1D8;         // std::vector<RMaterial_t*>

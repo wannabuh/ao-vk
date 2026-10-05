@@ -20,7 +20,7 @@ HMODULE g_orig;
 template <typename T>
 T& G(uint32_t rva) { return *reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
 template <typename F>
-F Internal(uint32_t rva) { return reinterpret_cast<F>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
+F Internal(uint32_t rva) { return reinterpret_cast<F>(AddressFor(rva)); }
 
 // TextureStreamCreator's statics and the renderer's compression / format-support flags.
 constexpr uint32_t kQuality = 0xB6608, kCompression = 0xB660C, kSupport = 0xB6610;   // s_nTextureQuality, s_bCompression, the format cache

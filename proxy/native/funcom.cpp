@@ -18,7 +18,7 @@ template <typename T>
 T& Field(void* object, uint32_t offset) { return *reinterpret_cast<T*>(static_cast<uint8_t*>(object) + offset); }
 void* At(uint32_t rva) { return reinterpret_cast<uint8_t*>(g_orig) + rva; }
 template <typename F>
-F Internal(uint32_t rva) { return reinterpret_cast<F>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
+F Internal(uint32_t rva) { return reinterpret_cast<F>(AddressFor(rva)); }
 
 // A virtual call: `obj`'s vtable entry at byte `offset`, with `obj` as this and one stack argument.
 void* Virtual(void* obj, uint32_t offset, void* arg)

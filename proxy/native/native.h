@@ -63,6 +63,15 @@ void* HookSlot(HMODULE module, uint32_t vtable, uint32_t slot, uint32_t expected
 // return addresses on the stack, before anyone handles them (randy-vk.log).
 void InstallCrashLog();
 
+// The module the replacements run against (the original randy31_orig.dll), set once by Install.
+void SetOriginal(HMODULE module);
+// The native implementation registered for `rva` (by Replace or HookEntry), or null if there is none.
+void* NativeFor(uint32_t rva);
+// The address native code calls for `rva`: the native implementation if one is registered, else the original's.
+// While the original is still loaded the two are the same, because the registered ones are patched over it; once it
+// is gone this is the only way our code reaches its own functions.
+void* AddressFor(uint32_t rva);
+
 // Every replacement, once randy31_orig.dll is loaded (native.cpp). `orig` is its module.
 void Install(HMODULE orig);
 

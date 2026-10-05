@@ -24,7 +24,7 @@ T& Field(void* object, uint32_t offset) { return *reinterpret_cast<T*>(static_ca
 template <typename T>
 T& Global(uint32_t rva) { return *reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
 template <typename F>
-F Internal(uint32_t rva) { return reinterpret_cast<F>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
+F Internal(uint32_t rva) { return reinterpret_cast<F>(AddressFor(rva)); }
 void SetVtable(void* o, uint32_t rva) { Field<uintptr_t>(o, 0) = reinterpret_cast<uintptr_t>(g_orig) + rva; }
 
 const serialize::Api& S() { return serialize::Get(); }

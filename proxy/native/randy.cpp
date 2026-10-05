@@ -26,7 +26,7 @@ T& Global(uint32_t rva) { return *reinterpret_cast<T*>(reinterpret_cast<uint8_t*
 template <typename T>
 T& Field(void* object, uint32_t offset) { return *reinterpret_cast<T*>(static_cast<uint8_t*>(object) + offset); }
 template <typename F>
-F Internal(uint32_t rva) { return reinterpret_cast<F>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
+F Internal(uint32_t rva) { return reinterpret_cast<F>(AddressFor(rva)); }
 
 void** RenderTargets() { return &Global<void*>(0x17D2F8); }
 void* Devicestate(void* randy) { return Field<void*>(randy, 0x27C); }

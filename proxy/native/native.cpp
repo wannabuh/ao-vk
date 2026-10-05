@@ -45,6 +45,7 @@ void Install(HMODULE orig)
     if (done || !orig)
         return;
     done = true;
+    SetOriginal(orig);
     InstallCrashLog();
     if (!orig::Init(orig))
         Log("some of randy31_orig's exports are missing - unknown client build");

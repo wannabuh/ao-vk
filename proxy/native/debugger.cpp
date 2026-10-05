@@ -24,7 +24,7 @@ T& Global(uint32_t rva) { return *reinterpret_cast<T*>(reinterpret_cast<uint8_t*
 template <typename T>
 T& Field(void* object, uint32_t offset) { return *reinterpret_cast<T*>(static_cast<uint8_t*>(object) + offset); }
 template <typename F>
-F Internal(uint32_t rva) { return reinterpret_cast<F>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
+F Internal(uint32_t rva) { return reinterpret_cast<F>(AddressFor(rva)); }
 
 constexpr uint32_t kInstance = 0x17D23C, kLines = 0x17D240, kLineCount = 0x17D244, kScreenLines = 0x17D248,
                    kScreenLineCount = 0x17D24C, kPoints = 0x17D250, kPointCount = 0x17D254, kMode = 0xB7500,

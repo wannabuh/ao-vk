@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <set>
+#include <unordered_map>
 
 namespace rnative {
 
@@ -16,6 +17,11 @@ namespace {
 void NoLog(const char*, ...) {}
 LogFn g_log = &NoLog;
 char g_ini[MAX_PATH];
+
+// The original module, and the native implementation registered for each rva (Replace / HookEntry). AddressFor is
+// what native code calls instead of taking the original's address: the native one if we have it, else the original's.
+HMODULE g_original;
+std::unordered_map<uint32_t, void*> g_native;
 
 // Trampolines live in one executable page, handed out in 32-byte pieces.
 uint8_t* g_tramp;
@@ -46,6 +52,20 @@ void WriteJump(uint8_t* at, const void* to)
 }  // namespace
 
 void SetLog(LogFn log) { g_log = log ? log : &NoLog; }
+
+void SetOriginal(HMODULE module) { g_original = module; }
+
+void* NativeFor(uint32_t rva)
+{
+    auto it = g_native.find(rva);
+    return it == g_native.end() ? nullptr : it->second;
+}
+
+void* AddressFor(uint32_t rva)
+{
+    if (void* native = NativeFor(rva)) return native;
+    return g_original ? reinterpret_cast<uint8_t*>(g_original) + rva : nullptr;
+}
 
 void Log(const char* fmt, ...)
 {
@@ -135,6 +155,7 @@ void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t co
     VirtualProtect(at, count, protect, &protect);
     FlushInstructionCache(GetCurrentProcess(), at, count);
     Wrapped().insert(rva);
+    g_native[rva] = target;
     return tramp;
 }
 
@@ -249,6 +270,7 @@ bool Replace(HMODULE module, uint32_t rva, void* target, const char* what)
     WriteJump(at, target);
     VirtualProtect(at, 5, protect, &protect);
     FlushInstructionCache(GetCurrentProcess(), at, 5);
+    g_native[rva] = target;
     return true;
 }
 

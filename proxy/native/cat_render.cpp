@@ -20,7 +20,7 @@ uint32_t* g_debuggerMode;                         // Debugger_t::m_nDebuggerMode
 float* g_sfxPhase;                                // 0x101E238C: the pulsing effect's phase
 
 template <typename F>
-F Internal(uint32_t rva) { return reinterpret_cast<F>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
+F Internal(uint32_t rva) { return reinterpret_cast<F>(AddressFor(rva)); }
 
 // The visual's members (RVisual_t at RCATMesh_t +0x3C; offsets from there).
 constexpr uint32_t kInView = 0x18C, kDrawn = 0x1E4, kTransparentLast = 0x1D8;

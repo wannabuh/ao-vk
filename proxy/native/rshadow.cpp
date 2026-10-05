@@ -21,7 +21,7 @@ HMODULE g_orig;
 template <typename T>
 T& G(uint32_t rva) { return *reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
 template <typename F>
-F Internal(uint32_t rva) { return reinterpret_cast<F>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
+F Internal(uint32_t rva) { return reinterpret_cast<F>(AddressFor(rva)); }
 const serialize::Api& S() { return serialize::Get(); }
 
 constexpr uint32_t kVtable0 = 0x956FC, kVtableA4 = 0x956E8;
