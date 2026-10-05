@@ -873,3 +873,10 @@
 0x151E5	replaced	proxy/native/lbitmap.cpp	LBitmap_t::Load
 0x1526B	replaced	proxy/native/lbitmap.cpp	the BMP stream loader (FUN_1001526b)
 0x1553D	replaced	proxy/native/lbitmap.cpp	the loader's factory (FUN_1001553d)
+0x1B63B	replaced	proxy/native/helpers.cpp	a Type* debug descriptor store (FUN_1001b63b)
+0x1B662	replaced	proxy/native/helpers.cpp	a Type* debug descriptor size (FUN_1001b662)
+0x2A358	replaced	proxy/native/helpers.cpp	Vector3 cross product (FUN_1002a358)
+0x2A39F	replaced	proxy/native/helpers.cpp	Vector3 scale (FUN_1002a39f)
+0x2A3DB	replaced	proxy/native/helpers.cpp	Vector3 cross product to (FUN_1002a3db)
+0x2A406	replaced	proxy/native/helpers.cpp	TMatrix4_t identity (FUN_1002a406)
+0x45289	replaced	proxy/native/helpers.cpp	NextNode (the frame hierarchy)

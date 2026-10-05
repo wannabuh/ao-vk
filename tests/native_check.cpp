@@ -7,6 +7,7 @@
 #include "native/cat_skin.h"
 #include "native/color.h"
 #include "native/dxerror.h"
+#include "native/helpers.h"
 #include "native/keyframe.h"
 #include "native/lbitmap.h"
 #include "native/orig_api.gen.h"
@@ -1492,6 +1493,78 @@ void CheckLBitmapStream()
     Check(mism == 0, "lbitmap stream: BMP loader");
 }
 
+// The small shared helpers against the original.
+void CheckHelpers()
+{
+    using namespace rnative::helpers;
+    using CrossFn = void(__fastcall*)(void*, void*, const void*);
+    using ScaleFn = void(__fastcall*)(void*, void*, void*, float);
+    using CrossToFn = void(__fastcall*)(void*, void*, void*, const void*);
+    using IdentityFn = void(__fastcall*)(void*, void*);
+    using NextFn = void(__cdecl*)(void**, const void*);
+    using TypeStoreFn = void(__stdcall*)(void*, int32_t);
+    using TypeSizeFn = int32_t(__cdecl*)();
+    std::mt19937 rng(31415);
+    std::uniform_real_distribution<float> uf(-10.0f, 10.0f);
+    int mism = 0;
+    for (int trial = 0; trial < 20000; ++trial) {
+        float a[3], b[3], x[3], y[3], oa[3] = {}, ob[3] = {}, oc[3] = {};
+        for (int i = 0; i < 3; ++i) a[i] = uf(rng), b[i] = uf(rng);
+        const float scale = uf(rng);
+        std::memcpy(x, a, sizeof(a));
+        std::memcpy(y, a, sizeof(a));
+        Orig<CrossFn>(0x2A358)(x, nullptr, b);
+        CrossProduct(y, nullptr, b);
+        if (std::memcmp(x, y, sizeof(x)) != 0 && mism++ < 6) std::printf("helpers: cross differs\n");
+        Orig<ScaleFn>(0x2A39F)(a, nullptr, oa, scale);
+        ScaleVector(a, nullptr, ob, scale);
+        if (std::memcmp(oa, ob, sizeof(oa)) != 0 && mism++ < 6) std::printf("helpers: scale differs\n");
+        Orig<CrossToFn>(0x2A3DB)(a, nullptr, oa, b);
+        CrossProductTo(a, nullptr, ob, b);
+        if (std::memcmp(oa, ob, sizeof(oa)) != 0 && mism++ < 6) std::printf("helpers: crossTo differs\n");
+        float m1[16], m2[16];
+        std::memset(m1, 0xAA, sizeof(m1));
+        std::memset(m2, 0xAA, sizeof(m2));
+        Orig<IdentityFn>(0x2A406)(m1, nullptr);
+        Identity(m2, nullptr);
+        if (std::memcmp(m1, m2, sizeof(m1)) != 0 && mism++ < 6) std::printf("helpers: identity differs\n");
+        (void)oc;
+    }
+    // the frame-hierarchy walk: a fixed forest (node i's parent is below it, its sibling above it; end is the root)
+    uint8_t nodes[8][0x20] = {};
+    auto set = [&](int i, int parent, int sibling, int child) {
+        *reinterpret_cast<void**>(nodes[i] + 0x14) = parent < 0 ? nullptr : nodes[parent];
+        *reinterpret_cast<void**>(nodes[i] + 0x18) = sibling < 0 ? nullptr : nodes[sibling];
+        *reinterpret_cast<void**>(nodes[i] + 0x1c) = child < 0 ? nullptr : nodes[child];
+    };
+    set(0, -1, -1, 1);
+    set(1, 0, 4, 2);
+    set(2, 1, 3, -1);
+    set(3, 1, -1, -1);
+    set(4, 0, -1, -1);
+    for (int start = 0; start < 5; ++start) {
+        void* pa = nodes[start];
+        void* pb = nodes[start];
+        for (int step = 0; step < 20 && (pa || pb); ++step) {
+            Orig<NextFn>(0x45289)(&pa, nodes[0]);
+            NextNode(&pb, nodes[0]);
+            if (pa != pb) {
+                if (mism++ < 6) std::printf("helpers: NextNode from %d step %d differs\n", start, step);
+                break;
+            }
+        }
+    }
+    alignas(8) uint8_t descriptorA[16] = {}, descriptorB[16] = {};
+    const int32_t value = int32_t(rng());
+    Orig<TypeStoreFn>(0x1B63B)(descriptorA, value);
+    TypeStore(descriptorB, value);
+    if (std::memcmp(descriptorA, descriptorB, sizeof(descriptorA)) != 0 && mism++ < 6)
+        std::printf("helpers: TypeStore differs\n");
+    if (Orig<TypeSizeFn>(0x1B662)() != TypeSize()) ++mism;
+    std::printf("helpers: cross / scale / crossTo / identity / NextNode / Type*; %d differ\n", mism);
+    Check(mism == 0, "helpers: shared helpers");
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -1535,6 +1608,7 @@ int main(int argc, char** argv)
     CheckPixelFormat();
     CheckLBitmap();
     CheckLBitmapStream();
+    CheckHelpers();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;

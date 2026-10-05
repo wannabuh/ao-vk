@@ -27,6 +27,7 @@
 #include "native/color.h"
 #include "native/pixfmt.h"
 #include "native/lbitmap.h"
+#include "native/helpers.h"
 
 namespace rnative {
 
@@ -64,6 +65,7 @@ void Install(HMODULE orig)
     color::Install(orig);
     pixfmt::Install(orig);
     lbitmap::Install(orig);
+    helpers::Install(orig);
     gonetrap::Install(orig);                        // last: over what the replacements left
 }
 

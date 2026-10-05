@@ -1,0 +1,22 @@
+// Small shared helpers (randy-vk.ini [Native] Scene=on): the Vector3 cross product and scale, TMatrix4_t's identity,
+// the frame-hierarchy NextNode walk, and two debug-descriptor stubs. These are the functions tools/port-status.py has
+// no named function for (the free functions), used across the mesh, camera, shadow and debug code.
+#pragma once
+
+#include "native/native.h"
+
+#include <cstdint>
+
+namespace rnative::helpers {
+
+void Install(HMODULE orig);
+
+void __fastcall CrossProduct(float* self, void*, const float* other);                        // FUN_1002a358
+void __fastcall ScaleVector(const float* self, void*, float* out, float scale);              // FUN_1002a39f
+void __fastcall CrossProductTo(const float* self, void*, float* out, const float* other);    // FUN_1002a3db
+void __fastcall Identity(void* self, void*);                                                 // FUN_1002a406
+void __cdecl NextNode(void** node, const void* end);                                         // NextNode
+void __stdcall TypeStore(void* descriptor, int32_t value);                                   // FUN_1001b63b
+int32_t __cdecl TypeSize();                                                                  // FUN_1001b662
+
+}  // namespace rnative::helpers
