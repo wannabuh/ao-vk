@@ -195,7 +195,8 @@ private:
     alignas(64) std::atomic<uint32_t> m_workerSleeping{0};
     std::atomic<uint64_t> m_framesQueued{0}, m_framesDone{0};
     std::atomic<uint64_t> m_recordsQueued{0}, m_recordsDone{0};
-    std::atomic<uint64_t> m_callerNs{0};               // calling thread's time inside Enqueue, this frame
+    uint64_t m_callerNs = 0;                           // calling thread's time inside Enqueue, this frame (its thread only)
+    uint32_t m_callerSample = 0;                       // ... sampled 1 in 64 calls, so timing doesn't cost the hot path
 
     // Caller-side mirrors for getters.
     HWND m_window = nullptr;
