@@ -5,7 +5,8 @@
 // functions that take its address (code), or that reference the data holding it (up to four levels: an exception
 // handler's unwind map -> FuncInfo -> the function).
 // Then one line per vtable: "vtable <rva> f=<function rva>,... data=<0|1>": the functions referencing it (its
-// constructors and destructors write it into objects) and whether anything else does (static objects).
+// constructors and destructors write it into objects; for a static object, the functions using that object) and
+// whether some reference can't be traced to a function.
 //
 // Args: <out.txt> [<export directory rva> <its size>]   (hex; references from it don't count as 'd': an export is
 // flagged e, and tools/port-status.py decides whether anything imports it)
@@ -119,7 +120,7 @@ public class CallGraph extends GhidraScript {
                     if (!r.getFromAddress().isMemoryAddress()) continue;
                     Function from = functions.getFunctionContaining(r.getFromAddress());
                     if (from != null) users.add(from.getEntryPoint().getOffset() - base);
-                    else data = true;
+                    else if (!owners(r.getFromAddress(), 1, users)) data = true;   // a static object: who uses it
                 }
                 w.println("vtable " + Long.toHexString(s.getAddress().getOffset() - base) + " f=" + join(users)
                           + " data=" + (data ? 1 : 0));
