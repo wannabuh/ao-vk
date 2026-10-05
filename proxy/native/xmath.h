@@ -214,6 +214,11 @@ inline double CrtSin(double x)
     static const auto fn = reinterpret_cast<double(__cdecl*)(double)>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "sin"));
     return fn(x);
 }
+inline double CrtCos(double x)
+{
+    static const auto fn = reinterpret_cast<double(__cdecl*)(double)>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "cos"));
+    return fn(x);
+}
 inline double CrtAcos(double x)
 {
     static const auto fn = reinterpret_cast<double(__cdecl*)(double)>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "acos"));

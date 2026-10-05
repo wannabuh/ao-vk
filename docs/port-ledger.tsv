@@ -787,3 +787,30 @@
 0x156C3	replaced	proxy/native/keyframe.cpp	FAFAnim_t::Instantiate
 0x15686	replaced	proxy/native/keyframe.cpp	FAFAnim_t(archive) (FUN_10015686)
 0x1566E	replaced	proxy/native/keyframe.cpp	FAFAnim_t::Archive (FUN_1001566e)
+0x135F1	replaced	proxy/native/sprite.cpp	RSprite::RSprite
+0x13128	replaced	proxy/native/sprite.cpp	RSprite::EnableAdditiveRendering
+0x13482	replaced	proxy/native/sprite.cpp	RSprite::InitVertexColor
+0x13575	replaced	proxy/native/sprite.cpp	RSprite setup (FUN_10013575)
+0x132B3	replaced	proxy/native/sprite.cpp	RSprite corners (FUN_100132b3)
+0x134A1	replaced	proxy/native/sprite.cpp	RSprite u v (FUN_100134a1)
+0x136F9	replaced	proxy/native/sprite.cpp	RSprite copy (FUN_100136f9)
+0x13DF4	replaced	proxy/native/sprite.cpp	RSprite duplicate (FUN_10013df4)
+0x138CC	replaced	proxy/native/sprite.cpp	RSprite(archive) (FUN_100138cc)
+0x13A7A	replaced	proxy/native/sprite.cpp	RSprite::Instantiate
+0x13018	replaced	proxy/native/sprite.cpp	RSprite archive (FUN_10013018)
+0x12FAA	replaced	proxy/native/sprite.cpp	RSprite destroyed (FUN_10012faa)
+0x13DD5	replaced	proxy/native/sprite.cpp	RSprite deleting destructor (FUN_10013dd5)
+0x13DAB	replaced	proxy/native/sprite.cpp	RSprite deleting destructor, second vtable (FUN_10013dab)
+0x13515	replaced	proxy/native/sprite.cpp	RSprite animated (FUN_10013515)
+0x13AB2	replaced	proxy/native/sprite.cpp	RSprite drawn (FUN_10013ab2)
+0x12EB0	replaced	proxy/native/sprite.cpp	RSpriteAnim frame (FUN_10012eb0)
+0x12E56	replaced	proxy/native/sprite.cpp	RSpriteAnim copy (FUN_10012e56)
+0x12F53	replaced	proxy/native/sprite.cpp	RSpriteAnim(archive) (FUN_10012f53)
+0x13540	replaced	proxy/native/sprite.cpp	RSpriteAnim::Instantiate
+0x12EA4	replaced	proxy/native/sprite.cpp	RSpriteAnim destroyed (FUN_10012ea4)
+0x13DB6	replaced	proxy/native/sprite.cpp	RSpriteAnim deleting destructor (FUN_10013db6)
+0x12F91	replaced	proxy/native/sprite.cpp	RSpriteAnim archive (FUN_10012f91)
+0x13E2E	replaced	proxy/native/sprite.cpp	RVisual_t observers: skip? (FUN_10013e2e)
+0x13E71	replaced	proxy/native/sprite.cpp	RVisual_t observers: material (FUN_10013e71)
+0x13EBB	replaced	proxy/native/sprite.cpp	RVisual_t observers: after the material (FUN_10013ebb)
+0x13F00	replaced	proxy/native/sprite.cpp	RVisual_t observers: after drawing (FUN_10013f00)

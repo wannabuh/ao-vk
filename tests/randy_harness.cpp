@@ -431,6 +431,8 @@ struct CharacterScene {
     std::vector<void*> characters;    // RCATMesh_t
     std::vector<void*> anims;         // CATKeyframeAnim_t, one per character
     std::vector<void*> statics;       // --static: the loaded objects (RTriMesh_t ...)
+    std::vector<void*> sprites;       // --sprites: RSprite, as DisplaySystem makes them
+    std::vector<bool> spriteAnimated;
 };
 
 // Builds root -> {camera, sun, `count` characters in a grid}, all with the same model and animation (each its own
@@ -704,6 +706,87 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
 
 // ---- --static: a static mesh (.abiff's ObjectArchive, tools/extract-static.py) loaded with serialize.dll the way
 // DisplaySystem loads them, `count` copies in a grid under the scene's root ----
+// --sprites N: RSprites as DisplaySystem makes them - every mode (0..4), with and without a grid of animation frames,
+// plain and additive (both kinds), coloured; one in four duplicated (vtable slot 3) as well.
+int g_sprites;
+void AddSprites(CharacterScene& scene, int count)
+{
+    std::vector<uint32_t> px(32 * 32);
+    for (int y = 0; y < 32; ++y)
+        for (int x = 0; x < 32; ++x) px[y * 32 + x] = (((x / 4) ^ (y / 4)) & 1 ? 0xFFFFA020u : 0x8020A0FFu);
+    void* texture = MakeTexture("sprite_grid", 32, 32, D3DX_SF_A8R8G8B8, px.data(), 32 * 4);
+    using MaterialFn = void*(__fastcall*)(void*, void*, const char*, void*, const float*, const float*, const float*,
+                                          const float*, float, float, float, bool, bool);
+    const float white[3] = {1, 1, 1}, black[3] = {0, 0, 0};
+    void* material = Export<MaterialFn>("??0RMaterial_t@@QAE@PBDPAVRTexture_t@@ABVRGB_t@@222MMM_N3@Z")(
+        ::operator new(0xC0), nullptr, "sprite", texture, white, black, white, black, 1.0f, 0.5f, 1.0f, false, false);
+    using SpriteFn = void*(__fastcall*)(void*, void*, void*, void*, float, float, void*, int);
+    auto ctor = Export<SpriteFn>("??0RSprite@@QAE@PBVRMaterial_t@@PBVRSpriteAnim@@MMPAVRRefFrame_t@@W4SpriteMode_e@0@@Z");
+    auto additive = Export<void(__fastcall*)(void*, void*, bool, int)>("?EnableAdditiveRendering@RSprite@@QAEX_NW4SpriteRenderMode_e@1@@Z");
+    auto initColor = Export<void(__fastcall*)(void*, void*)>("?InitVertexColor@RSprite@@IAEXXZ");
+    auto setPos = Export<SetPosFn>("?SetRelativePosition@RRefFrame_t@@QAEXABVVector3_t@@PBV1@@Z");
+    auto addChild = Export<void(__fastcall*)(void*, void*, void*)>("?AddChild@RRefFrame_t@@UAEXPAV1@@Z");
+    auto msvcrNew = reinterpret_cast<void*(__cdecl*)(size_t)>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "??2@YAPAXI@Z"));
+    auto serializable = reinterpret_cast<void*(__fastcall*)(void*, void*)>(
+        GetProcAddress(GetModuleHandleA("serialize.dll"), "??0Serializable_c@fun@@QAE@XZ"));
+    uint8_t* orig = reinterpret_cast<uint8_t*>(GetModuleHandleA("randy31_orig.dll"));
+    for (int i = 0; i < count; ++i) {
+        void* anim = nullptr;
+        if (i % 2) {                                 // an RSpriteAnim as DisplaySystem fills one: 4 x 3 frames
+            auto* a = static_cast<uint8_t*>(msvcrNew(0x30));
+            serializable(a, nullptr);
+            *reinterpret_cast<void**>(a) = orig + 0x8A624;
+            const float rect[4] = {0.0f, 0.0f, 0.25f, 0.25f}, step[2] = {0.25f, 0.33333334f};
+            std::memcpy(a + 8, rect, 16);
+            std::memcpy(a + 0x18, step, 8);
+            *reinterpret_cast<uint32_t*>(a + 0x20) = 4;
+            *reinterpret_cast<uint32_t*>(a + 0x24) = 10 + unsigned(i % 3);
+            *reinterpret_cast<float*>(a + 0x28) = 37.0f + float(i);
+            a[0x2C] = uint8_t((i / 2) % 2);
+            anim = a;
+        }
+        const int mode = i % 5;
+        void* sprite = ctor(::operator new(0x294), nullptr, material, anim, 0.6f + 0.1f * float(i % 4),
+                            0.4f + 0.15f * float(i % 3), scene.root, mode);
+        *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(sprite) + 0x18C) = 0xFF000000u | (0x3355AAu * unsigned(i + 1));
+        initColor(sprite, nullptr);
+        if (i % 3 == 1) additive(sprite, nullptr, true, 1);
+        if (i % 3 == 2) additive(sprite, nullptr, true, 2);
+        if (i % 6 == 4) additive(sprite, nullptr, false, 1);   // on and off again
+        Vector3 at{-2.0f + 0.9f * float(i % 5), 0.6f + 0.5f * float(i / 5), 1.5f + 0.3f * float(i % 3)};
+        setPos(sprite, nullptr, &at, nullptr);
+        scene.sprites.push_back(sprite);
+        scene.spriteAnimated.push_back(anim != nullptr);
+        if (i % 4 == 3 && anim) {                    // a copy (vtable slot 3), placed nearby
+            void* copy = reinterpret_cast<void*(__fastcall*)(void*, void*)>((*static_cast<void***>(sprite))[3])(sprite, nullptr);
+            addChild(scene.root, nullptr, copy);
+            // (the copy's colour is left unset - whatever its memory held - so it gets one here)
+            *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(copy) + 0x18C) = 0xFF80FF80u;
+            initColor(copy, nullptr);
+            Vector3 beside{at.x + 0.3f, at.y - 0.2f, at.z};
+            setPos(copy, nullptr, &beside, nullptr);
+            scene.sprites.push_back(copy);
+            scene.spriteAnimated.push_back(true);
+        }
+    }
+    std::printf("sprites: %zu\n", scene.sprites.size());
+}
+
+void AnimateSprites(CharacterScene& scene, float time, int frame)
+{
+    uint32_t sum = 0;
+    for (size_t i = 0; i < scene.sprites.size(); ++i) {
+        uint8_t* s = static_cast<uint8_t*>(scene.sprites[i]);
+        if (scene.spriteAnimated[i])                 // vtable slot 21: the animation at a time
+            reinterpret_cast<void(__fastcall*)(void*, void*, float)>((*reinterpret_cast<void***>(s))[21])(s, nullptr,
+                                                                                                     time + 13.0f * float(i));
+        for (uint32_t k = 0x178; k < 0x200; ++k) sum = sum * 31 + s[k];   // sizes, colour, rectangle, vertices
+        for (uint32_t k = 0x208; k < 0x20D; ++k) sum = sum * 31 + s[k];   // mode, additive (not the pointers)
+        for (uint32_t k = 0x15C; k < 0x160; ++k) sum = sum * 31 + s[k];   // render priority
+    }
+    if (frame == 3) std::printf("sprite state %08x (%zu sprites)\n", sum, scene.sprites.size());
+}
+
 bool AddStatics(const std::string& path, int count, CharacterScene& scene)
 {
     HMODULE serialize = LoadLibraryA("serialize.dll");
@@ -989,6 +1072,7 @@ int main(int argc, char** argv)
         else if (a == "--targets") g_targets = true;
         else if (a == "--shutdown") g_shutdown = true;
         else if (a == "--debug-draw") g_debugDraw = true;
+        else if (a == "--sprites" && i + 1 < argc) g_sprites = std::atoi(argv[++i]);
         else if (a == "--resize" && i + 2 < argc) {
             g_resize[0] = std::atoi(argv[++i]);
             g_resize[1] = std::atoi(argv[++i]);
@@ -1130,12 +1214,14 @@ int main(int argc, char** argv)
         return 1;
     if (!staticMesh.empty() && (scene.characters.empty() || !AddStatics(staticMesh, statics, scene)))
         return 1;
+    if (g_sprites && !scene.characters.empty()) AddSprites(scene, g_sprites);
     LARGE_INTEGER frequency, frameStart, sceneStart{};
     QueryPerformanceFrequency(&frequency);
     double sceneSeconds = 0.0;
     for (int frame = 0; frame < frames; ++frame) {
         if (g_restore && frame == 2) ++*Export<unsigned*>("?s_nRestoreCount@Randy_t@@0IA");
         if (g_debugDraw) AddDebugShapes(frame);
+        if (!scene.sprites.empty()) AnimateSprites(scene, 41.0f * float(frame), frame);
         if (g_resize[0] && frame == 3) {
             Export<void(__fastcall*)(void*, void*, unsigned, unsigned, bool)>("?Resize@RViewPort_t@@QAEXII_N@Z")(
                 viewport, nullptr, unsigned(g_resize[0]), unsigned(g_resize[1]), true);
@@ -1275,6 +1361,7 @@ int main(int argc, char** argv)
         using DeleteFn = void*(__fastcall*)(void* self, void*, unsigned flags);
         auto deleting = [](void* o) { reinterpret_cast<DeleteFn>((*static_cast<void***>(o))[0])(o, nullptr, 1); };
         for (void* o : scene.statics) deleting(o);
+        for (void* o : scene.sprites) deleting(o);
         for (void* c : scene.characters) deleting(c);
         std::printf("destroyed %zu statics, %zu characters\n", scene.statics.size(), scene.characters.size());
     }

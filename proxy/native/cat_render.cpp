@@ -106,7 +106,7 @@ void ForEachObserver(void* visual, Fn&& fn)
         fn(n->value, *static_cast<void***>(n->value));
 }
 
-bool ObserversSkip(void* visual, void* viewport)
+bool ObserversSkipImpl(void* visual, void* viewport)
 {
     bool skip = false;
     ForEachObserver(visual, [&](void* o, void** vt) {
@@ -115,7 +115,7 @@ bool ObserversSkip(void* visual, void* viewport)
     return skip;
 }
 
-bool ObserversMaterial(void* visual, void* material, void* viewport, void* d3dMaterial)
+bool ObserversMaterialImpl(void* visual, void* material, void* viewport, void* d3dMaterial)
 {
     bool all = true;
     ForEachObserver(visual, [&](void* o, void** vt) {
@@ -125,7 +125,7 @@ bool ObserversMaterial(void* visual, void* material, void* viewport, void* d3dMa
     return all;
 }
 
-void ObserversAfterMaterial(void* visual, void* material, void* viewport)
+void ObserversAfterMaterialImpl(void* visual, void* material, void* viewport)
 {
     ForEachObserver(visual, [&](void* o, void** vt) {
         reinterpret_cast<void(__fastcall*)(void*, void*, void*, void*, void*, void*)>(vt[2])(
@@ -133,7 +133,7 @@ void ObserversAfterMaterial(void* visual, void* material, void* viewport)
     });
 }
 
-void ObserversAfter(void* visual, void* viewport)
+void ObserversAfterImpl(void* visual, void* viewport)
 {
     ForEachObserver(visual, [&](void* o, void** vt) {
         reinterpret_cast<void(__fastcall*)(void*, void*, void*, void*)>(vt[3])(o, nullptr, visual, viewport);
@@ -228,7 +228,7 @@ void __fastcall Render(uint8_t* visual, void*, void* viewport)
         ScopedState light(0x88, lighting, 10);                                // LIGHTING
         ScopedState norm(0x8F, normalize, 10);                                // NORMALIZENORMALS
         orig::RVisual_t_CullLights(visual, viewport, radius, 0xFFFFFFFFu);
-        if (ObserversSkip(visual, viewport))
+        if (ObserversSkipImpl(visual, viewport))
             return;                                                          // (no render priority change)
         VirtualViewport(visual, 0x40, viewport);                             // StoreStateChanges
         {
@@ -259,9 +259,9 @@ void __fastcall Render(uint8_t* visual, void*, void* viewport)
                     orig::RViewPort_t_SetMaterial(viewport, material);
                     if (At<int32_t>(visual, kMaterialHook) != 0) {
                         orig::RMaterial_t_InitD3DMaterial(material, d3dMaterial);
-                        if (!ObserversMaterial(visual, material, viewport, d3dMaterial))
+                        if (!ObserversMaterialImpl(visual, material, viewport, d3dMaterial))
                             orig::RViewPort_t_SetD3DMaterial(viewport, d3dMaterial);
-                        ObserversAfterMaterial(visual, material, viewport);
+                        ObserversAfterMaterialImpl(visual, material, viewport);
                     }
                     if (!overrides) {
                         orig::RViewPort_t_RealizeRenderStates(viewport);
@@ -333,7 +333,7 @@ void __fastcall Render(uint8_t* visual, void*, void* viewport)
                 orig::StateBlob_c_Reset(visual + kSfxBlob);
             }
             VirtualViewport(visual, 0x48, viewport);                         // RestoreStateChanges
-            ObserversAfter(visual, viewport);
+            ObserversAfterImpl(visual, viewport);
         }
     }
     orig::RVisual_t_SetRenderPriority(visual, transparent ? 6 : 3);
@@ -370,6 +370,17 @@ void __fastcall RenderShadow(uint8_t* visual, void*, void* viewport, uint8_t* sh
 }
 
 }  // namespace
+
+bool ObserversSkip(void* visual, void* viewport) { return ObserversSkipImpl(visual, viewport); }
+bool ObserversMaterial(void* visual, void* material, void* viewport, void* d3dMaterial)
+{
+    return ObserversMaterialImpl(visual, material, viewport, d3dMaterial);
+}
+void ObserversAfterMaterial(void* visual, void* material, void* viewport)
+{
+    ObserversAfterMaterialImpl(visual, material, viewport);
+}
+void ObserversAfter(void* visual, void* viewport) { ObserversAfterImpl(visual, viewport); }
 
 void Install(HMODULE orig)
 {
