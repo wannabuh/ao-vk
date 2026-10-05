@@ -64,6 +64,46 @@ std::string DescribeSurface(void* surface)
     return std::string(text);
 }
 
+// --debug-draw: what DisplaySystem and the camera add to Randy's debugger each frame (drawn at the end of
+// RViewPort_t::Render); at frame 3 a checksum of its lists (`debugger` line).
+void AddDebugShapes(int frame)
+{
+    void* debugger = Export<void*(__cdecl*)()>("?Get@Debugger_t@@SAPAV1@XZ")();
+    auto line = Export<void(__fastcall*)(void*, void*, float, float, float, float, float, float, float, float, float)>(
+        "?AddLine@Debugger_t@@QAEXVVector3_t@@0MMM@Z");
+    auto screenLine = Export<void(__fastcall*)(void*, void*, float, float, float, float, float, float, float, float,
+                                               float, bool)>("?Add2DLine@Debugger_t@@QAEXVVector3_t@@0MMM_N@Z");
+    auto sphere = Export<void(__fastcall*)(void*, void*, float, float, float, float, float, float, float)>(
+        "?AddSphere@Debugger_t@@QAEXVVector3_t@@MMMM@Z");
+    uint8_t* orig = reinterpret_cast<uint8_t*>(GetModuleHandleA("randy31_orig.dll"));
+    auto point = reinterpret_cast<void(__fastcall*)(void*, void*, float, float, float, float, float, float, bool)>(
+        orig + 0x2CBAA);
+    const float t = 0.1f * float(frame);
+    for (int i = 0; i < 12; ++i)
+        line(debugger, nullptr, -3.0f + 0.5f * float(i), 0.0f, -2.0f, 1.0f, 2.0f + t, 2.0f + 0.25f * float(i), 1.0f,
+             0.1f * float(i), 0.3f);
+    sphere(debugger, nullptr, 0.5f, 1.0f + t, 0.25f, 1.7f, 0.2f, 1.0f, 0.4f);
+    sphere(debugger, nullptr, -1.0f, 0.3f, 2.0f, 0.6f, 1.0f, 1.0f, 0.0f);
+    screenLine(debugger, nullptr, -0.5f, -0.5f, 7.0f, 0.5f, 0.4f + t, 9.0f, 0.0f, 1.0f, 1.0f, false);
+    screenLine(debugger, nullptr, -0.25f, 0.5f, 0.0f, 0.75f, -0.4f, 0.0f, 1.0f, 0.5f, 0.0f, true);
+    for (int i = 0; i < 9; ++i)
+        point(debugger, nullptr, -0.8f + 0.2f * float(i), 0.1f * float(i) - t, 3.0f, 0.5f, 0.5f, 1.0f, (i & 1) != 0);
+    if (frame != 3) return;
+    uint32_t sum = 0;
+    auto add = [&](const void* p, size_t n) {
+        for (size_t k = 0; k < n; ++k) sum = sum * 31 + static_cast<const uint8_t*>(p)[k];
+    };
+    for (uint32_t list : {0x17D240u, 0x17D248u, 0x17D250u}) {
+        const uint8_t* entries = *reinterpret_cast<uint8_t* const*>(orig + list);
+        const uint32_t count = *reinterpret_cast<const uint32_t*>(orig + list + 4);
+        add(&count, 4);
+        if (entries) add(entries, count * (list == 0x17D250u ? 0x18u : 0x24u));
+    }
+    std::printf("debugger lists %08x (%u lines, %u screen lines, %u points), mode %x\n", sum,
+                *reinterpret_cast<const uint32_t*>(orig + 0x17D244), *reinterpret_cast<const uint32_t*>(orig + 0x17D24C),
+                *reinterpret_cast<const uint32_t*>(orig + 0x17D254), *reinterpret_cast<const uint32_t*>(orig + 0xB7500));
+}
+
 // What Randy_t::Initialize set up (`init` lines): hardware level, the hardware checks, buffer depths, the window's
 // rectangle, render_t's interfaces, the primary surface and render target 0.
 void PrintInit()
@@ -405,6 +445,7 @@ bool g_restore;                                       // --restore: a lost devic
 bool g_fullscreen;                                    // --fullscreen: Randy_t::Initialize in full screen
 int g_format = 1;                                     // --format N: its Randy_t::BufferFormat_e
 bool g_anyDevice;                                     // --any-device: no Direct3D device asked for
+bool g_debugDraw;                                     // --debug-draw: Debugger_t lines, spheres, screen lines, points
 int g_resize[2];                                      // --resize W H: the viewport resized (forced) at frame 3
 bool g_shutdown;                                      // --shutdown: Randy_t deleted at the end (as the game quits)
 bool g_targets;                                       // --targets: every offscreen feature asked for (render targets)
@@ -894,7 +935,7 @@ void DrawCharacterScene(CharacterScene& scene, void* viewport, float time, bool 
     Export<PtrArgFn>("?SetCamera@RViewPort_t@@QAEXPAVRCamera_t@@@Z")(viewport, nullptr, scene.camera);
     Export<PtrArgFn>("?Process@RViewPort_t@@QAEXPAVRRefFrame_t@@@Z")(viewport, nullptr, scene.root);
     Export<ViewRenderFn>("?Render@RViewPort_t@@QAEXW4RenderList_e@@0W4RenderType_e@1@II@Z")(
-        viewport, nullptr, 0, 10, 4, 0, 1799);
+        viewport, nullptr, 0, 10, g_debugDraw ? 4 | 8 : 4, 0, 1799);   // 8: the debugger's lists too
     if (g_shadow) DrawShadow(scene, viewport);
 }
 
@@ -947,6 +988,7 @@ int main(int argc, char** argv)
         else if (a == "--defaults") g_defaults = true;
         else if (a == "--targets") g_targets = true;
         else if (a == "--shutdown") g_shutdown = true;
+        else if (a == "--debug-draw") g_debugDraw = true;
         else if (a == "--resize" && i + 2 < argc) {
             g_resize[0] = std::atoi(argv[++i]);
             g_resize[1] = std::atoi(argv[++i]);
@@ -1093,6 +1135,7 @@ int main(int argc, char** argv)
     double sceneSeconds = 0.0;
     for (int frame = 0; frame < frames; ++frame) {
         if (g_restore && frame == 2) ++*Export<unsigned*>("?s_nRestoreCount@Randy_t@@0IA");
+        if (g_debugDraw) AddDebugShapes(frame);
         if (g_resize[0] && frame == 3) {
             Export<void(__fastcall*)(void*, void*, unsigned, unsigned, bool)>("?Resize@RViewPort_t@@QAEXII_N@Z")(
                 viewport, nullptr, unsigned(g_resize[0]), unsigned(g_resize[1]), true);

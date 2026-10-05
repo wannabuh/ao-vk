@@ -745,3 +745,10 @@
 0x289DC	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
 0x28A07	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
 0x28A2E	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x2CABF	replaced	proxy/native/debugger.cpp	Debugger_t::Get
+0x2CAE5	replaced	proxy/native/debugger.cpp	Debugger_t::AddLine
+0x2BF51	replaced	proxy/native/debugger.cpp	Debugger_t::Add2DLine
+0x2CBAA	replaced	proxy/native/debugger.cpp	Debugger_t screen point (FUN_1002cbaa)
+0x2CCAB	replaced	proxy/native/debugger.cpp	Debugger_t::AddSphere
+0x2C082	replaced	proxy/native/debugger.cpp	Debugger_t drawn (FUN_1002c082)
+0x2CC89	replaced	proxy/native/debugger.cpp	Debugger_t shut down (FUN_1002cc89)

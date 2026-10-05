@@ -14,6 +14,7 @@
 #include "native/device.h"
 #include "native/orig_api.gen.h"
 #include "native/dynamic_vb.h"
+#include "native/debugger.h"
 #include "native/devices.h"
 #include "native/dxerror.h"
 #include "native/randy.h"
@@ -653,6 +654,7 @@ void Install(HMODULE orig)
     dxerror::Install(orig);
     devices::Install(orig);
     randyinit::Install(orig);
+    debugger::Install(orig);
 }
 
 }  // namespace rnative::device
