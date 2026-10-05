@@ -70,6 +70,7 @@ private:
     Format m_format = Format::A8R8G8B8;
     bool m_renderTarget = false;
     Texture* m_normalMap = nullptr;    // tangent-space normal map drawn with this texture (owned; SetNormalMap)
+    uint32_t m_bindless = ~0u;         // its slot in the bindless image array (M1)
     // Layout as of the end of the commands recorded so far (main command buffer for render targets;
     // plain textures only change layout in the upload command buffer, which runs first).
     VkImageLayout m_layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -1153,6 +1154,20 @@ private:
 
     VkDescriptorSetLayout m_setLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
+    // Bindless textures (GPU-driven step M1): every texture and sampler in one descriptor set, so a draw selects
+    // them by index instead of pushing descriptors. The set is created and populated now; the shaders still use the
+    // per-draw bindings, so the frame is unchanged until they are switched over.
+    static constexpr uint32_t kMaxBindlessImages = 4096, kMaxBindlessSamplers = 256;
+    bool m_bindless = false;
+    VkDescriptorSetLayout m_bindlessSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_bindlessPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_bindlessSet = VK_NULL_HANDLE;
+    uint32_t m_nextBindlessImage = 0, m_nextBindlessSampler = 0;
+    std::vector<uint32_t> m_freeBindlessImages, m_freeBindlessSamplers;
+    std::unordered_map<uint64_t, uint32_t> m_bindlessSamplerIndex;
+    void RegisterBindlessTexture(Texture* t);
+    void UnregisterBindlessTexture(Texture* t);
+    uint32_t RegisterBindlessSampler(VkSampler s);
     std::array<VkPipeline, 3> m_pipelines{};   // per topology class: points, lines, triangles
     VkBuffer m_nullBuffer = VK_NULL_HANDLE;    // zeros, bound at stride 0 for attributes a format lacks
     VmaAllocation_T* m_nullAllocation = nullptr;

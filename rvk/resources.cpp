@@ -156,6 +156,7 @@ bool Device::RealizeTexture(Texture* t)
     vi.components = info.swizzle;
     vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, t->m_levels, 0, 1};
     vkCreateImageView(m_device, &vi, nullptr, &t->m_view);
+    RegisterBindlessTexture(t);
     return true;
 }
 
@@ -258,9 +259,89 @@ void Device::SetNormalMap(Texture* texture, Texture* normal)
 
 void Device::DestroyTextureNow(Texture* t)
 {
+    UnregisterBindlessTexture(t);                // clears the slot to the black image before the view goes
     if (t->m_view) vkDestroyImageView(m_device, t->m_view, nullptr);
     if (t->m_image) vmaDestroyImage(m_allocator, t->m_image, t->m_allocation);
     delete t;
+}
+
+// Bindless textures (M1): a slot in set 1's image array, written when the texture appears and cleared to black when
+// it goes. Update-after-bind lets these update while frames are in flight.
+void Device::RegisterBindlessTexture(Texture* t)
+{
+    if (!m_bindless || !t || !t->m_view || m_bindlessSet == VK_NULL_HANDLE)
+        return;
+    uint32_t index;
+    if (!m_freeBindlessImages.empty()) {
+        index = m_freeBindlessImages.back();
+        m_freeBindlessImages.pop_back();
+    } else if (m_nextBindlessImage < kMaxBindlessImages) {
+        index = m_nextBindlessImage++;
+    } else {
+        static bool logged;
+        if (!logged) { logged = true; Log("bindless textures: out of slots (%u)", kMaxBindlessImages); }
+        return;
+    }
+    t->m_bindless = index;
+    VkDescriptorImageInfo img{VK_NULL_HANDLE, t->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    w.dstSet = m_bindlessSet;
+    w.dstBinding = 0;
+    w.dstArrayElement = index;
+    w.descriptorCount = 1;
+    w.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    w.pImageInfo = &img;
+    vkUpdateDescriptorSets(m_device, 1, &w, 0, nullptr);
+}
+
+void Device::UnregisterBindlessTexture(Texture* t)
+{
+    if (!m_bindless || !t || t->m_bindless == ~0u)
+        return;
+    if (m_bindlessSet != VK_NULL_HANDLE) {
+        // A null view is allowed for a sampled-image slot (and the binding is partially bound). It must not be
+        // sampled, but no draw should still hold this index.
+        VkDescriptorImageInfo img{VK_NULL_HANDLE, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED};
+        VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        w.dstSet = m_bindlessSet;
+        w.dstBinding = 0;
+        w.dstArrayElement = t->m_bindless;
+        w.descriptorCount = 1;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        w.pImageInfo = &img;
+        vkUpdateDescriptorSets(m_device, 1, &w, 0, nullptr);
+    }
+    m_freeBindlessImages.push_back(t->m_bindless);
+    t->m_bindless = ~0u;
+}
+
+uint32_t Device::RegisterBindlessSampler(VkSampler s)
+{
+    if (!m_bindless || !s || m_bindlessSet == VK_NULL_HANDLE)
+        return ~0u;
+    auto it = m_bindlessSamplerIndex.find(uint64_t(s));
+    if (it != m_bindlessSamplerIndex.end())
+        return it->second;
+    uint32_t index;
+    if (!m_freeBindlessSamplers.empty()) {
+        index = m_freeBindlessSamplers.back();
+        m_freeBindlessSamplers.pop_back();
+    } else if (m_nextBindlessSampler < kMaxBindlessSamplers) {
+        index = m_nextBindlessSampler++;
+    } else {
+        return ~0u;
+    }
+    m_bindlessSamplerIndex.emplace(uint64_t(s), index);
+    VkDescriptorImageInfo img{s, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED};
+    VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    w.dstSet = m_bindlessSet;
+    w.dstBinding = 1;
+    w.dstArrayElement = index;
+    w.descriptorCount = 1;
+    w.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    w.pImageInfo = &img;
+    vkUpdateDescriptorSets(m_device, 1, &w, 0, nullptr);
+    return index;
 }
 
 VkSampler Device::SamplerFor(uint32_t stage)
@@ -294,6 +375,7 @@ VkSampler Device::SamplerFor(uint32_t stage)
     VkSampler sampler = VK_NULL_HANDLE;
     vkCreateSampler(m_device, &ci, nullptr, &sampler);
     m_samplers.emplace(key, sampler);
+    RegisterBindlessSampler(sampler);
     return sampler;
 }
 

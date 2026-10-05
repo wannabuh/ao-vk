@@ -190,6 +190,8 @@ Device::~Device()
     DestroyStaticGeometry();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_setLayout) vkDestroyDescriptorSetLayout(m_device, m_setLayout, nullptr);
+    if (m_bindlessPool) vkDestroyDescriptorPool(m_device, m_bindlessPool, nullptr);
+    if (m_bindlessSetLayout) vkDestroyDescriptorSetLayout(m_device, m_bindlessSetLayout, nullptr);
     if (m_nullBuffer) vmaDestroyBuffer(m_allocator, m_nullBuffer, m_nullAllocation);
     DestroyMainTargets();
     if (m_pool) vkDestroyCommandPool(m_device, m_pool, nullptr);
@@ -311,7 +313,8 @@ bool Device::CreateLogicalDevice(std::string* error)
     };
     std::vector<const char*> extensions = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
                                            VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
-                                           VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME};
+                                           VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME,
+                                           VK_EXT_ROBUSTNESS_2_EXTENSION_NAME};   // nullDescriptor: empty bindless slots
     // Swapchain support even without a window yet: SetWindow() can attach one later.
     m_swapchainSupported = has(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     if (m_swapchainSupported)
@@ -330,9 +333,13 @@ bool Device::CreateLogicalDevice(std::string* error)
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT};
     VkPhysicalDeviceExtendedDynamicState3FeaturesEXT eds3{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT};
     VkPhysicalDeviceVulkan13Features v13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    VkPhysicalDeviceDescriptorIndexingFeatures descIdx{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
+    VkPhysicalDeviceRobustness2FeaturesEXT rob2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT};
     VkPhysicalDeviceFeatures2 features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     features.pNext = &v13;
-    v13.pNext = &eds3;
+    v13.pNext = &descIdx;
+    descIdx.pNext = &rob2;
+    rob2.pNext = &eds3;
     eds3.pNext = &vertexInput;
     vkGetPhysicalDeviceFeatures2(m_physical, &features);
     // Quad operations in fragment shaders (ffp_main.glsl: a 2x2 block of cut-out pixels stops before the lighting).
@@ -349,6 +356,10 @@ bool Device::CreateLogicalDevice(std::string* error)
                           "fragment quad operations)";
         return false;
     }
+    // Bindless textures (M1): textures and samplers in descriptor arrays, indexed per draw.
+    m_bindless = descIdx.shaderSampledImageArrayNonUniformIndexing && descIdx.descriptorBindingSampledImageUpdateAfterBind &&
+                 descIdx.descriptorBindingPartiallyBound && rob2.nullDescriptor;
+    Log("bindless textures: %s", m_bindless ? "yes" : "no");
     // Enable only what is used.
     VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT enVertexInput{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT};
@@ -361,8 +372,16 @@ bool Device::CreateLogicalDevice(std::string* error)
     m_dynamicWriteMask = eds3.extendedDynamicState3ColorWriteMask == VK_TRUE;
     enEds3.extendedDynamicState3ColorWriteMask = m_dynamicWriteMask ? VK_TRUE : VK_FALSE;
     Log("dynamic colour write masks: %s", m_dynamicWriteMask ? "yes" : "no");
+    VkPhysicalDeviceDescriptorIndexingFeatures enDescIdx{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
+    enDescIdx.shaderSampledImageArrayNonUniformIndexing = m_bindless ? VK_TRUE : VK_FALSE;
+    enDescIdx.descriptorBindingSampledImageUpdateAfterBind = m_bindless ? VK_TRUE : VK_FALSE;
+    enDescIdx.descriptorBindingPartiallyBound = m_bindless ? VK_TRUE : VK_FALSE;
+    VkPhysicalDeviceRobustness2FeaturesEXT enRob2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT};
+    enRob2.nullDescriptor = m_bindless ? VK_TRUE : VK_FALSE;
+    enRob2.pNext = &enEds3;
+    enDescIdx.pNext = &enRob2;
     VkPhysicalDeviceVulkan13Features enV13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
-    enV13.pNext = &enEds3;
+    enV13.pNext = &enDescIdx;
     enV13.dynamicRendering = VK_TRUE;
     enV13.synchronization2 = VK_TRUE;
     enV13.shaderDemoteToHelperInvocation = VK_TRUE;     // glslc turns `discard` into OpDemoteToHelperInvocation
@@ -629,9 +648,44 @@ bool Device::CreatePipelines(std::string* error)
     sl.pBindings = bindings;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_setLayout), "vkCreateDescriptorSetLayout", error))
         return false;
+    if (m_bindless) {
+        VkDescriptorSetLayoutBinding bb[2] = {
+            {0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kMaxBindlessImages, vsfs, nullptr},
+            {1, VK_DESCRIPTOR_TYPE_SAMPLER, kMaxBindlessSamplers, vsfs, nullptr},
+        };
+        VkDescriptorBindingFlags bflags[2] = {
+            VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
+            VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT};
+        VkDescriptorSetLayoutBindingFlagsCreateInfo bf{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO};
+        bf.bindingCount = 2;
+        bf.pBindingFlags = bflags;
+        VkDescriptorSetLayoutCreateInfo sl2{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        sl2.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+        sl2.pNext = &bf;
+        sl2.bindingCount = 2;
+        sl2.pBindings = bb;
+        if (!Check(vkCreateDescriptorSetLayout(m_device, &sl2, nullptr, &m_bindlessSetLayout), "bindless set layout", error))
+            return false;
+        VkDescriptorPoolSize ps[2] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kMaxBindlessImages},
+                                      {VK_DESCRIPTOR_TYPE_SAMPLER, kMaxBindlessSamplers}};
+        VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        pi.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+        pi.maxSets = 1;
+        pi.poolSizeCount = 2;
+        pi.pPoolSizes = ps;
+        if (!Check(vkCreateDescriptorPool(m_device, &pi, nullptr, &m_bindlessPool), "bindless descriptor pool", error))
+            return false;
+        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        ai.descriptorPool = m_bindlessPool;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = &m_bindlessSetLayout;
+        if (!Check(vkAllocateDescriptorSets(m_device, &ai, &m_bindlessSet), "bindless descriptor set", error))
+            return false;
+    }
+    VkDescriptorSetLayout setLayouts[2] = {m_setLayout, m_bindlessSetLayout};
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    pl.setLayoutCount = 1;
-    pl.pSetLayouts = &m_setLayout;
+    pl.setLayoutCount = m_bindless ? 2 : 1;
+    pl.pSetLayouts = setLayouts;
     if (!Check(vkCreatePipelineLayout(m_device, &pl, nullptr, &m_pipelineLayout), "vkCreatePipelineLayout", error))
         return false;
 
