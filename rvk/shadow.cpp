@@ -393,15 +393,23 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     if (!IsShadowCaster(primitive, fvf))
         return;
     UpdateFrameEye();
-    uint32_t view = 0;
-    while (view < m_casterViews.size() && (std::memcmp(&m_casterViews[view].view, &m_view, sizeof(m_view)) != 0 ||
-                                           std::memcmp(&m_casterViews[view].proj, &m_proj, sizeof(m_proj)) != 0))
-        ++view;
+    // Most casters (a whole frame's worth) share one camera, the world's: try the last match first, not the scan.
+    uint32_t view = m_casterViewLast;
+    auto matchesView = [&](uint32_t v) {
+        return std::memcmp(&m_casterViews[v].view, &m_view, sizeof(m_view)) == 0 &&
+               std::memcmp(&m_casterViews[v].proj, &m_proj, sizeof(m_proj)) == 0;
+    };
+    if (view >= m_casterViews.size() || !matchesView(view)) {
+        view = 0;
+        while (view < m_casterViews.size() && !matchesView(view))
+            ++view;
+    }
     if (view == m_casterViews.size()) {
         if (view == 8)
             return;                              // too many cameras; not the world
         m_casterViews.push_back({m_view, m_proj, 0});
     }
+    m_casterViewLast = view;
     ++m_casterViews[view].count;
     ShadowCaster c;
     c.view = view;
@@ -416,7 +424,8 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     c.world = m_world;
     c.generation = m_ringGeneration;
     ShadowCutout(fvf, &c.texture, &c.texOffset, &c.alphaRef);
-    uint64_t key = CasterKey(primitive, fvf, stride, vertices, vertexCount, indices, indexCount, c.boundsMin, c.boundsMax);
+    uint64_t key = CasterKey(primitive, fvf, stride, vertices, vertexCount, indices, indexCount, c.texture, c.texOffset,
+                             c.boundsMin, c.boundsMax);
     c.key = key;
     std::memcpy(c.sway, m_drawSway, sizeof(c.sway));
     c.draw = m_frameDraw;
@@ -470,12 +479,12 @@ void Device::ShadowCutout(uint32_t fvf, Texture** texture, int* texOffset, float
 // and its bounds rounded to 4 units - but not the exact vertices or world matrix, so plants swaying in the wind
 // (by vertices or by a tilting world matrix) are still the same caster.
 uint64_t Device::CasterKey(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
-                           const uint16_t* indices, uint32_t indexCount, float boundsMin[3], float boundsMax[3]) const
+                           const uint16_t* indices, uint32_t indexCount, Texture* texture, int texOffset,
+                           float boundsMin[3], float boundsMax[3]) const
 {
-    Texture* texture;
-    int texOffset;
-    float alphaRef;
-    ShadowCutout(fvf, &texture, &texOffset, &alphaRef);
+    // texture / texOffset are the caller's already-computed cut-out (ShadowCutout): recomputing them here was a
+    // second DecodeFvf and state read per caster.
+    (void)stride;
     // The box (and the indices' hash) from the mesh cache when the draw has it; else a pass over the vertices.
     if (m_drawMesh) {
         std::memcpy(boundsMin, m_drawMesh->boundsMin, 12);

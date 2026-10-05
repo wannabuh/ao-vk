@@ -230,7 +230,12 @@ void Device::DumpDraw(uint32_t primitive, uint32_t fvf, const void* vertices, ui
                      ShadowInLightmap(fvf) ? "L" : ShadowCompensated(fvf) ? "M" : "");
     if (IsShadowCaster(primitive, fvf) && vertices) {
         float mn[3], mx[3];
-        uint64_t key = CasterKey(primitive, fvf, layout.stride, vertices, vertexCount, indices, indexCount, mn, mx);
+        Texture* cutTex;
+        int cutOffset;
+        float cutRef;
+        ShadowCutout(fvf, &cutTex, &cutOffset, &cutRef);
+        uint64_t key = CasterKey(primitive, fvf, layout.stride, vertices, vertexCount, indices, indexCount, cutTex,
+                                 cutOffset, mn, mx);
         auto streak = m_casterStreaks.find(key);
         if (m_casterCache.count(key)) std::fprintf(f, " remembered");
         else std::fprintf(f, " seen %u", streak != m_casterStreaks.end() ? streak->second.count : 0u);

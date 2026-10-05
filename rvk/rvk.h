@@ -571,6 +571,7 @@ private:
     // world's), so 3D interface elements drawn with their own camera neither move the map nor cast into it.
     struct CasterView { d3d::Matrix view, proj; uint32_t count; };
     std::vector<CasterView> m_casterViews;
+    uint32_t m_casterViewLast = 0;               // the view most casters matched (RecordShadowCaster's fast path)
     d3d::Matrix m_shadowWorldProj{};             // the world camera's projection: only its draws take shadows
     bool WorldCamera() const;
     bool m_drawIsLabel = false;                  // the current draw is a name label (IsLabel)
@@ -639,7 +640,8 @@ private:
     void CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertices, const uint16_t* indices);
     void ShadowCutout(uint32_t fvf, Texture** texture, int* texOffset, float* alphaRef) const;
     uint64_t CasterKey(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
-                       const uint16_t* indices, uint32_t indexCount, float boundsMin[3], float boundsMax[3]) const;
+                       const uint16_t* indices, uint32_t indexCount, Texture* texture, int texOffset, float boundsMin[3],
+                       float boundsMax[3]) const;
     uint32_t m_cachedCastersDrawn = 0;           // last shadow pass: remembered casters drawn (frame dumps)
     uint32_t m_forgottenInView = 0, m_forgottenFar = 0;   // remembered casters forgotten so far (frame dumps)
     // Last sun pass (frame dumps): the items it considered and the item-cascade pairs it culled / drew, split by

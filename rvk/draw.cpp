@@ -349,6 +349,12 @@ bool Device::MotionVectorDraw(uint32_t fvf) const
 uint64_t Device::MotionKey(uint32_t primitive, uint32_t fvf, uint32_t vertexCount, const uint16_t* indices,
                            uint32_t indexCount) const
 {
+    // A static (never-changing) mesh's identity is already known - DrawMeshInfo's key is stable across frames - so
+    // hashing a sample of its indices here again is wasted work. Animated ones (their vertices change) hash here.
+    if (m_drawMeshStatic && m_drawMesh) {
+        uintptr_t texture = reinterpret_cast<uintptr_t>(m_textures[0]);
+        return (m_drawMeshKey ^ uint64_t(texture)) * 1099511628211ull;
+    }
     uint64_t h = 1469598103934665603ull ^ (uint64_t(fvf) << 40) ^ (uint64_t(primitive) << 32) ^ vertexCount;
     h = (h ^ indexCount) * 1099511628211ull;
     if (indices) {
