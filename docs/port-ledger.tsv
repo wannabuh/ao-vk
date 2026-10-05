@@ -1089,3 +1089,7 @@
 0x46101	replaced	proxy/native/findobject.cpp	fun::FindObjectFor<T> (FUN_10046101)
 0x46DB0	replaced	proxy/native/findobject.cpp	fun::FindObjectFor<T> (FUN_10046db0)
 0x47ECC	replaced	proxy/native/findobject.cpp	fun::FindObjectFor<T> (FUN_10047ecc)
+0x63870	replaced	proxy/native/d3dx.cpp	D3DXMakeDDPixelFormat (FUN_10063870)
+0x638BE	replaced	proxy/native/d3dx.cpp	D3DXMakeSurfaceFormat (FUN_100638be)
+0x21541	replaced	proxy/native/d3dx.cpp	render_t::D3DXMakeDDPixelFormat (FUN_10021541)
+0x23DB3	replaced	proxy/native/d3dx.cpp	render_t::D3DXMakeSurfaceFormat (FUN_10023db3)
