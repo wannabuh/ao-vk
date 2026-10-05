@@ -5,6 +5,7 @@
 #include "native/cat_anim.h"
 #include "native/cat_query.h"
 #include "native/cat_skin.h"
+#include "native/color.h"
 #include "native/dxerror.h"
 #include "native/keyframe.h"
 #include "native/orig_api.gen.h"
@@ -1037,6 +1038,73 @@ void CheckShadowlands()
     Check(mismatches == 0, "shadowlands: state and matrices");
 }
 
+// Color_t against ours: every constructor, Init, assignment, Interpolate, + and * on random (and boundary) input,
+// the four bytes compared.
+void CheckColor()
+{
+    using namespace rnative::color;
+    std::mt19937 rng(2024);
+    std::uniform_real_distribution<float> uf(-0.3f, 1.3f);
+    const float special[] = {0.0f, 1.0f, 0.5f, -0.0f, 1.0f / 255.0f, 254.0f / 255.0f, -1.0f, 2.0f, 1000.0f};
+    auto randf = [&]() { return (rng() % 4 == 0) ? special[rng() % (sizeof(special) / sizeof(special[0]))] : uf(rng); };
+    int mism = 0;
+    auto bad = [&](const char* what, const uint8_t* x, const uint8_t* y) {
+        if (std::memcmp(x, y, 4) && mism++ < 6)
+            std::printf("color: %s %08x / %08x\n", what, *reinterpret_cast<const uint32_t*>(x),
+                        *reinterpret_cast<const uint32_t*>(y));
+    };
+    using CtorUintFn = void*(__fastcall*)(void*, void*, uint32_t);
+    using InitFFn = void(__fastcall*)(void*, void*, float, float, float, float);
+    using InitRgbFn = void(__fastcall*)(void*, void*, const float*, float);
+    using AssignFn = void*(__fastcall*)(void*, void*, uint32_t);
+    using InterpFn = void(__fastcall*)(void*, void*, const void*, const void*, float);
+    using RgbFn = void*(__fastcall*)(void*, void*, const float*);
+    using AddFn = void*(__fastcall*)(void*, void*, void*, const void*);
+    using ScaleFn = void*(__fastcall*)(void*, void*, void*, float);
+    uint8_t a[4], b[4], ca[4], cb[4], other[4];
+    for (int trial = 0; trial < 5000; ++trial) {
+        const float r = randf(), g = randf(), bl = randf(), al = randf();
+        float rgb[3] = {r, g, bl};
+        for (int k = 0; k < 4; ++k) ca[k] = uint8_t(rng()), other[k] = uint8_t(rng());
+        const uint32_t v = rng();
+        std::memset(a, 0xAA, 4), std::memset(b, 0xAA, 4);
+        Orig<CtorUintFn>(0x1998F)(a, nullptr, v);
+        CtorUint(reinterpret_cast<Color*>(b), nullptr, v);
+        bad("ctor(uint)", a, b);
+        std::memset(a, 0xAA, 4), std::memset(b, 0xAA, 4);
+        Orig<InitFFn>(0x199BB)(a, nullptr, r, g, bl, al);
+        InitF(reinterpret_cast<Color*>(b), nullptr, r, g, bl, al);
+        bad("init4", a, b);
+        std::memset(a, 0xAA, 4), std::memset(b, 0xAA, 4);
+        Orig<InitRgbFn>(0x199FF)(a, nullptr, rgb, al);
+        InitRgb(reinterpret_cast<Color*>(b), nullptr, rgb, al);
+        bad("initRGB", a, b);
+        std::memset(a, 0xAA, 4), std::memset(b, 0xAA, 4);
+        Orig<AssignFn>(0x19A47)(a, nullptr, v);
+        AssignUint(reinterpret_cast<Color*>(b), nullptr, v);
+        bad("assign", a, b);
+        std::memset(a, 0xAA, 4), std::memset(b, 0xAA, 4);
+        Orig<InterpFn>(0x19A7A)(a, nullptr, ca, other, al);
+        Interpolate(reinterpret_cast<Color*>(b), nullptr, reinterpret_cast<const Color*>(ca),
+                    reinterpret_cast<const Color*>(other), al);
+        bad("interp", a, b);
+        std::memset(a, 0xAA, 4), std::memset(b, 0xAA, 4);
+        Orig<RgbFn>(0x19B80)(a, nullptr, rgb);
+        CtorRgb(reinterpret_cast<Color*>(b), nullptr, rgb);
+        bad("ctor(RGB)", a, b);
+        Orig<AddFn>(0x19BB1)(ca, nullptr, a, other);
+        std::memset(cb, 0xAA, 4);
+        Add(reinterpret_cast<Color*>(ca), nullptr, reinterpret_cast<Color*>(cb), reinterpret_cast<const Color*>(other));
+        bad("add", a, cb);
+        Orig<ScaleFn>(0x19C93)(ca, nullptr, a, al);
+        std::memset(cb, 0xAA, 4);
+        Scale(reinterpret_cast<Color*>(ca), nullptr, reinterpret_cast<Color*>(cb), al);
+        bad("scale", a, cb);
+    }
+    std::printf("color: %d trials, %d differ\n", 5000, mism);
+    Check(mism == 0, "color: Color_t");
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -1076,6 +1144,7 @@ int main(int argc, char** argv)
     CheckDxErrors();
     CheckKeyframes();
     CheckShadowlands();
+    CheckColor();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;

@@ -24,6 +24,7 @@
 #include "native/keyframe.h"
 #include "native/sprite.h"
 #include "native/shadowlands.h"
+#include "native/color.h"
 
 namespace rnative {
 
@@ -58,6 +59,7 @@ void Install(HMODULE orig)
     keyframe::Install(orig);
     sprite::Install(orig);
     shadowlands::Install(orig);
+    color::Install(orig);
     gonetrap::Install(orig);                        // last: over what the replacements left
 }
 
