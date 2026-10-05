@@ -289,16 +289,28 @@ void* g_traceTargets[kExportCount];
 uint32_t g_traceFastPath = 0;
 uint32_t g_traceFlipIndex = 0xFFFFFFFF;
 
-void __cdecl trace_on_call(CallFrame* f)
+extern void rvk_install_exports();               // proxy/exports.gen.cpp: fills the export thunks' targets
+int rvk_exports_ready = 0;
+
+// Runs the native install once (idempotent), then resolves the export tables. Called by the first export thunk
+// (proxy/exports.gen.cpp) and by trace_on_call.
+void rvk_ensure_init()
 {
     static bool initialized = [] {
         Init();
         for (unsigned i = 0; i < kExportCount; ++i)
             g_traceTargets[i] = reinterpret_cast<void*>(GetProcAddress(g_orig, kExports[i].mangled));
         g_traceFlipIndex = uint32_t(g_flip);
+        rvk_install_exports();
+        rvk_exports_ready = 1;
         return true;
     }();
     (void)initialized;
+}
+
+void __cdecl trace_on_call(CallFrame* f)
+{
+    rvk_ensure_init();
 
     bool flip = static_cast<int>(f->index) == g_flip;
     if (g_capture == Capture::Recording && GetCurrentThreadId() == g_captureThread) {

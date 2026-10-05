@@ -27,10 +27,10 @@ int main(int argc, char** argv)
 {
     std::string dir = argc > 1 ? argv[1] : ".";
     HMODULE proxy = LoadLibraryExA((dir + "\\randy31.dll").c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-    // Forwarder targets load on first lookup, not with the proxy itself.
-    if (proxy)
-        GetProcAddress(proxy, "?Archive@RTexture_t@@UBEXPAVObjectArchive_c@fun@@@Z");
+    // The original is loaded on the first export call (the thunks run the install then), not with the proxy.
     HMODULE orig = GetModuleHandleA("randy31_orig.dll");
+    if (!orig)
+        orig = LoadLibraryExA((dir + "\\randy31_orig.dll").c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
     if (!proxy || !orig) {
         std::printf("load failed: proxy=%p orig=%p err=%lu\n", (void*)proxy, (void*)orig, GetLastError());
         return 1;
@@ -44,6 +44,7 @@ int main(int argc, char** argv)
     int forwarded = 0, thunked = 0, bad = 0;
     for (DWORD i = 0; i < exp->NumberOfNames; ++i) {
         const char* name = reinterpret_cast<const char*>(base + names[i]);
+        if (std::strncmp(name, "RvkSettings_", 12) == 0) continue;   // the proxy's own interface, not the original's
         FARPROC a = GetProcAddress(proxy, name), b = GetProcAddress(orig, name);
         if (a && a == b) ++forwarded;
         else if (a && b && InModule(proxy, a)) ++thunked;
