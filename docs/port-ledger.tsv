@@ -880,3 +880,5 @@
 0x2A3DB	replaced	proxy/native/helpers.cpp	Vector3 cross product to (FUN_1002a3db)
 0x2A406	replaced	proxy/native/helpers.cpp	TMatrix4_t identity (FUN_1002a406)
 0x45289	replaced	proxy/native/helpers.cpp	NextNode (the frame hierarchy)
+0x191B8	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator::EnableCompression
+0x193E4	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator::CreateTexture(LBitmap_t*,name)

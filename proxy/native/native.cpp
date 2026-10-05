@@ -28,6 +28,7 @@
 #include "native/pixfmt.h"
 #include "native/lbitmap.h"
 #include "native/helpers.h"
+#include "native/texture_stream.h"
 
 namespace rnative {
 
@@ -66,6 +67,7 @@ void Install(HMODULE orig)
     pixfmt::Install(orig);
     lbitmap::Install(orig);
     helpers::Install(orig);
+    texturestream::Install(orig);
     gonetrap::Install(orig);                        // last: over what the replacements left
 }
 
