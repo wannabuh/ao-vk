@@ -346,6 +346,114 @@ void TestProcessVertices(void* render)
 
 void* SurfaceOf(void* rtexture) { return *reinterpret_cast<void**>(static_cast<uint8_t*>(rtexture) + 0x30); }
 
+// ---- --texture: the texture creator's path. An LBitmap_t loaded from a BMP in memory through a fake
+// fun::PositionIO_t, then TextureStreamCreator::CreateTexture(bitmap, name) - the exported call the game's world
+// textures end in. It exercises the creator and its D3DX calls (tools/calllog-ab.sh Device texture). ----
+struct FakeStream {
+    void** vtable;
+    const uint8_t* data;
+    size_t size, pos;
+};
+uint16_t __fastcall FakeStreamReadWord(void* self, void*)
+{
+    FakeStream* s = static_cast<FakeStream*>(self);
+    uint16_t v = 0;
+    if (s->pos + 2 <= s->size) std::memcpy(&v, s->data + s->pos, 2);
+    s->pos += 2;
+    return v;
+}
+uint32_t __fastcall FakeStreamReadDword(void* self, void*)
+{
+    FakeStream* s = static_cast<FakeStream*>(self);
+    uint32_t v = 0;
+    if (s->pos + 4 <= s->size) std::memcpy(&v, s->data + s->pos, 4);
+    s->pos += 4;
+    return v;
+}
+void __fastcall FakeStreamRead(void* self, void*, void* buf, int size)
+{
+    FakeStream* s = static_cast<FakeStream*>(self);
+    if (size > 0 && s->pos + size_t(size) <= s->size) std::memcpy(buf, s->data + s->pos, size);
+    s->pos += size_t(size);
+}
+void __fastcall FakeStreamSeek(void* self, void*, int offset, int origin)
+{
+    FakeStream* s = static_cast<FakeStream*>(self);
+    s->pos = origin == 0 ? size_t(offset) : origin == 1 ? s->pos + size_t(offset) : s->size + size_t(offset);
+}
+
+// A 24-bit BMP (rows bottom-up, each padded to 4 bytes).
+std::vector<uint8_t> BuildBmp24(unsigned w, unsigned h, uint32_t (*color)(unsigned, unsigned))
+{
+    const unsigned rowBytes = w * 3, pad = (4 - (rowBytes % 4)) % 4, rowSize = rowBytes + pad;
+    const unsigned imageBytes = rowSize * h;
+    std::vector<uint8_t> bmp(54 + imageBytes, 0);
+    auto put16 = [&](size_t at, uint16_t v) { std::memcpy(&bmp[at], &v, 2); };
+    auto put32 = [&](size_t at, uint32_t v) { std::memcpy(&bmp[at], &v, 4); };
+    bmp[0] = 'B', bmp[1] = 'M';
+    put32(2, 54 + imageBytes);
+    put32(10, 54);
+    put32(14, 40), put32(18, w), put32(22, h), put16(26, 1), put16(28, 24), put32(30, 0), put32(34, imageBytes);
+    put32(38, 2835), put32(42, 2835), put32(46, 0), put32(50, 0);
+    for (unsigned y = 0; y < h; ++y) {
+        uint8_t* row = bmp.data() + 54 + size_t(h - 1 - y) * rowSize;   // the file's rows are bottom-up
+        for (unsigned x = 0; x < w; ++x) {
+            const uint32_t c = color(x, y);                            // 0x00RRGGBB -> the BMP's b g r
+            row[x * 3 + 0] = uint8_t(c), row[x * 3 + 1] = uint8_t(c >> 8), row[x * 3 + 2] = uint8_t(c >> 16);
+        }
+    }
+    return bmp;
+}
+
+void TestTextureStream()
+{
+    static const unsigned w = 65, h = 33;                              // not multiples of 4: row padding is exercised
+    std::vector<uint8_t> bmp = BuildBmp24(w, h, [](unsigned x, unsigned y) -> uint32_t {
+        return ((x / 4) ^ (y / 4)) & 1 ? 0xF0C040u : 0x3060C0u;
+    });
+    void* streamVt[19] = {};
+    streamVt[0] = reinterpret_cast<void*>(&FakeStreamRead);
+    streamVt[5] = reinterpret_cast<void*>(&FakeStreamReadDword);
+    streamVt[7] = reinterpret_cast<void*>(&FakeStreamReadWord);
+    streamVt[18] = reinterpret_cast<void*>(&FakeStreamSeek);
+    FakeStream stream{streamVt, bmp.data(), bmp.size(), 0};
+    using LBitmapLoadFn = void*(__cdecl*)(void*, const char*, int);
+    void* bitmap = Export<LBitmapLoadFn>("?Load@LBitmap_t@@SAPAV1@PAVPositionIO_t@fun@@PBDW4CreationFlags_e@1@@Z")(
+        &stream, "harness.bmp", 0);
+    std::printf("texture: bitmap %ux%u, %d bpp\n", w, h,
+                bitmap ? *reinterpret_cast<int*>(static_cast<uint8_t*>(bitmap) + 0x10c) : 0);
+    if (!bitmap) return;
+    using TSCCtorBitmapFn = void*(__fastcall*)(void*, void*, void*, const char*, int);
+    using TSCreateTextureBitmapFn = void*(__fastcall*)(void*, void*, void*, const char*);
+    void* creator = Export<TSCCtorBitmapFn>("??0TextureStreamCreator@@QAE@PAVLBitmap_t@@PBDH@Z")(
+        ::operator new(0x40), nullptr, bitmap, "harness_tex", 1);   // 1: the creator's downscale divisor
+    void* surface = Export<TSCreateTextureBitmapFn>(
+        "?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVLBitmap_t@@PBD@Z")(creator, nullptr, bitmap,
+                                                                                    "harness_tex");
+    (void)creator;
+    IDirectDrawSurface7** pp = surface
+                                   ? Export<GetSurfacePointerFn>("?GetSurfacePointer@surface_t@@QAEPAPAUIDirectDrawSurface7@@XZ")(
+                                         surface, nullptr)
+                                   : nullptr;
+    if (pp && *pp) {
+        DDSURFACEDESC2 sd{};
+        sd.dwSize = sizeof(sd);
+        if ((*pp)->Lock(nullptr, &sd, DDLOCK_READONLY | DDLOCK_WAIT, nullptr) == DD_OK) {
+            uint32_t hash = 2166136261u;
+            const uint32_t bytes = sd.dwWidth * (sd.ddpfPixelFormat.dwRGBBitCount / 8);
+            for (uint32_t y = 0; y < sd.dwHeight; ++y) {
+                const uint8_t* row = static_cast<const uint8_t*>(sd.lpSurface) + size_t(y) * sd.lPitch;
+                for (uint32_t i = 0; i < bytes; ++i) hash = (hash ^ row[i]) * 16777619u;
+            }
+            (*pp)->Unlock(nullptr);
+            std::printf("texture: surface %lux%lu %lu bpp checksum %08x\n", sd.dwWidth, sd.dwHeight,
+                        sd.ddpfPixelFormat.dwRGBBitCount, hash);
+        } else {
+            std::printf("texture: surface lock failed\n");
+        }
+    }
+}
+
 const GUID kTnLHalDevice = {0xf5049e78, 0x4861, 0x11d2, {0xa4, 0x07, 0x00, 0xa0, 0xc9, 0x06, 0x29, 0xa8}};
 
 struct VtxRhw { float x, y, z, rhw; uint32_t color; };
@@ -709,6 +817,7 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
 // --sprites N: RSprites as DisplaySystem makes them - every mode (0..4), with and without a grid of animation frames,
 // plain and additive (both kinds), coloured; one in four duplicated (vtable slot 3) as well.
 int g_sprites;
+bool g_texture;                                       // --texture: the texture creator's path
 void AddSprites(CharacterScene& scene, int count)
 {
     std::vector<uint32_t> px(32 * 32);
@@ -1087,6 +1196,7 @@ int main(int argc, char** argv)
         else if (a == "--shadow") g_shadow = true;
         else if (a == "--dynamic") g_dynamic = true;
         else if (a == "--materials") g_materials = true;
+        else if (a == "--texture") g_texture = true;
         else if (a == "--blend" && i + 1 < argc) g_blend = float(std::atof(argv[++i]));
         else if (a == "--query") query = true;
         else if (a == "--static" && i + 1 < argc) staticMesh = argv[++i];
@@ -1162,6 +1272,7 @@ int main(int argc, char** argv)
     std::printf("textures: checker surface_t %p, dxt1 surface_t %p\n", SurfaceOf(texChecker), SurfaceOf(texDxt));
     TestProcessVertices(render);
     if (g_materials) TestMaterials();
+    if (g_texture) TestTextureStream();   // before the first present: in the frame=1 call log window
     {
         auto* device = *static_cast<IDirect3DDevice7**>(render);
         device->EnumTextureFormats([](LPDDPIXELFORMAT pf, LPVOID) -> HRESULT {
