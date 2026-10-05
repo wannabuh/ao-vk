@@ -933,9 +933,15 @@
 0x166EE	replaced	proxy/native/faf.cpp	FAFAttractor_t(archive) ctor (FUN_100166ee)
 0x16743	replaced	proxy/native/faf.cpp	FAFAttractor_t::Instantiate
 0x1682C	replaced	proxy/native/faf.cpp	FAFAttractor_t deleting destructor (FUN_1001682c)
-0x168D6	replaced	proxy/native/faf.cpp	FAFAttractor_t::Archive (FUN_100168d6)
+0x168D6	replaced	proxy/native/faf.cpp	FAFCollisionBox_c::Archive (FUN_100168d6)
+0x1672B	replaced	proxy/native/faf.cpp	FAFAttractor_t::Archive (FUN_1001672b)
 0x168EE	replaced	proxy/native/faf.cpp	FAFCollisionBox_c(archive) ctor (FUN_100168ee)
 0x16946	replaced	proxy/native/faf.cpp	FAFCollisionBox_c::Instantiate
+0x16AC0	replaced	proxy/native/faf.cpp	FAFCollisionSphere_c::Archive (FUN_10016ac0)
+0x16D3F	replaced	proxy/native/faf.cpp	FAFPointLight_t::Archive (FUN_10016d3f)
+0x16D57	replaced	proxy/native/faf.cpp	FAFPointLight_t::Instantiate
+0x16D9B	replaced	proxy/native/faf.cpp	FAFSpotLight_t::Archive (FUN_10016d9b)
+0x16DB3	replaced	proxy/native/faf.cpp	FAFSpotLight_t::Instantiate
 0x16AD8	replaced	proxy/native/faf.cpp	FAFCollisionSphere_c(archive) ctor (FUN_10016ad8)
 0x16B30	replaced	proxy/native/faf.cpp	FAFCollisionSphere_c::Instantiate
 0x17EC8	replaced	proxy/native/faf.cpp	FAFTexture_t::Instantiate

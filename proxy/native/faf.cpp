@@ -44,6 +44,13 @@ void* __cdecl NewCollision(uint32_t vtable, uint32_t size, void* archive)
     return self ? CtorCollision(self, nullptr, vtable, archive) : nullptr;
 }
 
+// FUN_10016ac0: the collision sphere's Archive (its RRefFrame_t base, then its own stream).
+void __fastcall ArchiveCollision(void* self, void*, void* archive)
+{
+    orig::RRefFrame_t_Archive(self, archive);
+    serialize::Get().getStream(archive, nullptr);
+}
+
 }  // namespace
 
 // ---- FAFAttractor_t (RRefFrame_t) ----
@@ -148,6 +155,40 @@ void* __cdecl InstantiateDirectionalLight(void* archive)
     return self ? CtorDirectionalLight(self, nullptr, archive) : nullptr;
 }
 
+// ---- FAFPointLight_t / FAFSpotLight_t (RLight_t too) ----
+
+constexpr uint32_t kPointLightVtable = 0x8A8D0, kSpotLightVtable = 0x8A908;
+
+void* __cdecl InstantiatePointLight(void* archive)
+{
+    uint8_t* self = static_cast<uint8_t*>(vc10::Allocate(0x11C));
+    if (!self) return nullptr;
+    Internal<void*(__fastcall*)(void*, void*, void*)>(0x3FE81)(self, nullptr, archive);   // RLight_t(archive)
+    SetVtable(self, kPointLightVtable);
+    return self;
+}
+
+void* __cdecl InstantiateSpotLight(void* archive)
+{
+    uint8_t* self = static_cast<uint8_t*>(vc10::Allocate(0x11C));
+    if (!self) return nullptr;
+    Internal<void*(__fastcall*)(void*, void*, void*)>(0x3FE81)(self, nullptr, archive);
+    SetVtable(self, kSpotLightVtable);
+    return self;
+}
+
+void __fastcall ArchivePointLight(void* self, void*, void* archive)   // FUN_10016d3f (vtable slot 1)
+{
+    Internal<void(__fastcall*)(void*, void*, void*)>(0x3FBD8)(self, nullptr, archive);   // RLight_t::Archive
+    serialize::Get().getStream(archive, nullptr);
+}
+
+void __fastcall ArchiveSpotLight(void* self, void*, void* archive)   // FUN_10016d9b (vtable slot 1)
+{
+    Internal<void(__fastcall*)(void*, void*, void*)>(0x3FBD8)(self, nullptr, archive);
+    serialize::Get().getStream(archive, nullptr);
+}
+
 // ---- the collision classes' destructors ----
 
 void __fastcall DtorCollision(void* self, void*)
@@ -205,14 +246,20 @@ void Install(HMODULE orig)
         {0x166EE, FN(CtorAttractor), "FAFAttractor_t(archive) ctor (FUN_100166ee)"},
         {0x16743, FN(InstantiateAttractor), "FAFAttractor_t::Instantiate"},
         {0x1682C, FN(DeletingDtorAttractor), "FAFAttractor_t deleting destructor (FUN_1001682c)"},
-        {0x168D6, FN(ArchiveAttractor), "FAFAttractor_t::Archive (FUN_100168d6)"},
+        {0x168D6, FN(ArchiveAttractor), "FAFCollisionBox_c::Archive (FUN_100168d6)"},
+        {0x1672B, FN(ArchiveAttractor), "FAFAttractor_t::Archive (FUN_1001672b)"},
         {0x168EE, FN(CtorBox), "FAFCollisionBox_c(archive) ctor (FUN_100168ee)"},
         {0x16946, FN(InstantiateBox), "FAFCollisionBox_c::Instantiate"},
         {0x16AA1, FN(DeletingDtorBox), "FAFCollisionBox_c deleting destructor (FUN_10016aa1)"},
+        {0x16AC0, FN(ArchiveCollision), "FAFCollisionSphere_c::Archive (FUN_10016ac0)"},
         {0x16C5E, FN(DtorCollision), "the collision classes' destructor (FUN_10016c5e)"},
         {0x16CB2, FN(CtorDirectionalLight), "FAFDirectionalLight_t(archive) ctor (FUN_10016cb2)"},
         {0x16CEF, FN(ArchiveDirectionalLight), "FAFDirectionalLight_t::Archive (FUN_10016cef)"},
         {0x16D07, FN(InstantiateDirectionalLight), "FAFDirectionalLight_t::Instantiate"},
+        {0x16D3F, FN(ArchivePointLight), "FAFPointLight_t::Archive (FUN_10016d3f)"},
+        {0x16D57, FN(InstantiatePointLight), "FAFPointLight_t::Instantiate"},
+        {0x16D9B, FN(ArchiveSpotLight), "FAFSpotLight_t::Archive (FUN_10016d9b)"},
+        {0x16DB3, FN(InstantiateSpotLight), "FAFSpotLight_t::Instantiate"},
         {0x16AD8, FN(CtorSphere), "FAFCollisionSphere_c(archive) ctor (FUN_10016ad8)"},
         {0x16B30, FN(InstantiateSphere), "FAFCollisionSphere_c::Instantiate"},
         {0x17D1D, FN(CtorMaterial), "FAFMaterial_t(archive) ctor (FUN_10017d1d)"},
