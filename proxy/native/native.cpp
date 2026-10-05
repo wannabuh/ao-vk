@@ -29,6 +29,7 @@
 #include "native/lbitmap.h"
 #include "native/helpers.h"
 #include "native/texture_stream.h"
+#include "native/faf.h"
 
 namespace rnative {
 
@@ -68,6 +69,7 @@ void Install(HMODULE orig)
     lbitmap::Install(orig);
     helpers::Install(orig);
     texturestream::Install(orig);
+    faf::Install(orig);
     gonetrap::Install(orig);                        // last: over what the replacements left
 }
 

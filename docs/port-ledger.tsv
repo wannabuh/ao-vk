@@ -895,3 +895,13 @@
 0x19960	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator vtable Process (FUN_10019960)
 0x1988F	replaced	proxy/native/texture_stream.cpp	format into a std::string (FUN_1001988f)
 0x1994C	replaced	proxy/native/texture_stream.cpp	format with varargs (FUN_1001994c)
+0x166EE	replaced	proxy/native/faf.cpp	FAFAttractor_t(archive) ctor (FUN_100166ee)
+0x16743	replaced	proxy/native/faf.cpp	FAFAttractor_t::Instantiate
+0x1682C	replaced	proxy/native/faf.cpp	FAFAttractor_t deleting destructor (FUN_1001682c)
+0x168D6	replaced	proxy/native/faf.cpp	FAFAttractor_t::Archive (FUN_100168d6)
+0x168EE	replaced	proxy/native/faf.cpp	FAFCollisionBox_c(archive) ctor (FUN_100168ee)
+0x16946	replaced	proxy/native/faf.cpp	FAFCollisionBox_c::Instantiate
+0x16AD8	replaced	proxy/native/faf.cpp	FAFCollisionSphere_c(archive) ctor (FUN_10016ad8)
+0x16B30	replaced	proxy/native/faf.cpp	FAFCollisionSphere_c::Instantiate
+0x17EC8	replaced	proxy/native/faf.cpp	FAFTexture_t::Instantiate
+0x17F0C	replaced	proxy/native/faf.cpp	FAFTexture_t deleting destructor (FUN_10017f0c)
