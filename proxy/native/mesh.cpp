@@ -13,6 +13,7 @@
 // +0x188 visible this frame, +0x1B8 lights lighting it, +0x1BC sub-meshes sorted, +0x1BD registered with the occluder,
 // +0x1BE an occluder itself ("[OCC]..."), +0x1BF culled by its bounding volume.
 #include "native/mesh.h"
+#include "native/mesh_data.h"
 #include "native/orig_api.gen.h"
 #include "native/serialize.h"
 #include "native/vc10.h"
@@ -60,6 +61,8 @@ constexpr uint32_t kFade = 0x0C, kRotation = 0x2C, kWorldScale = 0x84, kTranspar
 // RTriMesh_t
 constexpr uint32_t kColours = 0x178, kTransparentFlag = 0x182, kData = 0x184, kVisibleNow = 0x188, kLitBy = 0x1B8,
                    kSorted = 0x1BC, kRegistered = 0x1BD, kIsOccluder = 0x1BE, kCullByVolume = 0x1BF;
+constexpr uint32_t kTriVtable = 0x957F4, kTriSubjectVtable = 0x957E0, kSubjectPart = 0xA4, kTimer = 0x190,
+                   kRestoredAt = 0xF0, kDataRestored = 0x5C, kTriSize = 0x1C0;
 // SimpleMesh / its data / RVisualData_t
 constexpr uint32_t kMaterial = 0x14, kVolume = 0x18, kMeshFlags = 0x1E, kMeshData = 0x20;
 constexpr uint32_t kIndices = 0x30, kVertexCount = 0x34, kTriangleCount = 0x38, kDataFlags = 0x3C, kFvf = 0x40,
@@ -443,7 +446,7 @@ bool VolumeSeen(Visual* v, void* volume)
 }
 
 // FUN_1004941b: its 16-bit (5:6:5) vertex colours into the sub-meshes' vertex buffers.
-void CopyColours(Visual* v, const uint16_t* colours)
+void __fastcall CopyColours(Visual* v, void*, const uint16_t* colours)
 {
     uint8_t* data = Field<uint8_t*>(v, kData);
     if (!data) return;
@@ -460,6 +463,22 @@ void CopyColours(Visual* v, const uint16_t* colours)
             c = orig::VertexBuffer_c_NextVertex(vb, c);
         }
         orig::VertexBuffer_c_Unlock(vb);
+    }
+}
+
+// typeid(*this) == typeid(RTriMesh_t): its own primary vtable (a subclass has its own). ConvertToLightmap's branch.
+bool IsExactTriMesh(void* v) { return Field<void*>(v, 0) == reinterpret_cast<uint8_t*>(g_orig) + kTriVtable; }
+
+// RTriMesh_t::ConvertToLightmap: a DisplaySystem subclass gets a private copy of its data and the colours written
+// straight in; an RTriMesh_t keeps the colours for its Render and swaps in the shared lightmap copy of its data.
+void __fastcall TriMeshConvertToLightmap(Visual* v, void*, const uint16_t* colours)
+{
+    if (!IsExactTriMesh(v)) {
+        Field<void*>(v, kData) = meshdata::MakePrivate(Field<void*>(v, kData), false);
+        CopyColours(v, nullptr, colours);
+    } else {
+        Field<const uint16_t*>(v, kColours) = colours;
+        Field<void*>(v, kData) = meshdata::SharedCopy(Field<void*>(v, kData));
     }
 }
 
@@ -486,7 +505,7 @@ void __fastcall TriMeshProcess(Visual* v)
 void __fastcall TriMeshRender(Visual* v, void*, void* vp)
 {
     if (!v[kVisibleNow]) return;
-    if (const uint16_t* colours = Field<const uint16_t*>(v, kColours)) CopyColours(v, colours);
+    if (const uint16_t* colours = Field<const uint16_t*>(v, kColours)) CopyColours(v, nullptr, colours);
     uint8_t* data = Field<uint8_t*>(v, kData);
     Field<uint32_t>(v, kLitBy) =
         orig::RVisual_t_CullLights(v, vp, Field<float>(Field<void*>(data, kDataVolume), 0x14), 0xFFFFFFFF);
@@ -524,9 +543,6 @@ void __fastcall TriMeshRenderShadow(Visual* v, void*, void* vp, uint8_t* shadow)
 }
 
 // ---- RTriMesh_t: being made, copied, archived, destroyed; its data; rays ----
-
-constexpr uint32_t kTriVtable = 0x957F4, kTriSubjectVtable = 0x957E0, kSubjectPart = 0xA4, kTimer = 0x190,
-                   kRestoredAt = 0xF0, kDataRestored = 0x5C, kTriSize = 0x1C0;
 
 void InitTriMeshPart(Visual* v)
 {
@@ -752,6 +768,8 @@ void Install(HMODULE orig)
         {0x4CDE6, FN(RasterizeShadow), "RVisual_t shadow pass (FUN_1004cde6)"},
         {0x49554, FN(TriMeshProcess), "RTriMesh_t::Process"},
         {0x49761, FN(TriMeshRender), "RTriMesh_t::Render"},
+        {0x4941B, FN(CopyColours), "RTriMesh_t lightmap colours (FUN_1004941b)"},
+        {0x4980F, FN(TriMeshConvertToLightmap), "RTriMesh_t::ConvertToLightmap"},
         {0x4934C, FN(TriMeshRenderDepth), "RTriMesh_t::RenderDepth"},
         {0x48FBE, FN(TriMeshRenderShadow), "RTriMesh_t::RenderShadow"},
         {0x49017, FN(SetTriMeshData), "RTriMesh_t::SetTriMeshData"},

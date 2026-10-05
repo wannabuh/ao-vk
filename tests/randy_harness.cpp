@@ -818,6 +818,7 @@ bool MakeCharacterScene(const std::string& meshPath, const std::string& animPath
 // plain and additive (both kinds), coloured; one in four duplicated (vtable slot 3) as well.
 int g_sprites;
 bool g_texture;                                       // --texture: the texture creator's path
+bool g_lightmap;                                      // --lightmap: the statics' lightmap colours
 void AddSprites(CharacterScene& scene, int count)
 {
     std::vector<uint32_t> px(32 * 32);
@@ -959,6 +960,81 @@ void PickCharacter(CharacterScene& scene)
             Vector3 end{from.x + (to.x - from.x) * 3.0f, from.y + (to.y - from.y) * 3.0f, from.z + (to.z - from.z) * 3.0f};
             float at = -1.0f;
             bool hit = isLine(scene.characters[0], nullptr, &from, &end, &at, false);
+            std::printf(" %s", hit ? "X" : ".");
+            if (hit) std::printf("%.3f", at);
+        }
+    }
+    std::printf("\n");
+}
+
+// The vertices of an RTriMesh_t's data (its RTriMeshData_t's SimpleMeshes), the count ConvertToLightmap consumes.
+size_t StaticVertexCount(void* object)
+{
+    auto* data = *reinterpret_cast<uint8_t**>(static_cast<uint8_t*>(object) + 0x184);
+    if (!data) return 0;
+    auto* first = *reinterpret_cast<uint8_t**>(data + 0x4C);
+    auto* last = *reinterpret_cast<uint8_t**>(data + 0x50);
+    size_t n = 0;
+    for (uint8_t* at = first; at != last; at += sizeof(void*)) {
+        auto* mesh = *reinterpret_cast<uint8_t**>(at);
+        auto* triangles = *reinterpret_cast<uint8_t**>(mesh + 0x20);
+        n += *reinterpret_cast<uint32_t*>(triangles + 0x34);
+    }
+    return n;
+}
+
+// The RTriMesh_t objects under the statics (each --static object is an RRefFrame_t holding its mesh and its light).
+void CollectTriMeshes(void* frame, std::vector<void*>& out)
+{
+    using DynamicCastFn = void*(__cdecl*)(void*, long, void*, void*, int);
+    static const auto cast =
+        reinterpret_cast<DynamicCastFn>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "__RTDynamicCast"));
+    static uint8_t* orig = reinterpret_cast<uint8_t*>(GetModuleHandleA("randy31_orig.dll"));
+    for (void* c = *reinterpret_cast<void**>(static_cast<uint8_t*>(frame) + 0x1C); c;
+         c = *reinterpret_cast<void**>(static_cast<uint8_t*>(c) + 0x18)) {
+        if (cast && cast(c, 0, orig + 0xB60D4, orig + 0xB78EC, 0)) out.push_back(c);   // Serializable_c -> RTriMesh_t
+        CollectTriMeshes(c, out);
+    }
+}
+
+// --lightmap: the statics' lightmap colours, as the game applies them (RTriMesh_t::ConvertToLightmap).
+void ApplyLightmap(CharacterScene& scene, int frame)
+{
+    using ConvertFn = void(__fastcall*)(void* self, void*, const uint16_t* colours);
+    auto convert = Export<ConvertFn>("?ConvertToLightmap@RTriMesh_t@@QAEXPBG@Z");
+    std::vector<void*> meshes;
+    for (void* s : scene.statics) CollectTriMeshes(s, meshes);
+    size_t total = 0;
+    for (void* m : meshes) total += StaticVertexCount(m);
+    static std::vector<uint16_t> colours;
+    if (colours.size() < total) {
+        colours.resize(total);
+        for (size_t i = 0; i < colours.size(); ++i) colours[i] = uint16_t((i * 2654435761u) >> 16);
+    }
+    for (void* m : meshes) convert(m, nullptr, colours.data());
+    if (frame == 3) std::printf("lightmap: %zu meshes, %zu colours\n", meshes.size(), colours.size());
+}
+
+// --static ... --pick: rays from the camera at the statics (RTriMesh_t::IsRayIntersecting, over
+// SimpleMesh::IsRayIntersecting's triangles).
+void PickStatics(CharacterScene& scene)
+{
+    using IsRayFn = bool(__fastcall*)(void* self, void*, const Vector3* from, const Vector3* along, float* at, bool nearest);
+    auto isRay = Export<IsRayFn>("?IsRayIntersecting@RTriMesh_t@@UBE_NABVVector3_t@@0PAM_N@Z");
+    using WorldFn = const float*(__fastcall*)(const void* self, void*);
+    auto world = Export<WorldFn>("?GetWorldMatrix@RRefFrame_t@@QBEABVTMatrix4_t@@XZ");
+    std::vector<void*> meshes;
+    for (void* s : scene.statics) CollectTriMeshes(s, meshes);
+    const float* c = world(scene.camera, nullptr);
+    Vector3 from{c[12], c[13], c[14]};
+    std::printf("static pick:");
+    for (void* m : meshes) {
+        const float* w = world(m, nullptr);
+        for (float h : {0.0f, 1.5f, 4.0f}) {
+            Vector3 to{w[12], w[13] + h, w[14]};
+            Vector3 along{to.x - from.x, to.y - from.y, to.z - from.z};
+            float at = -1.0f;
+            bool hit = isRay(m, nullptr, &from, &along, &at, false);
             std::printf(" %s", hit ? "X" : ".");
             if (hit) std::printf("%.3f", at);
         }
@@ -1197,6 +1273,7 @@ int main(int argc, char** argv)
         else if (a == "--dynamic") g_dynamic = true;
         else if (a == "--materials") g_materials = true;
         else if (a == "--texture") g_texture = true;
+        else if (a == "--lightmap") g_lightmap = true;
         else if (a == "--blend" && i + 1 < argc) g_blend = float(std::atof(argv[++i]));
         else if (a == "--query") query = true;
         else if (a == "--static" && i + 1 < argc) staticMesh = argv[++i];
@@ -1353,9 +1430,11 @@ int main(int argc, char** argv)
         unsigned clearColor = 0xFF203040;
         clear(viewport, nullptr, &clearColor, true, true, 0);
         if (!scene.characters.empty()) {
+            if (g_lightmap) ApplyLightmap(scene, frame);
             QueryPerformanceCounter(&frameStart);
             DrawCharacterScene(scene, viewport, characterTime + (still ? 0.0f : 33.0f * float(frame)), !still || frame == 0);
             if (pick) PickCharacter(scene);
+            if (pick && !scene.statics.empty()) PickStatics(scene);
             if (query && frame + 1 == frames) QueryCharacter(scene);
             LARGE_INTEGER now;
             QueryPerformanceCounter(&now);

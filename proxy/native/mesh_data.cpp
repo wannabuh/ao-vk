@@ -17,11 +17,13 @@
 // lazily-made private RVisualData_t (its meshes' materials turned into lightmap delta states), +0x6C its BVolume_t*
 // (from the archive, or recomputed from the vertices). FAFTriMeshData_t is the scene reader's subclass (vtable
 // 0x8A9EC, same layout).
+#include "native/helpers.h"
 #include "native/mesh_data.h"
 #include "native/orig_api.gen.h"
 #include "native/serialize.h"
 #include "native/vc10.h"
 
+#include <cmath>
 #include <cstring>
 #include <initializer_list>
 #include <utility>
@@ -536,6 +538,57 @@ void __fastcall MeshMakeVolume(void* m)               // FUN_1004f820: the bound
     positions.release();
 }
 
+// SimpleMesh::IsRayIntersecting: the segment / ray `origin` along `dir` (t in [0, 1]) against its triangles, back
+// facing only (the normal against the direction); `nearest` keeps the closest hit in *at, else the first. The same
+// test as the character picking's (cat_pick.cpp), over this mesh's own triangles.
+bool __fastcall MeshRay(void* m, void*, const float* origin, const float* dir, float* at, bool nearest)
+{
+    vc10::Vector<V3> triangles{};
+    MeshTriangles(m, nullptr, &triangles);
+    const float kMax = 3.4028234663852886e38f;   // FLT_MAX
+    float best = kMax;
+    for (size_t k = 0; k + 3 <= triangles.size(); k += 3) {
+        const float* v0 = &triangles.first[k].x;
+        const float* v1 = &triangles.first[k + 1].x;
+        const float* v2 = &triangles.first[k + 2].x;
+        float e0[3], e1[3], n[3];
+        helpers::Subtract(v1, nullptr, e0, v0);        // e0 = v1 - v0
+        helpers::Subtract(v2, nullptr, e1, v1);        // e1 = v2 - v1
+        helpers::CrossProductTo(e0, nullptr, n, e1);   // n = e0 x e1
+        const float det = dir[2] * n[2] + dir[0] * n[0] + dir[1] * n[1];
+        if (!(det < 0.0f) && !std::isnan(det)) continue;   // facing away (or edge on)
+        float w[3];
+        helpers::Subtract(v0, nullptr, w, origin);     // w = v0 - origin
+        const float num = w[2] * n[2] + w[0] * n[0] + w[1] * n[1];
+        const float t = num / det;
+        if (nearest && !(0.0f <= t && t <= best)) continue;
+        float dt[3], p[3];
+        helpers::ScaleVector(dir, nullptr, dt, t);
+        p[0] = origin[0] + dt[0], p[1] = origin[1] + dt[1], p[2] = origin[2] + dt[2];
+        float q[3], u[3], c0[3], c1[3], c2[3];
+        helpers::Subtract(p, nullptr, q, v0);
+        helpers::Subtract(v1, nullptr, u, v0);
+        helpers::CrossProductTo(u, nullptr, c0, q);
+        helpers::Subtract(p, nullptr, q, v1);
+        helpers::Subtract(v2, nullptr, u, v1);
+        helpers::CrossProductTo(u, nullptr, c1, q);
+        if (!(0.0f <= c0[2] * c1[2] + c1[0] * c0[0] + c0[1] * c1[1])) continue;
+        helpers::Subtract(p, nullptr, q, v2);
+        helpers::Subtract(v0, nullptr, u, v2);
+        helpers::CrossProductTo(u, nullptr, c2, q);
+        if (!(0.0f <= c2[2] * c0[2] + c2[0] * c0[0] + c2[1] * c0[1])) continue;
+        if (!(t <= 1.0f)) continue;
+        best = t;
+        if (at) *at = t;
+        if (!nearest) {
+            triangles.release();
+            return true;
+        }
+    }
+    triangles.release();
+    return best < kMax;
+}
+
 // ---- RVisualData_t ----
 
 constexpr uint32_t kAnimPosition = 0x2C, kAnimRotation = 0x38, kDegenerate = 0x48, kMeshes = 0x4C,
@@ -880,6 +933,10 @@ void* __fastcall FafTriMeshDataDelete(void* v, void*, uint8_t flags)   // FUN_10
 
 }  // namespace
 
+void* MakePrivate(void* data, bool systemOnly) { return TriMeshDataPrivate(data, nullptr, systemOnly ? 1 : 0); }
+
+void* SharedCopy(void* data) { return TriMeshDataSharedCopy(data); }
+
 void Install(HMODULE orig)
 {
     if (GetMode("Scene", Mode::Off) != Mode::On) return;
@@ -936,6 +993,7 @@ void Install(HMODULE orig)
         {0x4F0EB, FN(MeshUVs), "SimpleMesh::GetVertexUVCoords"},
         {0x4E8C2, FN(MeshMirror), "SimpleMesh::Mirror"},
         {0x4F820, FN(MeshMakeVolume), "SimpleMesh bounding volume (FUN_1004f820)"},
+        {0x4F407, FN(MeshRay), "SimpleMesh::IsRayIntersecting"},
         {0x4EDFF, FN(Register), "RVisualData_t registry add (FUN_1004edff)"},
         {0x4E9C7, FN(Unregister), "RVisualData_t registry remove (FUN_1004e9c7)"},
         {0x4EE3F, FN(VisualDataConstruct), "RVisualData_t::RVisualData_t (FUN_1004ee3f)"},

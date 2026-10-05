@@ -338,6 +338,8 @@
 0x4CDE6	replaced	proxy/native/mesh.cpp	RVisual_t shadow pass (FUN_1004cde6)
 0x49554	replaced	proxy/native/mesh.cpp	RTriMesh_t::Process
 0x49761	replaced	proxy/native/mesh.cpp	RTriMesh_t::Render
+0x4941B	replaced	proxy/native/mesh.cpp	RTriMesh_t lightmap colours (FUN_1004941b)
+0x4980F	replaced	proxy/native/mesh.cpp	RTriMesh_t::ConvertToLightmap
 0x4934C	replaced	proxy/native/mesh.cpp	RTriMesh_t::RenderDepth
 0x48FBE	replaced	proxy/native/mesh.cpp	RTriMesh_t::RenderShadow
 0x2B4A6	replaced	proxy/native/camera.cpp	RCamera_t bounding volume test (FUN_1002b4a6)
@@ -392,6 +394,7 @@
 0x4ED88	replaced	proxy/native/mesh_data.cpp	SimpleMesh::GetTriangleIndices(ushort)
 0x4F369	replaced	proxy/native/mesh_data.cpp	SimpleMesh::GetTriangles
 0x4F723	replaced	proxy/native/mesh_data.cpp	SimpleMesh::GetVertexPositions
+0x4F407	replaced	proxy/native/mesh_data.cpp	SimpleMesh::IsRayIntersecting
 0x4F779	replaced	proxy/native/mesh_data.cpp	SimpleMesh::GetVertexNormals
 0x4F0EB	replaced	proxy/native/mesh_data.cpp	SimpleMesh::GetVertexUVCoords
 0x4E8C2	replaced	proxy/native/mesh_data.cpp	SimpleMesh::Mirror
