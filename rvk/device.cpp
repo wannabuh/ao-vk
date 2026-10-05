@@ -400,6 +400,12 @@ bool Device::CreateLogicalDevice(std::string* error)
     enabled.features.imageCubeArray = VK_TRUE;           // point light shadow maps
     enabled.features.tessellationShader = features.features.tessellationShader;   // characters' Phong tessellation
     m_tessSupported = features.features.tessellationShader;
+    // M3: a batch's indirect commands carry the record index in firstInstance (the shader's gl_InstanceIndex),
+    // and one call holds several commands (multiDrawIndirect).
+    m_groupIndirect = features.features.drawIndirectFirstInstance && features.features.multiDrawIndirect;
+    enabled.features.drawIndirectFirstInstance = features.features.drawIndirectFirstInstance;
+    enabled.features.multiDrawIndirect = features.features.multiDrawIndirect;
+    Log("draw grouping (indirect firstInstance + multiDrawIndirect): %s", m_groupIndirect ? "yes" : "no");
 
     float priority = 1.0f;
     VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -890,7 +896,8 @@ bool Device::CreateRing(Frame& f, VkDeviceSize size, std::string* error)
     bi.size = size;
     bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;   // last frame's vertex positions (motion vectors)
+               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |   // last frame's vertex positions (motion vectors)
+               VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;   // M3: a frame's batched draw commands
     VmaAllocationCreateInfo ac{};
     // System memory, never the CPU-visible VRAM window: without resizable BAR that window is ~256 MB,
     // shared with the driver and other programs, and running it out makes allocations fail.
@@ -1025,12 +1032,15 @@ void Device::PrepareDrawArenas()
     m_recordCapacity = m_recordWanted;
     VkDeviceSize align = std::max<VkDeviceSize>(16, m_props.limits.minStorageBufferOffsetAlignment);
     VkDeviceSize bytes = VkDeviceSize(m_constCapacity) * sizeof(DrawConstants) +
-                         VkDeviceSize(m_recordCapacity) * sizeof(DrawRecord) + 64;
+                         VkDeviceSize(m_recordCapacity) * sizeof(DrawRecord) +
+                         VkDeviceSize(m_recordCapacity) * sizeof(VkDrawIndexedIndirectCommand) + 64;
     EnsureRingSpace(bytes);          // the caller reserved for it, but a flush may have restarted the ring since
     void* cpu;
     m_constsBase = Allocate(VkDeviceSize(m_constCapacity) * sizeof(DrawConstants), align, &cpu);
     m_recordsBase = Allocate(VkDeviceSize(m_recordCapacity) * sizeof(DrawRecord), align, &cpu);
-    m_constCount = m_recordCount = 0;
+    m_indirectBase = Allocate(VkDeviceSize(m_recordCapacity) * sizeof(VkDrawIndexedIndirectCommand), 4, &cpu);
+    m_constCount = m_recordCount = m_indirectCount = 0;
+    m_group = DrawGroup{};
     m_constIndex = 0;
     m_constantsDirty = true;
     m_constantsGeneration = ~0ull;
@@ -1052,10 +1062,20 @@ void Device::FlushDrawArenas()
         BeginRenderingOn(m_target);
     m_arenaBound = false;
     m_bindlessBound = false;
-    m_constCount = m_recordCount = 0;
+    m_constCount = m_recordCount = m_indirectCount = 0;
+    m_group = DrawGroup{};
     m_constIndex = 0;
     m_constantsDirty = true;
     m_constantsGeneration = ~0ull;
+}
+
+// M3 stats: one indirect call issued for a group.
+void Device::NoteGroup(uint32_t count)
+{
+    ++m_groupCalls;
+    m_groupDraws += count;
+    if (count == 1)
+        ++m_singleDraws;
 }
 
 uint32_t Device::AppendConstant(const DrawConstants& c)
@@ -1110,6 +1130,7 @@ void Device::Transition(VkCommandBuffer cmd, Texture* t, VkImageLayout to)
 void Device::EndRendering()
 {
     if (m_rendering) {
+        FlushGroup();                                // the pending batched draws belong to this rendering
         vkCmdEndRendering(m_frames[m_frameIndex].main);
         m_rendering = false;
     }
@@ -1255,6 +1276,7 @@ void Device::BeginFrame()
     m_sunLuminance = 0.0f;
     m_casters.clear();
     m_frameDraw = 0;
+    m_groupCalls = m_groupDraws = m_singleDraws = 0;
     m_casterViews.clear();
     m_frameLightsDirty = true;
     m_constantsDirty = true;                     // shadow receiving depends on last frame's map

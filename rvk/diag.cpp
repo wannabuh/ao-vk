@@ -47,6 +47,8 @@ void Device::EndFrameDump()
                  m_shadowAnimatedDrawn, m_shadowCulled, m_shadowCollectMs, m_shadowCullMs, m_shadowDrawMs);
     std::fprintf(m_dumpFile, "# instancing: %u runs of >=2 identical static draws; %u draws could merge away (longest run"
                              " %u)\n", m_batchRuns, m_batchMerged, m_batchMaxRun);
+    std::fprintf(m_dumpFile, "# M3 batching: %u indirect calls for %u draws (%u single); %u indexed draws left direct\n",
+                 m_groupCalls, m_groupDraws, m_singleDraws, m_frameDraw - m_groupDraws);
     std::fprintf(m_dumpFile, "# mesh info: %u draws identified by static snapshot, %u by a content hash\n",
                  m_meshStaticDraws, m_meshHashedDraws);
     if (m_lightMaskVerify)

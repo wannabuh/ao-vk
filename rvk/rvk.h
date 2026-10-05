@@ -1074,6 +1074,17 @@ private:
     void FlushDrawArenas();                      // start the arrays over after a mid-frame submit (the GPU has read them)
     uint32_t AppendConstant(const detail::DrawConstants& c);
     uint32_t AppendRecord(uint32_t constIndex, const detail::DrawTransform& d);
+    // M3: consecutive draws that share pipeline, dynamic state, descriptor bindings and vertex/index buffers are
+    // recorded as indirect commands (one per draw, carrying its geometry and record index) and issued together.
+    VkDeviceSize m_indirectBase = 0;             // this frame's indirect command array in the ring
+    uint32_t m_indirectCount = 0;                // commands written
+    bool m_groupIndirect = false;                // drawIndirectFirstInstance enabled
+    struct DrawGroup { bool active = false; uint64_t key = 0; uint32_t first = 0, count = 0; } m_group;
+    uint32_t m_groupCalls = 0, m_groupDraws = 0, m_singleDraws = 0;   // M3 stats (per frame)
+    void FlushGroup();
+    void NoteGroup(uint32_t count);
+    void RecordIndirect(uint32_t indexCount, VkDeviceSize ibOffset, VkDeviceSize vbOffset, uint32_t stride,
+                        uint32_t recordIndex, uint64_t key);
     uint32_t m_constantsFvf = ~0u;
     uint32_t m_constantsTexMask = ~0u;
     bool m_constantsTerrain = false, m_constantsLabel = false;

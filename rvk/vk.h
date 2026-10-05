@@ -106,6 +106,7 @@
     X(vkCmdClearAttachments) \
     X(vkCmdDraw) \
     X(vkCmdDrawIndexed) \
+    X(vkCmdDrawIndexedIndirect) \
     X(vkCmdDispatch) \
     X(vkCmdFillBuffer) \
     X(vkCmdCopyBufferToImage) \

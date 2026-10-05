@@ -1563,6 +1563,46 @@ void Device::NoteBatch(uint64_t key)
     }
 }
 
+// One draw's indirect command (M3): this draw's geometry, with the record index in firstInstance (the shader's
+// gl_InstanceIndex). Consecutive draws with the same key become one vkCmdDrawIndexedIndirect (FlushGroup).
+void Device::RecordIndirect(uint32_t indexCount, VkDeviceSize ibOffset, VkDeviceSize vbOffset, uint32_t stride,
+                            uint32_t recordIndex, uint64_t key)
+{
+    Frame& f = m_frames[m_frameIndex];
+    auto* cmds = reinterpret_cast<VkDrawIndexedIndirectCommand*>(f.ringData + m_indirectBase);
+    VkDrawIndexedIndirectCommand& c = cmds[m_indirectCount++];
+    c.indexCount = indexCount;
+    c.instanceCount = 1;
+    c.firstIndex = uint32_t(ibOffset / 2);
+    c.vertexOffset = int32_t(vbOffset / stride);
+    c.firstInstance = recordIndex;
+    if (m_group.active && m_group.key == key) {
+        ++m_group.count;
+    } else {
+        m_group.active = true;
+        m_group.key = key;
+        m_group.first = m_indirectCount - 1;
+        m_group.count = 1;
+    }
+}
+
+// Issues the pending group as one indirect draw; the pipeline, dynamic state, descriptors and buffers are the
+// group's (nothing may have changed them since its last draw). Called before anything that would.
+void Device::FlushGroup()
+{
+    if (!m_group.active)
+        return;
+    m_group.active = false;
+    if (!m_group.count)
+        return;
+    Frame& f = m_frames[m_frameIndex];
+    vkCmdDrawIndexedIndirect(f.main, f.ring,
+                             m_indirectBase + VkDeviceSize(m_group.first) * sizeof(VkDrawIndexedIndirectCommand),
+                             m_group.count, sizeof(VkDrawIndexedIndirectCommand));
+    NoteGroup(m_group.count);
+    m_group.count = 0;
+}
+
 void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
                   const uint16_t* indices, uint32_t indexCount)
 {
@@ -1624,6 +1664,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         if (t && t->m_renderTarget && t->m_layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
             needTransition = true;
     if (needTransition) {
+        FlushGroup();                                // the previous group's state is about to be invalidated
         vkCmdEndRendering(cmd);
         for (Texture* t : m_textures)
             if (t && t->m_renderTarget)
@@ -1644,7 +1685,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // (re)reserved when the ring has been started. A frame that overflowed them grows the target below.
     bool reserveArenas = m_arenaGeneration != m_ringGeneration;
     VkDeviceSize arenaBytes = reserveArenas ? VkDeviceSize(m_constWanted) * sizeof(DrawConstants) +
-                                                  VkDeviceSize(m_recordWanted) * sizeof(DrawRecord) + 64
+                                                  VkDeviceSize(m_recordWanted) * sizeof(DrawRecord) +
+                                                  VkDeviceSize(m_recordWanted) * sizeof(VkDrawIndexedIndirectCommand) + 64
                                             : 0;
     EnsureRingSpace(arenaBytes + sizeof(FrameLights) + geometryBytes + 3 * uboAlign +
                     layout.stride + 32 + (motion ? 12ull * vertexCount + 256 : 0) +
@@ -2008,6 +2050,38 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     ProfileDrawSection("draw: geometry + casters", since);
     m_drawOverbright2x = Overbright2x(fvf);
     if (GlowDraw(fvf)) ++m_glowDraws;
+    // M3: can this draw join the pending batched group? A group shares the pipeline (tessellation, target), the
+    // topology, the constants (render state, material, lights - any change makes a new constIndex), the vertex and
+    // index buffers, and the per-draw descriptor blocks. Geometry offsets and the record index are per command, so
+    // draws of different meshes with the same state still share one call.
+    uint64_t groupKey = 0;
+    if (m_groupIndirect && indices && !m_external && !(m_particlePending && fvf == kParticleFvf)) {
+        bool hdr = m_target->m_format == Format::RGBA16F;
+        uint32_t pipelineClass = m_drawTess ? 6u + (hdr ? 1u : 0u)
+                                            : TopologyClass(primitive) + (hdr ? 3u : 0u);
+        VkBuffer vb = m_drawGpu ? m_frames[m_frameIndex].skinArena
+                                : (m_drawStaticBuffer ? m_drawStaticBuffer : f.ring);
+        VkBuffer ib = m_drawGpu ? m_drawGpu->mesh->buffer : f.ring;
+        uint64_t k = 0x9E3779B97F4A7C15ull;
+        auto gmix = [&k](uint64_t x) { k = (k ^ x) * 0xFF51AFD7ED558CCDull; k ^= k >> 32; };
+        gmix(constIndex);
+        gmix(pipelineClass);
+        gmix(primitive);
+        gmix(fvf);
+        gmix(layout.stride);
+        gmix(uint64_t(vb));
+        gmix(uint64_t(ib));
+        gmix(uint64_t(prevPositionsBuffer));
+        gmix(prevPositionsOffset);
+        gmix(prevPositionsBytes);
+        gmix(uint64_t(smoothBuffer));
+        gmix(smoothOffset);
+        gmix(smoothBytes);
+        gmix(frameLightsOffset);
+        groupKey = k ? k : 1;
+    }
+    if (m_group.active && (groupKey == 0 || groupKey != m_group.key))
+        FlushGroup();                                // the pending group's state is about to change
     ApplyDynamicState(primitive, fvf, layout.stride);
 
     // Bindless textures (set 1, M1): the draw's four textures and four samplers by index, so nothing per-draw is
@@ -2025,7 +2099,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     dt.sampIdx[2] = BindlessSampler(m_bumpSampler);
     dt.sampIdx[3] = BindlessSampler(m_normalSampler);
     // GPU-driven M2: this draw's record, and the frame's two arrays (bindings 0 = constants, 12 = records) pushed
-    // once per frame's command buffer. The record is selected with a push constant (M3: gl_DrawID).
+    // once per frame's command buffer. The record index travels in firstInstance (gl_InstanceIndex).
     uint32_t recordIndex = AppendRecord(constIndex, dt);
     if (!m_arenaBound) {
         VkDescriptorBufferInfo consts{f.ring, m_constsBase, VkDeviceSize(m_constCapacity) * sizeof(DrawConstants)};
@@ -2102,8 +2176,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         VkBuffer buffers[2] = {m_drawStaticBuffer, m_nullBuffer};
         VkDeviceSize offsets[2] = {0, 0};
         vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
-        if (indices) {
+        if (indices)
             vkCmdBindIndexBuffer(cmd, f.ring, 0, VK_INDEX_TYPE_UINT16);
+        if (groupKey) {
+            RecordIndirect(indexCount, ibOffset, vbOffset, layout.stride, recordIndex, groupKey);
+        } else if (indices) {
             vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), recordIndex);
         } else {
             vkCmdDraw(cmd, vertexCount, 1, uint32_t(vbOffset / layout.stride), recordIndex);
@@ -2116,11 +2193,16 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         VkDeviceSize offsets[2] = {0, 0};
         vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
         vkCmdBindIndexBuffer(cmd, m_drawGpu->mesh->buffer, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), recordIndex);
+        if (groupKey)
+            RecordIndirect(indexCount, ibOffset, vbOffset, layout.stride, recordIndex, groupKey);
+        else
+            vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), recordIndex);
         m_cache.buffersBound = false;            // the next draw binds the ring again
         return;
     }
-    if (indices)
+    if (groupKey)
+        RecordIndirect(indexCount, ibOffset, vbOffset, layout.stride, recordIndex, groupKey);
+    else if (indices)
         vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), recordIndex);
     else
         vkCmdDraw(cmd, vertexCount, 1, uint32_t(vbOffset / layout.stride), recordIndex);
