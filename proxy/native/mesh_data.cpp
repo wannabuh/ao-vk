@@ -13,6 +13,10 @@
 // RVisualData_t (0x68 bytes, an RResource_t, vtable 0x95A58): +0x2C anim position, +0x38 anim rotation, +0x48
 // degenerate, +0x4C std::vector<SimpleMesh*>, +0x5C the restore count of its buffers, +0x60 the frame it was last
 // drawn, +0x64 its slot in the registry (0x101E2368 std::vector, 0x101E2364 slots used).
+// RTriMeshData_t (0x70 bytes, an RVisualData_t, vtable 0x958D0 - the type a static mesh's data really is): +0x68 a
+// lazily-made private RVisualData_t (its meshes' materials turned into lightmap delta states), +0x6C its BVolume_t*
+// (from the archive, or recomputed from the vertices). FAFTriMeshData_t is the scene reader's subclass (vtable
+// 0x8A9EC, same layout).
 #include "native/mesh_data.h"
 #include "native/orig_api.gen.h"
 #include "native/serialize.h"
@@ -717,6 +721,163 @@ void __fastcall TriListArchiveImpl(void* t, void*, void* archive)
     S().addData(stream, nullptr, "triangles", v.first, int32_t(v.size()) * 2, false, 1);
 }
 
+// ---- RTriMeshData_t (an RVisualData_t) ----
+
+constexpr uint32_t kSharedCopy = 0x68, kBVolume = 0x6C, kTriMeshDataSize = 0x70;
+constexpr uint32_t kTriMeshDataVtable = 0x958D0, kFafTriMeshDataVtable = 0x8A9EC, kBVolumeTd = 0xB6130,
+                   kAutoVolume = 0xB79BA, kVector3Compare = 0x155C5, kMaterialPower = 0x4A8C0;
+
+void*& SharedPtr(void* v) { return Field<void*>(v, kSharedCopy); }
+void*& BVolumePtr(void* v) { return Field<void*>(v, kBVolume); }
+
+// FUN_1004add9: the base archive constructor, this vtable, the "bvol" object, then (0xB79BA is 1) the bounding volume
+// recomputed from the meshes' vertices - used, with the archived volume deleted, only if its centre differs.
+void* __fastcall TriMeshDataConstructFrom(void* v, void*, void* archive)
+{
+    VisualDataConstructFrom(v, nullptr, archive);   // RVisualData_t::RVisualData_t(archive)
+    SetVtable(v, kTriMeshDataVtable);
+    SharedPtr(v) = nullptr;
+    BVolumePtr(v) = nullptr;
+    void* stream = S().getStream(archive, nullptr);
+    FindObject(stream, "bvol", kBVolumeTd, &BVolumePtr(v), 0);
+    vc10::Vector<V3> positions{};
+    for (void** m = Meshes(v).first; m != Meshes(v).last; ++m) MeshPositions(*m, nullptr, &positions);
+    if (Global<uint8_t>(kAutoVolume)) {
+        const uint32_t count = uint32_t(positions.size());
+        void* volume = count
+            ? Internal<void*(__fastcall*)(void*, void*, const void*, uint32_t, uint32_t)>(0x17FEE)(
+                  vc10::Allocate(0x30), nullptr, &positions.first[0].x, count, 0xC)
+            : Internal<void*(__fastcall*)(void*, void*)>(0x299E0)(vc10::Allocate(0x30), nullptr);
+        if (BVolumePtr(v) && Internal<uint8_t(__fastcall*)(void*, void*, const void*)>(kVector3Compare)(
+                                  static_cast<uint8_t*>(volume) + 8, nullptr, static_cast<uint8_t*>(BVolumePtr(v)) + 8))
+            std::swap(volume, BVolumePtr(v));
+        if (volume) DeleteObject(volume);
+    }
+    positions.release();
+    return v;
+}
+
+// FUN_1004ab7a: the base copy, this vtable, a copy of the bounding volume.
+void* __fastcall TriMeshDataCopy(void* v, void*, const void* from)
+{
+    VisualDataCopy(v, nullptr, const_cast<void*>(from));   // RVisualData_t::RVisualData_t(copy)
+    BVolumePtr(v) = nullptr;
+    SetVtable(v, kTriMeshDataVtable);
+    if (BVolumePtr(const_cast<void*>(from)))
+        BVolumePtr(v) = Internal<void*(__fastcall*)(void*, void*, const void*)>(0x29A13)(
+            vc10::Allocate(0x30), nullptr, BVolumePtr(const_cast<void*>(from)));
+    SharedPtr(v) = nullptr;
+    return v;
+}
+
+void __fastcall TriMeshDataDestroy(void* v)   // FUN_1004abe3
+{
+    SetVtable(v, kTriMeshDataVtable);
+    if (void* volume = BVolumePtr(v)) DeleteObject(volume);
+    if (void* shared = SharedPtr(v); shared && shared != v) Release(shared);
+    VisualDataDestroy(v);   // RVisualData_t::~RVisualData_t
+}
+
+void __fastcall TriMeshDataArchive(void* v, void*, void* archive)   // FUN_1004ac33
+{
+    VisualDataArchive(v, nullptr, archive);
+    void* stream = S().getStream(archive, nullptr);
+    S().addObject(stream, nullptr, "bvol", BVolumePtr(v));
+}
+
+// FUN_1004ac5f: a private RVisualData_t (cloned unless it is unshared), its meshes in system memory when asked and
+// their materials' lightmap delta states (no material sources, emissive by the material colour's luminance).
+void* __fastcall TriMeshDataPrivate(void* v, void*, uint8_t systemOnly)
+{
+    void* data;
+    if (Field<int32_t>(v, 0x24) == 1) {
+        data = v;
+    } else {
+        data = Virtual<void*>(v, 3);   // Clone
+        Release(v);
+    }
+    for (void** m = Meshes(data).first; m != Meshes(data).last; ++m) {
+        if (systemOnly) MeshSetSystemOnly(*m, nullptr, 1);
+        void* material = Field<void*>(*m, kMaterial);
+        void* delta = Field<void*>(material, 0x70);
+        if (!delta) {
+            void* made = vc10::Allocate(0x16C);
+            delta = made ? orig::RDeltaState_RDeltaState(made, "") : nullptr;
+            orig::RMaterial_t_SetDeltaState(material, delta);
+            if (made) Release(made);
+        }
+        orig::RDeltaState_SetRenderState(delta, 0x91, 0);
+        orig::RDeltaState_SetRenderState(delta, 0x92, 0);
+        orig::RDeltaState_SetRenderState(delta, 0x93, 0);
+        const float power =
+            Internal<float(__fastcall*)(const void*)>(kMaterialPower)(static_cast<const uint8_t*>(material) + 0x50);
+        orig::RDeltaState_SetRenderState(delta, 0x94, power <= 0.0f ? 1u : 0u);
+        MeshAddColours(*m, nullptr, true, false);
+    }
+    return data;
+}
+
+// FUN_1004ad93: its +0x68 private copy, made once (and all its copies share it).
+void* __fastcall TriMeshDataSharedCopy(void* v)
+{
+    void* shared = SharedPtr(v);
+    if (!shared) {
+        AddRef(v);
+        shared = TriMeshDataPrivate(v, nullptr, 1);
+        SharedPtr(v) = shared;
+        AddRef(shared);
+        SharedPtr(shared) = shared;
+    } else if (shared == v) {
+        return shared;
+    } else {
+        AddRef(shared);
+    }
+    Release(v);
+    return shared;
+}
+
+void* __cdecl TriMeshDataInstantiate(void* archive)
+{
+    void* v = vc10::Allocate(kTriMeshDataSize);
+    return v ? TriMeshDataConstructFrom(v, nullptr, archive) : nullptr;
+}
+
+void* __fastcall TriMeshDataClone(void* v)   // FUN_100187fc (vtable slot 3)
+{
+    void* copy = vc10::Allocate(kTriMeshDataSize);
+    return copy ? TriMeshDataCopy(copy, nullptr, v) : nullptr;
+}
+
+// ---- FAFTriMeshData_t (the scene reader's subclass) ----
+
+void* __fastcall FafTriMeshDataConstructFrom(void* v, void*, void* archive)   // FUN_10018087
+{
+    TriMeshDataConstructFrom(v, nullptr, archive);
+    SetVtable(v, kFafTriMeshDataVtable);
+    S().getStream(archive, nullptr);
+    return v;
+}
+
+void __fastcall FafTriMeshDataArchive(void* v, void*, void* archive)   // FUN_100180c4
+{
+    TriMeshDataArchive(v, nullptr, archive);
+    S().getStream(archive, nullptr);
+}
+
+void* __cdecl FafTriMeshDataInstantiate(void* archive)
+{
+    void* v = vc10::Allocate(kTriMeshDataSize);
+    return v ? FafTriMeshDataConstructFrom(v, nullptr, archive) : nullptr;
+}
+
+void* __fastcall FafTriMeshDataDelete(void* v, void*, uint8_t flags)   // FUN_10018893 (vtable slot 0)
+{
+    SetVtable(v, kFafTriMeshDataVtable);
+    TriMeshDataDestroy(v);
+    if (flags & 1) vc10::Free(v);
+    return v;
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -790,6 +951,18 @@ void Install(HMODULE orig)
         {0x4F7FC, FN(VisualDataPositions), "RVisualData_t::GetVertexPositions"},
         {0x4EC2C, FN(VisualDataFree), "RVisualData_t hardware copies freed (FUN_1004ec2c)"},
         {0x4EC5B, FN(FreeUnused), "unused mesh buffers freed (FUN_1004ec5b)"},
+        {0x4AB7A, FN(TriMeshDataCopy), "RTriMeshData_t::RTriMeshData_t(copy) (FUN_1004ab7a)"},
+        {0x4ABE3, FN(TriMeshDataDestroy), "RTriMeshData_t::~RTriMeshData_t (FUN_1004abe3)"},
+        {0x4AC33, FN(TriMeshDataArchive), "RTriMeshData_t::Archive"},
+        {0x4AC5F, FN(TriMeshDataPrivate), "RTriMeshData_t private copy (FUN_1004ac5f)"},
+        {0x4AD93, FN(TriMeshDataSharedCopy), "RTriMeshData_t shared copy (FUN_1004ad93)"},
+        {0x4ADD9, FN(TriMeshDataConstructFrom), "RTriMeshData_t::RTriMeshData_t(archive) (FUN_1004add9)"},
+        {0x4AF1A, FN(TriMeshDataInstantiate), "RTriMeshData_t::Instantiate"},
+        {0x187FC, FN(TriMeshDataClone), "RTriMeshData_t clone (FUN_100187fc)"},
+        {0x1716A, FN(FafTriMeshDataInstantiate), "FAFTriMeshData_t::Instantiate"},
+        {0x18087, FN(FafTriMeshDataConstructFrom), "FAFTriMeshData_t(archive) ctor (FUN_10018087)"},
+        {0x180C4, FN(FafTriMeshDataArchive), "FAFTriMeshData_t::Archive (FUN_100180c4)"},
+        {0x18893, FN(FafTriMeshDataDelete), "FAFTriMeshData_t deleting destructor (FUN_10018893)"},
     };
 #undef FN
     int installed = 0;

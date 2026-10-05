@@ -411,6 +411,18 @@
 0x4F7FC	replaced	proxy/native/mesh_data.cpp	RVisualData_t::GetVertexPositions
 0x4EC2C	replaced	proxy/native/mesh_data.cpp	RVisualData_t hardware copies freed (FUN_1004ec2c)
 0x4EC5B	replaced	proxy/native/mesh_data.cpp	unused mesh buffers freed (FUN_1004ec5b)
+0x4AB7A	replaced	proxy/native/mesh_data.cpp	RTriMeshData_t::RTriMeshData_t(copy) (FUN_1004ab7a)
+0x4ABE3	replaced	proxy/native/mesh_data.cpp	RTriMeshData_t::~RTriMeshData_t (FUN_1004abe3)
+0x4AC33	replaced	proxy/native/mesh_data.cpp	RTriMeshData_t::Archive
+0x4AC5F	replaced	proxy/native/mesh_data.cpp	RTriMeshData_t private lightmap copy (FUN_1004ac5f)
+0x4AD93	replaced	proxy/native/mesh_data.cpp	RTriMeshData_t shared lightmap copy (FUN_1004ad93)
+0x4ADD9	replaced	proxy/native/mesh_data.cpp	RTriMeshData_t::RTriMeshData_t(archive) (FUN_1004add9)
+0x4AF1A	replaced	proxy/native/mesh_data.cpp	RTriMeshData_t::Instantiate
+0x187FC	replaced	proxy/native/mesh_data.cpp	RTriMeshData_t clone (FUN_100187fc)
+0x1716A	replaced	proxy/native/mesh_data.cpp	FAFTriMeshData_t::Instantiate
+0x18087	replaced	proxy/native/mesh_data.cpp	FAFTriMeshData_t(archive) ctor (FUN_10018087)
+0x180C4	replaced	proxy/native/mesh_data.cpp	FAFTriMeshData_t::Archive (FUN_100180c4)
+0x18893	replaced	proxy/native/mesh_data.cpp	FAFTriMeshData_t deleting destructor (FUN_10018893)
 0x462AD	replaced	proxy/native/resource.cpp	RResource_t::RResource_t(copy) (FUN_100462ad)
 0x4624F	replaced	proxy/native/resource.cpp	RResource_t counted flag (FUN_1004624f)
 0x46266	replaced	proxy/native/resource.cpp	RResource_t references (FUN_10046266)

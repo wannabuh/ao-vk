@@ -7,9 +7,9 @@
 // SimpleMesh: +0x14 RMaterial_t*, +0x18 BVolume_t* (made when first asked), +0x1E flags (bit 0: its vertex buffer is
 // the client's), +0x20 its data: +0x30 the indices (+8 begin, +0xC end), +0x34 vertex count, +0x38 triangle count,
 // +0x3C flags (bit 1: a hardware copy), +0x40 FVF, +0x44 the hardware copy, +0x48 the vertex buffer.
-// RVisualData_t: +0x4C std::vector<SimpleMesh*>, +0x60 the frame it was last drawn, +0x6C BVolume_t* (+8 centre,
-// +0x14 radius, +0x18 / +0x24 box corners).
-// RTriMesh_t (an RVisual_t): +0x178 16-bit vertex colours (or null), +0x182 drawn transparent, +0x184 RVisualData_t*,
+// RTriMeshData_t (an RVisualData_t): +0x4C std::vector<SimpleMesh*>, +0x60 the frame it was last drawn, +0x6C
+// BVolume_t* (+8 centre, +0x14 radius, +0x18 / +0x24 box corners); RVisualData_t itself stops at 0x68.
+// RTriMesh_t (an RVisual_t): +0x178 16-bit vertex colours (or null), +0x182 drawn transparent, +0x184 RTriMeshData_t*,
 // +0x188 visible this frame, +0x1B8 lights lighting it, +0x1BC sub-meshes sorted, +0x1BD registered with the occluder,
 // +0x1BE an occluder itself ("[OCC]..."), +0x1BF culled by its bounding volume.
 #include "native/mesh.h"
