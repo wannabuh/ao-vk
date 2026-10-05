@@ -1042,6 +1042,38 @@ void PickStatics(CharacterScene& scene)
     std::printf("\n");
 }
 
+// --connector: an RRefFrameConnector (the attachment point a frame hands out) - its originator, its originator's
+// world matrix (the same ones the frame gives), and its deletion.
+bool g_connector;
+void* g_connectorObject;
+void TestConnector(CharacterScene& scene, int frame)
+{
+    if (!g_connectorObject) {
+        using CtorFn = void*(__fastcall*)(void*, void*, const char*, void*);
+        auto ctor = Export<CtorFn>("??0RRefFrameConnector@@QAE@PBDPAVRRefFrame_t@@@Z");
+        auto msvcrNew =
+            reinterpret_cast<void*(__cdecl*)(size_t)>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "??2@YAPAXI@Z"));
+        g_connectorObject = ctor(msvcrNew(0x30), nullptr, "harness connector", scene.camera);
+    }
+    using WorldFn2 = const float*(__fastcall*)(void*, void*);
+    auto world = Export<WorldFn2>("?GetWorldMatrix@RRefFrame_t@@QBEABVTMatrix4_t@@XZ");
+    void* originator = reinterpret_cast<void*(__fastcall*)(void*, void*)>(
+        (*reinterpret_cast<void***>(g_connectorObject))[4])(g_connectorObject, nullptr);
+    const float* m = reinterpret_cast<const float*(__fastcall*)(void*, void*)>(
+        (*reinterpret_cast<void***>(g_connectorObject))[3])(g_connectorObject, nullptr);
+    if (frame == 3) {
+        const float* expected = world(scene.camera, nullptr);
+        uint32_t sum = 0;
+        for (int i = 0; i < 16; ++i) {
+            uint32_t bits;
+            std::memcpy(&bits, &m[i], 4);
+            sum = sum * 31 + bits;
+        }
+        std::printf("connector: originator %s, matrix %08x\n",
+                    originator == scene.camera && m == expected ? "camera" : "other", sum);
+    }
+}
+
 // The first character's projected shadow (RVisual_t vtable slot 20, as RShadow draws its caster): a fake RShadow
 // with its matrix (+0x1AC, flattening onto y = 0.01; +0x1EC 0 = up to date) and material (+0x178).
 void DrawShadow(CharacterScene& scene, void* viewport)
@@ -1274,6 +1306,7 @@ int main(int argc, char** argv)
         else if (a == "--materials") g_materials = true;
         else if (a == "--texture") g_texture = true;
         else if (a == "--lightmap") g_lightmap = true;
+        else if (a == "--connector") g_connector = true;
         else if (a == "--blend" && i + 1 < argc) g_blend = float(std::atof(argv[++i]));
         else if (a == "--query") query = true;
         else if (a == "--static" && i + 1 < argc) staticMesh = argv[++i];
@@ -1435,6 +1468,7 @@ int main(int argc, char** argv)
             DrawCharacterScene(scene, viewport, characterTime + (still ? 0.0f : 33.0f * float(frame)), !still || frame == 0);
             if (pick) PickCharacter(scene);
             if (pick && !scene.statics.empty()) PickStatics(scene);
+            if (g_connector) TestConnector(scene, frame);
             if (query && frame + 1 == frames) QueryCharacter(scene);
             LARGE_INTEGER now;
             QueryPerformanceCounter(&now);
@@ -1550,6 +1584,7 @@ int main(int argc, char** argv)
     if (destroy) {                                   // --destroy: their destructors too (as the game deletes them)
         using DeleteFn = void*(__fastcall*)(void* self, void*, unsigned flags);
         auto deleting = [](void* o) { reinterpret_cast<DeleteFn>((*static_cast<void***>(o))[0])(o, nullptr, 1); };
+        if (g_connectorObject) deleting(g_connectorObject);
         for (void* o : scene.statics) deleting(o);
         for (void* o : scene.sprites) deleting(o);
         for (void* c : scene.characters) deleting(c);

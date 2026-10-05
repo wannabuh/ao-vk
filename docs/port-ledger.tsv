@@ -272,6 +272,20 @@
 0x45A2F	replaced	proxy/native/refframe.cpp	RRefFrame_t::RRefFrame_t(archive)
 0x45C4D	replaced	proxy/native/refframe.cpp	RRefFrame_t::Instantiate
 0x44DA8	replaced	proxy/native/refframe.cpp	RRefFrame_t::Archive
+0x2BC5F	replaced	proxy/native/connector.cpp	RConnector::RConnector(archive) (FUN_1002bc5f)
+0x2BC9C	replaced	proxy/native/connector.cpp	RConnector::Archive (FUN_1002bc9c)
+0x2BE25	replaced	proxy/native/connector.cpp	RConnector deleting destructor (FUN_1002be25)
+0x166A5	replaced	proxy/native/connector.cpp	RRefFrameConnector::RRefFrameConnector(name, originator)
+0x1667E	replaced	proxy/native/connector.cpp	RRefFrameConnector::GetOriginator (vtable slot 4, too short to patch)
+0x2BCB4	replaced	proxy/native/connector.cpp	RRefFrameConnector::SetOriginator
+0x2BCCD	replaced	proxy/native/connector.cpp	RRefFrameConnector::Archive
+0x2BD18	replaced	proxy/native/connector.cpp	RRefFrameConnector::RRefFrameConnector(archive)
+0x2BD6A	replaced	proxy/native/connector.cpp	RRefFrameConnector::RequestMatrix
+0x2BDA7	replaced	proxy/native/connector.cpp	RRefFrameConnector::Instantiate
+0x2BCF9	replaced	proxy/native/connector.cpp	DummyConnector::DummyConnector
+0x16682	replaced	proxy/native/connector.cpp	DummyConnector::GetOriginator
+0x16688	replaced	proxy/native/connector.cpp	DummyConnector::Archive and SetOriginator (no-ops; vtable slots 1 and 5, too short to patch)
+0x1668B	replaced	proxy/native/connector.cpp	DummyConnector::RequestMatrix (vtable slot 3, too short to patch)
 0x4D544	replaced	proxy/native/visual.cpp	RVisual_t::RVisual_t
 0x4D5E5	replaced	proxy/native/visual.cpp	RVisual_t::RVisual_t(copy)
 0x4D7D3	replaced	proxy/native/visual.cpp	RVisual_t::~RVisual_t
