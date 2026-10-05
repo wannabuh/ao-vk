@@ -1183,6 +1183,9 @@ public:
     // Threads (threaded.cpp): the render thread's idle time (waiting for the game's records), the game thread's
     // waits for the render thread (frames ahead, queue full) - microseconds since the last log.
     void ProfileAddIdle(double ms) { m_profileIdleMs += ms; }
+    // The calling (game) thread's time inside the renderer's call path (ThreadedDevice::Enqueue), for the profiler.
+    void ProfileAddCaller(double ms) { m_profileCallerMs += ms; }
+    double m_profileCallerMs = 0.0;
     std::atomic<uint64_t> m_profileGameWaitUs{0};
     double m_profileIdleMs = 0.0;
     double m_timerCost = 0.0;                    // ms per clock read (subtracted from the draw sections)

@@ -152,8 +152,10 @@ void Device::ProfileLog(const char* label)
     };
     line("gpu ms:", m_profileGpu);
     ProfileAdd(m_profileCpu, "render thread idle", m_profileIdleMs);
+    ProfileAdd(m_profileCpu, "game thread in rvk (submit)", m_profileCallerMs);
     ProfileAdd(m_profileCpu, "game thread waiting", double(m_profileGameWaitUs.exchange(0)) * 1e-3);
     m_profileIdleMs = 0.0;
+    m_profileCallerMs = 0.0;
     line("cpu ms (frame recording):", m_profileCpu);
     m_profileFrames = 0;
 }

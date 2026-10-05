@@ -119,6 +119,7 @@ void ThreadedDevice::Enqueue(F&& f, const void* data, uint32_t dataBytes, void**
 {
     using Fn = std::decay_t<F>;
     constexpr uint32_t kFnBytes = Align16(sizeof(Fn));
+    auto callStart = std::chrono::steady_clock::now();
     uint8_t* payload = Reserve(kFnBytes + dataBytes);
     if (dataBytes) {
         std::memcpy(payload + kFnBytes, data, dataBytes);
@@ -131,6 +132,8 @@ void ThreadedDevice::Enqueue(F&& f, const void* data, uint32_t dataBytes, void**
         fn->~Fn();
     };
     Commit();
+    m_callerNs.fetch_add(uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                      std::chrono::steady_clock::now() - callStart).count()), std::memory_order_relaxed);
 }
 
 DWORD WINAPI ThreadedDevice::WorkerMain(void* self)
@@ -197,7 +200,12 @@ void ThreadedDevice::Sync()
 void ThreadedDevice::BeginFrame()
 {
     m_inFrame = true;
-    Enqueue([this](const uint8_t*) { m_device.BeginFrame(); });
+    // The previous frame's time spent on this (the game) thread inside the renderer's call path.
+    uint64_t callerNs = m_callerNs.exchange(0, std::memory_order_relaxed);
+    Enqueue([this, callerNs](const uint8_t*) {
+        m_device.ProfileAddCaller(double(callerNs) * 1e-6);
+        m_device.BeginFrame();
+    });
 }
 
 void ThreadedDevice::EndFrame()

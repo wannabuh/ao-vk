@@ -195,6 +195,7 @@ private:
     alignas(64) std::atomic<uint32_t> m_workerSleeping{0};
     std::atomic<uint64_t> m_framesQueued{0}, m_framesDone{0};
     std::atomic<uint64_t> m_recordsQueued{0}, m_recordsDone{0};
+    std::atomic<uint64_t> m_callerNs{0};               // calling thread's time inside Enqueue, this frame
 
     // Caller-side mirrors for getters.
     HWND m_window = nullptr;
