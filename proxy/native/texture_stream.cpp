@@ -6,6 +6,7 @@
 
 #include "native/lbitmap.h"
 #include "native/orig_api.gen.h"
+#include "native/serialize.h"
 
 namespace rnative::texturestream {
 
@@ -21,11 +22,15 @@ F Internal(uint32_t rva) { return reinterpret_cast<F>(reinterpret_cast<uint8_t*>
 // TextureStreamCreator's statics and the renderer's compression / format-support flags.
 constexpr uint32_t kQuality = 0xB6608, kCompression = 0xB660C, kSupport = 0xB6610;   // s_nTextureQuality, s_bCompression, the format cache
 constexpr uint32_t kDxt1 = 0x17D330, kSquared = 0x17D31D, kRender = 0x16BED0;
+constexpr uint32_t kVtable = 0x8AA44;                 // TextureStreamCreator::vftable
 
 // VS2010 std::string (library): assign(const char*), find(const char*, pos) and _Tidy.
 constexpr uint32_t kAssign = 0x1468C, kFind = 0x19826, kTidy = 0x11E82, kFormat = 0x1994C;
+constexpr uint32_t kAssignOwn = 0x17B42;              // the std::string assign the ctors use
 // FUN_100416f6 (compression supported) and FUN_10041e93 (the format-support flag).
 constexpr uint32_t kCompressionSupported = 0x416F6, kFormatSupport = 0x41E93;
+
+void SetVtable(Creator* self) { self->vtable = reinterpret_cast<uint8_t*>(g_orig) + kVtable; }
 
 void Tidy(vc10::String& s) { Internal<void(__fastcall*)(void*, void*, uint8_t, uint32_t)>(kTidy)(&s, nullptr, 1, 0); }
 
@@ -110,6 +115,110 @@ void* __fastcall CreateTexture(Creator* self, void*, void* bitmapRaw, const char
     return surface;
 }
 
+void* __fastcall CreateFromStream(Creator* self, void*, void* stream, const char* name)
+{
+    lbitmap::Bitmap* bitmap = lbitmap::Load(static_cast<lbitmap::Stream*>(stream), name, 0);
+    void* surface = CreateTexture(self, nullptr, bitmap, name);
+    if (bitmap)
+        reinterpret_cast<void*(__fastcall*)(void*, void*, uint8_t)>((*reinterpret_cast<void***>(bitmap))[0])(bitmap,
+                                                                                                             nullptr, 1);
+    return surface;
+}
+
+void* __fastcall Process(Creator* self, void*)
+{
+    if (self->bitmap) return CreateTexture(self, nullptr, self->bitmap, self->name.c_str());
+    return CreateFromStream(self, nullptr, self->stream, self->name.c_str());
+}
+
+void* __fastcall CtorStream(Creator* self, void*, void* stream, const char* name, int32_t divisor)
+{
+    serialize::Get().construct(self, nullptr);
+    SetVtable(self);
+    self->name.init();
+    self->stream = stream;
+    self->bitmap = nullptr;
+    self->flag38 = 0;
+    self->divisor = divisor;
+    self->filter = 2;
+    Internal<void(__cdecl*)(void*, const char*)>(kAssignOwn)(&self->name, name ? name : "");
+    self->flag30 = 1;
+    if (Internal<uint32_t(__cdecl*)()>(kCompressionSupported)() == 0) G<uint8_t>(kCompression) = 0;
+    return self;
+}
+
+void* __fastcall CtorBitmap(Creator* self, void*, void* bitmap, const char* name, int32_t divisor)
+{
+    serialize::Get().construct(self, nullptr);
+    SetVtable(self);
+    self->name.init();
+    self->stream = nullptr;
+    self->bitmap = bitmap;
+    self->flag38 = 0;
+    self->divisor = divisor;
+    self->filter = 2;
+    Internal<void(__cdecl*)(void*, const char*)>(kAssignOwn)(&self->name, name ? name : "");
+    self->flag30 = 1;
+    if (Internal<uint32_t(__cdecl*)()>(kCompressionSupported)() == 0) G<uint8_t>(kCompression) = 0;
+    return self;
+}
+
+void* __fastcall CtorArchive(Creator* self, void*, void* archive)
+{
+    orig::TextureCreator_TextureCreator(self, archive);
+    SetVtable(self);
+    self->name.init();
+    self->divisor = 1;
+    self->flag38 = 0;
+    self->filter = 2;
+    serialize::Get().getStream(archive, nullptr);
+    if (Internal<uint32_t(__cdecl*)()>(kCompressionSupported)() == 0) G<uint8_t>(kCompression) = 0;
+    return self;
+}
+
+void* __cdecl Instantiate(void* archive)
+{
+    Creator* self = static_cast<Creator*>(vc10::Allocate(0x40));
+    if (self) CtorArchive(self, nullptr, archive);
+    return self;
+}
+
+void __fastcall Archive(Creator* self, void*, void* archive)
+{
+    orig::TextureCreator_Archive(self, archive);
+    serialize::Get().getStream(archive, nullptr);
+}
+
+void __fastcall ArchiveTexture(void* self, void*, void* archive)
+{
+    orig::RTexture_t_Archive(self, archive);
+    serialize::Get().getStream(archive, nullptr);
+}
+
+void __fastcall Dtor(Creator* self, void*)
+{
+    SetVtable(self);
+    Tidy(self->name);
+    serialize::Get().destroy(self, nullptr);
+}
+
+void* __fastcall DeletingDtor(Creator* self, void*, uint8_t flags)
+{
+    Dtor(self, nullptr);
+    if (flags & 1) vc10::Free(self);
+    return self;
+}
+
+void* __fastcall DeletingDtorBase(Creator* self, void*, uint8_t flags)
+{
+    serialize::Get().destroy(self, nullptr);
+    if (flags & 1) vc10::Free(self);
+    return self;
+}
+
+void* __fastcall NameAccessor(Creator* self, void*) { return &self->name; }
+uint8_t __fastcall FlagAccessor(Creator* self, void*) { return self->flag38; }
+
 void Install(HMODULE orig)
 {
     if (GetMode("Device", Mode::Off) != Mode::On) return;
@@ -121,8 +230,21 @@ void Install(HMODULE orig)
     };
 #define FN(f) reinterpret_cast<void*>(&f)
     const Entry entries[] = {
+        {0x17EB0, FN(ArchiveTexture), "RTexture_t archive wrapper (FUN_10017eb0)"},
+        {0x191A0, FN(Archive), "TextureStreamCreator::Archive"},
         {0x191B8, FN(EnableCompression), "TextureStreamCreator::EnableCompression"},
+        {0x1920F, FN(CtorArchive), "TextureStreamCreator::TextureStreamCreator(archive)"},
+        {0x19289, FN(Instantiate), "TextureStreamCreator::Instantiate"},
+        {0x192BE, FN(CtorStream), "TextureStreamCreator::TextureStreamCreator(stream, name, int)"},
+        {0x19351, FN(CtorBitmap), "TextureStreamCreator::TextureStreamCreator(bitmap, name, int)"},
         {0x193E4, FN(CreateTexture), "TextureStreamCreator::CreateTexture(LBitmap_t*, name)"},
+        {0x1973A, FN(CreateFromStream), "TextureStreamCreator::CreateTexture(stream, name)"},
+        {0x19774, FN(DeletingDtorBase), "TextureStreamCreator deleting destructor, base (FUN_10019774)"},
+        {0x1984A, FN(NameAccessor), "TextureStreamCreator name (FUN_1001984a)"},
+        {0x1984E, FN(FlagAccessor), "TextureStreamCreator flag (FUN_1001984e)"},
+        {0x19852, FN(Dtor), "TextureStreamCreator destructor (FUN_10019852)"},
+        {0x19870, FN(DeletingDtor), "TextureStreamCreator deleting destructor (FUN_10019870)"},
+        {0x19960, FN(Process), "TextureStreamCreator vtable Process (FUN_10019960)"},
     };
 #undef FN
     int installed = 0;

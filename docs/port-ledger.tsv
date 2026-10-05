@@ -882,3 +882,14 @@
 0x45289	replaced	proxy/native/helpers.cpp	NextNode (the frame hierarchy)
 0x191B8	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator::EnableCompression
 0x193E4	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator::CreateTexture(LBitmap_t*,name)
+0x17EB0	replaced	proxy/native/texture_stream.cpp	RTexture_t archive wrapper (FUN_10017eb0)
+0x191A0	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator::Archive
+0x1920F	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator(archive) ctor
+0x19289	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator::Instantiate
+0x192BE	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator(stream,name,int) ctor
+0x19351	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator(bitmap,name,int) ctor
+0x1973A	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator::CreateTexture(stream,name)
+0x19774	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator deleting destructor, base (FUN_10019774)
+0x19852	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator destructor (FUN_10019852)
+0x19870	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator deleting destructor (FUN_10019870)
+0x19960	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator vtable Process (FUN_10019960)
