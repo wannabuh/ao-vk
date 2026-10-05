@@ -9,6 +9,7 @@
 #include "native/dxerror.h"
 #include "native/keyframe.h"
 #include "native/orig_api.gen.h"
+#include "native/pixfmt.h"
 #include "native/shadowlands.h"
 #include "native/vc10.h"
 #include "native/xmath.h"
@@ -1105,6 +1106,75 @@ void CheckColor()
     Check(mism == 0, "color: Color_t");
 }
 
+// PixelFormat_t against ours: the mask helper on random masks, then real pixel formats (built from a DDPIXELFORMAT)
+// with the packing / unpacking conversions on random pixels and colours.
+void CheckPixelFormat()
+{
+    using namespace rnative::pixfmt;
+    std::mt19937 rng(4242);
+    using MaskFn = void(__stdcall*)(uint32_t, int32_t*, int32_t*);
+    using CtorFn = void*(__fastcall*)(void*, void*, const void*);
+    using PackFn = uint32_t(__fastcall*)(void*, void*, const float*);
+    using ToBytesFn = void(__fastcall*)(void*, void*, void*, const void*);
+    using PackBytesFn = uint32_t(__fastcall*)(void*, void*, const void*);
+    using PackPackedFn = uint32_t(__fastcall*)(void*, void*, uint32_t);
+    using ToFloatsFn = void(__fastcall*)(void*, void*, void*, const void*, const void*);
+    int mism = 0;
+    auto bad = [&](const char* what, const void* x, const void* y, size_t n) {
+        if (std::memcmp(x, y, n) && mism++ < 6) std::printf("pixfmt: %s differs\n", what);
+    };
+    for (int i = 0; i < 20000; ++i) {
+        const uint32_t mask = rng();
+        int32_t sa = 0, sb = 0, ba = 0, bb = 0;
+        Orig<MaskFn>(0x1F694)(mask, &sa, &ba);
+        MaskToShiftBits(mask, &sb, &bb);
+        if ((sa != sb || ba != bb) && mism++ < 6)
+            std::printf("pixfmt: mask %08x %d,%d / %d,%d\n", mask, sa, ba, sb, bb);
+    }
+    // bit count, R, G, B, A masks (the formats the game's surfaces and textures use).
+    const uint32_t formats[][5] = {
+        {16, 0xF800, 0x07E0, 0x001F, 0},                       // R5G6B5
+        {16, 0x7C00, 0x03E0, 0x001F, 0x8000},                  // A1R5G5B5
+        {16, 0x0F00, 0x00F0, 0x000F, 0xF000},                  // A4R4G4B4
+        {24, 0xFF0000, 0x00FF00, 0x0000FF, 0},                 // R8G8B8
+        {32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0},           // X8R8G8B8
+        {32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000},  // A8R8G8B8
+        {8, 0xE0, 0x1C, 0x03, 0},                              // 3-3-2 palette
+    };
+    uint32_t ddpf[8] = {};
+    for (int trial = 0; trial < 4000; ++trial) {
+        const uint32_t* f = formats[rng() % (sizeof(formats) / sizeof(formats[0]))];
+        ddpf[3] = f[0], ddpf[4] = f[1], ddpf[5] = f[2], ddpf[6] = f[3], ddpf[7] = f[4];
+        Format fa, fb;
+        std::memset(&fa, 0xAA, sizeof(fa));
+        std::memset(&fb, 0xAA, sizeof(fb));
+        Orig<CtorFn>(0x1FD01)(&fa, nullptr, ddpf);
+        Ctor(&fb, nullptr, ddpf);
+        bad("format", &fa, &fb, sizeof(fa));
+        float rgb[4];
+        for (float& v : rgb) v = float(double(rng() % 2000) / 1000.0 - 0.5);
+        uint8_t bytes[3] = {uint8_t(rng()), uint8_t(rng()), uint8_t(rng())};
+        uint8_t raw[4] = {uint8_t(rng()), uint8_t(rng()), uint8_t(rng()), uint8_t(rng())};
+        const uint32_t pixel = rng();
+        const uint32_t pa = Orig<PackFn>(0x1F79F)(&fa, nullptr, rgb), pb = Pack(&fb, nullptr, rgb);
+        if (pa != pb && mism++ < 6) std::printf("pixfmt: Pack %08x/%08x\n", pa, pb);
+        const uint32_t qa = Orig<PackBytesFn>(0x1FA9D)(&fa, nullptr, bytes), qb = PackBytes(&fb, nullptr, bytes);
+        if (qa != qb && mism++ < 6) std::printf("pixfmt: PackBytes %08x/%08x\n", qa, qb);
+        const uint32_t ra = Orig<PackPackedFn>(0x1FAE3)(&fa, nullptr, pixel), rb = PackPacked(&fb, nullptr, pixel);
+        if (ra != rb && mism++ < 6) std::printf("pixfmt: PackPacked %08x/%08x\n", ra, rb);
+        uint8_t oa[4] = {0, 0, 0, 0}, ob[4] = {0, 0, 0, 0};
+        Orig<ToBytesFn>(0x1FA50)(&fa, nullptr, oa, rgb);
+        ToBytes(&fb, nullptr, ob, rgb);
+        bad("ToBytes", oa, ob, sizeof(oa));
+        float xa[4] = {0, 0, 0, 0}, xb[4] = {0, 0, 0, 0};
+        Orig<ToFloatsFn>(0x1F90D)(&fa, nullptr, xa, raw, nullptr);
+        ToFloats(&fb, nullptr, xb, raw, nullptr);
+        bad("ToFloats", xa, xb, sizeof(xa));
+    }
+    std::printf("pixfmt: 20000 masks, 4000 formats, %d differ\n", mism);
+    Check(mism == 0, "pixfmt: PixelFormat_t");
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -1145,6 +1215,7 @@ int main(int argc, char** argv)
     CheckKeyframes();
     CheckShadowlands();
     CheckColor();
+    CheckPixelFormat();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;

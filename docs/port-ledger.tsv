@@ -853,3 +853,11 @@
 0x19B80	replaced	proxy/native/color.cpp	Color_t::Color_t(RGB_t)
 0x19BB1	replaced	proxy/native/color.cpp	Color_t::operator+
 0x19C93	replaced	proxy/native/color.cpp	Color_t::operator*
+0x1F694	replaced	proxy/native/pixfmt.cpp	FUN_1001f694 a mask's lowest set bit and bit count
+0x1F79F	replaced	proxy/native/pixfmt.cpp	FUN_1001f79f an RGBI_t packed
+0x1F90D	replaced	proxy/native/pixfmt.cpp	PixelFormat_t::ConvertColor(void const*,RGBI_t const*)
+0x1FA50	replaced	proxy/native/pixfmt.cpp	PixelFormat_t::ConvertColor(void*,RGBI_t const&)
+0x1FA9D	replaced	proxy/native/pixfmt.cpp	PixelFormat_t::ConvertColor(uchar const*)
+0x1FAE3	replaced	proxy/native/pixfmt.cpp	PixelFormat_t::ConvertColorPacked
+0x1FC3E	replaced	proxy/native/pixfmt.cpp	PixelFormat_t init from a pixel format (FUN_1001fc3e)
+0x1FD01	replaced	proxy/native/pixfmt.cpp	PixelFormat_t::PixelFormat_t
