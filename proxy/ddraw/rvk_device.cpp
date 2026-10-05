@@ -47,6 +47,7 @@ RDevice::RDevice(RDirect3D* d3d, RSurface* target, REFCLSID clsid) : m_d3d(d3d),
 {
     m_d3d->AddRef();
     m_target->AddRef();
+    CallLogFrame(0);                                // RANDYVK_CALLLOG_FRAME=1: from here to the first present
     // D3D7 defaults (match rvk::Device's), so GetRenderState/GetTextureStageState report what is in effect.
     m_rs[D3DRENDERSTATE_TEXTUREPERSPECTIVE] = TRUE;
     m_rs[D3DRENDERSTATE_ZENABLE] = D3DZB_TRUE;
@@ -105,7 +106,7 @@ RDevice::~RDevice()
 // ---------------------------------------------------------------------------------------------------
 // Call log (tests): every Direct3D call of one frame, with arguments, objects as ids in order of first use and data as
 // hashes - two runs drawing the same thing log the same lines (comparing a native port with the original).
-// RANDYVK_CALLLOG=<file>, RANDYVK_CALLLOG_FRAME=<presented frame number>.
+// RANDYVK_CALLLOG=<file>, RANDYVK_CALLLOG_FRAME=<presented frame number> (1: from the device's creation, its setup).
 namespace {
 
 FILE* g_callLog;

@@ -1,7 +1,8 @@
 #!/bin/bash
 # A/B check of a [Native] mode with the call log: runs randy_harness scenes with randy-vk.ini [Native] <Mode>=off and
 # =on (the test client's ini; other modes as they are) and compares every Direct3D call of frame 4; then the scene's
-# objects are deleted (--destroy), and a crash in either run fails the scene.
+# objects are deleted (--destroy), and a crash in either run fails the scene. Scene `setup` compares the device's
+# creation instead (Randy_t's start: everything up to the first present).
 # Usage: tools/calllog-ab.sh <Mode> [scene...]     scenes: names below (default all)
 cd "$(dirname "$0")/.." || exit 1
 mode=$1
@@ -12,14 +13,17 @@ logs=$AO_CLIENT/../logs
 c=$PWD/build/characters
 s=$PWD/build/statics
 character="--character $c/5900.catmesh $c/9386.catanim --crowd 3 --time 400"
-scenes=${*:-"basic dynamic materials plain blend shadow alpha env sfx1 sfx2 lights manylights culled terrain occmeshes preprocess lifecycle anim106 statics staticshadow"}
+scenes=${*:-"setup defaults basic dynamic materials plain blend shadow alpha env sfx1 sfx2 lights manylights culled terrain occmeshes preprocess lifecycle anim106 statics staticshadow"}
 grep -q "^$mode=" "$ini" || printf '%s=off\n' "$mode" >> "$ini"
 before=$(grep "^$mode=" "$ini" | cut -d= -f2)
 fail=0
 for scene in $scenes; do
     least=10                                         # calls a frame at least (else the run counts as failed)
+    frame=4
     case $scene in
+        setup) args=""; frame=1 ;;
         basic) args="" ;;
+        defaults) args="--defaults" ;;               # the device's default states, each texture filter branch
         dynamic) args="--dynamic" ;;
         materials) args="--materials" ;;
         plain) args="$character" ;;
@@ -46,7 +50,7 @@ for scene in $scenes; do
         sed -i "s/^$mode=.*/$mode=$v/" "$ini"
         rm -f "$logs/calllog-$v.txt"                  # a run that writes none must not compare an older one
         for attempt in 1 2; do                       # a harness that never started (Wine) gets a second go
-            RANDYVK_CALLLOG="C:\\linux\\logs\\calllog-$v.txt" RANDYVK_CALLLOG_FRAME=4 \
+            RANDYVK_CALLLOG="C:\\linux\\logs\\calllog-$v.txt" RANDYVK_CALLLOG_FRAME=$frame \
                 tools/randy-harness.sh build/h-ab --frames 6 $args --destroy > "build/h-ab-$v.txt" 2>&1
             [ -s "build/h-ab-$v.txt" ] && break
         done

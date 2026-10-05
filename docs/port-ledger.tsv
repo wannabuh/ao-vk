@@ -625,3 +625,4 @@
 0x1D58D	dead	-	Type* debug descriptor vtable slot (TypeFLOAT): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
 0x1D5D9	dead	-	ostream manipulator used only by FUN_1001e5bb (the Randy assert text), which only FUN_1001e7bd calls, which nothing calls
 0x1D5F3	dead	-	ostream manipulator used only by FUN_1001e5bb (the Randy assert text), which only FUN_1001e7bd calls, which nothing calls
+0x41EDE	replaced	proxy/native/randy.cpp	Randy_t device default states (FUN_10041ede)

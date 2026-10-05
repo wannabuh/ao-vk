@@ -288,6 +288,8 @@ float g_terrain;                                      // --terrain H: a heightma
 int g_playfield;
 int g_attach;                                         // --attach N: N attractor children a character, half removed
 bool g_restore;                                       // --restore: a lost device's restore at frame 2
+bool g_defaults;                                      // --defaults: the device's default states (FUN_10041ede) at
+                                                      // frame 3, once per texture filter caps branch
 int g_preprocess;                                     // --preprocess N: PreProcessPlayfield(N) on a 256 x 256 map
 int g_mapSize = 64;                                      // --playfield N: the occluder's playfield (meshes register)
 bool g_look;                                         // --look X Y Z: where the camera looks instead (some culled)
@@ -822,6 +824,7 @@ int main(int argc, char** argv)
         else if (a == "--preprocess" && i + 1 < argc) g_preprocess = std::atoi(argv[++i]);
         else if (a == "--attach" && i + 1 < argc) g_attach = std::atoi(argv[++i]);
         else if (a == "--restore") g_restore = true;
+        else if (a == "--defaults") g_defaults = true;
         else if (a == "--lights" && i + 1 < argc) g_carriedLights = std::atoi(argv[++i]);
         else if (a == "--alpha" && i + 1 < argc) g_alpha = float(std::atof(argv[++i]));
         else if (a == "--sfx" && i + 1 < argc) g_sfx = std::atoi(argv[++i]);
@@ -957,6 +960,16 @@ int main(int argc, char** argv)
     double sceneSeconds = 0.0;
     for (int frame = 0; frame < frames; ++frame) {
         if (g_restore && frame == 2) ++*Export<unsigned*>("?s_nRestoreCount@Randy_t@@0IA");
+        if (g_defaults && frame == 3) {
+            auto* orig = reinterpret_cast<uint8_t*>(GetModuleHandleA("randy31_orig.dll"));
+            uint32_t& caps = *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(randy) + 0x1E8);
+            const uint32_t saved = caps;
+            for (uint32_t c : {0u, 2u, 0x20u, 0x22u, saved}) {   // point, linear, linear mip linear
+                caps = c;
+                reinterpret_cast<void(__fastcall*)(void*)>(orig + 0x41EDE)(randy);
+            }
+            caps = saved;
+        }
         bool restored = false;
         open(viewport, nullptr, &restored);
         unsigned clearColor = 0xFF203040;
