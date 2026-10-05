@@ -22,7 +22,7 @@
 struct VmaAllocator_T;
 struct VmaAllocation_T;
 
-namespace rvk::detail { struct FrameLights; struct FvfLayout; }
+namespace rvk::detail { struct FrameLights; struct FvfLayout; struct DrawConstants; struct DrawTransform; }
 
 namespace rvk {
 
@@ -1061,7 +1061,19 @@ private:
     void PointShadowChurn(const PointShadowLight* previous, uint32_t previousCount, size_t candidates,
                           const std::vector<const d3d::Light*>& chosen);
     uint64_t m_ringGeneration = 0, m_constantsGeneration = ~0ull;
-    VkDeviceSize m_constantsOffset = 0;
+    // GPU-driven M2: the frame's draw arenas, slices of this frame's ring. `m_constsBase` holds the deduplicated
+    // DrawConstants (appended on a render-state change) and `m_recordsBase` the per-draw DrawRecords. They are
+    // (re)reserved when the ring has been restarted; a wrap or an overflow flush discards them (the GPU has
+    // consumed the data). `m_constIndex` is the current shared block, reused while nothing changes.
+    VkDeviceSize m_constsBase = 0, m_recordsBase = 0;
+    uint64_t m_arenaGeneration = ~0ull;
+    uint32_t m_constCount = 0, m_recordCount = 0, m_constIndex = 0;
+    uint32_t m_constCapacity = 0, m_recordCapacity = 0;
+    bool m_arenaBound = false;                   // bindings 0 and 12 pushed in this frame's command buffer
+    void PrepareDrawArenas();                    // reserve the arrays in the ring if the generation changed
+    void FlushDrawArenas();                      // start the arrays over after a mid-frame submit (the GPU has read them)
+    uint32_t AppendConstant(const detail::DrawConstants& c);
+    uint32_t AppendRecord(uint32_t constIndex, const detail::DrawTransform& d);
     uint32_t m_constantsFvf = ~0u;
     uint32_t m_constantsTexMask = ~0u;
     bool m_constantsTerrain = false, m_constantsLabel = false;
@@ -1161,6 +1173,11 @@ private:
     VkDeviceSize m_ringWanted = kRingSize;       // after a mid-frame flush: the next frames' ring size
     VkDeviceSize m_ringPeak = 0;                 // the most a frame used (logged with the flushes)
     uint32_t m_ringFlushesLogged = 0;
+    // The draw arenas' reserve targets (entries), grown between frames when one overflows.
+    static constexpr uint32_t kDrawConstCapacity = 2048, kDrawRecordCapacity = 16384;
+    static constexpr uint32_t kMaxDrawConstCapacity = 8192, kMaxDrawRecordCapacity = 131072;
+    uint32_t m_constWanted = kDrawConstCapacity, m_recordWanted = kDrawRecordCapacity;
+    uint32_t m_arenaFlushes = 0;                 // mid-frame arena overflows (logged, throttled)
     bool CreateRing(Frame& f, VkDeviceSize size, std::string* error);
 
     VkDescriptorSetLayout m_setLayout = VK_NULL_HANDLE;

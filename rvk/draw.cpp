@@ -1640,9 +1640,23 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                                        VkDeviceSize(indexCount) * 2;
     m_drawIsCharacter = CharacterDraw(fvf, vertexCount);
     float tessLevel = TessellateDraw(primitive, fvf, vertexCount);
-    EnsureRingSpace(sizeof(DrawConstants) + sizeof(DrawTransform) + sizeof(FrameLights) + geometryBytes + 3 * uboAlign +
+    // GPU-driven M2: reserve this frame's arrays (with the geometry) in the ring in one go; they are only
+    // (re)reserved when the ring has been started. A frame that overflowed them grows the target below.
+    bool reserveArenas = m_arenaGeneration != m_ringGeneration;
+    VkDeviceSize arenaBytes = reserveArenas ? VkDeviceSize(m_constWanted) * sizeof(DrawConstants) +
+                                                  VkDeviceSize(m_recordWanted) * sizeof(DrawRecord) + 64
+                                            : 0;
+    EnsureRingSpace(arenaBytes + sizeof(FrameLights) + geometryBytes + 3 * uboAlign +
                     layout.stride + 32 + (motion ? 12ull * vertexCount + 256 : 0) +
                     (tessLevel > 0.0f ? 12ull * vertexCount + 256 : 0));
+    PrepareDrawArenas();
+    // The arrays are full (a frame with more unique states or draws than reserved): submit what is recorded, wait,
+    // and start over. Rare; the targets double for the next frames.
+    if (m_constCount >= m_constCapacity || m_recordCount >= m_recordCapacity) {
+        m_constWanted = std::min(m_constWanted * 2u, kMaxDrawConstCapacity);
+        m_recordWanted = std::min(m_recordWanted * 2u, kMaxDrawRecordCapacity);
+        FlushDrawArenas();
+    }
 
     // The frame's light list (binding 4): rebuilt when lights changed; always bound, as layouts require.
     // Only lit draws read it; the others bind any in-range part of the ring.
@@ -1655,19 +1669,18 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         frameLightsOffset = WriteFrameLights();
 
     ProfileDrawSection("draw: setup", since);
-    // Per-draw world matrix (small block).
+    // Per-draw world matrix: written into this draw's record.
     void* cpu;
-    VkDeviceSize transformOffset = Allocate(sizeof(DrawTransform), uboAlign, &cpu);
-    auto* drawTransform = static_cast<DrawTransform*>(cpu);
+    DrawTransform dt{};
     VkDeviceSize prevPositionsOffset = 0, prevPositionsBytes = 0;   // binding 8 (animated meshes' last positions)
     VkBuffer prevPositionsBuffer = f.ring;
-    drawTransform->world = m_world;
-    drawTransform->prevWorld = m_world;
-    drawTransform->motion[0] = motion ? 1.0f : 0.0f;
-    drawTransform->motion[1] = drawTransform->motion[2] = drawTransform->motion[3] = 0.0f;
-    drawTransform->tess[0] = drawTransform->tess[1] = drawTransform->tess[2] = drawTransform->tess[3] = 0.0f;
-    std::memcpy(drawTransform->sway, sway, sizeof(sway));
-    std::memcpy(m_drawSway, drawTransform->sway, sizeof(m_drawSway));
+    dt.world = m_world;
+    dt.prevWorld = m_world;
+    dt.motion[0] = motion ? 1.0f : 0.0f;
+    dt.motion[1] = dt.motion[2] = dt.motion[3] = 0.0f;
+    dt.tess[0] = dt.tess[1] = dt.tess[2] = dt.tess[3] = 0.0f;
+    std::memcpy(dt.sway, sway, sizeof(sway));
+    std::memcpy(m_drawSway, dt.sway, sizeof(m_drawSway));
     if (m_dumpFile && m_drawSway[3] > 0.5f) {    // frame dump: how the plant sways (after its D line)
         const auto& w = m_world.m;
         std::fprintf(m_dumpFile, "  sway: axis %d base %.3f 1/h %.3f tip %.3f | model box (%.2f %.2f %.2f)-(%.2f %.2f %.2f)"
@@ -1678,8 +1691,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                      w[0][2], w[1][0], w[1][1], w[1][2], w[2][0], w[2][1], w[2][2]);
     }
     ProfileDrawSection("draw: sway", since);
-    FrameLightMask(fvf, layout.stride, vertices, vertexCount, drawTransform->lightMask);
-    drawTransform->lightMask[2] = swaying && m_grassPush > 0.0f ? PusherMask(1.4f * std::sqrt(m_grassPush) + 0.1f) : 0u;
+    FrameLightMask(fvf, layout.stride, vertices, vertexCount, dt.lightMask);
+    dt.lightMask[2] = swaying && m_grassPush > 0.0f ? PusherMask(1.4f * std::sqrt(m_grassPush) + 0.1f) : 0u;
     ProfileDrawSection("draw: light mask", since);
     if (motion) {
         // Motion vectors: the same object last frame - same mesh, nearest to where this one is (within 3 units). Not
@@ -1705,14 +1718,14 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                 if (d2 < bestD2) { bestD2 = d2; best = &e; }
             }
             if (best) {
-                drawTransform->prevWorld = best->world;
+                dt.prevWorld = best->world;
                 best->used = true;
                 // Skinned on the GPU: last frame's positions came from the same dispatch (last frame's bones).
                 if (m_drawGpu && m_drawGpu->moved) {
                     prevPositionsBuffer = m_frames[m_frameIndex].skinArena;
                     prevPositionsOffset = m_drawGpu->prevOffset;
                     prevPositionsBytes = VkDeviceSize(vertexCount) * 12;
-                    drawTransform->motion[1] = 1.0f;
+                    dt.motion[1] = 1.0f;
                 }
                 // Animated (its vertices changed): last frame's positions for the vertex shader (binding 8).
                 if (!positions.empty() && best->positions.size() == positions.size() &&
@@ -1721,7 +1734,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                     prevPositionsOffset = Allocate(positions.size() * 4, m_props.limits.minStorageBufferOffsetAlignment, &prevCpu);
                     std::memcpy(prevCpu, best->positions.data(), positions.size() * 4);
                     prevPositionsBytes = positions.size() * 4;
-                    drawTransform->motion[1] = 1.0f;
+                    dt.motion[1] = 1.0f;
                 }
             }
         }
@@ -1763,11 +1776,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                    m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
                    m_constantsFoliageLod != foliageLod || m_constantsNormalMap != normalMap ||
                    m_constantsCharacter != m_drawIsCharacter;
-    VkDeviceSize uboOffset = m_constantsOffset;
+    uint32_t constIndex = m_constIndex;
     if (rewrite) {
-    uboOffset = Allocate(sizeof(DrawConstants), uboAlign, &cpu);
-    m_constantsOffset = uboOffset;
-    m_constantsGeneration = m_ringGeneration;   // after Allocate: a wrap would bump the generation
+    m_constantsGeneration = m_ringGeneration;
     m_constantsDirty = false;
     m_constantsFvf = fvf;
     m_constantsTexMask = texMask;
@@ -1778,43 +1789,43 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsFoliageLod = foliageLod;
     m_constantsCharacter = m_drawIsCharacter;
     m_constantsNormalMap = normalMap;
-    auto* c = static_cast<DrawConstants*>(cpu);
-    c->view = m_view;
-    c->proj = m_proj;
-    c->texMatrix[0] = m_texMatrix[0];
-    c->texMatrix[1] = m_texMatrix[1];
-    c->viewport[0] = float(m_viewport.x);
-    c->viewport[1] = float(m_viewport.y);
-    c->viewport[2] = float(m_viewport.width);
-    c->viewport[3] = float(m_viewport.height);
-    Copy4(c->matDiffuse, m_material.diffuse);
-    Copy4(c->matAmbient, m_material.ambient);
-    Copy4(c->matSpecular, m_material.specular);
-    Copy4(c->matEmissive, m_material.emissive);
-    ArgbToFloat(m_rs[d3d::RS_AMBIENT], c->ambient);
-    ArgbToFloat(m_rs[d3d::RS_FOGCOLOR], c->fogColor);
-    c->fogParams[0] = AsFloat(m_rs[d3d::RS_FOGSTART]);
-    c->fogParams[1] = AsFloat(m_rs[d3d::RS_FOGEND]);
-    c->fogParams[2] = AsFloat(m_rs[d3d::RS_FOGDENSITY]);
-    c->fogParams[3] = 0.0f;
-    ArgbToFloat(m_rs[d3d::RS_TEXTUREFACTOR], c->tfactor);
-    c->misc[0] = m_material.power;
-    c->misc[1] = float(m_rs[d3d::RS_ALPHAREF] & 0xFF);
-    c->misc[2] = m_effectGlow;                 // F_GLOW: how much the effect feeds the glow
-    c->misc[3] = normalMap ? m_normalStrength : m_bump;   // F_NORMALMAP: slope scale; F_BUMP: height change per texel
+    DrawConstants c{};
+    c.view = m_view;
+    c.proj = m_proj;
+    c.texMatrix[0] = m_texMatrix[0];
+    c.texMatrix[1] = m_texMatrix[1];
+    c.viewport[0] = float(m_viewport.x);
+    c.viewport[1] = float(m_viewport.y);
+    c.viewport[2] = float(m_viewport.width);
+    c.viewport[3] = float(m_viewport.height);
+    Copy4(c.matDiffuse, m_material.diffuse);
+    Copy4(c.matAmbient, m_material.ambient);
+    Copy4(c.matSpecular, m_material.specular);
+    Copy4(c.matEmissive, m_material.emissive);
+    ArgbToFloat(m_rs[d3d::RS_AMBIENT], c.ambient);
+    ArgbToFloat(m_rs[d3d::RS_FOGCOLOR], c.fogColor);
+    c.fogParams[0] = AsFloat(m_rs[d3d::RS_FOGSTART]);
+    c.fogParams[1] = AsFloat(m_rs[d3d::RS_FOGEND]);
+    c.fogParams[2] = AsFloat(m_rs[d3d::RS_FOGDENSITY]);
+    c.fogParams[3] = 0.0f;
+    ArgbToFloat(m_rs[d3d::RS_TEXTUREFACTOR], c.tfactor);
+    c.misc[0] = m_material.power;
+    c.misc[1] = float(m_rs[d3d::RS_ALPHAREF] & 0xFF);
+    c.misc[2] = m_effectGlow;                 // F_GLOW: how much the effect feeds the glow
+    c.misc[3] = normalMap ? m_normalStrength : m_bump;   // F_NORMALMAP: slope scale; F_BUMP: height change per texel
                                                          // for a full brightness step
     // Camera position/forward in world space from the view matrix (columns 0-2 = camera axes for an
     // orthonormal D3D view matrix; row 3 = -eye expressed in those axes).
     const auto& v = m_view.m;
     for (int i = 0; i < 3; ++i) {
-        c->eyePos[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
-        c->eyeDir[i] = v[i][2];
+        c.eyePos[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
+        c.eyeDir[i] = v[i][2];
     }
-    c->eyePos[3] = 1.0f;
-    c->eyeDir[3] = 0.0f;
-    c->vtx[0] = fvf;
-    std::memcpy(&c->vtx[1], &m_drawColorScale, 4);
-    if (m_drawColorScale == 1.0f) c->vtx[1] = 0;
+    c.eyePos[3] = 1.0f;
+    c.eyeDir[3] = 0.0f;
+    c.vtx[0] = fvf;
+    std::memcpy(&c.vtx[1], &m_drawColorScale, 4);
+    if (m_drawColorScale == 1.0f) c.vtx[1] = 0;
     // Reflectivity (screen-space reflections, the scene's attachment 2 G): water; glossy (specular) surfaces; and a
     // wet look on surfaces facing up, which the shader scales by how much the surface faces up.
     float reflectivity = 0.0f, wet = 0.0f;
@@ -1827,8 +1838,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             wet = m_ssrWet;
         }
     }
-    std::memcpy(&c->vtx[2], &reflectivity, 4);
-    std::memcpy(&c->vtx[3], &wet, 4);
+    std::memcpy(&c.vtx[2], &reflectivity, 4);
+    std::memcpy(&c.vtx[3], &wet, 4);
     uint32_t flags = 0;
     if (m_rs[d3d::RS_LIGHTING] && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) flags |= F_LIGHTING;
     if ((flags & F_LIGHTING) && m_pixelLighting) flags |= F_PERPIXEL;
@@ -1892,24 +1903,24 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         flags |= F_EMISSIVE;
     // A character's body and parts: the lights characters carry don't shadow them (lighting.glsl).
     if (m_drawIsCharacter) flags |= F_CHARACTER;
-    c->flags[0] = flags;
-    c->flags[1] = m_rs[d3d::RS_FOGVERTEXMODE];
-    c->flags[2] = m_rs[d3d::RS_FOGTABLEMODE];
-    c->flags[3] = m_rs[d3d::RS_ALPHAFUNC];
-    c->matSources[0] = m_rs[d3d::RS_DIFFUSEMATERIALSOURCE];
-    c->matSources[1] = m_rs[d3d::RS_AMBIENTMATERIALSOURCE];
-    c->matSources[2] = m_rs[d3d::RS_SPECULARMATERIALSOURCE];
-    c->matSources[3] = m_rs[d3d::RS_EMISSIVEMATERIALSOURCE];
+    c.flags[0] = flags;
+    c.flags[1] = m_rs[d3d::RS_FOGVERTEXMODE];
+    c.flags[2] = m_rs[d3d::RS_FOGTABLEMODE];
+    c.flags[3] = m_rs[d3d::RS_ALPHAFUNC];
+    c.matSources[0] = m_rs[d3d::RS_DIFFUSEMATERIALSOURCE];
+    c.matSources[1] = m_rs[d3d::RS_AMBIENTMATERIALSOURCE];
+    c.matSources[2] = m_rs[d3d::RS_SPECULARMATERIALSOURCE];
+    c.matSources[3] = m_rs[d3d::RS_EMISSIVEMATERIALSOURCE];
     for (int s = 0; s < 2; ++s) {
         const auto& t = m_tss[s];
-        c->stageA[s][0] = t[d3d::TSS_COLOROP];
-        c->stageA[s][1] = t[d3d::TSS_COLORARG1];
-        c->stageA[s][2] = t[d3d::TSS_COLORARG2];
-        c->stageA[s][3] = t[d3d::TSS_ALPHAOP];
-        c->stageB[s][0] = t[d3d::TSS_ALPHAARG1];
-        c->stageB[s][1] = t[d3d::TSS_ALPHAARG2];
-        c->stageB[s][2] = t[d3d::TSS_TEXCOORDINDEX];
-        c->stageB[s][3] = t[d3d::TSS_TEXTURETRANSFORMFLAGS];
+        c.stageA[s][0] = t[d3d::TSS_COLOROP];
+        c.stageA[s][1] = t[d3d::TSS_COLORARG1];
+        c.stageA[s][2] = t[d3d::TSS_COLORARG2];
+        c.stageA[s][3] = t[d3d::TSS_ALPHAOP];
+        c.stageB[s][0] = t[d3d::TSS_ALPHAARG1];
+        c.stageB[s][1] = t[d3d::TSS_ALPHAARG2];
+        c.stageB[s][2] = t[d3d::TSS_TEXCOORDINDEX];
+        c.stageB[s][3] = t[d3d::TSS_TEXTURETRANSFORMFLAGS];
     }
     uint32_t lightCount = 0, localLights = 0;
     if (flags & F_LIGHTING)
@@ -1923,13 +1934,15 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             // saturates the ground's lighting pass and local lights (the player's) vanish on it.
             if (override && terrain && slot.light.type == d3d::LIGHT_DIRECTIONAL)
                 continue;
-            FillGpuLight(slot.light, slot.cosHalfTheta, slot.cosHalfPhi, c->lights[lightCount++], LightScale(slot.light));
+            FillGpuLight(slot.light, slot.cosHalfTheta, slot.cosHalfPhi, c.lights[lightCount++], LightScale(slot.light));
             if (slot.light.type != d3d::LIGHT_DIRECTIONAL) ++localLights;
         }
-    c->lightInfo[0] = lightCount;
-    c->lightInfo[1] = localLights;
-    c->lightInfo[2] = override ? carrier : 0;   // frame light (index + 1) this draw carries: it doesn't light it
-    c->lightInfo[3] = 0;
+    c.lightInfo[0] = lightCount;
+    c.lightInfo[1] = localLights;
+    c.lightInfo[2] = override ? carrier : 0;   // frame light (index + 1) this draw carries: it doesn't light it
+    c.lightInfo[3] = 0;
+    constIndex = AppendConstant(c);            // shared with the next draws that keep this state
+    m_constIndex = constIndex;
     }
 
     ProfileDrawSection("draw: constants", since);
@@ -1940,13 +1953,13 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         // Skinned on the GPU: the vertices in the frame's skin arena, the indices in the mesh's buffer.
         vbOffset = m_drawGpu->vertexOffset;
         ibOffset = m_drawGpu->mesh->indexOffset;
-        drawTransform->motion[2] = float(vbOffset / layout.stride);
+        dt.motion[2] = float(vbOffset / layout.stride);
         RecordShadowCaster(primitive, fvf, layout.stride, nullptr, vertexCount, vbOffset, indices, indices ? indexCount : 0,
                            ibOffset, m_frames[m_frameIndex].skinArena, m_drawGpu->mesh->buffer);
     } else if (m_drawStaticBuffer) {
         // Static geometry on the GPU: the vertices stay where they are, the indices come through the ring.
         vbOffset = m_drawStaticOffset;
-        drawTransform->motion[2] = float(vbOffset / layout.stride);
+        dt.motion[2] = float(vbOffset / layout.stride);
         if (indices) {
             ibOffset = Allocate(VkDeviceSize(indexCount) * 2, 2, &cpu);
             std::memcpy(cpu, indices, size_t(indexCount) * 2);
@@ -1957,7 +1970,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         VkDeviceSize vbBytes = VkDeviceSize(layout.stride) * vertexCount;
         vbOffset = Allocate(vbBytes, layout.stride, &cpu);
         std::memcpy(cpu, vertices, vbBytes);
-        drawTransform->motion[2] = float(vbOffset / layout.stride);   // the base vertex: gl_VertexIndex - it = vertex
+        dt.motion[2] = float(vbOffset / layout.stride);   // the base vertex: gl_VertexIndex - it = vertex
         if (indices) {
             ibOffset = Allocate(VkDeviceSize(indexCount) * 2, 2, &cpu);
             std::memcpy(cpu, indices, size_t(indexCount) * 2);
@@ -1974,9 +1987,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             smoothBuffer = m_frames[m_frameIndex].skinArena;
             smoothOffset = m_drawGpu->smoothOffset;
             smoothBytes = VkDeviceSize(vertexCount) * 12;
-            drawTransform->tess[0] = tessLevel;
-            drawTransform->tess[1] = m_tessShape;
-            drawTransform->tess[2] = float(vbOffset / layout.stride);
+            dt.tess[0] = tessLevel;
+            dt.tess[1] = m_tessShape;
+            dt.tess[2] = float(vbOffset / layout.stride);
             m_drawTess = true;
         }
     } else if (tessLevel > 0.0f &&
@@ -1987,9 +2000,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         smoothBytes = m_smoothNormals.size() * 4;
         smoothOffset = Allocate(smoothBytes, m_props.limits.minStorageBufferOffsetAlignment, &smoothCpu);
         std::memcpy(smoothCpu, m_smoothNormals.data(), smoothBytes);
-        drawTransform->tess[0] = tessLevel;
-        drawTransform->tess[1] = m_tessShape;
-        drawTransform->tess[2] = float(vbOffset / layout.stride);
+        dt.tess[0] = tessLevel;
+        dt.tess[1] = m_tessShape;
+        dt.tess[2] = float(vbOffset / layout.stride);
         m_drawTess = true;
     }
     ProfileDrawSection("draw: geometry + casters", since);
@@ -1997,22 +2010,40 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (GlowDraw(fvf)) ++m_glowDraws;
     ApplyDynamicState(primitive, fvf, layout.stride);
 
-    VkDescriptorBufferInfo ubo{f.ring, uboOffset, sizeof(DrawConstants)};
-    VkDescriptorBufferInfo transform{f.ring, transformOffset, sizeof(DrawTransform)};
     // Bindless textures (set 1, M1): the draw's four textures and four samplers by index, so nothing per-draw is
-    // bound as an image descriptor. The indices live in the draw's transform block (constants.glsl D.texIdx/sampIdx).
+    // bound as an image descriptor. The indices live in the draw's record (constants.glsl D.texIdx/sampIdx).
     Texture* texStage0 = m_textures[0] ? m_textures[0] : m_blackTexture;
     Texture* texStage1 = m_textures[1] ? m_textures[1] : m_blackTexture;
     Texture* bumpBase = m_drawBumpBase ? m_drawBumpBase : m_blackTexture;
     Texture* normalTex = normalMap ? normalMap : m_flatNormal;
-    drawTransform->texIdx[0] = BindlessImage(texStage0);
-    drawTransform->texIdx[1] = BindlessImage(texStage1);
-    drawTransform->texIdx[2] = BindlessImage(bumpBase);
-    drawTransform->texIdx[3] = BindlessImage(normalTex);
-    drawTransform->sampIdx[0] = BindlessSampler(SamplerFor(0));
-    drawTransform->sampIdx[1] = BindlessSampler(SamplerFor(1));
-    drawTransform->sampIdx[2] = BindlessSampler(m_bumpSampler);
-    drawTransform->sampIdx[3] = BindlessSampler(m_normalSampler);
+    dt.texIdx[0] = BindlessImage(texStage0);
+    dt.texIdx[1] = BindlessImage(texStage1);
+    dt.texIdx[2] = BindlessImage(bumpBase);
+    dt.texIdx[3] = BindlessImage(normalTex);
+    dt.sampIdx[0] = BindlessSampler(SamplerFor(0));
+    dt.sampIdx[1] = BindlessSampler(SamplerFor(1));
+    dt.sampIdx[2] = BindlessSampler(m_bumpSampler);
+    dt.sampIdx[3] = BindlessSampler(m_normalSampler);
+    // GPU-driven M2: this draw's record, and the frame's two arrays (bindings 0 = constants, 12 = records) pushed
+    // once per frame's command buffer. The record is selected with a push constant (M3: gl_DrawID).
+    uint32_t recordIndex = AppendRecord(constIndex, dt);
+    if (!m_arenaBound) {
+        VkDescriptorBufferInfo consts{f.ring, m_constsBase, VkDeviceSize(m_constCapacity) * sizeof(DrawConstants)};
+        VkDescriptorBufferInfo records{f.ring, m_recordsBase, VkDeviceSize(m_recordCapacity) * sizeof(DrawRecord)};
+        VkWriteDescriptorSet arena[2] = {};
+        arena[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        arena[0].dstBinding = 0;
+        arena[0].descriptorCount = 1;
+        arena[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        arena[0].pBufferInfo = &consts;
+        arena[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        arena[1].dstBinding = 12;
+        arena[1].descriptorCount = 1;
+        arena[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        arena[1].pBufferInfo = &records;
+        vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 2, arena);
+        m_arenaBound = true;
+    }
     VkDescriptorBufferInfo frameLights{f.ring, frameLightsOffset, sizeof(FrameLights)};
     VkDescriptorImageInfo shadow{m_shadowSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     VkDescriptorImageInfo cubes{m_cubeSampler, m_cubeArrayView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
@@ -2022,23 +2053,26 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     VkDescriptorImageInfo shadowDepths{m_shadowDepthSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     // Binding 10: a tessellated draw's averaged normals, else any small part of the ring (unread).
     VkDescriptorBufferInfo smoothNormals{smoothBuffer, smoothOffset, smoothBytes ? smoothBytes : 16};
-    // The textures (bindings 1, 2, 7, 11) are bindless now; the rest of the push set is unchanged.
-    VkWriteDescriptorSet writes[8] = {};
+    // Bindings 0 (constants) and 3 (the old transform block) are gone: the draw's constants and transform come
+    // from its record. The rest of the push set is unchanged.
+    VkWriteDescriptorSet writes[6] = {};
     auto write = [&](int i, uint32_t binding, VkDescriptorType type) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstBinding = binding;
         writes[i].descriptorCount = 1;
         writes[i].descriptorType = type;
     };
-    write(0, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);          writes[0].pBufferInfo = &ubo;
-    write(1, 3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);          writes[1].pBufferInfo = &transform;
-    write(2, 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);          writes[2].pBufferInfo = &frameLights;
-    write(3, 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[3].pImageInfo = &shadow;
-    write(4, 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[4].pImageInfo = &cubes;
-    write(5, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);          writes[5].pBufferInfo = &prevPositions;
-    write(6, 9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[6].pImageInfo = &shadowDepths;
-    write(7, 10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);         writes[7].pBufferInfo = &smoothNormals;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 8, writes);
+    write(0, 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);          writes[0].pBufferInfo = &frameLights;
+    write(1, 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[1].pImageInfo = &shadow;
+    write(2, 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[2].pImageInfo = &cubes;
+    write(3, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);          writes[3].pBufferInfo = &prevPositions;
+    write(4, 9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[4].pImageInfo = &shadowDepths;
+    write(5, 10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);         writes[5].pBufferInfo = &smoothNormals;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 6, writes);
+    VkShaderStageFlags pushStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    if (m_tessSupported)
+        pushStages |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+    vkCmdPushConstants(cmd, m_pipelineLayout, pushStages, 0, sizeof(recordIndex), &recordIndex);
     if (!m_bindlessBound) {                       // set 1, once per frame's command buffer
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 1, 1, &m_bindlessSet, 0, nullptr);
         m_bindlessBound = true;

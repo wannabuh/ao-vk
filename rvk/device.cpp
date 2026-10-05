@@ -631,12 +631,12 @@ bool Device::CreatePipelines(std::string* error)
     // Bindings 0, 3, 4 also for the tessellation stages (characters' Phong tessellation: camera, draw, frame).
     const VkShaderStageFlags vsfs = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     const VkShaderStageFlags tess = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+    const VkShaderStageFlags vsfstess = vsfs | tess;
     VkDescriptorSetLayoutBinding bindings[12] = {
-        {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, vsfs | tess, nullptr},
+        {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, vsfstess, nullptr},   // the deduplicated DrawConstants array
         {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, vsfs | tess, nullptr},
-        {4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, vsfs | tess, nullptr},
+        {4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, vsfstess, nullptr},
         {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
@@ -644,6 +644,7 @@ bool Device::CreatePipelines(std::string* error)
         {9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},   // shadow depths
         {10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},     // tessellation's normals
         {11, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},  // normal map
+        {12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, vsfstess, nullptr},  // the per-draw DrawRecords
     };
     if (!m_tessSupported)
         for (auto& b : bindings) b.stageFlags &= ~tess;
@@ -691,6 +692,10 @@ bool Device::CreatePipelines(std::string* error)
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pl.setLayoutCount = m_bindless ? 2 : 1;
     pl.pSetLayouts = setLayouts;
+    // M2: the draw picks its DrawRecord with a push constant (M3 will use gl_DrawID).
+    VkPushConstantRange drawPush{vsfstess, 0, sizeof(uint32_t)};
+    pl.pushConstantRangeCount = 1;
+    pl.pPushConstantRanges = &drawPush;
     if (!Check(vkCreatePipelineLayout(m_device, &pl, nullptr, &m_pipelineLayout), "vkCreatePipelineLayout", error))
         return false;
 
@@ -1011,6 +1016,71 @@ void Device::EnsureRingSpace(VkDeviceSize bytes)
     ++m_ringGeneration;
 }
 
+// ---------------------------------------------------------------------------------------------------
+// GPU-driven M2: a frame's draw arenas, slices of its ring
+
+// Reserve this frame's deduplicated-constants and draw-record arrays in the ring (the space was ensured by the
+// caller). Called when the ring was (re)started.
+void Device::PrepareDrawArenas()
+{
+    if (m_arenaGeneration == m_ringGeneration)
+        return;
+    m_constCapacity = m_constWanted;
+    m_recordCapacity = m_recordWanted;
+    VkDeviceSize align = std::max<VkDeviceSize>(16, m_props.limits.minStorageBufferOffsetAlignment);
+    VkDeviceSize bytes = VkDeviceSize(m_constCapacity) * sizeof(DrawConstants) +
+                         VkDeviceSize(m_recordCapacity) * sizeof(DrawRecord) + 64;
+    EnsureRingSpace(bytes);          // the caller reserved for it, but a flush may have restarted the ring since
+    void* cpu;
+    m_constsBase = Allocate(VkDeviceSize(m_constCapacity) * sizeof(DrawConstants), align, &cpu);
+    m_recordsBase = Allocate(VkDeviceSize(m_recordCapacity) * sizeof(DrawRecord), align, &cpu);
+    m_constCount = m_recordCount = 0;
+    m_constIndex = 0;
+    m_constantsDirty = true;
+    m_constantsGeneration = ~0ull;
+    m_arenaGeneration = m_ringGeneration;
+    m_arenaBound = false;            // a new base: bindings 0 and 12 must be pushed again
+    m_bindlessBound = false;
+}
+
+// The arrays are full: submit what the frame has so far, wait, and start them over (the GPU has consumed them).
+// The base and capacity stay; only the raw data is stale.
+void Device::FlushDrawArenas()
+{
+    bool wasRendering = m_rendering;
+    if (m_arenaFlushes++ < 20)
+        Log("draw arenas full mid-frame (constants %u/%u, records %u/%u): flushing\n", m_constCount, m_constCapacity,
+            m_recordCount, m_recordCapacity);
+    SubmitAndWait();
+    if (wasRendering)
+        BeginRenderingOn(m_target);
+    m_arenaBound = false;
+    m_bindlessBound = false;
+    m_constCount = m_recordCount = 0;
+    m_constIndex = 0;
+    m_constantsDirty = true;
+    m_constantsGeneration = ~0ull;
+}
+
+uint32_t Device::AppendConstant(const DrawConstants& c)
+{
+    uint32_t index = m_constCount++;
+    std::memcpy(m_frames[m_frameIndex].ringData + m_constsBase + VkDeviceSize(index) * sizeof(DrawConstants), &c,
+                sizeof(c));
+    return index;
+}
+
+uint32_t Device::AppendRecord(uint32_t constIndex, const DrawTransform& d)
+{
+    uint32_t index = m_recordCount++;
+    DrawRecord rec{};
+    rec.constIndex = constIndex;
+    rec.d = d;
+    std::memcpy(m_frames[m_frameIndex].ringData + m_recordsBase + VkDeviceSize(index) * sizeof(DrawRecord), &rec,
+                sizeof(rec));
+    return index;
+}
+
 VkCommandBuffer Device::UploadCommands()
 {
     Frame& f = m_frames[m_frameIndex];
@@ -1131,6 +1201,7 @@ void Device::BeginFrame()
     m_batchRun = 0;
     m_meshStaticDraws = m_meshHashedDraws = 0;
     m_bindlessBound = false;                     // the frame's command buffer starts with set 1 unbound
+    m_arenaBound = false;                        // ... and with the draw arenas unbound
     if (m_swapchainStale) {
         vkDeviceWaitIdle(m_device);
         DestroySwapchain();

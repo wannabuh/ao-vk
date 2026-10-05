@@ -1,9 +1,10 @@
-// Per-draw constants shared by ffp.vert / ffp.frag. Must match DrawConstants in rvk/device.cpp (std140).
+// Per-draw constants shared by ffp.vert / ffp.frag. Must match DrawConstants / DrawTransform / DrawRecord in
+// rvk/internal.h (std430 - every member is vec4/mat4/uvec4, so std140 and std430 agree).
 #include "frame_lights.glsl"
 
-// Changes on nearly every draw, so it has its own small block (binding 3); the big block below is only
+// Changes on nearly every draw, so it has its own record (see DrawRecord below); the big constant block is only
 // rewritten when render state changes.
-layout(set = 0, binding = 3, std140) uniform DrawTransform {
+struct DrawTransform {
     mat4 world;                 // raw D3DMATRIX memory: GLSL M * v == D3D v * M
     mat4 prevWorld;             // the same object's world matrix last frame (motion vectors)
     vec4 motion;                // x: 1 = world camera, write its motion; y: 1 = last frame's vertex positions in
@@ -13,18 +14,9 @@ layout(set = 0, binding = 3, std140) uniform DrawTransform {
     vec4 tess;                  // characters' Phong tessellation: level (0 = off), shape (0..1), base vertex (binding 10)
     uvec4 texIdx;               // bindless (set 1): image slots for stage 0, stage 1, bump base, normal map
     uvec4 sampIdx;              // bindless (set 1): sampler slots for stage 0, stage 1, bump, normal
-} D;
+};
 
-// Bindless textures (M1): one array of every texture and one of every sampler; a draw names the four it uses by
-// index. TEX0/TEX1 are the game's two texture stages, BUMPTEX the ground's base texture, NORMALTEX its normal map.
-layout(set = 1, binding = 0) uniform texture2D texImages[4096];
-layout(set = 1, binding = 1) uniform sampler bindlessSamplers[256];
-#define TEX0 sampler2D(texImages[D.texIdx.x], bindlessSamplers[D.sampIdx.x])
-#define TEX1 sampler2D(texImages[D.texIdx.y], bindlessSamplers[D.sampIdx.y])
-#define BUMPTEX sampler2D(texImages[D.texIdx.z], bindlessSamplers[D.sampIdx.z])
-#define NORMALTEX sampler2D(texImages[D.texIdx.w], bindlessSamplers[D.sampIdx.w])
-
-layout(set = 0, binding = 0, std140) uniform DrawConstants {
+struct DrawConstants {
     mat4 view, proj;
     mat4 texMatrix[2];
     vec4 viewport;              // D3D viewport x, y, width, height (pixels)
@@ -43,8 +35,34 @@ layout(set = 0, binding = 0, std140) uniform DrawConstants {
     uvec4 stageB[2];            // alphaarg1, alphaarg2, texcoordindex, texturetransformflags
     uvec4 lightInfo;            // light count, point + spot light count, frame light (index + 1) the draw carries
     Light lights[8];
-} C;
+};
 
+// GPU-driven M2: one small record per draw (its transform plus which deduplicated constants it uses). The
+// constants themselves are appended once per render-state change and shared, as before. A draw names its record
+// through a push constant now; M3 replaces that with gl_DrawID (and passes it to the tess/fragment stages).
+struct DrawRecord {
+    uint constIndex;
+    uint pad[3];
+    DrawTransform d;
+};
+
+layout(set = 0, binding = 12, std430) readonly buffer DrawRecords { DrawRecord records[]; } gRecords;
+layout(set = 0, binding = 0, std430) readonly buffer DrawConstantArray { DrawConstants consts[]; } gConsts;
+layout(push_constant) uniform DrawPush { uint record; } pc;
+
+// The record and constants the shader is drawing: selected by the push constant. Kept spelled C./D. as when they
+// were uniform blocks, so the body below is unchanged.
+#define D (gRecords.records[pc.record].d)
+#define C (gConsts.consts[gRecords.records[pc.record].constIndex])
+
+// Bindless textures (M1): one array of every texture and one of every sampler; a draw names the four it uses by
+// index. TEX0/TEX1 are the game's two texture stages, BUMPTEX the ground's base texture, NORMALTEX its normal map.
+layout(set = 1, binding = 0) uniform texture2D texImages[4096];
+layout(set = 1, binding = 1) uniform sampler bindlessSamplers[256];
+#define TEX0 sampler2D(texImages[D.texIdx.x], bindlessSamplers[D.sampIdx.x])
+#define TEX1 sampler2D(texImages[D.texIdx.y], bindlessSamplers[D.sampIdx.y])
+#define BUMPTEX sampler2D(texImages[D.texIdx.z], bindlessSamplers[D.sampIdx.z])
+#define NORMALTEX sampler2D(texImages[D.texIdx.w], bindlessSamplers[D.sampIdx.w])
 
 const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8u, F_FOG = 16u,
            F_RANGEFOG = 32u, F_LOCALVIEWER = 64u, F_TEX0 = 128u, F_TEX1 = 256u, F_ALPHATEST = 512u,

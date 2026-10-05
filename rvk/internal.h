@@ -11,7 +11,8 @@
 
 namespace rvk::detail {
 
-// Per-draw constants, std140; must match shaders/constants.glsl.
+// Per-draw constants, std430; must match shaders/constants.glsl. Every member is vec4/mat4/uvec4, so std140 and
+// std430 lay them out identically.
 struct GpuLight {
     float diffuse[4], specular[4], ambient[4], position[4], direction[4], atten[4], spot[4];
 };
@@ -46,6 +47,15 @@ struct DrawTransform {
     uint32_t texIdx[4];            // bindless (M1): image slots for stage 0, stage 1, bump base, normal map
     uint32_t sampIdx[4];           // bindless (M1): sampler slots for stage 0, stage 1, bump, normal
 };
+// GPU-driven M2: one record a draw (binding 12). `constIndex` selects the shared DrawConstants it draws with; the
+// record is picked by a push constant until M3 replaces that with gl_DrawID.
+struct DrawRecord {
+    uint32_t constIndex;
+    uint32_t pad[3];
+    DrawTransform d;
+};
+static_assert(sizeof(DrawRecord) == 16 + sizeof(DrawTransform), "record layout");
+static_assert(sizeof(DrawRecord) % 16 == 0, "record stride");
 
 enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE = 8, F_FOG = 16, F_RANGEFOG = 32,
                   F_LOCALVIEWER = 64, F_TEX0 = 128, F_TEX1 = 256, F_ALPHATEST = 512,
