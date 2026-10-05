@@ -36,6 +36,7 @@
 #include "native/rgrid.h"
 #include "native/timer.h"
 #include "native/funcom.h"
+#include "native/findobject.h"
 
 namespace rnative {
 
@@ -81,6 +82,7 @@ void Install(HMODULE orig)
     rgrid::Install(orig);
     timer::Install(orig);
     funcom::Install(orig);
+    findobject::Install(orig);
     // After the installs, so each rva resolves to our function (else the original's): orig:: is then independent of
     // the original's export table.
     if (!orig::Init())

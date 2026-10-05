@@ -1081,3 +1081,11 @@
 0x1D615	replaced	proxy/native/dxerror.cpp	fun::DXError::GetErrorNo
 0x1D611	replaced	proxy/native/dxerror.cpp	fun::DXError::GetLineNo
 0x1D60D	replaced	proxy/native/dxerror.cpp	fun::DXError::GetFilename
+0x13D19	replaced	proxy/native/findobject.cpp	fun::FindObjectFor<T> (FUN_10013d19)
+0x2BDDC	replaced	proxy/native/findobject.cpp	fun::FindObjectFor<T> (FUN_1002bddc)
+0x2F989	replaced	proxy/native/findobject.cpp	fun::FindObjectFor<T> (FUN_1002f989)
+0x414DF	replaced	proxy/native/findobject.cpp	fun::FindObjectFor<T> (FUN_100414df)
+0x460B8	replaced	proxy/native/findobject.cpp	fun::FindObjectFor<T> (FUN_100460b8)
+0x46101	replaced	proxy/native/findobject.cpp	fun::FindObjectFor<T> (FUN_10046101)
+0x46DB0	replaced	proxy/native/findobject.cpp	fun::FindObjectFor<T> (FUN_10046db0)
+0x47ECC	replaced	proxy/native/findobject.cpp	fun::FindObjectFor<T> (FUN_10047ecc)
