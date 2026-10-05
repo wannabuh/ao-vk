@@ -800,6 +800,18 @@ void Device::CollectShadowItems()
         std::memcpy(it.sway, e.plantSway, sizeof(it.sway));
         m_shadowItems.push_back(it);
     }
+    // The drawn-static tally and the animated subset: the point-light pass asks "is anything animated in range?" once
+    // per cube, and only animated casters (characters) can answer yes, so static casters need not be scanned.
+    m_shadowItemsCount = uint32_t(m_shadowItems.size());
+    m_shadowStaticItems = m_shadowAnimatedItems = 0;
+    m_animatedItems.clear();
+    for (uint32_t i = 0; i < m_shadowItems.size(); ++i) {
+        if (m_shadowItems[i].animated) {
+            ++m_shadowAnimatedItems;
+            m_animatedItems.push_back(i);
+        }
+        if (uint32_t(m_shadowItems[i].kind) == uint32_t(VisualKind::Static)) ++m_shadowStaticItems;
+    }
 }
 
 // The game draws each character's parts (body pieces, head, held weapon) one after another, so a run of casters
@@ -916,6 +928,8 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     m_shadowValid = false;
     m_shadowItemsCount = m_shadowStaticItems = m_shadowAnimatedItems = 0;
     m_shadowDrawn = m_shadowCulled = m_shadowStaticDrawn = m_shadowAnimatedDrawn = 0;
+    m_shadowCollectMs = m_shadowCullMs = m_shadowDrawMs = 0.0;
+    m_animatedItems.clear();
     // The sun for effects that don't need the shadow map (light through leaves, contact shadows).
     if (haveSun) std::memcpy(m_frameSunDir, m_sunDir, sizeof(m_sunDir));
     for (int i = 0; i < 3; ++i) m_frameSunColor[i] = haveSun ? m_sunColor[i] : 0.0f;
@@ -942,12 +956,8 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     }
     double collectStart = ProfileCpu();
     CollectShadowItems();
+    m_shadowCollectMs = ProfileCpu() - collectStart;
     ProfileCpuAdd("shadow collect", collectStart);
-    m_shadowItemsCount = uint32_t(m_shadowItems.size());
-    for (const ShadowItem& it : m_shadowItems) {
-        if (uint32_t(it.kind) == uint32_t(VisualKind::Static)) ++m_shadowStaticItems;
-        if (it.animated) ++m_shadowAnimatedItems;
-    }
     if (!m_shadows || !haveSun)
         return;
 
@@ -1033,6 +1043,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
             }
             m_cascadeVisible.push_back(i);
         }
+        m_shadowCullMs += ProfileCpu() - cullStart;
         ProfileCpuAdd("shadow cull", cullStart);
         double drawStart = ProfileCpu();
         for (uint32_t i : m_cascadeVisible) {
@@ -1043,6 +1054,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
             if (item.animated) ++m_shadowAnimatedDrawn;
             DrawShadowItem(cmd, bind, item, lightViewProj);
         }
+        m_shadowDrawMs += ProfileCpu() - drawStart;
         ProfileCpuAdd("shadow draw", drawStart);
         vkCmdEndRendering(cmd);
         m_cascadeViewProj[c] = lightViewProj;
@@ -1068,6 +1080,7 @@ void Device::FinishShadowFrame()
     m_daylight += (daylight - m_daylight) * 0.1f;
     m_casters.clear();
     m_shadowItems.clear();
+    m_animatedItems.clear();
     UpdateCasterCache();
     // The mesh cache: forget meshes not drawn for a while (animated ones leave a fingerprint per frame).
     if ((m_frameNumber & 31) == 0 || m_meshInfo.size() > 60000)

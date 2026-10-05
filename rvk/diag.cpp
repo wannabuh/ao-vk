@@ -42,9 +42,9 @@ void Device::EndFrameDump()
                              " forgotten since start: %u in view but not drawn, %u far away\n",
                  m_dumpDraw, m_casters.size(), m_casterCache.size(), m_cachedCastersDrawn, m_forgottenInView, m_forgottenFar);
     std::fprintf(m_dumpFile, "# sun shadow pass: %u items (%u static, %u animated); drew %u item-cascades (%u static,"
-                             " %u animated), culled %u\n",
+                             " %u animated), culled %u; %.2f ms collect, %.2f cull, %.2f draw\n",
                  m_shadowItemsCount, m_shadowStaticItems, m_shadowAnimatedItems, m_shadowDrawn, m_shadowStaticDrawn,
-                 m_shadowAnimatedDrawn, m_shadowCulled);
+                 m_shadowAnimatedDrawn, m_shadowCulled, m_shadowCollectMs, m_shadowCullMs, m_shadowDrawMs);
     if (m_hdr)
         std::fprintf(m_dumpFile, "# hdr: scene phase ended at draw %u (fvf 0x%X)%s; %u additive draws fed the glow\n",
                      m_sceneEndDraw, m_sceneEndFvf,

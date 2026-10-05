@@ -530,11 +530,13 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
         // Not while anything animated is in its range: a character's body moves every frame, and against last frame's
         // map its own limbs and torso shadow it in the wrong places - dark patches flickering on bodies in crowds.
         bool animatedNear = false;
-        for (const ShadowItem& it : m_shadowItems)
-            if (it.animated && BoxDistance2(it.boundsMin, it.boundsMax, pos) <= l.range * l.range) {
+        for (uint32_t i : m_animatedItems) {     // only animated casters can answer yes (m_animatedItems)
+            const ShadowItem& it = m_shadowItems[i];
+            if (BoxDistance2(it.boundsMin, it.boundsMax, pos) <= l.range * l.range) {
                 animatedNear = true;
                 break;
             }
+        }
         if (!animatedNear && k < previousCount && previous[k].range == l.range && ((k + m_frameNumber) & 1)) {
             float dx = previous[k].position[0] - pos[0], dy = previous[k].position[1] - pos[1], dz = previous[k].position[2] - pos[2];
             if (dx * dx + dy * dy + dz * dz < 1e-4f) {

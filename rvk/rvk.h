@@ -638,7 +638,9 @@ private:
     uint32_t m_shadowItemsCount = 0, m_shadowStaticItems = 0, m_shadowAnimatedItems = 0;
     uint32_t m_shadowDrawn = 0, m_shadowCulled = 0;
     uint32_t m_shadowStaticDrawn = 0, m_shadowAnimatedDrawn = 0;
+    double m_shadowCollectMs = 0.0, m_shadowCullMs = 0.0, m_shadowDrawMs = 0.0;   // last pass (frame dumps)
     std::vector<uint32_t> m_cascadeVisible;      // scratch: indices into m_shadowItems for one cascade
+    std::vector<uint32_t> m_animatedItems;       // indices of the animated items (characters' bodies)
     void UpdateCasterCache();
     void ForgetCachedCaster(std::unordered_map<uint64_t, CachedCaster>::iterator it);
     void ForgetCasterTexture(Texture* texture);
