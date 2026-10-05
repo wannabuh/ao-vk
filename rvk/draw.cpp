@@ -2144,34 +2144,39 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (!extending) {
     ApplyDynamicState(primitive, fvf, layout.stride);
     if (!m_arenaBound) {
+        // The frame's pushed set: the two arrays (0 = constants, 12 = records) and the shadow maps (5, 6, 9) are
+        // constant for the frame's command buffer, so they are pushed once, not on every non-extending draw.
         VkDescriptorBufferInfo consts{f.ring, m_constsBase, VkDeviceSize(m_constCapacity) * sizeof(DrawConstants)};
         VkDescriptorBufferInfo records{f.ring, m_recordsBase, VkDeviceSize(m_recordCapacity) * sizeof(DrawRecord)};
-        VkWriteDescriptorSet arena[2] = {};
-        arena[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        arena[0].dstBinding = 0;
-        arena[0].descriptorCount = 1;
-        arena[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        arena[0].pBufferInfo = &consts;
-        arena[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        arena[1].dstBinding = 12;
-        arena[1].descriptorCount = 1;
-        arena[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        arena[1].pBufferInfo = &records;
-        vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 2, arena);
+        VkDescriptorImageInfo shadow{m_shadowSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkDescriptorImageInfo cubes{m_cubeSampler, m_cubeArrayView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkDescriptorImageInfo shadowDepths{m_shadowDepthSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet arena[5] = {};
+        auto set = [&](int i, uint32_t binding, VkDescriptorType type, const void* info) {
+            arena[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            arena[i].dstBinding = binding;
+            arena[i].descriptorCount = 1;
+            arena[i].descriptorType = type;
+            if (type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                arena[i].pBufferInfo = static_cast<const VkDescriptorBufferInfo*>(info);
+            else
+                arena[i].pImageInfo = static_cast<const VkDescriptorImageInfo*>(info);
+        };
+        set(0, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &consts);
+        set(1, 12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &records);
+        set(2, 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &shadow);
+        set(3, 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &cubes);
+        set(4, 9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &shadowDepths);
+        vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 5, arena);
         m_arenaBound = true;
     }
     VkDescriptorBufferInfo frameLights{f.ring, frameLightsOffset, sizeof(FrameLights)};
-    VkDescriptorImageInfo shadow{m_shadowSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkDescriptorImageInfo cubes{m_cubeSampler, m_cubeArrayView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     // Binding 8: an animated mesh's last positions, else any small part of the ring (unread).
     VkDescriptorBufferInfo prevPositions{prevPositionsBuffer, prevPositionsOffset, prevPositionsBytes ? prevPositionsBytes : 16};
-    // Binding 9: the sun shadow cascades' depths, read without comparison (soft shadows' blocker search).
-    VkDescriptorImageInfo shadowDepths{m_shadowDepthSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     // Binding 10: a tessellated draw's averaged normals, else any small part of the ring (unread).
     VkDescriptorBufferInfo smoothNormals{smoothBuffer, smoothOffset, smoothBytes ? smoothBytes : 16};
-    // Bindings 0 (constants) and 3 (the old transform block) are gone: the draw's constants and transform come
-    // from its record. The rest of the push set is unchanged.
-    VkWriteDescriptorSet writes[6] = {};
+    // The per-draw bindings: the frame lights (rebuilt when the lights change) and the two buffers that vary by draw.
+    VkWriteDescriptorSet writes[3] = {};
     auto write = [&](int i, uint32_t binding, VkDescriptorType type) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstBinding = binding;
@@ -2179,12 +2184,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         writes[i].descriptorType = type;
     };
     write(0, 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);          writes[0].pBufferInfo = &frameLights;
-    write(1, 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[1].pImageInfo = &shadow;
-    write(2, 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[2].pImageInfo = &cubes;
-    write(3, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);          writes[3].pBufferInfo = &prevPositions;
-    write(4, 9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);  writes[4].pImageInfo = &shadowDepths;
-    write(5, 10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);         writes[5].pBufferInfo = &smoothNormals;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 6, writes);
+    write(1, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);          writes[1].pBufferInfo = &prevPositions;
+    write(2, 10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);         writes[2].pBufferInfo = &smoothNormals;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 3, writes);
     if (!m_bindlessBound) {                       // set 1, once per frame's command buffer
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 1, 1, &m_bindlessSet, 0, nullptr);
         m_bindlessBound = true;
