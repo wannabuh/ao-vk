@@ -98,7 +98,8 @@ through `proxy/native/orig_api.gen.h` (tools/gen_orig_api.py), and lives in the 
 `proxy/native/vc10.h`. A call the call graph cannot see never runs - its block is guarded by a constant
 (`DEAD_CALLS` in port-status.py) - so it doesn't keep its callee live: the caller is live, its dead calls aren't.
 The statically linked VS2010 `std::basic_string` and `std::map` / `std::set` are library, not Randy's own (their named
-members always matched; `STL_STRING` / `STL_MAP` in port-status.py are the unnamed halves Ghidra's matcher missed).
+members always matched; `STL_STRING` / `STL_MAP` in port-status.py are the unnamed halves Ghidra's matcher missed). The game's serialize
+library's `fun::FindObjectFor<T>` instantiations are counted the same way (`FUN_FIND`).
 
 ## Tools
 
