@@ -918,6 +918,14 @@
 0x11B9A	replaced	proxy/native/lbitmap.cpp	the BMP loader's extension (FUN_10011b9a)
 0x11D73	replaced	proxy/native/lbitmap.cpp	LBitmap_t deleting destructor (FUN_10011d73)
 0x18D11	replaced	proxy/native/lbitmap.cpp	the PNG loader (FUN_10018d11)
+0x556DB	replaced	proxy/native/cat_status.cpp	CATStatus_t::~CATStatus_t
+0x556F2	replaced	proxy/native/cat_status.cpp	CATStatus_t deleting destructor (FUN_100556f2)
+0x55883	replaced	proxy/native/cat_status.cpp	CATStdioStatus_t::~CATStdioStatus_t
+0x558A4	replaced	proxy/native/cat_status.cpp	CATStdioStatus_t::VPrintStatus
+0x558BF	replaced	proxy/native/cat_status.cpp	CATStdioStatus_t::VPrintWarningLevel1
+0x558DA	replaced	proxy/native/cat_status.cpp	CATStdioStatus_t::VPrintWarningLevel2
+0x558F5	replaced	proxy/native/cat_status.cpp	CATStdioStatus_t::VPrintError
+0x55910	replaced	proxy/native/cat_status.cpp	CATStdioStatus_t::VPrintDebug
 0x1B63B	replaced	proxy/native/helpers.cpp	a Type* debug descriptor store (FUN_1001b63b)
 0x1B662	replaced	proxy/native/helpers.cpp	a Type* debug descriptor size (FUN_1001b662)
 0x2A358	replaced	proxy/native/helpers.cpp	Vector3 cross product (FUN_1002a358)

@@ -13,7 +13,7 @@ logs=$AO_CLIENT/../logs
 c=$PWD/build/characters
 s=$PWD/build/statics
 character="--character $c/5900.catmesh $c/9386.catanim --crowd 3 --time 400"
-scenes=${*:-"setup setup0 setup16 setupfs defaults targets shutdown resize debugdraw sprites basic dynamic materials texture plain blend shadow alpha env sfx1 sfx2 lights manylights culled terrain occmeshes preprocess lifecycle anim106 statics staticshadow lightmap staticpick connector png"}
+scenes=${*:-"setup setup0 setup16 setupfs defaults targets shutdown resize debugdraw sprites basic dynamic materials texture plain blend shadow alpha env sfx1 sfx2 lights manylights culled terrain occmeshes preprocess lifecycle anim106 statics staticshadow lightmap staticpick connector png status"}
 # One Wine boot for every run: a server that stays up between them (if none is running yet, e.g. the game's), else
 # each launch boots the prefix's services again (~20 s).
 WINEPREFIX=${WINEPREFIX:-$HOME/.wine-prk} wineserver -p 120 2>/dev/null
@@ -39,6 +39,7 @@ for scene in $scenes; do
         materials) args="--materials" ;;
         texture) args="--texture"; frame=1 ;;        # LBitmap_t + TextureStreamCreator::CreateTexture (with setup)
         png) args="--png"; frame=1 ;;                # LBitmap_t::Load of a PNG (stb_image decoder)
+        status) args="--status"; frame=1 ;;          # CATStdioStatus_t's printers (a file, in the frame=1 window)
         plain) args="$character" ;;
         blend) args="$character --blend 0.4 --pick --query" ;;
         shadow) args="$character --shadow" ;;
@@ -79,7 +80,7 @@ for scene in $scenes; do
         echo "$scene: no call log ($n lines)"; fail=1
         for v in off on; do echo "  $v:"; tail -n 3 "build/h-ab-$v.txt" | sed 's/^/    /'; done
     elif tools/calllog-compare.py "$logs/calllog-off.txt" "$logs/calllog-on.txt" >/dev/null &&
-         diff -q <(grep -E '^(pick|static pick|connector|query|material|heightmap|meshdata|animdata|devicestate|rendertarget|adapter|init|shutdown|debugger|sprite|lightmap|texture:|png:)' build/h-ab-off.txt) <(grep -E '^(pick|static pick|connector|query|material|heightmap|meshdata|animdata|devicestate|rendertarget|adapter|init|shutdown|debugger|sprite|lightmap|texture:|png:)' build/h-ab-on.txt) >/dev/null; then
+         diff -q <(grep -E '^(pick|static pick|connector|query|material|heightmap|meshdata|animdata|devicestate|rendertarget|adapter|init|shutdown|debugger|sprite|lightmap|texture:|png:|status:)' build/h-ab-off.txt) <(grep -E '^(pick|static pick|connector|query|material|heightmap|meshdata|animdata|devicestate|rendertarget|adapter|init|shutdown|debugger|sprite|lightmap|texture:|png:|status:)' build/h-ab-on.txt) >/dev/null; then
         echo "$scene: same ($n calls)"
     else
         echo "$scene: DIFFERENT"; tools/calllog-compare.py "$logs/calllog-off.txt" "$logs/calllog-on.txt" | head -12; fail=1

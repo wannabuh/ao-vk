@@ -467,6 +467,32 @@ void TestJpeg()
     std::printf("jpeg: bitmap %ux%u %d bpp checksum %08x\n", w, h, bpp, hash);
 }
 
+// CATStdioStatus_t through the exported constructor, its five virtual printers and its deleting destructor: the file
+// it writes (the game's own msvcr100 FILE*, so the strings go through that CRT) is checksummed.
+std::vector<uint8_t> ReadFile(const std::string& path);
+void TestStatus()
+{
+    HMODULE msvcr = GetModuleHandleA("msvcr100.dll");
+    auto fopen_ = reinterpret_cast<void*(__cdecl*)(const char*, const char*)>(GetProcAddress(msvcr, "fopen"));
+    auto new_ = reinterpret_cast<void*(__cdecl*)(size_t)>(GetProcAddress(msvcr, "??2@YAPAXI@Z"));
+    const char* path = "harness_status.txt";
+    void* file = fopen_(path, "wb");
+    if (!file) {
+        std::printf("status: no file\n");
+        return;
+    }
+    using CtorFn = void*(__fastcall*)(void*, void*, void*, bool);
+    void* status = Export<CtorFn>("??0CATStdioStatus_t@@QAE@PAU_iobuf@@_N@Z")(new_(0x10), nullptr, file, true);
+    for (int i = 1; i <= 5; ++i)                         // VPrintStatus, Warning1, Warning2, Error, Debug
+        reinterpret_cast<void(__fastcall*)(void*, void*, const char*)>(
+            (*static_cast<void***>(status))[i])(status, nullptr, "hello");
+    reinterpret_cast<void*(__fastcall*)(void*, void*, unsigned)>((*static_cast<void***>(status))[0])(status, nullptr, 1);
+    const std::vector<uint8_t> bytes = ReadFile(path);
+    uint32_t hash = 2166136261u;
+    for (uint8_t b : bytes) hash = (hash ^ b) * 16777619u;
+    std::printf("status: file %zu bytes checksum %08x\n", bytes.size(), hash);
+}
+
 // A 24-bit BMP (rows bottom-up, each padded to 4 bytes).
 std::vector<uint8_t> BuildBmp24(unsigned w, unsigned h, uint32_t (*color)(unsigned, unsigned))
 {
@@ -905,6 +931,7 @@ int g_sprites;
 bool g_texture;                                       // --texture: the texture creator's path
 bool g_png;                                           // --png: LBitmap_t::Load of a PNG
 bool g_jpeg;                                          // --jpeg: LBitmap_t::Load of a JPEG
+bool g_status;                                        // --status: CATStdioStatus_t's printers
 bool g_lightmap;                                      // --lightmap: the statics' lightmap colours
 void AddSprites(CharacterScene& scene, int count)
 {
@@ -1394,6 +1421,7 @@ int main(int argc, char** argv)
         else if (a == "--texture") g_texture = true;
         else if (a == "--png") g_png = true;
         else if (a == "--jpeg") g_jpeg = true;
+        else if (a == "--status") g_status = true;
         else if (a == "--lightmap") g_lightmap = true;
         else if (a == "--connector") g_connector = true;
         else if (a == "--blend" && i + 1 < argc) g_blend = float(std::atof(argv[++i]));
@@ -1474,6 +1502,7 @@ int main(int argc, char** argv)
     if (g_texture) TestTextureStream();   // before the first present: in the frame=1 call log window
     if (g_png) TestPng();                 // likewise
     if (g_jpeg) TestJpeg();               // likewise
+    if (g_status) TestStatus();           // likewise
     {
         auto* device = *static_cast<IDirect3DDevice7**>(render);
         device->EnumTextureFormats([](LPDDPIXELFORMAT pf, LPVOID) -> HRESULT {

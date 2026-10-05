@@ -32,6 +32,7 @@
 #include "native/faf.h"
 #include "native/rshadow.h"
 #include "native/connector.h"
+#include "native/cat_status.h"
 
 namespace rnative {
 
@@ -74,6 +75,7 @@ void Install(HMODULE orig)
     faf::Install(orig);
     rshadow::Install(orig);
     connector::Install(orig);
+    catstatus::Install(orig);
     gonetrap::Install(orig);                        // last: over what the replacements left
 }
 
