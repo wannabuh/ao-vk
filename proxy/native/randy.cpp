@@ -62,6 +62,14 @@ void DropRenderTarget(int index)
     }
 }
 
+// FUN_1004198a: the frame buffer's alpha bits (none: 0).
+uint32_t __fastcall GetNumAlphaBits(void*, void*) { return 0; }
+
+// FUN_10011ba0: a one-shot block that never runs (its guard, the global at 0xB6088, is 1 from load and only grows
+// inside the block). It always answers 1, so the block's allocations are dead (port-status's DEAD_CALLS). Its ABI
+// cleans 0xc (three arguments).
+uint32_t __stdcall Canary(uint32_t, int, uint32_t) { return 1; }
+
 // RenderTarget_t (0xC bytes): +0 its colour surface_t, +4 its Z-buffer surface_t, +8 the colour surface failed.
 struct RenderTarget {
     void* color;
@@ -583,6 +591,9 @@ void Install(HMODULE orig)
         {0x43319, FN(PopRenderTarget), "Randy_t::PopRenderTarget"},
         {0x43504, FN(PushRenderTarget), "Randy_t::PushRenderTarget"},
         {0x11A8C, FN(GetRenderTarget), "Randy_t::GetRenderTarget"},
+        {0x41566, FN(DropRenderTarget), "an offscreen feature given up (FUN_10041566)"},
+        {0x4198A, FN(GetNumAlphaBits), "Randy_t::GetNumAlphaBits"},
+        {0x11BA0, FN(Canary), "Randy's one-shot canary (FUN_10011ba0)"},
     };
 #undef FN
     int installed = 0;

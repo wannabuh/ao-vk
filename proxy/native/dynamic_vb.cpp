@@ -119,6 +119,12 @@ void __fastcall Reset(Dynamic* d)
     for (auto& [fvf, r] : d->rings) Discard(r);
 }
 
+// FUN_10014309: frees a vertex buffer's +4 field (a handler's own destructor path).
+void __fastcall FreeBuffer(void* self, void*)
+{
+    vc10::Free(*reinterpret_cast<void**>(static_cast<uint8_t*>(self) + 4));
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -137,6 +143,7 @@ void Install(HMODULE orig)
         {0x141FE, FN(Initialize), "DynamicVB_c::Initialize"},
         {0x14253, FN(Shutdown), "DynamicVB_c::Shutdown"},
         {0x14275, FN(Get), "DynamicVB_c::Get"},
+        {0x14309, FN(FreeBuffer), "a vertex buffer freed (FUN_10014309)"},
     };
 #undef FN
     for (const Entry& e : entries)                  // ours and the original's objects don't mix: all or none

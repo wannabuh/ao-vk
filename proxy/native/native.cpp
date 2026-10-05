@@ -34,6 +34,8 @@
 #include "native/connector.h"
 #include "native/cat_status.h"
 #include "native/rgrid.h"
+#include "native/timer.h"
+#include "native/funcom.h"
 
 namespace rnative {
 
@@ -78,6 +80,8 @@ void Install(HMODULE orig)
     connector::Install(orig);
     catstatus::Install(orig);
     rgrid::Install(orig);
+    timer::Install(orig);
+    funcom::Install(orig);
     gonetrap::Install(orig);                        // last: over what the replacements left
 }
 

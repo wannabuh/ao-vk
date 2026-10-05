@@ -728,6 +728,12 @@ bool __fastcall TriMeshRay(Visual* v, void*, const float* from, const float* alo
     return best < none;
 }
 
+// FUN_1004a64d: RTriMesh_t's SubjectImpl subobject (its +0xA4) deleting destructor, which adjusts to the mesh.
+void* __fastcall TriMeshSubjectDelete(void* self, void*, uint8_t flags)
+{
+    return TriMeshDelete(static_cast<uint8_t*>(self) - 0xA4, nullptr, flags);
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -788,6 +794,7 @@ void Install(HMODULE orig)
         {0x4EBF7, FN(DataRestore), "RVisualData_t restore (FUN_1004ebf7)"},
         {0x490CA, FN(TriMeshRestoreData), "RTriMesh_t::RestoreData"},
         {0x49867, FN(TriMeshRay), "RTriMesh_t::IsRayIntersecting"},
+        {0x4A64D, FN(TriMeshSubjectDelete), "RTriMesh_t subject deleting destructor (FUN_1004a64d)"},
     };
 #undef FN
     int installed = 0;

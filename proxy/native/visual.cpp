@@ -366,6 +366,30 @@ void __fastcall Archive(Visual* v, void*, void* archive)
     s.addObject(stream, nullptr, "delta_state", Field<void*>(v, kDelta));
 }
 
+// SubjectImpl<Rendering>'s observer map (VS2010 std::map, library): its add and remove - the slots the subject
+// vtables share with every visual (FUN_10012c31 / FUN_10012c58 / FUN_10012c9e). The map lives at the subject +4.
+void __fastcall ObserverAdd(void* self, void*, uint32_t value)   // FUN_10012c31
+{
+    uint8_t* map = static_cast<uint8_t*>(self) + 4;
+    void* node = Internal<void*(__fastcall*)(void*, void*, uint32_t*)>(0x4A7F8)(map, nullptr, &value);
+    uint8_t result[8];
+    Internal<void(__fastcall*)(void*, void*, void*, void*, uint8_t)>(0x4A812)(map, nullptr, result, node, 0);
+}
+uint32_t __fastcall ObserverRemoveRange(void* map, void*, uint32_t* key)   // FUN_10012c58
+{
+    uint32_t range[2] = {uint32_t(reinterpret_cast<uintptr_t>(map)), uint32_t(reinterpret_cast<uintptr_t>(map))};
+    Internal<void(__fastcall*)(void*, void*, uint32_t*, uint32_t*)>(0x12B93)(map, nullptr, range, key);
+    uint32_t count = 0;
+    Internal<void(__cdecl*)(uint32_t, uint32_t, uint32_t*)>(0x12C0E)(range[0], range[1], &count);
+    Internal<void(__fastcall*)(void*, void*, uint32_t*, uint32_t, uint32_t)>(0x5B417)(map, nullptr, &range[1], range[0],
+                                                                                    range[1]);
+    return count;
+}
+void __fastcall ObserverRemove(void* self, void*, uint32_t value)   // FUN_10012c9e
+{
+    ObserverRemoveRange(static_cast<uint8_t*>(self) + 4, nullptr, &value);
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -404,6 +428,9 @@ void Install(HMODULE orig)
         {0x4CC29, FN(RestoreData), "RVisual_t::RestoreData"},
         {0x4CC35, FN(Process), "RVisual_t::Process"},
         {0x4CE96, FN(CullLights), "RVisual_t::CullLights"},
+        {0x12C31, FN(ObserverAdd), "SubjectImpl observer add (FUN_10012c31)"},
+        {0x12C58, FN(ObserverRemoveRange), "SubjectImpl observer remove (FUN_10012c58)"},
+        {0x12C9E, FN(ObserverRemove), "SubjectImpl observer remove slot (FUN_10012c9e)"},
     };
 #undef FN
     int installed = 0;

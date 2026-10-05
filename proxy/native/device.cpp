@@ -565,6 +565,11 @@ void __cdecl ShutdownDeviceState()
     Instance() = nullptr;
 }
 
+// RenderStats_t (FUN_10025e1b / FUN_10025e22 / FUN_10025e2a): nothing to reset, and "Unknown" for both names.
+void __fastcall StatsReset(void*, void*) {}
+const char* __fastcall StatsGroupName(void*, void*, uint32_t) { return "Unknown"; }
+const char* __fastcall StatsNameName(void*, void*, uint32_t) { return "Unknown"; }
+
 }  // namespace
 
 uint32_t FormatSize(uint32_t fvf)                   // FUN_100116c7
@@ -639,6 +644,9 @@ void Install(HMODULE orig)
         {0x1160B, FN(VbFormatSize), "VertexBuffer_c::GetFormatSize"},
         {0x11614, FN(VbDestroy), "VertexBuffer_c::~VertexBuffer_c"},
         {0x11632, FN(VbRelease), "VertexBuffer_c::Release"},
+        {0x25E1B, FN(StatsReset), "RenderStats_t::Reset"},
+        {0x25E22, FN(StatsGroupName), "RenderStats_t::GetGroupName"},
+        {0x25E2A, FN(StatsNameName), "RenderStats_t::GetNameName"},
     };
 #undef FN
     int installed = 0;

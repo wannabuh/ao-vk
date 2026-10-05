@@ -560,6 +560,19 @@ bool __fastcall BlendRest(uint8_t* b)                  // slot 10 (FUN_10050abc)
     return false;
 }
 
+// The blend's accessors and clear, and the keyframe data's, that the rest of the class did not cover.
+void* __fastcall GetAnim2(void* self, void*) { return Field<void*>(self, 0x58); }               // CATAnimBlend_t::GetAnim2
+void* __fastcall BlendAt64(void* self, void*) { return static_cast<uint8_t*>(self) + 0x64; }    // FUN_10050a5b
+void __fastcall BlendClear(void* self, void*)                                                   // FUN_10050ff4
+{
+    if (void* p = Field<void*>(self, 0)) vc10::Free(p);
+    Field<void*>(self, 0) = nullptr;
+    Field<void*>(self, 4) = nullptr;
+    Field<void*>(self, 8) = nullptr;
+}
+void* __fastcall DataAt58(void* self, void*) { return static_cast<uint8_t*>(self) + 0x58; }     // FUN_10052a5e
+bool __fastcall ReturnTrue(void*, void*) { return true; }                                        // FUN_10052a69
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -608,6 +621,11 @@ void Install(HMODULE orig)
         {0x5050A, FN(BlendBones), "CATAnimBlend_t bone count (FUN_1005050a)"},
         {0x50A9D, FN(BlendSkeleton), "CATAnimBlend_t skeleton (FUN_10050a9d)"},
         {0x50ABC, FN(BlendRest), "CATAnimBlend_t rest pose (FUN_10050abc)"},
+        {0x504F2, FN(GetAnim2), "CATAnimBlend_t::GetAnim2"},
+        {0x50A5B, FN(BlendAt64), "CATAnimBlend_t field (FUN_10050a5b)"},
+        {0x50FF4, FN(BlendClear), "CATAnimBlend_t clear (FUN_10050ff4)"},
+        {0x52A5E, FN(DataAt58), "CATKeyframeAnimData_t field (FUN_10052a5e)"},
+        {0x52A69, FN(ReturnTrue), "CATKeyframeAnimData_t flag (FUN_10052a69)"},
     };
 #undef FN
     int installed = 0;

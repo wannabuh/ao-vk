@@ -301,6 +301,10 @@ void __fastcall Destroy(Blob* b)
     b->renderStates.release();
 }
 
+void* __fastcall GetBlueprint(Blob* b, void*) { return Field<void*>(b, 0x0C); }        // StateBlob_c::GetBlueprint
+void* __fastcall GetMaterial(Blob* b, void*) { return Field<void*>(b, 0x10); }        // StateBlob_c::GetMaterial
+uint32_t __fastcall GetRenderTarget(Blob* b, void*) { return Field<uint32_t>(b, 0x08); }   // StateBlob_c::GetRenderTarget
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -319,6 +323,9 @@ void Install(HMODULE orig)
         {0x255B5, FN(Destroy), "StateBlob_c::~StateBlob_c"},
         {0x25456, FN(Clear), "StateBlob_c::Clear"},
         {0x24CE2, FN(NeedTextures), "StateBlob_c::NeedTextures"},
+        {0x24CF8, FN(GetBlueprint), "StateBlob_c::GetBlueprint"},
+        {0x24D09, FN(GetMaterial), "StateBlob_c::GetMaterial"},
+        {0x24D1A, FN(GetRenderTarget), "StateBlob_c::GetRenderTarget"},
         {0x24CEB, FN(SetBlueprint), "StateBlob_c::SetBlueprint"},
         {0x24CFC, FN(SetMaterial), "StateBlob_c::SetMaterial"},
         {0x24D0D, FN(SetRenderTarget), "StateBlob_c::SetRenderTarget"},

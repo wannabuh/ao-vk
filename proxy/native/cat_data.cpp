@@ -597,6 +597,14 @@ void __fastcall CalcBoundingVolume(uint8_t* m)
     points.release();
 }
 
+// FUN_10053e97: CATError_t's constructor (a std::runtime_error), installing the game class's own vtable.
+void* __fastcall CATErrorConstruct(void* self, void*, void* str)
+{
+    Internal<void(__fastcall*)(void*, void*, void*)>(0x53EB2)(self, nullptr, str);   // std::runtime_error(string)
+    SetVtable(self, 0x95D30);
+    return self;
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -654,6 +662,7 @@ void Install(HMODULE orig)
         {0x52D29, FN(MeshActiveVertices), "CATMesh_t active vertices (FUN_10052d29)"},
         {0x52D4F, FN(MeshActiveTriangles), "CATMesh_t active triangles (FUN_10052d4f)"},
         {0x52F16, FN(CalcBoundingVolume), "CATMesh_t::CalcBoundingVolume"},
+        {0x53E97, FN(CATErrorConstruct), "CATError_t::CATError_t"},
     };
 #undef FN
     int installed = 0;

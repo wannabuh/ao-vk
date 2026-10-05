@@ -132,7 +132,13 @@ STL_STRING = {0x11E08, 0x11EC6, 0x11F52, 0x11FE3, 0x1211B, 0x1468C, 0x178AD, 0x1
 # VS2010's std::map / std::set red-black tree, also statically linked and unnamed (its node's colour is at +0x2C / +0x2D
 # and its header at +4): _Lbound, the two rotations, the header, _Erase, the recursive and range erases and the map
 # destructor. Same treatment as the string ones.
-STL_MAP = {0x47E91, 0x47F15, 0x47FB1, 0x47FF6, 0x48244, 0x4849B, 0x485B7, 0x485DE, 0x48631}
+STL_MAP = {0x47E91, 0x47F15, 0x47FB1, 0x47FF6, 0x48244, 0x4849B, 0x485B7, 0x485DE, 0x48631,
+           # A second instantiation (the CATMesh attractors' map and the visuals' observer set): colour at +0x10 /
+           # +0x11, header at +4, node 0x14 bytes. _Insert, the rotations, _Buynode / _Buyheadnode, _Erase, clear, the
+           # range erase and the destructor, its iterator ++ / -- and std::distance, and a lower_bound emitted with the
+           # SubjectImpl<Rendering> observers (0x12b93 / 0x12c0e).
+           0x4A5C2, 0x4A608, 0x4A67A, 0x4A6CF, 0x4A7F8, 0x4A812, 0x5B008, 0x5B04F, 0x5B0B4, 0x5B170, 0x5B3BB, 0x5B3F0,
+           0x5B417, 0x5B824, 0x5B867, 0x12B93, 0x12C0E}
 
 # The game's serialize library's fun::FindObjectFor<T> instantiations: ArchiveStream_c::DoFindObject then an
 # __RTDynamicCast to the wanted class. Statically linked and unnamed, like the STL (every DoFindObject caller here
@@ -140,6 +146,21 @@ STL_MAP = {0x47E91, 0x47F15, 0x47FB1, 0x47FF6, 0x48244, 0x4849B, 0x485B7, 0x485D
 # but is Randy's own, so it is not here.
 FUN_FIND = {0x13D19, 0x13D62, 0x2BDDC, 0x2F989, 0x414DF, 0x460B8, 0x46101, 0x46DB0, 0x47ECC, 0x48BBE, 0x49E12, 0x4AF4F,
             0x4F8AB}
+
+# The statically linked CRT's exception classes, unnamed: std::bad_alloc's and std::exception's deleting destructors
+# (0x11653 / 0x52aef, each through msvcr100's `??1exception`) and std::runtime_error's constructor (0x53eb2, which
+# installs std::runtime_error's vtable). Same treatment as the STL. (CATError_t, the game's own runtime_error
+# subclass, is not here - it sets its own vtable and stays Randy's.)
+CRT_EXCEPTION = {0x11653, 0x52AEF, 0x53EB2}
+
+# A compiler SEH funclet (0x6e07e: the epilogue Ghidra split from the library function 0x6db0a in the zlib range that
+# calls it); there is no C to write for it.
+SEH_FUNCLET = {0x6E07E}
+
+# render_t's forwards to the statically linked D3DX7 (already library): D3DXGetErrorString / D3DXMakeDDPixelFormat /
+# D3DXMakeSurfaceFormat / D3DXCreateTexture / D3DXLoadTextureFromMemory / D3DXLoadTextureFromSurface. They only find
+# the D3DX function, call it, and turn a failure into the game's fun::DXError (dxerror.cpp, which we do port).
+D3DX_GLUE = {0x20BED, 0x21541, 0x23DB3, 0x24844, 0x24908, 0x249C1}
 
 
 def call_graph():
@@ -272,7 +293,8 @@ def main():
         # (texture loading); past 0x787AE the CRT glue. 0x6E06A-0x787AE is Funcom's own code linked in - the FAF scene
         # reader (FC_*), streams (SL_*), config lines (LineItem*), matrix helpers - to port like Randy's (it calls
         # Randy's code; the libraries above never do).
-        if (LIB.match(name) or rva in STL_STRING or rva in STL_MAP or rva in FUN_FIND or rva < 0x11380
+        if (LIB.match(name) or rva in STL_STRING or rva in STL_MAP or rva in FUN_FIND or rva in CRT_EXCEPTION
+                or rva in SEH_FUNCLET or rva in D3DX_GLUE or rva < 0x11380
                 or (0x5C1D0 <= rva < 0x6E06A and name.startswith("FUN_")) or rva >= 0x787AE):
             cls = "(library)"
         elif 0x6E06A <= rva < 0x787AE:

@@ -7,6 +7,8 @@
 #include "native/serialize.h"
 #include "native/vc10.h"
 
+#include <cmath>
+
 namespace rnative::faf {
 
 namespace {
@@ -49,6 +51,21 @@ void __fastcall ArchiveCollision(void* self, void*, void* archive)
 {
     orig::RRefFrame_t_Archive(self, archive);
     serialize::Get().getStream(archive, nullptr);
+}
+
+// FUN_10016a92: the collision box's std::string at +0xA4 as a C string.
+void* __fastcall BoxName(void* self, void*)
+{
+    uint8_t* s = static_cast<uint8_t*>(self) + 0xA4;
+    return *reinterpret_cast<uint32_t*>(s + 0x14) > 0xF ? *reinterpret_cast<void**>(s) : static_cast<void*>(s);
+}
+
+// FUN_10017f2b: one over the length of the 3-float vector in this (the original's x87 sums c, a, b, then sqrt).
+float __fastcall InverseLength(void* self, void*)
+{
+    const float* v = static_cast<const float*>(self);
+    const float sum = float(double(v[2]) * double(v[2]) + double(v[0]) * double(v[0]) + double(v[1]) * double(v[1]));
+    return float(1.0 / double(std::sqrt(double(sum))));
 }
 
 }  // namespace
@@ -270,6 +287,8 @@ void Install(HMODULE orig)
         {0x17E85, FN(DeletingDtorMaterial), "FAFMaterial_t deleting destructor (FUN_10017e85)"},
         {0x17EC8, FN(InstantiateTexture), "FAFTexture_t::Instantiate"},
         {0x17F0C, FN(DeletingDtorTexture), "FAFTexture_t deleting destructor (FUN_10017f0c)"},
+        {0x16A92, FN(BoxName), "FAFCollisionBox_c name (FUN_10016a92)"},
+        {0x17F2B, FN(InverseLength), "a vector's inverse length (FUN_10017f2b)"},
     };
 #undef FN
     int installed = 0;

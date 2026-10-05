@@ -931,6 +931,14 @@ void* __fastcall FafTriMeshDataDelete(void* v, void*, uint8_t flags)   // FUN_10
     return v;
 }
 
+// Triangle: three indices per triangle, and the static tables its other accessors hand back. RVisualData_t's
+// SimpleMesh vector is at +0x4C.
+uint32_t __cdecl TriangleIndexCount() { return 3; }                                             // Triangle::GetIndexCount
+void* __cdecl TriangleTable0() { return reinterpret_cast<uint8_t*>(g_orig) + 0x8F490; }
+void* __cdecl TriangleTable1() { return reinterpret_cast<uint8_t*>(g_orig) + 0x8F4C0; }
+void* __cdecl TriangleTable2() { return reinterpret_cast<uint8_t*>(g_orig) + 0x8F4F8; }
+void* __fastcall VisualDataSimpleMeshes(void* self, void*) { return static_cast<uint8_t*>(self) + 0x4C; }
+
 }  // namespace
 
 void* MakePrivate(void* data, bool systemOnly) { return TriMeshDataPrivate(data, nullptr, systemOnly ? 1 : 0); }
@@ -1021,6 +1029,12 @@ void Install(HMODULE orig)
         {0x18087, FN(FafTriMeshDataConstructFrom), "FAFTriMeshData_t(archive) ctor (FUN_10018087)"},
         {0x180C4, FN(FafTriMeshDataArchive), "FAFTriMeshData_t::Archive (FUN_100180c4)"},
         {0x18893, FN(FafTriMeshDataDelete), "FAFTriMeshData_t deleting destructor (FUN_10018893)"},
+        {0x1B69D, FN(TriangleIndexCount), "Triangle::GetIndexCount"},
+        {0x1B6E3, FN(TriangleTable0), "Triangle static table 0 (FUN_1001b6e3)"},
+        {0x1B6E9, FN(TriangleTable1), "Triangle static table 1 (FUN_1001b6e9)"},
+        {0x1B6EF, FN(TriangleTable2), "Triangle static table 2 (FUN_1001b6ef)"},
+        {0x4E7EB, FN(VisualDataSimpleMeshes), "RVisualData_t::GetSimpleMeshArray (const)"},
+        {0x4E7EF, FN(VisualDataSimpleMeshes), "RVisualData_t::GetSimpleMeshArray"},
     };
 #undef FN
     int installed = 0;

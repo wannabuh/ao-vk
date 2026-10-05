@@ -755,6 +755,81 @@ void* __fastcall DefaultConstructFrom(void* m, void*, void* archive)   // FUN_10
 
 void* __cdecl DefaultInstantiate(void* archive) { return DefaultConstructFrom(vc10::Allocate(0xC0), nullptr, archive); }
 
+// ---- the pieces still the original's ----
+
+template <typename T>
+T& Global(uint32_t rva) { return *reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(g_orig) + rva); }
+
+void* __fastcall GetEnvTexture(void* m, void*) { return Field<void*>(m, 0x5C); }   // RMaterial_t::GetEnvTexture
+
+void* __fastcall DeleteMaterial(void* m, void*, uint8_t flags)   // FUN_10041528
+{
+    Destroy(m);
+    if (flags & 1) vc10::Free(m);
+    return m;
+}
+
+// FUN_10019197: DefaultMaterial_t's vector-constructor iterator (nothing to construct).
+bool __fastcall DefaultIter(void*, void*) { return false; }
+
+void* __fastcall DeleteDefaultMaterial(void* m, void*, uint8_t flags)   // FUN_1002ef97
+{
+    SetVtable(m, kDefaultVtable);
+    Destroy(m);
+    if (flags & 1) vc10::Free(m);
+    return m;
+}
+
+void* __fastcall DeleteDelta(void* d, void*, uint8_t flags)   // FUN_1002fbd2
+{
+    DeltaDestroy(static_cast<Delta*>(d));
+    if (flags & 1) vc10::Free(d);
+    return d;
+}
+
+// FUN_1002fd23: a frame's value at +0x84, its world matrix updated first when its +0x9E flag is set.
+float __fastcall FrameValue84(void* self, void*)
+{
+    if (Field<uint8_t>(self, 0x9E)) orig::RRefFrame_t_UpdateWorldMatrix(self);
+    return Field<float>(self, 0x84);
+}
+
+// FUN_1002eda6: the material archive, then the archive's stream (the original makes it here).
+void __fastcall DeltaArchiveMaterial(void* self, void*, void* archive)
+{
+    Internal<void(__fastcall*)(void*, void*, void*)>(0x40916)(self, nullptr, archive);   // RMaterial_t::Archive
+    S().getStream(archive, nullptr);
+}
+
+// ---- the CRT's rand, seeded once from the counter (FUN_1002edbe / FUN_1002ede7) ----
+
+int MsvcrRand()
+{
+    static const auto f = reinterpret_cast<int(__cdecl*)()>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "rand"));
+    return f ? f() : 0;
+}
+
+uint32_t __cdecl SeedRandom()   // FUN_1002edbe (returns 0, as the original)
+{
+    LARGE_INTEGER counter;
+    counter.LowPart = 0;
+    counter.HighPart = 0;
+    QueryPerformanceCounter(&counter);
+    static const auto srand_ =
+        reinterpret_cast<void(__cdecl*)(unsigned)>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "srand"));
+    if (srand_) srand_(counter.LowPart);
+    return 0;
+}
+
+void __cdecl RandomRGB(float* out)   // FUN_1002ede7, a colour in [0.25, 0.75]
+{
+    if (!(Global<uint32_t>(0x17D280) & 1)) {
+        Global<uint32_t>(0x17D280) |= 1;
+        Global<uint32_t>(0x17D27C) = SeedRandom();
+    }
+    for (int i = 0; i < 3; ++i) out[i] = float(double(MsvcrRand()) / 32767.0 * 0.5 + 0.25);
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -813,6 +888,15 @@ void Install(HMODULE orig)
         {0x2EE70, FN(DefaultConstruct), "DefaultMaterial_t::DefaultMaterial_t"},
         {0x2EEDE, FN(DefaultConstructFrom), "DefaultMaterial_t(archive) (FUN_1002eede)"},
         {0x2EF5F, FN(DefaultInstantiate), "DefaultMaterial_t::Instantiate"},
+        {0x40AFB, FN(GetEnvTexture), "RMaterial_t::GetEnvTexture"},
+        {0x41528, FN(DeleteMaterial), "RMaterial_t deleting destructor (FUN_10041528)"},
+        {0x19197, FN(DefaultIter), "DefaultMaterial_t constructor iterator (FUN_10019197)"},
+        {0x2EF97, FN(DeleteDefaultMaterial), "DefaultMaterial_t deleting destructor (FUN_1002ef97)"},
+        {0x2FBD2, FN(DeleteDelta), "RDeltaState deleting destructor (FUN_1002fbd2)"},
+        {0x2FD23, FN(FrameValue84), "a frame's value at +0x84 (FUN_1002fd23)"},
+        {0x2EDA6, FN(DeltaArchiveMaterial), "DefaultMaterial_t::Archive (FUN_1002eda6)"},
+        {0x2EDBE, FN(SeedRandom), "the CRT rand seeded (FUN_1002edbe)"},
+        {0x2EDE7, FN(RandomRGB), "a random colour (FUN_1002ede7)"},
     };
 #undef FN
     int installed = 0;

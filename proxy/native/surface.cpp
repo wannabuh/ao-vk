@@ -209,6 +209,26 @@ void __fastcall GetCaps(void* render, void*, void* caps, void* helCaps)   // FUN
     if (caps) std::memcpy(static_cast<uint8_t*>(render) + 0x10, caps, 0x5F * 4);
 }
 
+// FUN_10026277: a format code to a byte / bit count. FUN_100278b4: the format's colour bits. FUN_100263dc: nothing.
+uint32_t __cdecl FormatBits(int format)
+{
+    int rest = 0;
+    if (format < 0x13) {
+        if (format == 0x12) return 1;
+        if (format == 2) return 8;
+        if (format == 8) return 1;
+        rest = format - 10;
+        if (rest == 0) return 4;
+    } else {
+        if (format == 0x13) return 4;
+        rest = format - 0x14;
+        if (rest == 0) return 8;
+    }
+    return rest == 2 ? 8 : 0;
+}
+uint32_t __cdecl ReturnTwo() { return 2; }                                    // FUN_100278b4
+void __fastcall Ret8(void*, void*, uint32_t, uint32_t) {}                     // FUN_100263dc
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -242,6 +262,9 @@ void Install(HMODULE orig)
         {0x2376A, FN(WaitForVerticalBlank), "render_t::WaitForVerticalBlank (FUN_1002376a)"},
         {0x23E14, FN(EvictManagedTextures), "render_t::EvictManagedTextures (FUN_10023e14)"},
         {0x21073, FN(GetCaps), "render_t::GetCaps (FUN_10021073)"},
+        {0x26277, FN(FormatBits), "a format code's bits (FUN_10026277)"},
+        {0x263DC, FN(Ret8), "a surface no-op (FUN_100263dc)"},
+        {0x278B4, FN(ReturnTwo), "a surface constant 2 (FUN_100278b4)"},
     };
 #undef FN
     int installed = 0;

@@ -130,6 +130,21 @@ void* __cdecl Instantiate(void* archive)
     return ConstructFrom(r, nullptr, archive);
 }
 
+// FUN_10016469: a second entry point to RResource_t::AddRefRResource.
+void __fastcall AddRefAlias(void* self, void*)
+{
+    reinterpret_cast<void(__fastcall*)(void*, void*)>(reinterpret_cast<uint8_t*>(g_orig) + 0x4621A)(self, nullptr);
+}
+
+// FUN_10046767: hand `arg` and this to the object at +0x17C (its vtable slot 0x14).
+void __fastcall NotifyTexture(void* self, void*, void* arg)
+{
+    void* obj = Field<void*>(self, 0x17C);
+    if (!obj) return;
+    using Fn = void(__fastcall*)(void*, void*, void*, void*);
+    reinterpret_cast<Fn>((*static_cast<void***>(obj))[0x50 / 4])(obj, nullptr, arg, self);
+}
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -157,6 +172,8 @@ void Install(HMODULE orig)
         {0x462AD, FN(Copy), "RResource_t::RResource_t(copy) (FUN_100462ad)"},
         {0x4624F, FN(SetCounted), "RResource_t counted flag (FUN_1004624f)"},
         {0x46266, FN(SetReferences), "RResource_t references (FUN_10046266)"},
+        {0x16469, FN(AddRefAlias), "RResource_t::AddRefRResource (2nd entry) (FUN_10016469)"},
+        {0x46767, FN(NotifyTexture), "RResource_t notifies its texture (FUN_10046767)"},
     };
 #undef FN
     int installed = 0;

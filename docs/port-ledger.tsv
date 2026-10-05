@@ -682,7 +682,7 @@
 0x43C48	replaced	proxy/native/randy_init.cpp	Randy_t frame buffer resized (FUN_10043c48)
 0x263D2	dead	-	D3DFormatAccess*_c vtable slot (DXT1, DXT3, DXT5): its objects are made only by FUN_100262dc, which nothing references
 0x263D7	dead	-	D3DFormatAccess*_c vtable slot (DXT1, DXT3, DXT5): its objects are made only by FUN_100262dc, which nothing references
-0x263DF	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, A4R4G4B4, DXT1, ...): its objects are made only by FUN_100262dc, which nothing references
+0x263DF	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, A4R4G4B4, DXT1, ...): its objects are made only by FUN_100262dc, which nothing references (too short to patch: entry_guard)
 0x263E2	dead	-	D3DFormatAccess*_c vtable slot (DXT1, DXT5): its objects are made only by FUN_100262dc, which nothing references
 0x263E8	dead	-	D3DFormatAccess*_c vtable slot (DXT1): its objects are made only by FUN_100262dc, which nothing references
 0x26626	dead	-	D3DFormatAccess*_c vtable slot (DXT1): its objects are made only by FUN_100262dc, which nothing references
@@ -753,7 +753,7 @@
 0x28190	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
 0x281BB	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
 0x281EC	dead	-	D3DFormatAccess*_c vtable slot (A4R4G4B4): its objects are made only by FUN_100262dc, which nothing references
-0x28212	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5, X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
+0x28212	dead	-	D3DFormatAccess*_c vtable slot (R5G6B5, X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references (too short to patch: entry_guard)
 0x28216	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
 0x2825D	dead	-	D3DFormatAccess*_c vtable slot (A1R5G5B5, X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
 0x28299	dead	-	D3DFormatAccess*_c vtable slot (X1R5G5B5): its objects are made only by FUN_100262dc, which nothing references
@@ -882,7 +882,7 @@
 0x47271	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::IsGroundLightUsed
 0x472A2	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::IsStatelLightUsed
 0x472D3	replaced	proxy/native/shadowlands.cpp	RandyShadowlandsData_s::IsCATLightUsed
-0x1998C	replaced	proxy/native/color.cpp	Color_t::Color_t
+0x1998C	replaced	proxy/native/color.cpp	Color_t::Color_t (too short to patch: entry_guard)
 0x1998F	replaced	proxy/native/color.cpp	Color_t::Color_t(uint)
 0x199BB	replaced	proxy/native/color.cpp	Color_t::Init(float,float,float,float)
 0x199FF	replaced	proxy/native/color.cpp	Color_t::Init(RGB_t,float)
@@ -927,7 +927,7 @@
 0x558F5	replaced	proxy/native/cat_status.cpp	CATStdioStatus_t::VPrintError
 0x55910	replaced	proxy/native/cat_status.cpp	CATStdioStatus_t::VPrintDebug
 0x1B63B	replaced	proxy/native/helpers.cpp	a Type* debug descriptor store (FUN_1001b63b)
-0x1B662	replaced	proxy/native/helpers.cpp	a Type* debug descriptor size (FUN_1001b662)
+0x1B662	replaced	proxy/native/helpers.cpp	a Type* debug descriptor size (FUN_1001b662) (too short to patch: entry_guard)
 0x2A358	replaced	proxy/native/helpers.cpp	Vector3 cross product (FUN_1002a358)
 0x2A39F	replaced	proxy/native/helpers.cpp	Vector3 scale (FUN_1002a39f)
 0x2A3DB	replaced	proxy/native/helpers.cpp	Vector3 cross product to (FUN_1002a3db)
@@ -1005,3 +1005,73 @@
 0x12AC1	replaced	proxy/native/rgrid.cpp	BVolume_t from points (FUN_10012ac1)
 0x12B69	replaced	proxy/native/rgrid.cpp	RGrid subject deleting destructor (FUN_10012b69)
 0x12B74	replaced	proxy/native/rgrid.cpp	RGrid deleting destructor (FUN_10012b74)
+0x24CF8	replaced	proxy/native/state_blob.cpp	StateBlob_c::GetBlueprint (too short to patch: entry_guard)
+0x24D09	replaced	proxy/native/state_blob.cpp	StateBlob_c::GetMaterial (too short to patch: entry_guard)
+0x24D1A	replaced	proxy/native/state_blob.cpp	StateBlob_c::GetRenderTarget (too short to patch: entry_guard)
+0x1B69D	replaced	proxy/native/mesh_data.cpp	Triangle::GetIndexCount (too short to patch: entry_guard)
+0x1B6E3	replaced	proxy/native/mesh_data.cpp	Triangle static table 0 (FUN_1001b6e3)
+0x1B6E9	replaced	proxy/native/mesh_data.cpp	Triangle static table 1 (FUN_1001b6e9)
+0x1B6EF	replaced	proxy/native/mesh_data.cpp	Triangle static table 2 (FUN_1001b6ef)
+0x4E7EB	replaced	proxy/native/mesh_data.cpp	RVisualData_t::GetSimpleMeshArray (const) (too short to patch: entry_guard)
+0x4E7EF	replaced	proxy/native/mesh_data.cpp	RVisualData_t::GetSimpleMeshArray (too short to patch: entry_guard)
+0x40AFB	replaced	proxy/native/material.cpp	RMaterial_t::GetEnvTexture (too short to patch: entry_guard)
+0x41528	replaced	proxy/native/material.cpp	RMaterial_t deleting destructor (FUN_10041528)
+0x19197	replaced	proxy/native/material.cpp	DefaultMaterial_t constructor iterator (FUN_10019197) (too short to patch: entry_guard)
+0x2EF97	replaced	proxy/native/material.cpp	DefaultMaterial_t deleting destructor (FUN_1002ef97)
+0x2FBD2	replaced	proxy/native/material.cpp	RDeltaState deleting destructor (FUN_1002fbd2)
+0x2FD23	replaced	proxy/native/material.cpp	a frame's value at +0x84 (FUN_1002fd23)
+0x2EDA6	replaced	proxy/native/material.cpp	DefaultMaterial_t::Archive (FUN_1002eda6)
+0x2EDBE	replaced	proxy/native/material.cpp	the CRT rand seeded (FUN_1002edbe)
+0x2EDE7	replaced	proxy/native/material.cpp	a random colour (FUN_1002ede7)
+0x26277	replaced	proxy/native/surface.cpp	a format code's bits (FUN_10026277)
+0x263DC	replaced	proxy/native/surface.cpp	a surface no-op (FUN_100263dc) (too short to patch: entry_guard)
+0x278B4	replaced	proxy/native/surface.cpp	a surface constant 2 (FUN_100278b4) (too short to patch: entry_guard)
+0x16469	replaced	proxy/native/resource.cpp	RResource_t::AddRefRResource (2nd entry) (FUN_10016469)
+0x46767	replaced	proxy/native/resource.cpp	RResource_t notifies its texture (FUN_10046767)
+0x47638	replaced	proxy/native/texture.cpp	RTexture_t::GetPitch (too short to patch: entry_guard)
+0x1984A	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator name (FUN_1001984a) (too short to patch: entry_guard)
+0x1984E	replaced	proxy/native/texture_stream.cpp	TextureStreamCreator flag (FUN_1001984e) (too short to patch: entry_guard)
+0x4763C	replaced	proxy/native/texture_stream.cpp	TextureCreator::TextureCreator(archive)
+0x4767A	replaced	proxy/native/texture_stream.cpp	TextureCreator::Archive
+0x504F2	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t::GetAnim2 (too short to patch: entry_guard)
+0x50A5B	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t field (FUN_10050a5b) (too short to patch: entry_guard)
+0x50FF4	replaced	proxy/native/cat_anim_data.cpp	CATAnimBlend_t clear (FUN_10050ff4)
+0x52A5E	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnimData_t field (FUN_10052a5e) (too short to patch: entry_guard)
+0x52A69	replaced	proxy/native/cat_anim_data.cpp	CATKeyframeAnimData_t flag (FUN_10052a69) (too short to patch: entry_guard)
+0x53E97	replaced	proxy/native/cat_data.cpp	CATError_t::CATError_t
+0x4198A	replaced	proxy/native/randy.cpp	Randy_t::GetNumAlphaBits (too short to patch: entry_guard)
+0x41566	replaced	proxy/native/randy.cpp	an offscreen feature given up (FUN_10041566)
+0x11BA0	replaced	proxy/native/randy.cpp	Randy's one-shot canary (FUN_10011ba0)
+0x14309	replaced	proxy/native/dynamic_vb.cpp	a vertex buffer freed (FUN_10014309)
+0x4A64D	replaced	proxy/native/mesh.cpp	RTriMesh_t subject deleting destructor (FUN_1004a64d)
+0x12C31	replaced	proxy/native/visual.cpp	SubjectImpl observer add (FUN_10012c31)
+0x12C58	replaced	proxy/native/visual.cpp	SubjectImpl observer remove (FUN_10012c58)
+0x12C9E	replaced	proxy/native/visual.cpp	SubjectImpl observer remove slot (FUN_10012c9e)
+0x16A92	replaced	proxy/native/faf.cpp	FAFCollisionBox_c name (FUN_10016a92)
+0x17F2B	replaced	proxy/native/faf.cpp	a vector's inverse length (FUN_10017f2b)
+0x28A4A	replaced	proxy/native/timer.cpp	Timer tick length (FUN_10028a4a)
+0x28A62	replaced	proxy/native/timer.cpp	Timer::Timer
+0x28ACA	replaced	proxy/native/timer.cpp	Timer counter (FUN_10028aca)
+0x28AE1	replaced	proxy/native/timer.cpp	Timer::GetSec
+0x28B1C	replaced	proxy/native/timer.cpp	Timer::GetMilliSec
+0x28C05	replaced	proxy/native/timer.cpp	Timer::Start
+0x28C1E	replaced	proxy/native/timer.cpp	Timer::Stop
+0x6E302	replaced	proxy/native/funcom.cpp	Funcom 4x4 matrix multiply (FUN_1006e302)
+0x6F058	replaced	proxy/native/funcom.cpp	Funcom hash constant (FUN_1006f058)
+0x6F05E	replaced	proxy/native/funcom.cpp	Funcom "Container" name (FUN_1006f05e)
+0x7080F	replaced	proxy/native/funcom.cpp	SL_StreamControl_t vtable (FUN_1007080f)
+0x70927	replaced	proxy/native/funcom.cpp	SL_StreamControl_t deleting destructor (FUN_10070927)
+0x71814	replaced	proxy/native/funcom.cpp	FC_Base_t::~FC_Base_t (FUN_10071814)
+0x71833	replaced	proxy/native/funcom.cpp	FC_Base_t name (FUN_10071833)
+0x71873	replaced	proxy/native/funcom.cpp	FC_Base_t name read (FUN_10071873)
+0x718BF	replaced	proxy/native/funcom.cpp	FC_Base_t write to a variable (FUN_100718bf)
+0x7194F	replaced	proxy/native/funcom.cpp	Funcom no-op (FUN_1007194f) (too short to patch: entry_guard)
+0x72247	replaced	proxy/native/funcom.cpp	Funcom returns 0 (FUN_10072247) (too short to patch: entry_guard)
+0x72F58	replaced	proxy/native/funcom.cpp	SL_Chunk_t destructor (FUN_10072f58)
+0x7386D	replaced	proxy/native/funcom.cpp	FC_Base_t deleting destructor (FUN_1007386d)
+0x74F95	replaced	proxy/native/funcom.cpp	Funcom clears a byte (FUN_10074f95)
+0x756F2	replaced	proxy/native/funcom.cpp	Funcom returns 1 (FUN_100756f2) (too short to patch: entry_guard)
+0x7809F	replaced	proxy/native/funcom.cpp	SL_Chunk_t deleting destructor (FUN_1007809f)
+0x25E1B	replaced	proxy/native/device.cpp	RenderStats_t::Reset (too short to patch: entry_guard)
+0x25E22	replaced	proxy/native/device.cpp	RenderStats_t::GetGroupName
+0x25E2A	replaced	proxy/native/device.cpp	RenderStats_t::GetNameName

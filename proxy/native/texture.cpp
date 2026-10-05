@@ -358,6 +358,8 @@ uint32_t __fastcall GetTextureSize(void* t)
     return total;
 }
 
+uint32_t __fastcall GetPitch(void* self, void*) { return Field<uint32_t>(self, 0x48); }   // RTexture_t::GetPitch
+
 }  // namespace
 
 void Install(HMODULE orig)
@@ -393,6 +395,7 @@ void Install(HMODULE orig)
         {0x47633, FN(GetHeight), "RTexture_t::GetHeight"},
         {0x47693, FN(GetDefault), "RTexture_t::GetDefault"},
         {0x47730, FN(GetTextureSize), "RTexture_t::GetTextureSize"},
+        {0x47638, FN(GetPitch), "RTexture_t::GetPitch"},
     };
 #undef FN
     // The registry is ours once any of its users is: all of them or none.

@@ -225,6 +225,23 @@ void* __fastcall DeletingDtorBase(Creator* self, void*, uint8_t flags)
 void* __fastcall NameAccessor(Creator* self, void*) { return &self->name; }
 uint8_t __fastcall FlagAccessor(Creator* self, void*) { return self->flag38; }
 
+// The TextureCreator base (FUN_1004763c / FUN_1004767a), which the stream creator's own archive constructor calls:
+// the Serializable_c constructor / Archive, the TextureCreator vtable, then the archive's stream.
+void* __fastcall BaseConstruct(Creator* self, void*, void* archive)
+{
+    serialize::Get().constructFrom(self, nullptr, archive);
+    self->vtable = reinterpret_cast<uint8_t*>(g_orig) + 0x8AA2C;   // TextureCreator::vftable
+    serialize::Get().getStream(archive, nullptr);
+    return self;
+}
+void __fastcall BaseArchive(Creator* self, void*, void* archive)
+{
+    using ArchiveFn = void(__fastcall*)(void*, void*, void*);
+    auto archive_ = *reinterpret_cast<ArchiveFn*>(reinterpret_cast<uint8_t*>(g_orig) + 0x8A36C);   // fun::Serializable_c::Archive
+    archive_(self, nullptr, archive);
+    serialize::Get().getStream(archive, nullptr);
+}
+
 // vsnprintf into a std::string (0x1988f): a 256- then 512-byte stack buffer, and if both truncate, the string grown
 // in 0x800 steps (FUN_1001798f / FUN_10017969) up to four times; the result assigned with the string's own assign.
 void __fastcall FormatInto(vc10::String* self, void*, const char* format, va_list ap)
@@ -290,6 +307,8 @@ void Install(HMODULE orig)
         {0x1984A, FN(NameAccessor), "TextureStreamCreator name (FUN_1001984a)"},
         {0x1984E, FN(FlagAccessor), "TextureStreamCreator flag (FUN_1001984e)"},
         {0x19852, FN(Dtor), "TextureStreamCreator destructor (FUN_10019852)"},
+        {0x4763C, FN(BaseConstruct), "TextureCreator::TextureCreator(archive)"},
+        {0x4767A, FN(BaseArchive), "TextureCreator::Archive"},
         {0x19870, FN(DeletingDtor), "TextureStreamCreator deleting destructor (FUN_10019870)"},
         {0x1988F, FN(FormatInto), "format into a std::string (FUN_1001988f)"},
         {0x1994C, FN(Format), "format with varargs (FUN_1001994c)"},
