@@ -422,9 +422,11 @@ void main()
     vec4 t0 = Sample(0u), t1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
 #ifdef RVK_GLOW
     // The surface's own colour, for the indirect light it reflects: lit draws through the stages under white light,
-    // unlit ones as they are (the ground's base pass is its bare texture; its lightmap pass keeps this).
-    vec3 albedo;
-    if ((C.flags.x & F_LIGHTING) != 0u) {
+    // unlit ones as they are (the ground's base pass is its bare texture; its lightmap pass keeps this). A
+    // multiplying pass (F_NOALBEDO) keeps the albedo the base pass wrote, so computing it here would be wasted work.
+    vec3 albedo = vec3(0.0);
+    bool wantAlbedo = (C.flags.x & F_NOALBEDO) == 0u;
+    if (wantAlbedo && (C.flags.x & F_LIGHTING) != 0u) {
         vec4 d = gDiffuse, sp = gSpecular;
         gDiffuse = vec4(1.0, 1.0, 1.0, d.a);
         gSpecular = vec4(0.0);
@@ -436,7 +438,7 @@ void main()
     t0.rgb *= texShade * gLightmapRelief;
     vec4 current = Cascade(t0, t1, 1.0);
 #ifdef RVK_GLOW
-    if ((C.flags.x & F_LIGHTING) == 0u)
+    if (wantAlbedo && (C.flags.x & F_LIGHTING) == 0u)
         albedo = current.rgb;
 #endif
     if (any(greaterThan(gLocalDiffuse + gLocalSpecular, vec3(0.0)))) {

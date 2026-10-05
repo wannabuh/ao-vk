@@ -1502,6 +1502,8 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
             if (m_drawTerrainBase) {              // the ground's light pass replaces these two (see Draw)
                 masks[2] = 0u;
                 masks[3] = 0u;
+            } else if (m_drawTerrainLight) {      // its motion is zero either way (the base pass skipped it too)
+                masks[3] = 0u;
             }
             if (std::memcmp(masks, c.writeMask, sizeof(masks)) != 0) {
                 VkColorComponentFlags flags[5];
@@ -1811,6 +1813,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // attachments are replaced by that pass (depth-equal, right after) or are zero anyway, so don't write them here
     // - the ground covers much of the screen and is overdrawn, so those writes are pure bandwidth.
     m_drawTerrainBase = terrain && !m_rs[d3d::RS_LIGHTING] && !m_rs[d3d::RS_ALPHABLENDENABLE];
+    m_drawTerrainLight = terrain && m_rs[d3d::RS_LIGHTING] && IsMultiplyPass();
     // The ground: base pass textures remembered by chunk; the lighting pass (lightmap + lights, multiplying the base,
     // drawn after all base passes) takes its relief from its chunk's.
     m_drawBumpBase = nullptr;
@@ -1969,6 +1972,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         flags |= F_EMISSIVE;
     // A character's body and parts: the lights characters carry don't shadow them (lighting.glsl).
     if (m_drawIsCharacter) flags |= F_CHARACTER;
+    if (m_drawTerrainLight) flags |= F_NOALBEDO;   // its albedo write is masked (the base pass wrote it)
     c.flags[0] = flags;
     c.flags[1] = m_rs[d3d::RS_FOGVERTEXMODE];
     c.flags[2] = m_rs[d3d::RS_FOGTABLEMODE];
