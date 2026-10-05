@@ -163,15 +163,18 @@ float CascadeVisibility(int c, vec3 posW, vec3 n, float nl, out float edge)
     // lit; all: deep in the shadow (the filter wouldn't reach out of it) - both without the filter.
     // The centre too: a thin shadow (a pole) must not fall between the taps.
     float searchTexels = clamp(k * 30.0 / texel, 1.5, 24.0), blockerSum = 0.0, blockers = 0.0;
-    for (int i = 0; i < 9; ++i) {
-        vec2 o = i == 8 ? vec2(0.0) : Vogel(i, 8, rotation) * searchTexels * ts;
+    const int kSearch = 5;                       // the centre plus four blockers (a thin shadow still hits the centre)
+    for (int i = 0; i < kSearch; ++i) {
+        vec2 o = i == kSearch - 1 ? vec2(0.0) : Vogel(i, kSearch - 1, rotation) * searchTexels * ts;
         float d = texture(shadowDepths, vec3(uv + o, float(c))).r;
         if (d < ndc.z) { blockerSum += d; blockers += 1.0; }
     }
     if (blockers == 0.0) return 1.0;
-    if (blockers == 9.0) return 0.0;
+    if (blockers == float(kSearch)) return 0.0;
     float distance = (ndc.z - blockerSum / blockers) * FL.cascadeDepth[c];
     float radius = clamp(distance * k / texel, 1.0, 24.0);
+    if (radius < 2.0)                            // a sharp penumbra: the wide filter would only re-read the same texels
+        return texture(shadowMap, vec4(uv, float(c), ndc.z));
     float sum = 0.0;
     for (int i = 0; i < 12; ++i)
         sum += texture(shadowMap, vec4(uv + Vogel(i, 12, rotation) * radius * ts, float(c), ndc.z));
@@ -466,10 +469,9 @@ void main()
             if (dot(nf, toEye) < 0.0) nf = -nf;                  // the side the camera sees
             float through = max(-dot(nf, L), 0.0), glare = pow(max(dot(-toEye, L), 0.0), 4.0);
             if (through + glare > 0.0) {
-                // The sun's visibility on the lit side: the main shadow's when that is the same side (one search).
-                float visible = FL.shadowParams.x <= 0.5 ? 1.0
-                              : gSunVisibilityValid && dot(-nf, vNormalW.xyz) > 0.0 ? gSunVisibility
-                              : SunVisibility(vPosW, -nf);
+                // The sun's visibility on the lit side: the shadow already computed for the surface (a second,
+                // opposite-side search only darkened back-lit leaves and cost another few taps).
+                float visible = FL.shadowParams.x <= 0.5 ? 1.0 : gSunVisibilityValid ? gSunVisibility : 1.0;
                 current.rgb += t0.rgb * FL.sunColor.rgb * ((0.5 * through + 0.7 * glare) * visible * holes * FL.effects.x);
             }
         }
