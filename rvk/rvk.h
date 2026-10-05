@@ -460,6 +460,7 @@ private:
     std::unordered_map<uint64_t, Texture*> m_terrainBases;
     Texture* m_drawBumpBase = nullptr;           // the current draw's (Draw)
     Texture* m_constantsBumpBase = nullptr;
+    bool m_drawTerrainBase = false;              // the current draw is the ground's unlit base pass (Draw)
     VkSampler m_bumpSampler = VK_NULL_HANDLE;
     static uint64_t TerrainChunkKey(const void* vertices, uint32_t vertexCount, uint32_t stride, uint32_t indexCount);
     uint32_t m_dumpVertexCount = 0;

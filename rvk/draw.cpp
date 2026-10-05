@@ -1499,6 +1499,10 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
                                  blend && fSrc == d3d::BLEND_ZERO && fDst == d3d::BLEND_ONE ? 0u : all,
                                  keep ? 0u : all,
                                  blend && aSrc == d3d::BLEND_ZERO && aDst == d3d::BLEND_ONE ? 0u : all};
+            if (m_drawTerrainBase) {              // the ground's light pass replaces these two (see Draw)
+                masks[2] = 0u;
+                masks[3] = 0u;
+            }
             if (std::memcmp(masks, c.writeMask, sizeof(masks)) != 0) {
                 VkColorComponentFlags flags[5];
                 for (int i = 0; i < 5; ++i) flags[i] = masks[i];
@@ -1803,6 +1807,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // The big constant block: reused unless something feeding it changed since it was written.
     uint32_t texMask = (m_textures[0] ? 1u : 0u) | (m_textures[1] ? 2u : 0u);
     bool terrain = IsTerrain(fvf);
+    // The ground's base pass (unlit, the texture the lighting pass multiplies): its local-light fraction and motion
+    // attachments are replaced by that pass (depth-equal, right after) or are zero anyway, so don't write them here
+    // - the ground covers much of the screen and is overdrawn, so those writes are pure bandwidth.
+    m_drawTerrainBase = terrain && !m_rs[d3d::RS_LIGHTING] && !m_rs[d3d::RS_ALPHABLENDENABLE];
     // The ground: base pass textures remembered by chunk; the lighting pass (lightmap + lights, multiplying the base,
     // drawn after all base passes) takes its relief from its chunk's.
     m_drawBumpBase = nullptr;
