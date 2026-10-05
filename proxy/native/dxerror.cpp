@@ -18,6 +18,25 @@ namespace {
 
 HMODULE g_orig;
 
+template <typename T>
+T& Field(void* object, uint32_t offset) { return *reinterpret_cast<T*>(static_cast<uint8_t*>(object) + offset); }
+void* At(uint32_t rva) { return reinterpret_cast<uint8_t*>(g_orig) + rva; }
+
+// the original's static DXError (vtable in its .rdata) and msvcr100's std::exception it derives from
+constexpr uint32_t kDXErrorVtable = 0x9296C;
+void ExceptionCtor(void* self)
+{
+    static const auto ctor = reinterpret_cast<void(__fastcall*)(void*, void*)>(
+        GetProcAddress(GetModuleHandleA("msvcr100.dll"), "??0exception@std@@QAE@XZ"));
+    ctor(self, nullptr);
+}
+void ExceptionDtor(void* self)
+{
+    static const auto dtor = reinterpret_cast<void(__fastcall*)(void*, void*)>(
+        GetProcAddress(GetModuleHandleA("msvcr100.dll"), "??1exception@std@@UAE@XZ"));
+    dtor(self, nullptr);
+}
+
 void Append(vc10::String& s, const char* text)
 {
     const size_t n = std::strlen(text);
@@ -62,6 +81,35 @@ bool Describe(int32_t hr, const char** description, const char** name)
     return true;
 }
 
+// fun::DXError's members (DisplaySystem imports them): the constructor / destructor and the three accessors.
+void* __fastcall Construct(void* self, void*, int32_t hr, const vc10::String* message, const vc10::String* file,
+                           int line)
+{
+    ExceptionCtor(self);
+    *reinterpret_cast<uintptr_t*>(self) = reinterpret_cast<uintptr_t>(At(kDXErrorVtable));
+    vc10::String& text = Field<vc10::String>(self, 0x10);
+    vc10::String& source = Field<vc10::String>(self, 0x2C);
+    text.init();
+    source.init();
+    Field<int32_t>(self, 0x0C) = hr;
+    text.assign(message->c_str(), message->size);
+    source.assign(file->c_str(), file->size);
+    Field<int32_t>(self, 0x48) = line;
+    return self;
+}
+
+void __fastcall Destroy(void* self, void*)
+{
+    *reinterpret_cast<uintptr_t*>(self) = reinterpret_cast<uintptr_t>(At(kDXErrorVtable));
+    Field<vc10::String>(self, 0x2C).release();
+    Field<vc10::String>(self, 0x10).release();
+    ExceptionDtor(self);
+}
+
+int32_t __fastcall GetErrorNo(void* self, void*) { return Field<int32_t>(self, 0x0C); }
+int32_t __fastcall GetLineNo(void* self, void*) { return Field<int32_t>(self, 0x48); }
+void* __fastcall GetFilename(void* self, void*) { return static_cast<uint8_t*>(self) + 0x2C; }
+
 [[noreturn]] void Throw(int32_t hr, const char* message, const char* file, int line)
 {
     vc10::String text, where;
@@ -70,10 +118,7 @@ bool Describe(int32_t hr, const char** description, const char** name)
     text.assign(message, std::strlen(message));
     where.assign(file, std::strlen(file));
     alignas(8) uint8_t error[0x4C];
-    using CtorFn = void*(__fastcall*)(void*, void*, int32_t, const vc10::String*, const vc10::String*, int);
-    reinterpret_cast<CtorFn>(GetProcAddress(
-        g_orig, "??0DXError@fun@@QAE@JABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0H@Z"))(
-        error, nullptr, hr, &text, &where, line);
+    Construct(error, nullptr, hr, &text, &where, line);
     text.release();
     where.release();
     using ThrowFn = void(__stdcall*)(void*, void*);
@@ -86,7 +131,22 @@ bool Describe(int32_t hr, const char** description, const char** name)
 void Install(HMODULE orig)
 {
     g_orig = orig;
-    Replace(orig, 0x1E51A, reinterpret_cast<void*>(&GetErrorString), "fun::DXError::GetErrorString");
+    struct Entry {
+        uint32_t rva;
+        void* target;
+        const char* what;
+    };
+    const Entry entries[] = {
+        {0x1E51A, reinterpret_cast<void*>(&GetErrorString), "fun::DXError::GetErrorString"},
+        {0x1E4A3, reinterpret_cast<void*>(&Construct), "fun::DXError::DXError (FUN_1001e4a3)"},
+        {0x1E479, reinterpret_cast<void*>(&Destroy), "fun::DXError::~DXError"},
+        {0x1D615, reinterpret_cast<void*>(&GetErrorNo), "fun::DXError::GetErrorNo"},
+        {0x1D611, reinterpret_cast<void*>(&GetLineNo), "fun::DXError::GetLineNo"},
+        {0x1D60D, reinterpret_cast<void*>(&GetFilename), "fun::DXError::GetFilename"},
+    };
+    int installed = 0;
+    for (const Entry& e : entries) installed += Replace(orig, e.rva, e.target, e.what) ? 1 : 0;
+    Log("DXError: %d of %d functions native", installed, int(sizeof(entries) / sizeof(entries[0])));
 }
 
 }  // namespace rnative::dxerror

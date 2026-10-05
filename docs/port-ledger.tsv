@@ -1076,3 +1076,8 @@
 0x25E22	replaced	proxy/native/device.cpp	RenderStats_t::GetGroupName
 0x25E2A	replaced	proxy/native/device.cpp	RenderStats_t::GetNameName
 0x5C270	replaced	proxy/native/cat_anim_data.cpp	zlib uncompress (FUN_1005c270)
+0x1E4A3	replaced	proxy/native/dxerror.cpp	fun::DXError::DXError (FUN_1001e4a3)
+0x1E479	replaced	proxy/native/dxerror.cpp	fun::DXError::~DXError
+0x1D615	replaced	proxy/native/dxerror.cpp	fun::DXError::GetErrorNo
+0x1D611	replaced	proxy/native/dxerror.cpp	fun::DXError::GetLineNo
+0x1D60D	replaced	proxy/native/dxerror.cpp	fun::DXError::GetFilename
