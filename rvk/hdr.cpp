@@ -325,6 +325,8 @@ void Device::BeginScene()
     m_taaJitter[1] = (halton(k, 3) - 0.5f) * 2.0f / h;
     m_sceneSaw3D = false;
     m_aoProjValid = false;
+    m_sceneClass = 0;
+    m_sceneClassMarks = 0;
     m_motionPrev.swap(m_motionCur);              // last frame's objects, for matching this frame's
     m_motionCur.clear();
     m_glowCleared = false;
@@ -348,6 +350,7 @@ void Device::EndScene()
     VkCommandBuffer cmd = m_frames[m_frameIndex].main;
     bool wasMain = m_target == m_scene;
     EndRendering();
+    ProfileSceneClass(0);                        // close the last scene class for the GPU profile
     ProfileMark("scene");
     double cpu = ProfileCpu();
     Transition(cmd, m_scene, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);

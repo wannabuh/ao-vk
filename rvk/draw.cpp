@@ -1609,6 +1609,18 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (!m_inFrame || !vertexCount)
         return;
     ++m_frameDraw;
+    // GPU profiling: which class of scene draw this is (splits the "scene" block; see ProfileSceneClass).
+    if (m_scenePhase && m_target == m_scene && !m_external &&
+        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) {
+        int cls = 1;
+        if (IsTerrain(fvf))
+            cls = IsMultiplyPass() ? 3 : 2;
+        else if (m_leafLight > 0.0f && m_rs[d3d::RS_LIGHTING] &&
+                 (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) && m_textures[0] &&
+                 (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
+            cls = 4;
+        ProfileSceneClass(cls);
+    }
     // Particles whose effect the game no longer draws: at the end of the 3D scene - the first interface draw after 3D,
     // both into the main target (other targets - refraction, offscreen copies - have their own pre-transformed draws).
     if (!m_external && m_target == m_main) {

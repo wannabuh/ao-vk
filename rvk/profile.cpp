@@ -87,6 +87,20 @@ void Device::ProfileMark(const char* name)
     p.names[p.count++] = name;
 }
 
+// The scene's draws split by class (opaque, terrain base, terrain light, foliage) for the GPU profile: the interval
+// ending at a mark is named after the class it closes. Bounded so the pool isn't exhausted mid-frame.
+void Device::ProfileSceneClass(int cls)
+{
+    if (cls == m_sceneClass || m_sceneClassMarks >= 20)
+        return;
+    static const char* names[] = {"", "scene opaque", "scene terrain base", "scene terrain light", "scene foliage"};
+    if (m_sceneClass > 0 && m_sceneClass < int(sizeof(names) / sizeof(names[0]))) {
+        ProfileMark(names[m_sceneClass]);
+        ++m_sceneClassMarks;
+    }
+    m_sceneClass = cls;
+}
+
 // CPU time of a part of the frame's recording (milliseconds since `since`, from ProfileCpu()).
 double Device::ProfileCpu() const { return CpuNow(); }
 void Device::ProfileCpuAdd(const char* name, double since) { ProfileAdd(m_profileCpu, name, CpuNow() - since); }

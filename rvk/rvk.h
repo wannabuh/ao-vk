@@ -948,6 +948,11 @@ private:
     void DestroyHdrResources();
     void BeginScene();
     void EndScene();
+    // GPU profiling (profile.cpp): a mark when the scene's draw class changes, so the 4.8 ms "scene" block splits
+    // into opaque / terrain base / terrain light / foliage.
+    int m_sceneClass = 0;
+    uint32_t m_sceneClassMarks = 0;
+    void ProfileSceneClass(int cls);
 
     // Particles (particles.cpp): one block of kParticlesPerBlock particles per effect; particle p belongs to sprite slot
     // p / kParticleChildren. State and the generated quads (FVF 0x142, 4 vertices a particle) live in GPU buffers; the
