@@ -67,7 +67,7 @@ void* __fastcall CreateTexture(Creator* self, void*, void* bitmapRaw, const char
                              : state == 2 ? "Bad texture file %s!"
                              : state == 3 ? "Memory error opening texture file %s!"
                                           : "Unknown error opening texture file %s!";
-        Internal<void(__cdecl*)(void*, const char*, ...)>(kFormat)(&message, format);
+        Internal<void(__cdecl*)(void*, const char*, ...)>(kFormat)(&message, format, self->name.c_str());
         Tidy(message);
         return nullptr;
     }
@@ -97,8 +97,10 @@ void* __fastcall CreateTexture(Creator* self, void*, void* bitmapRaw, const char
     vc10::String createError, convertError;
     createError.init();
     convertError.init();
-    Internal<void(__cdecl*)(void*, const char*, ...)>(kFormat)(&createError, "Could not create texture from file %s!");
-    Internal<void(__cdecl*)(void*, const char*, ...)>(kFormat)(&convertError, "Could not convert texture from file %s!");
+    Internal<void(__cdecl*)(void*, const char*, ...)>(kFormat)(&createError, "Could not create texture from file %s!",
+                                                              self->name.c_str());
+    Internal<void(__cdecl*)(void*, const char*, ...)>(kFormat)(&convertError, "Could not convert texture from file %s!",
+                                                               self->name.c_str());
     if (G<int32_t>(kSupport) == 1 && format == 0x12) {
         self->flag38 = 1;
         self->format = 0x13;
