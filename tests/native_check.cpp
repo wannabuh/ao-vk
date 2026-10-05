@@ -6,6 +6,7 @@
 #include "native/cat_query.h"
 #include "native/cat_skin.h"
 #include "native/dxerror.h"
+#include "native/keyframe.h"
 #include "native/vc10.h"
 #include "native/xmath.h"
 
@@ -794,6 +795,94 @@ void CheckDxErrors()
     Check(bad == 0, "dxerror: GetErrorString");
 }
 
+// RKeyFrameAnimation_t's evaluation (FUN_10028fde) against ours on random animations: the same objects (key lists,
+// cached indices), the same times in a row (on, back, past the end, looped or held); everything it writes compared
+// to the bit.
+void CheckKeyframes()
+{
+    using EvaluateFn = void(__fastcall*)(void*, void*, float, float*, uint8_t*);
+    auto original = reinterpret_cast<EvaluateFn>(reinterpret_cast<uint8_t*>(g_orig) + 0x28FDE);
+    std::mt19937 rng(1234);
+    std::uniform_real_distribution<float> unit(-1.0f, 1.0f), step(0.0f, 2.0f);
+    auto times = [&](int n, float* out, int stride) {   // increasing, a few repeated
+        float t = 0.0f;
+        for (int i = 0; i < n; ++i) {
+            out[i * stride] = t;
+            t += (rng() % 7 == 0) ? 0.0f : step(rng);
+        }
+    };
+    int mismatches = 0, calls = 0;
+    for (int trial = 0; trial < 400; ++trial) {
+        const int nt = 1 + int(rng() % 10), nr = 1 + int(rng() % 10), nv = 1 + int(rng() % 6), nu = 1 + int(rng() % 6);
+        std::vector<float> trans(nt * 4), rot(nr * 5), vis(nv * 2), uv(nu * 6);
+        for (float& v : trans) v = unit(rng) * 10.0f;
+        for (float& v : rot) v = unit(rng);
+        for (int i = 0; i < nv; ++i) reinterpret_cast<uint32_t&>(vis[i * 2 + 1]) = rng() & 1;
+        for (float& v : uv) v = unit(rng) * 2.0f;
+        for (int i = 0; i < nu; ++i) {
+            uint32_t& flag = reinterpret_cast<uint32_t&>(uv[i * 6 + 5]);
+            const uint32_t pick = rng() % 4;
+            flag = pick == 0 ? 0u : pick == 1 ? 0x80000000u : pick == 2 ? 0x3F800000u : uint32_t(rng());
+        }
+        times(nt, trans.data() + 3, 4);
+        times(nr, rot.data() + 4, 5);
+        times(nv, vis.data(), 2);
+        times(nu, uv.data() + 4, 6);
+        const float longest = std::max({trans[(nt - 1) * 4 + 3], rot[(nr - 1) * 5 + 4], vis[(nv - 1) * 2], uv[(nu - 1) * 6 + 4]});
+        alignas(16) uint8_t objects[2][0x94];
+        std::vector<float> copies[2][4];
+        for (int k = 0; k < 2; ++k) {
+            uint8_t* a = objects[k];
+            std::memset(a, 0, sizeof(objects[k]));
+            copies[k][0] = trans, copies[k][1] = rot, copies[k][2] = vis, copies[k][3] = uv;
+            const uint32_t at[4] = {0x3C, 0x4C, 0x5C, 0x6C};
+            const size_t keyBytes[4] = {16, 20, 8, 24};
+            for (int l = 0; l < 4; ++l) {
+                float** v = reinterpret_cast<float**>(a + at[l]);
+                v[0] = copies[k][l].data();
+                v[1] = v[2] = reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(v[0]) +
+                                                       copies[k][l].size() * 4 / (keyBytes[l] / 4) * (keyBytes[l] / 4));
+            }
+            *reinterpret_cast<float*>(a + 0x7C) = longest * (0.5f + step(rng) * 0.5f);
+            a[0x80] = uint8_t(trial & 1);
+            *reinterpret_cast<float*>(a + 0x84) = 1.0f;
+            *reinterpret_cast<float*>(a + 0x88) = 1.0f;
+        }
+        std::memcpy(objects[1] + 0x7C, objects[0] + 0x7C, 4);
+        for (int c = 0; c < 40; ++c) {
+            const float time = (c % 9 == 0) ? 0.0f : step(rng) * longest;
+            float m[2][16];
+            uint8_t visible[2] = {0xAA, 0xAA};
+            for (int k = 0; k < 2; ++k)
+                for (int i = 0; i < 16; ++i) m[k][i] = float(i) * 0.5f;
+            original(objects[0], nullptr, time, m[0], &visible[0]);
+            keyframe::Evaluate(objects[1], nullptr, time, m[1], &visible[1]);
+            ++calls;
+            if (std::memcmp(m[0], m[1], sizeof(m[0])) || visible[0] != visible[1] ||
+                std::memcmp(objects[0] + 0x2C, objects[1] + 0x2C, 16) ||
+                std::memcmp(objects[0] + 0x84, objects[1] + 0x84, 16)) {
+                if (mismatches < 5) {
+                    std::printf("keyframe: trial %d call %d time %.9g differs:", trial, c, time);
+                    for (int i = 0; i < 16; ++i)
+                        if (std::memcmp(&m[0][i], &m[1][i], 4)) std::printf(" m[%d] %.9g/%.9g", i, m[0][i], m[1][i]);
+                    for (int i = 0; i < 4; ++i)
+                        std::printf(" idx%d %d/%d", i, reinterpret_cast<int*>(objects[0] + 0x2C)[i],
+                                    reinterpret_cast<int*>(objects[1] + 0x2C)[i]);
+                    for (int i = 0; i < 4; ++i)
+                        std::printf(" uv%d %.9g/%.9g", i, reinterpret_cast<float*>(objects[0] + 0x84)[i],
+                                    reinterpret_cast<float*>(objects[1] + 0x84)[i]);
+                    std::printf("\n");
+                }
+                ++mismatches;
+            }
+        }
+    }
+    unsigned short cw = 0;
+    __asm__ volatile("fnstcw %0" : "=m"(cw));
+    std::printf("keyframe: %d evaluations, %d differ (x87 control word %04x)\n", calls, mismatches, cw);
+    Check(mismatches == 0, "keyframe: evaluation");
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -830,6 +919,7 @@ int main(int argc, char** argv)
     CheckMath();
     CheckAttractors();
     CheckDxErrors();
+    CheckKeyframes();
     Time();
     std::printf("%s (%d failures)\n", g_failures ? "FAILED" : "all passed", g_failures);
     return g_failures ? 1 : 0;

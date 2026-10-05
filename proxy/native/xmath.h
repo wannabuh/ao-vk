@@ -2,6 +2,11 @@
 // small ones (TMatrix4_t, Vector3_t) and the D3DX7 functions statically linked into randy31_orig.dll.
 #pragma once
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -197,6 +202,72 @@ inline void QuatMul(float* a, const float* b)
     a[0] = x * b[3] + ((b[1] * z + w * b[0]) - b[2] * y);
     a[1] = y * b[3] + (b[2] * x + (w * b[1] - b[0] * z));
     a[2] = (b[3] * z + b[2] * w) + (y * b[0] - x * b[1]);
+}
+
+// ---- As the x87 computes them (precision control 53 bits - Windows' default, and DirectDraw's with
+// DDSCL_FPUPRESERVE): every x87 operation rounds like a double, so double arithmetic in the original's order, rounded
+// to float where it stores a float, gives its results to the bit. ----
+
+// msvcr100's sin / cos / acos / fmod: the original's _CIsin etc. come to them (their SSE2 path), bit for bit.
+inline double CrtSin(double x)
+{
+    static const auto fn = reinterpret_cast<double(__cdecl*)(double)>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "sin"));
+    return fn(x);
+}
+inline double CrtAcos(double x)
+{
+    static const auto fn = reinterpret_cast<double(__cdecl*)(double)>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "acos"));
+    return fn(x);
+}
+inline double CrtFmod(double x, double y)
+{
+    static const auto fn =
+        reinterpret_cast<double(__cdecl*)(double, double)>(GetProcAddress(GetModuleHandleA("msvcr100.dll"), "fmod"));
+    return fn(x, y);
+}
+
+// FUN_1006eefa (D3DXQuaternionSlerp): out may be a.
+inline void SlerpX87(const float* a, const float* b, float t, float* out)
+{
+    float dot = float((((double)a[0] * b[0] + (double)a[1] * b[1]) + (double)a[2] * b[2]) + (double)a[3] * b[3]);
+    const bool flip = dot < 0.0f;
+    if (flip) dot = -dot;
+    float wa, wb;
+    if (!(1.0 - (double)dot < 1e-6)) {              // (the constant is a double: 0x10095db0)
+        const float theta = float(CrtAcos(dot));
+        const float inv = float(1.0 / (double)float(CrtSin(theta)));
+        const double tt = (double)theta * (double)t;
+        wa = float((double)float(CrtSin(float((double)theta - tt))) * inv);
+        wb = float((double)float(CrtSin(float(tt))) * inv);
+    } else {
+        wa = float(1.0 - (double)t);
+        wb = t;
+    }
+    if (flip) wb = -wb;
+    const float a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
+    out[0] = float((double)a0 * wa + (double)b[0] * wb);
+    out[1] = float((double)wa * a1 + (double)wb * b[1]);
+    out[2] = float((double)a2 * wa + (double)b[2] * wb);
+    out[3] = float((double)wa * a3 + (double)b[3] * wb);
+}
+
+// FUN_1006e393: the rotation of a quaternion into a matrix's 3x3 (the rest left as it is).
+inline void RotationX87(float* m, const float* q)
+{
+    const double x2 = q[0] * 2.0, y2 = q[1] * 2.0, z2 = q[2] * 2.0;
+    const float xx = float(q[0] * x2), yy = float(q[1] * y2), zz = float(q[2] * z2);
+    const float xy = float(q[1] * x2), xz = float(q[2] * x2), xw = float(x2 * q[3]);
+    const float yz = float(q[2] * y2), yw = float(y2 * q[3]), zw = float(z2 * q[3]);
+    m[0] = float((1.0 - yy) - zz);
+    m[1] = float((double)zw + xy);
+    m[2] = float((double)xz - yw);
+    m[4] = float((double)xy - zw);
+    const double oneXx = 1.0 - xx;
+    m[5] = float(oneXx - zz);
+    m[6] = float((double)yz + xw);
+    m[8] = float((double)yw + xz);
+    m[9] = float((double)yz - xw);
+    m[10] = float(oneXx - yy);
 }
 
 }  // namespace rnative::xm

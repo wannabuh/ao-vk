@@ -775,3 +775,15 @@
 0x17445	dead	-	FAFLoader_t vtable slot 6 (its visit of an FC_* object: conversion to Randy's objects): no FAFLoader_t is ever made: its constructor is imported by no module of the client and called by nothing in Randy, and its vtable is referenced only by its constructor and destructor (AnarchyOnline.exe only names FAFLoaderException's type, for a catch)
 0x173C6	dead	-	FAFLoader_t vtable slot 7 (its visit of an FC_* object: conversion to Randy's objects): no FAFLoader_t is ever made: its constructor is imported by no module of the client and called by nothing in Randy, and its vtable is referenced only by its constructor and destructor (AnarchyOnline.exe only names FAFLoaderException's type, for a catch)
 0x17403	dead	-	FAFLoader_t vtable slot 8 (its visit of an FC_* object: conversion to Randy's objects): no FAFLoader_t is ever made: its constructor is imported by no module of the client and called by nothing in Randy, and its vtable is referenced only by its constructor and destructor (AnarchyOnline.exe only names FAFLoaderException's type, for a catch)
+0x295AB	replaced	proxy/native/keyframe.cpp	RKeyFrameAnimation_t::RKeyFrameAnimation_t(archive)
+0x28C87	replaced	proxy/native/keyframe.cpp	RKeyFrameAnimation_t::Archive
+0x28FDE	replaced	proxy/native/keyframe.cpp	RKeyFrameAnimation_t evaluated (FUN_10028fde)
+0x294E0	replaced	proxy/native/keyframe.cpp	RKeyFrameAnimation_t UV (FUN_100294e0)
+0x16485	replaced	proxy/native/keyframe.cpp	RKeyFrameAnimation_t / FAFAnim_t length (FUN_10016485: too short to patch, both vtables' slot 5 point at ours)
+0x1647E	replaced	proxy/native/keyframe.cpp	RKeyFrameAnimation_t looping (FUN_1001647e)
+0x1646E	replaced	proxy/native/keyframe.cpp	RKeyFrameAnimation_t set looping (FUN_1001646e)
+0x1643E	replaced	proxy/native/keyframe.cpp	RKeyFrameAnimation_t destroyed (FUN_1001643e)
+0x1665F	replaced	proxy/native/keyframe.cpp	RKeyFrameAnimation_t deleting destructor (FUN_1001665f)
+0x156C3	replaced	proxy/native/keyframe.cpp	FAFAnim_t::Instantiate
+0x15686	replaced	proxy/native/keyframe.cpp	FAFAnim_t(archive) (FUN_10015686)
+0x1566E	replaced	proxy/native/keyframe.cpp	FAFAnim_t::Archive (FUN_1001566e)

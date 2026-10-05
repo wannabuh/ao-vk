@@ -155,8 +155,7 @@ void __fastcall UpdateWorldMatrix(Frame* f)
 {
     if (f[kDirty] & 0xF) {
         float* m = &Field<float>(f, kWorld);
-        const xm::M4 r = xm::FromQuaternion(&Field<float>(f, kRotation));
-        for (int i : {0, 1, 2, 4, 5, 6, 8, 9, 10}) m[i] = r.m[i];   // (FUN_1006e393 writes only these)
+        xm::RotationX87(m, &Field<float>(f, kRotation));   // FUN_1006e393 (only the 3x3)
         const float s = Field<float>(f, kScale);
         for (int row = 0; row < 4; ++row)
             for (int col = 0; col < 3; ++col) m[row * 4 + col] *= s;
