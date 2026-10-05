@@ -570,3 +570,58 @@
 0x1BDF2	replaced	proxy/native/device.cpp	DeviceState instance, made on first use (FUN_1001bdf2)
 0x1BD14	replaced	proxy/native/device.cpp	DeviceState shutdown (FUN_1001bd14)
 0x1E51A	replaced	proxy/native/dxerror.cpp	fun::DXError::GetErrorString (its HRESULT table FUN_1001d619 in dxerror.gen.h)
+0x1C04D	dead	-	Type* debug descriptor vtable slot (TypeBOOL): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C075	dead	-	Type* debug descriptor vtable slot (TypeLINEPATTERN): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C0C8	dead	-	Type* debug descriptor vtable slot (TypeD3DCOLOR): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C131	dead	-	Type* debug descriptor vtable slot (TypeWRAPUV): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C323	dead	-	Type* debug descriptor vtable slot (TypeBOOL, TypeD3DANTIALIASMODE, TypeD3DBLEND, ...): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C332	dead	-	Type* debug descriptor vtable slot (TypeUNKNOWN): see the rows above
+0x1C338	dead	-	Type* debug descriptor vtable slot (TypeFLOAT): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C839	dead	-	Type* debug descriptor vtable slot (TypeBOOL, TypeD3DCOLOR, TypeFLOAT, ...): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C909	dead	-	Type* debug descriptor vtable slot (TypeD3DANTIALIASMODE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C924	dead	-	Type* debug descriptor vtable slot (TypeD3DBLEND): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C93F	dead	-	Type* debug descriptor vtable slot (TypeD3DCMPFUNC): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C95A	dead	-	Type* debug descriptor vtable slot (TypeD3DCOLORMODEL): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C975	dead	-	Type* debug descriptor vtable slot (TypeD3DCULL): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C990	dead	-	Type* debug descriptor vtable slot (TypeD3DFILLMODE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C9AB	dead	-	Type* debug descriptor vtable slot (TypeD3DFOGMODE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C9C6	dead	-	Type* debug descriptor vtable slot (TypeD3DSHADEMODE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C9E1	dead	-	Type* debug descriptor vtable slot (TypeD3DSTENCILOP): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1C9FC	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREADDRESS): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CA17	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREBLEND): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CA32	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREFILTER): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CA4D	dead	-	Type* debug descriptor vtable slot (TypeD3DZBUFFERTYPE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CA68	dead	-	Type* debug descriptor vtable slot (TypeD3DRENDERSTATETYPE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CA83	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTURESTAGESTATETYPE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CA9E	dead	-	Type* debug descriptor vtable slot (TypeD3DLIGHTSTATETYPE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CAB9	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREMAGFILTER): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CAD4	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREMINFILTER): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CAEF	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREMIPFILTER): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CB0A	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREOP): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CB25	dead	-	Type* debug descriptor vtable slot (TypeD3DANTIALIASMODE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CB9B	dead	-	Type* debug descriptor vtable slot (TypeD3DBLEND): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CC11	dead	-	Type* debug descriptor vtable slot (TypeD3DCMPFUNC): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CC87	dead	-	Type* debug descriptor vtable slot (TypeD3DCOLORMODEL): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CCFD	dead	-	Type* debug descriptor vtable slot (TypeD3DCULL): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CD73	dead	-	Type* debug descriptor vtable slot (TypeD3DFILLMODE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CDE9	dead	-	Type* debug descriptor vtable slot (TypeD3DFOGMODE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CE5F	dead	-	Type* debug descriptor vtable slot (TypeD3DSHADEMODE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CED5	dead	-	Type* debug descriptor vtable slot (TypeD3DSTENCILOP): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CF4B	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREADDRESS): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1CFC1	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREBLEND): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D037	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREFILTER): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D0AD	dead	-	Type* debug descriptor vtable slot (TypeD3DZBUFFERTYPE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D123	dead	-	Type* debug descriptor vtable slot (TypeD3DRENDERSTATETYPE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D199	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTURESTAGESTATETYPE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D20F	dead	-	Type* debug descriptor vtable slot (TypeD3DLIGHTSTATETYPE): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D285	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREMAGFILTER): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D2FB	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREMINFILTER): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D371	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREMIPFILTER): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D3E7	dead	-	Type* debug descriptor vtable slot (TypeD3DTEXTUREOP): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D45D	dead	-	Type* debug descriptor vtable slot (TypeUNKNOWN): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D4A9	dead	-	Type* debug descriptor vtable slot (TypeINT): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D4F5	dead	-	Type* debug descriptor vtable slot (TypeHEX2): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D541	dead	-	Type* debug descriptor vtable slot (TypeHEX8): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D58D	dead	-	Type* debug descriptor vtable slot (TypeFLOAT): its objects (0x100B6D10..) are used only by FUN_1001b725 / FUN_1001b8b4, which nothing calls
+0x1D5D9	dead	-	ostream manipulator used only by FUN_1001e5bb (the Randy assert text), which only FUN_1001e7bd calls, which nothing calls
+0x1D5F3	dead	-	ostream manipulator used only by FUN_1001e5bb (the Randy assert text), which only FUN_1001e7bd calls, which nothing calls
