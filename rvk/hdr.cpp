@@ -328,8 +328,15 @@ void Device::BeginScene()
     m_sceneClass = 0;
     m_shadeClass = 0;
     m_sceneClassMarks = 0;
-    m_motionPrev.swap(m_motionCur);              // last frame's objects, for matching this frame's
-    m_motionCur.clear();
+    std::swap(m_motionPrev, m_motionCur);        // last frame's objects, for matching this frame's
+    m_motionCur.Clear();
+    MotionFrame& prev = m_motionPrev;
+    prev.index.resize(prev.entries.size());
+    for (uint32_t i = 0; i < prev.entries.size(); ++i)
+        prev.index[i] = {prev.keys[i], prev.entries[i].world.m[3][0], i};
+    std::sort(prev.index.begin(), prev.index.end(), [](const MotionFrame::Index& a, const MotionFrame::Index& b) {
+        return a.key != b.key ? a.key < b.key : a.x < b.x;
+    });
     m_glowCleared = false;
     m_glowDraws = 0;
     m_sceneEndDraw = 0;

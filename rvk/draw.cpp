@@ -1845,20 +1845,33 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         // Motion vectors: the same object last frame - same mesh, nearest to where this one is (within 3 units). Not
         // found (new, or a different level of detail): its current matrix, i.e. it moved with the world.
         uint64_t key = MotionKey(primitive, fvf, vertexCount, indices, indexCount);
-        // This frame's positions (for next frame's match) of a mesh small enough to be a character's part.
-        // Static meshes (the mesh cache: same vertices as before) need none - only animated ones are compared.
-        std::vector<float> positions;
+        // This frame's positions (for next frame's match) of a mesh small enough to be a character's part, into the
+        // frame's pool. Static meshes (the mesh cache: same vertices as before) need none - only animated ones are
+        // compared.
+        MotionFrame& cur = m_motionCur;
+        uint32_t posOffset = 0, posCount = 0;
         if (vertexCount <= kMotionMaxVertices && !m_drawMeshStatic && !m_drawGpu) {
-            positions.resize(size_t(vertexCount) * 3);
+            posOffset = uint32_t(cur.positions.size());
+            posCount = vertexCount * 3;
+            cur.positions.resize(size_t(posOffset) + posCount);
+            float* out = cur.positions.data() + posOffset;
             const uint8_t* v = static_cast<const uint8_t*>(vertices);
             for (uint32_t i = 0; i < vertexCount; ++i)
-                std::memcpy(&positions[size_t(i) * 3], v + size_t(i) * layout.stride, 12);
+                std::memcpy(out + size_t(i) * 3, v + size_t(i) * layout.stride, 12);
         }
-        auto it = m_motionPrev.find(key);
-        if (it != m_motionPrev.end()) {
+        // Last frame's unused entry of this mesh nearest to where this one is (within 3 units): the index's run for
+        // the key between x - 3 and x + 3.
+        MotionFrame& prev = m_motionPrev;
+        const float x = m_world.m[3][0];
+        auto at = std::lower_bound(prev.index.begin(), prev.index.end(), MotionFrame::Index{key, x - 3.0f, 0},
+                                   [](const MotionFrame::Index& a, const MotionFrame::Index& b) {
+                                       return a.key != b.key ? a.key < b.key : a.x < b.x;
+                                   });
+        {
             MotionEntry* best = nullptr;
             float bestD2 = 9.0f;
-            for (MotionEntry& e : it->second) {
+            for (; at != prev.index.end() && at->key == key && at->x <= x + 3.0f; ++at) {
+                MotionEntry& e = prev.entries[at->entry];
                 if (e.used) continue;
                 float dx = e.world.m[3][0] - m_world.m[3][0], dy = e.world.m[3][1] - m_world.m[3][1],
                       dz = e.world.m[3][2] - m_world.m[3][2], d2 = dx * dx + dy * dy + dz * dz;
@@ -1875,17 +1888,19 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                     dt.motion[1] = 1.0f;
                 }
                 // Animated (its vertices changed): last frame's positions for the vertex shader (binding 8).
-                if (!positions.empty() && best->positions.size() == positions.size() &&
-                    std::memcmp(best->positions.data(), positions.data(), positions.size() * 4) != 0) {
+                const float* last = prev.positions.data() + best->positions;
+                if (posCount && best->positionCount == posCount &&
+                    std::memcmp(last, cur.positions.data() + posOffset, size_t(posCount) * 4) != 0) {
                     void* prevCpu;
-                    prevPositionsOffset = Allocate(positions.size() * 4, m_props.limits.minStorageBufferOffsetAlignment, &prevCpu);
-                    std::memcpy(prevCpu, best->positions.data(), positions.size() * 4);
-                    prevPositionsBytes = positions.size() * 4;
+                    prevPositionsOffset = Allocate(VkDeviceSize(posCount) * 4, m_props.limits.minStorageBufferOffsetAlignment, &prevCpu);
+                    std::memcpy(prevCpu, last, size_t(posCount) * 4);
+                    prevPositionsBytes = VkDeviceSize(posCount) * 4;
                     dt.motion[1] = 1.0f;
                 }
             }
         }
-        m_motionCur[key].push_back({m_world, false, std::move(positions)});
+        cur.entries.push_back({m_world, posOffset, posCount, false});
+        cur.keys.push_back(key);
     }
 
     ProfileDrawSection("draw: motion vectors", since);

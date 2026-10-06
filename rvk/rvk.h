@@ -1013,11 +1013,22 @@ private:
     VkPipeline m_tileMaxPipeline = VK_NULL_HANDLE, m_neighbourMaxPipeline = VK_NULL_HANDLE, m_objectBlurPipeline = VK_NULL_HANDLE;
     static constexpr uint32_t kMotionTile = 32;
     // Matching draws across frames (motion vectors): last frame's and this frame's world matrices by mesh key.
-    // positions: the mesh's vertex positions (model space) when it has at most kMotionMaxVertices - a CPU-skinned
-    // character's limbs move only in them.
-    struct MotionEntry { d3d::Matrix world; bool used; std::vector<float> positions; };
+    // positions: the mesh's vertex positions (model space, 3 floats each, a slice of the frame's pool) when it has at
+    // most kMotionMaxVertices - a CPU-skinned character's limbs move only in them. Flat arrays reused from frame to
+    // frame (a map of vectors allocated per draw before); last frame's are looked up through `index`, sorted by key
+    // then x (BeginScene), so a draw finds the entries within reach with one binary search, however many instances
+    // of its mesh there are.
+    struct MotionEntry { d3d::Matrix world; uint32_t positions, positionCount; bool used; };
+    struct MotionFrame {
+        struct Index { uint64_t key; float x; uint32_t entry; };
+        std::vector<MotionEntry> entries;
+        std::vector<uint64_t> keys;              // per entry
+        std::vector<float> positions;
+        std::vector<Index> index;
+        void Clear() { entries.clear(); keys.clear(); positions.clear(); index.clear(); }
+    };
     static constexpr uint32_t kMotionMaxVertices = 8192;
-    std::unordered_map<uint64_t, std::vector<MotionEntry>> m_motionPrev, m_motionCur;
+    MotionFrame m_motionPrev, m_motionCur;
     bool MotionVectorDraw(uint32_t fvf) const;   // this draw writes motion vectors
     uint64_t MotionKey(uint32_t primitive, uint32_t fvf, uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount) const;
     Texture* m_tonemapped = nullptr;             // with motion blur: the tone mapped scene, blurred into m_ldrMain
