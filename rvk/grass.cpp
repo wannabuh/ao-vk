@@ -256,6 +256,21 @@ bool Device::GroundHeight(float x, float z, float* y, uint32_t* colour) const
     return false;
 }
 
+// The ground's upward normal at x, z, from the captured heights around it: blades grow along the slope, not straight
+// up (on a hill a field of world-up grass gives itself away). Falls back to straight up where the ground is unknown.
+void Device::GroundNormal(float x, float z, float out[3]) const
+{
+    constexpr float d = 0.6f;
+    float yl, yr, yd, yu;
+    const bool ox = GroundHeight(x - d, z, &yl) && GroundHeight(x + d, z, &yr);
+    const bool oz = GroundHeight(x, z - d, &yd) && GroundHeight(x, z + d, &yu);
+    out[0] = ox ? -(yr - yl) / (2.0f * d) : 0.0f;
+    out[1] = 1.0f;
+    out[2] = oz ? -(yu - yd) / (2.0f * d) : 0.0f;
+    const float l = std::sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2]);
+    out[0] /= l; out[1] /= l; out[2] /= l;
+}
+
 // Whether the terrain has been captured near a world x, z at all (grass or not). A tile whose ground is not captured
 // yet (the game has not drawn it there - right after loading, or a zone not streamed in) must not be built empty: it
 // would stay bare. Same search as GroundHeight, ignoring whether the ground is grass.
@@ -474,7 +489,9 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         const float fl = std::sqrt(f1 * f1 + f2 * f2) + 1e-6f;
         const float mag = 0.05f + 0.22f * ValueNoise(px * 0.028f + 4.7f, pz * 0.028f - 2.2f);
         const float scatter = (v2 - 0.5f) * 0.18f;
-        float up[3] = {(f1 / fl) * mag + rx * scatter, 1.0f, (f2 / fl) * mag + rz * scatter};
+        float tn[3];
+        GroundNormal(px, pz, tn);                // the blade grows along the ground's slope, not straight up
+        float up[3] = {tn[0] + (f1 / fl) * mag + rx * scatter, tn[1], tn[2] + (f2 / fl) * mag + rz * scatter};
         const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
         up[0] /= ul; up[1] /= ul; up[2] /= ul;
         const float droop = 0.06f + 0.18f * v4;  // a little arc over towards the tip
