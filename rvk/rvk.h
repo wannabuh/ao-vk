@@ -1113,6 +1113,7 @@ private:
     void FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, uint32_t out[4]);
     struct LightSphere { float x, y, z, r2; };
     std::vector<LightSphere> m_frameLightSpheres;  // the frame lights' spheres in FrameLights order (light masks)
+    uint32_t m_pusherSeenMax = 0;                // the most pushers any frame in the window had (the grass's log)
     // A coarse x/z grid over those lights, so a draw's mask tests only the lights near it, not all of them (a busy
     // scene captures up to kFrameLights): per cell the mask of the lights whose sphere reaches into it, over the
     // lights' extent. Rebuilt by BuildLightGrid when the frame lights change; allocation-free after the first frames.

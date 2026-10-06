@@ -46,7 +46,7 @@ vec3 PusherOffset(vec3 posW, float h, float plantHeight)
     uint count = min(FL.info.y, 16u);
     if (amount <= 0.0 || count == 0u || h <= 0.0)
         return vec3(0.0);
-    float reach = 1.4 * sqrt(amount);
+    float reach = 0.7 * sqrt(amount);            // the game's plants use 1.4; the grass bends over a smaller radius
     vec2 push = vec2(0.0), rustle = vec2(0.0);
     for (uint i = 0u; i < count; ++i) {
         vec4 p = FL.pushers[i];

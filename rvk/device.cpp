@@ -1325,9 +1325,12 @@ void Device::BeginFrame()
             double(m_foliageVerts) / 600.0, m_foliageMinH, m_foliageMaxH);
         Log("no-discard pipeline (early-Z): %llu draws (last 600 frames)", (unsigned long long)m_noCutDraws);
         if (m_grassOn)
-            Log("ground grass: %llu frames drawn, %.0f blades a frame; ground cells %llu, tiles %llu (last 600 frames)",
+            Log("ground grass: %llu frames drawn, %.0f blades a frame; ground cells %llu, tiles %llu, pushers now %llu "
+                "max %u (last 600 frames)",
                 (unsigned long long)m_grassDraws, double(m_grassBlades) / std::max<uint64_t>(m_grassDraws, 1),
-                (unsigned long long)m_groundHeights.size(), (unsigned long long)m_grassTiles.size());
+                (unsigned long long)m_groundHeights.size(), (unsigned long long)m_grassTiles.size(),
+                (unsigned long long)m_framePushers.size(), m_pusherSeenMax);
+        m_pusherSeenMax = 0;
         m_grassDraws = m_grassBlades = 0;
         PrepassLog();
         m_ringPeak = 0;

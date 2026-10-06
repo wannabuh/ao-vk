@@ -798,6 +798,8 @@ void Device::FillPushers(detail::FrameLights* fl, const float eye[3])
         m_framePushers.push_back({{items[i].p->x, items[i].p->y, items[i].p->z}});
     }
     fl->info[1] = used;
+    if (used > m_pusherSeenMax)
+        m_pusherSeenMax = used;
 }
 
 // Splits a plant's triangles evenly (each into n x n, all its vertex data interpolated) so that the pieces are about
