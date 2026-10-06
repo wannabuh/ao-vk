@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <map>
+#include <unordered_map>
 #include <string>
 #include <memory>
 #include <vector>
@@ -318,6 +319,10 @@ public:
     // lines and statistics as its SetRenderState / SetTextureStageState / SetTexture calls one by one, but one record
     // for the render thread.
     void ApplyStates(const rnative::device::StateChange* changes, uint32_t count);
+    // DrawIndexedPrimitiveVB of a native mesh (the direct channel): the same as the COM call, but indices unchanged
+    // since `indexGeneration` (a native triangle list's) are kept as a snapshot the renderer retains on the GPU.
+    HRESULT DrawIndexedVBRetained(D3DPRIMITIVETYPE type, RVertexBuffer* vb, DWORD start, DWORD vcount, const WORD* idx,
+                                  DWORD icount, uint64_t indexGeneration);
 
 protected:
     void* Cast(REFIID iid) override { return iid == IID_IDirect3DDevice7 ? this : nullptr; }
@@ -368,6 +373,14 @@ private:
     D3DMATERIAL7 m_material{};
     std::vector<std::pair<D3DLIGHT7, BOOL>> m_lights;
     std::vector<rvk::ThreadedDevice::StateItem> m_stateItems;   // ApplyStates' scratch
+    // DrawIndexedVBRetained's kept index arrays, by where they are and how many.
+    struct KeptIndices {
+        std::shared_ptr<const std::vector<uint8_t>> data;
+        uint64_t generation = 0;                   // the triangle lists' generation they were last known equal at
+        uint64_t checked = 0, used = 0;            // presented frame of the last full compare / draw
+    };
+    std::unordered_map<uint64_t, KeptIndices> m_keptIndices;
+    uint64_t m_keptSweep = 0;
 };
 
 }  // namespace rvkproxy

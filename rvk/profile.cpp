@@ -261,9 +261,9 @@ void Device::ProfileLog(const char* label)
     {
         double n = double(m_profileFrames);
         const uint64_t* h = m_profileHandoff;
-        Log("%shand-off draws: %.0f with their vertices copied (%.0f KB), %.0f from shared vertex buffers, %.0f skinned;"
-            " %.0f KB of indices copied a frame (avg of %u frames)",
-            label, double(h[0]) / n, double(h[1]) / 1024.0 / n, double(h[2]) / n, double(h[3]) / n,
+        Log("%shand-off draws: %.0f with their vertices copied (%.0f KB), %.0f from shared vertex buffers (%.0f of them"
+            " with retained indices), %.0f skinned; %.0f KB of indices copied a frame (avg of %u frames)",
+            label, double(h[0]) / n, double(h[1]) / 1024.0 / n, double(h[2]) / n, double(h[5]) / n, double(h[3]) / n,
             double(h[4]) / 1024.0 / n, m_profileFrames);
         std::memset(m_profileHandoff, 0, sizeof(m_profileHandoff));
         Log("%sdraw batching: %.0f draws a frame; %.0f in %.0f indirect calls, %.0f direct; %.0f constant blocks"

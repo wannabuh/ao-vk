@@ -449,6 +449,62 @@ void RDevice::ApplyStates(const rnative::device::StateChange* changes, uint32_t 
         dev->SetStates(m_stateItems.data(), uint32_t(m_stateItems.size()));
 }
 
+void NoteVisual(rvk::ThreadedDevice* dev);          // below
+
+HRESULT RDevice::DrawIndexedVBRetained(D3DPRIMITIVETYPE type, RVertexBuffer* vb, DWORD start, DWORD vcount,
+                                       const WORD* idx, DWORD icount, uint64_t indexGeneration)
+{
+    static const unsigned index = ComIndex("IDirect3DDevice7::DrawIndexedPrimitiveVB");
+    CountComCall(index);
+    ComScope scope(index);
+    // As DoDrawIndexedPrimitiveVB (the same call log line and checks), until the indices.
+    if (idx) CALL_LOG("DIPVB %d %u %lu %lu %lu %08x", type, LogId(static_cast<IDirect3DVertexBuffer7*>(vb)), start, vcount,
+                      icount, Fnv(idx, size_t(icount) * 2));
+    CountBackendDraw();
+    rvk::ThreadedDevice* dev = g_rvk.device;
+    if (!dev || !vb || !idx || start + vcount > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
+    g_rvk.Frame();
+    NoteVisual(dev);
+    if (vb->skin) {
+        dev->DrawIndexedPrimitiveSkinned(type, vb->desc.dwFVF, vb->skin, start, vcount, idx, icount);
+        return D3D_OK;
+    }
+    auto* shared = vb->StaticShared();
+    if (!shared) {
+        dev->DrawIndexedPrimitive(type, vb->desc.dwFVF, vb->Bytes() + size_t(start) * vb->stride, vcount, idx, icount);
+        return D3D_OK;
+    }
+    // The kept copy of these indices: reused while no triangle list was written (the generation), with the first and
+    // last index checked every draw and the whole array every 64 frames - a write the generation missed (a writer
+    // that isn't native) is caught; a different array gets a new copy.
+    const size_t bytes = size_t(icount) * 2;
+    const uint64_t key = uint64_t(reinterpret_cast<uintptr_t>(idx)) * 0x9E3779B97F4A7C15ull ^ icount;
+    KeptIndices& k = m_keptIndices[key];
+    const uint64_t frame = g_rvk.presentCount;
+    const uint16_t* kept = k.data ? reinterpret_cast<const uint16_t*>(k.data->data()) : nullptr;
+    bool same = kept && k.data->size() == bytes && kept[0] == idx[0] && kept[icount - 1] == idx[icount - 1];
+    if (same && (k.generation != indexGeneration || frame >= k.checked + 64)) {
+        same = std::memcmp(kept, idx, bytes) == 0;
+        k.checked = frame;
+        k.generation = indexGeneration;
+    }
+    if (!same) {
+        k.data = std::make_shared<const std::vector<uint8_t>>(reinterpret_cast<const uint8_t*>(idx),
+                                                              reinterpret_cast<const uint8_t*>(idx) + bytes);
+        k.generation = indexGeneration;
+        k.checked = frame;
+    }
+    k.used = frame;
+    if (frame >= m_keptSweep + 600) {               // every ~600 frames: forget arrays not drawn lately
+        m_keptSweep = frame;
+        for (auto it = m_keptIndices.begin(); it != m_keptIndices.end();)
+            it = it->second.used + 600 < frame ? m_keptIndices.erase(it) : std::next(it);
+    }
+    dev->DrawIndexedPrimitiveSharedRetained(type, vb->desc.dwFVF, *shared, size_t(start) * vb->stride, vcount, k.data,
+                                            icount);
+    return D3D_OK;
+}
+
 namespace {
 
 RDevice* g_directDevice;                            // the device the direct channel serves (the last one made)
@@ -469,7 +525,20 @@ void DirectGameSection(const char* name, double ms)
         dev->AddGameSection(name, ms);
 }
 
-const rnative::device::Direct kDirect{&DirectApplyStates, &DirectGameSection};
+bool DirectDrawIndexedVB(void* d3dDevice, uint32_t type, void* d3dVertexBuffer, uint32_t start, uint32_t vertexCount,
+                         const uint16_t* indices, uint32_t indexCount, uint64_t indexGeneration)
+{
+    if (!g_directDevice || d3dDevice != static_cast<IDirect3DDevice7*>(g_directDevice) || !indexCount)
+        return false;
+    // Randy's vertex buffers are ours (RDirect3D::CreateVertexBuffer hands out RVertexBuffer).
+    auto* vb = static_cast<RVertexBuffer*>(static_cast<IDirect3DVertexBuffer7*>(d3dVertexBuffer));
+    HRESULT hr = g_directDevice->DrawIndexedVBRetained(D3DPRIMITIVETYPE(type), vb, start, vertexCount, indices,
+                                                       indexCount, indexGeneration);
+    (void)hr;                                       // as the COM path: the native caller only logs failures
+    return true;
+}
+
+const rnative::device::Direct kDirect{&DirectApplyStates, &DirectGameSection, &DirectDrawIndexedVB};
 
 void DirectAttach(RDevice* device)
 {

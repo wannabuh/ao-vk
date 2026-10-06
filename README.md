@@ -82,6 +82,7 @@ Device=on     ; the device layer: render state, drawing, vertex buffers, state b
               ; materials
 Scene=on      ; the scene layer (so far: viewports - the frame: camera, scene update, lights, the render lists)
 Direct=on     ; with Device=on: render state reaches the renderer directly, one hand-off per update (default on)
+Retain=on     ; with Device, Scene and Direct on: static meshes' indices kept on the GPU instead of copied each draw
 ```
 
 All of them but `Direct` default to `off` (the original code). They have been played with in game; if something misbehaves,

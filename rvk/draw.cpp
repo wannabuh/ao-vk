@@ -1797,10 +1797,15 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     bool swaying = !m_external && SwayParams(fvf, layout.stride, vertices, vertexCount, sway);
     if (swaying) {
         const void* before = vertices;
+        const uint16_t* indicesBefore = indices;
         SubdividePlant(primitive, fvf, layout, vertices, vertexCount, indices, indexCount);
         if (vertices != before)
             m_drawStaticBuffer = VK_NULL_HANDLE;     // split into new geometry: through the ring
+        if (vertices != before || indices != indicesBefore)
+            m_drawStaticIndexBuffer = VK_NULL_HANDLE;
     }
+    // Retained indices only with the retained vertices (one static draw path).
+    const VkBuffer staticIb = m_drawStaticBuffer && indices ? m_drawStaticIndexBuffer : VK_NULL_HANDLE;
 
     // Render targets bound as textures must be readable; layout changes can't happen inside rendering.
     bool needTransition = false;
@@ -2203,15 +2208,18 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         RecordShadowCaster(primitive, fvf, layout.stride, nullptr, vertexCount, vbOffset, indices, indices ? indexCount : 0,
                            ibOffset, m_frames[m_frameIndex].skinArena, m_drawGpu->mesh->buffer);
     } else if (m_drawStaticBuffer) {
-        // Static geometry on the GPU: the vertices stay where they are, the indices come through the ring.
+        // Static geometry on the GPU: the vertices stay where they are; the indices are retained there too
+        // (DrawSharedIndexed) or come through the ring.
         vbOffset = m_drawStaticOffset;
         dt.motion[2] = float(vbOffset / layout.stride);
-        if (indices) {
+        if (staticIb) {
+            ibOffset = m_drawStaticIndexOffset;
+        } else if (indices) {
             ibOffset = Allocate(VkDeviceSize(indexCount) * 2, 2, &cpu);
             std::memcpy(cpu, indices, size_t(indexCount) * 2);
         }
         RecordShadowCaster(primitive, fvf, layout.stride, vertices, vertexCount, vbOffset, indices,
-                           indices ? indexCount : 0, ibOffset, m_drawStaticBuffer, f.ring);
+                           indices ? indexCount : 0, ibOffset, m_drawStaticBuffer, staticIb ? staticIb : f.ring);
     } else if (!m_external) {
         VkDeviceSize vbBytes = VkDeviceSize(layout.stride) * vertexCount;
         vbOffset = Allocate(vbBytes, layout.stride, &cpu);
@@ -2286,7 +2294,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                                             : TopologyClass(primitive) + (hdr ? 3u : 0u);
         VkBuffer vb = m_drawGpu ? m_frames[m_frameIndex].skinArena
                                 : (m_drawStaticBuffer ? m_drawStaticBuffer : f.ring);
-        VkBuffer ib = m_drawGpu ? m_drawGpu->mesh->buffer : f.ring;
+        VkBuffer ib = m_drawGpu ? m_drawGpu->mesh->buffer : (staticIb ? staticIb : f.ring);
         uint64_t k = 0x9E3779B97F4A7C15ull;
         auto gmix = [&k](uint64_t x) { k = (k ^ x) * 0xFF51AFD7ED558CCDull; k ^= k >> 32; };
         gmix(constIndex);
@@ -2332,7 +2340,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     uint32_t recordIndex = AppendRecord(constIndex, dt);
     if (m_drawPrepassed)
         PrepassDraw(primitive, fvf, layout.stride, vertexCount, indices ? indexCount : 0, vbOffset, ibOffset,
-                    m_drawStaticBuffer ? m_drawStaticBuffer : f.ring, f.ring, frameLightsOffset, prevPositionsBuffer,
+                    m_drawStaticBuffer ? m_drawStaticBuffer : f.ring, staticIb ? staticIb : f.ring, frameLightsOffset,
+                    prevPositionsBuffer,
                     prevPositionsOffset, prevPositionsBytes, smoothBuffer, smoothOffset, smoothBytes, recordIndex);
     if (!extending) {
     ApplyDynamicState(primitive, fvf, layout.stride);
@@ -2417,7 +2426,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             VkDeviceSize offsets[2] = {0, 0};
             vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
             if (indices)
-                vkCmdBindIndexBuffer(cmd, f.ring, 0, VK_INDEX_TYPE_UINT16);
+                vkCmdBindIndexBuffer(cmd, staticIb ? staticIb : f.ring, 0, VK_INDEX_TYPE_UINT16);
         }
         if (groupKey) {
             RecordIndirect(indexCount, ibOffset, vbOffset, layout.stride, recordIndex, groupKey);

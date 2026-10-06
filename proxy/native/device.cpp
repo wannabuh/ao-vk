@@ -36,6 +36,8 @@ namespace {
 HMODULE g_orig;
 const Direct* g_direct;                             // the rvk backend's direct channel (SetDirect), or null
 bool g_directOn;                                    // [Native] Direct = on: use it
+bool g_retainOn;                                    // [Native] Retain = on: native meshes' indices kept (phase 3)
+uint64_t g_retainGeneration;                        // RetainedIndices: the current draw's triangle list generation
 const uint32_t* g_debuggerMode;                     // Debugger_t::m_nDebuggerMode: 0x100 draws nothing, 0x200 copies
 void* const* g_render;                              // render_t::m_pcInstance
 
@@ -270,6 +272,11 @@ void __fastcall DrawIndexedVB(void* render, void*, void* buffer, uint32_t start,
                               uint32_t indexCount, uint32_t)
 {
     if (NoDraw() || !Device(render)) return;
+    // A native mesh's triangles (RetainedIndices): through the direct channel, which can keep them.
+    if (g_retainGeneration && g_direct && g_direct->drawIndexedVB &&
+        g_direct->drawIndexedVB(Device(render), Type, D3dVb(buffer), start, vertices, indices, indexCount,
+                                g_retainGeneration))
+        return;
     HRESULT hr = Com(Device(render), kDrawIndexedPrimitiveVB, DWORD(Type), D3dVb(buffer), DWORD(start), DWORD(vertices),
                      indices, DWORD(indexCount), DWORD(0));
     if (hr) Failed("render_t indexed draw from a vertex buffer", hr);
@@ -600,6 +607,13 @@ const char* __fastcall StatsNameName(void*, void*, uint32_t) { return "Unknown";
 
 void SetDirect(const Direct* direct) { g_direct = direct; }
 
+RetainedIndices::RetainedIndices(uint64_t generation) : m_previous(g_retainGeneration)
+{
+    g_retainGeneration = g_retainOn && g_directOn ? generation : 0;
+}
+
+RetainedIndices::~RetainedIndices() { g_retainGeneration = m_previous; }
+
 namespace {
 int g_timerDepth;                                   // GameTimer nesting (the game thread's)
 double g_qpcMs;                                     // milliseconds per QueryPerformanceCounter tick
@@ -646,6 +660,7 @@ void Install(HMODULE orig)
         return;
     g_orig = orig;
     g_directOn = GetMode("Direct", Mode::On) == Mode::On;    // docs/device-on-rvk.md (call log identical: default on)
+    g_retainOn = GetMode("Retain", Mode::Off) == Mode::On;    // phase 3: new, off until tested in game
     g_debuggerMode = reinterpret_cast<const uint32_t*>(GetProcAddress(orig, "?m_nDebuggerMode@Debugger_t@@2IA"));
     g_render = reinterpret_cast<void* const*>(GetProcAddress(orig, "?m_pcInstance@render_t@@0PAV1@A"));
     if (!g_debuggerMode || !g_render || !KnownBuild(orig)) {
@@ -710,7 +725,9 @@ void Install(HMODULE orig)
     int installed = 0;
     for (const Entry& e : entries) installed += Replace(orig, e.rva, e.target, e.what) ? 1 : 0;
     Log("device layer: %d of %d functions native%s", installed, int(sizeof(entries) / sizeof(entries[0])),
-        g_directOn ? "; state updates through the direct channel when the backend is rvk" : "");
+        g_directOn ? (g_retainOn ? "; state updates and static meshes' indices through the direct channel"
+                                 : "; state updates through the direct channel when the backend is rvk")
+                   : "");
     stateblob::Install(orig);
     dynamicvb::Install(orig);
     randy::Install(orig);

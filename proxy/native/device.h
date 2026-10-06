@@ -28,8 +28,25 @@ struct Direct {
     bool (*applyStates)(void* d3dDevice, const StateChange* changes, uint32_t count);
     // Game-thread time in a part of the native scene code (`name` a string literal), for the renderer's profile log.
     void (*gameSection)(const char* name, double ms);
+    // IDirect3DDevice7::DrawIndexedPrimitiveVB whose indices belong to a native triangle list unchanged since
+    // `indexGeneration` (meshdata::IndexGeneration): the backend may keep them instead of copying them each draw.
+    bool (*drawIndexedVB)(void* d3dDevice, uint32_t type, void* d3dVertexBuffer, uint32_t start, uint32_t vertexCount,
+                          const uint16_t* indices, uint32_t indexCount, uint64_t indexGeneration);
 };
 void SetDirect(const Direct* direct);       // null: none (the backend's device is gone)
+
+// Around a native mesh's draw (mesh.cpp): its indices are a native triangle list's, unchanged while `generation`
+// (meshdata::IndexGeneration, non-zero) is. [Native] Retain = on.
+class RetainedIndices {
+public:
+    explicit RetainedIndices(uint64_t generation);
+    ~RetainedIndices();
+    RetainedIndices(const RetainedIndices&) = delete;
+    RetainedIndices& operator=(const RetainedIndices&) = delete;
+
+private:
+    uint64_t m_previous;
+};
 
 // Times a part of the game thread's frame into the profile ("cpu ms" line) when the rvk backend is there. Nested
 // timers (an offscreen viewport rendered inside a visual's render) count in the outermost only.

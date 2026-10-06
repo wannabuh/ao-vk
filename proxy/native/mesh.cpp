@@ -13,6 +13,7 @@
 // +0x188 visible this frame, +0x1B8 lights lighting it, +0x1BC sub-meshes sorted, +0x1BD registered with the occluder,
 // +0x1BE an occluder itself ("[OCC]..."), +0x1BF culled by its bounding volume.
 #include "native/mesh.h"
+#include "native/device.h"
 #include "native/mesh_data.h"
 #include "native/orig_api.gen.h"
 #include "native/serialize.h"
@@ -205,8 +206,10 @@ uint32_t __fastcall DrawIndexed(uint8_t* indices, void*, void* vb, uint32_t vert
                                 uint32_t flags, int32_t start)
 {
     uint8_t* begin = Field<uint8_t*>(indices, 8);
-    if (vertices > 3 && triangles > 1 && ((Field<uint8_t*>(indices, 0xC) - begin) & ~1) != 0)
+    if (vertices > 3 && triangles > 1 && ((Field<uint8_t*>(indices, 0xC) - begin) & ~1) != 0) {
+        device::RetainedIndices retained(meshdata::IndexGeneration());   // a TriList's: the renderer may keep them
         orig::render_t_RenderTriangleList_408(Render(), vb, flags, vertices, begin + start * 6, triangles * 3, 0);
+    }
     return 0;
 }
 

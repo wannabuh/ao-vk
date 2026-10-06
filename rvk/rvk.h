@@ -340,6 +340,10 @@ public:
     // Vertices that stay the same (a snapshot shared by every draw of them): kept on the GPU, uploaded once.
     void DrawShared(uint32_t primitive, uint32_t fvf, const std::shared_ptr<const std::vector<uint8_t>>& data,
                     size_t byteOffset, uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount);
+    // ... with the indices a snapshot too (kept by the caller while unchanged): retained on the GPU like the vertices.
+    void DrawSharedIndexed(uint32_t primitive, uint32_t fvf, const std::shared_ptr<const std::vector<uint8_t>>& data,
+                           size_t byteOffset, uint32_t vertexCount,
+                           const std::shared_ptr<const std::vector<uint8_t>>& indexData, uint32_t indexCount);
     // A character piece skinned by `job` (skinned here if no one did yet): exactly a character, its box known.
     void DrawSkinned(uint32_t primitive, uint32_t fvf, skin::Job& job, uint32_t startVertex, uint32_t vertexCount,
                      const uint16_t* indices, uint32_t indexCount);
@@ -886,6 +890,8 @@ private:
     VkDeviceSize m_staticBytes = 0;              // on the GPU now
     VkBuffer m_drawStaticBuffer = VK_NULL_HANDLE;   // the current draw's vertices are in this buffer, at this offset
     VkDeviceSize m_drawStaticOffset = 0;
+    VkBuffer m_drawStaticIndexBuffer = VK_NULL_HANDLE;   // with m_drawStaticBuffer: its indices retained here, at
+    VkDeviceSize m_drawStaticIndexOffset = 0;            // this offset (DrawSharedIndexed); else through the ring
     ArenaChunk* ArenaPlace(VkDeviceSize bytes, VkDeviceSize align, VkDeviceSize* offset);
     void ArenaFree(ArenaChunk* chunk, VkDeviceSize offset, VkDeviceSize bytes);   // reusable once the GPU is done
     void CollectArenaSlots();                    // CollectGarbage: slots no submission in flight can still read
@@ -1340,17 +1346,19 @@ public:
         m_profileCallerRepeats += repeats;
     }
     uint64_t m_profileCallerRecords = 0, m_profileCallerBytes = 0, m_profileCallerRepeats = 0;
-    // ... and its draws: vertices copied (count, bytes), shared vertex buffers, skinned pieces, indices copied (bytes).
+    // ... and its draws: vertices copied (count, bytes), shared vertex buffers, skinned pieces, indices copied (bytes),
+    // shared draws whose indices were retained (no copy).
     void ProfileAddCallerDraws(uint64_t copied, uint64_t vertexBytes, uint64_t shared, uint64_t skinned,
-                               uint64_t indexBytes)
+                               uint64_t indexBytes, uint64_t retained)
     {
+        m_profileHandoff[5] += retained;
         m_profileHandoff[0] += copied;
         m_profileHandoff[1] += vertexBytes;
         m_profileHandoff[2] += shared;
         m_profileHandoff[3] += skinned;
         m_profileHandoff[4] += indexBytes;
     }
-    uint64_t m_profileHandoff[5] = {};
+    uint64_t m_profileHandoff[6] = {};
     uint64_t m_profileDraws = 0, m_profileGroupCalls = 0, m_profileGroupDraws = 0, m_profileConstBlocks = 0,
              m_profileConstReused = 0;   // the draws' batching (summed per frame for the log)
     std::atomic<uint64_t> m_profileGameWaitUs{0};

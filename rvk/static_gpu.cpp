@@ -43,7 +43,8 @@ Device::ArenaChunk* Device::ArenaPlace(VkDeviceSize bytes, VkDeviceSize align, V
         auto c = std::make_unique<ArenaChunk>();
         VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
         bi.size = size;
-        bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |   // retained indices too
+                   VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         VmaAllocationCreateInfo ac{};
         ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
         if (vmaCreateBuffer(m_allocator, &bi, &ac, &c->buffer, &c->allocation, nullptr) != VK_SUCCESS)
@@ -173,6 +174,33 @@ void Device::DrawShared(uint32_t primitive, uint32_t fvf, const std::shared_ptr<
     }
     Draw(primitive, fvf, data->data() + byteOffset, vertexCount, indices, indexCount);
     m_drawStaticBuffer = VK_NULL_HANDLE;
+}
+
+// DrawShared with retained indices (docs/device-on-rvk.md phase 3): the indices are a snapshot the caller keeps while
+// they don't change, so they go into the arena once like the vertices - the draw binds them there instead of copying
+// them into the ring. Without static vertices (the arena off, or not a world-geometry format) it is DrawShared.
+void Device::DrawSharedIndexed(uint32_t primitive, uint32_t fvf, const std::shared_ptr<const std::vector<uint8_t>>& data,
+                               size_t byteOffset, uint32_t vertexCount,
+                               const std::shared_ptr<const std::vector<uint8_t>>& indexData, uint32_t indexCount)
+{
+    if (!data || !indexData || indexData->size() < size_t(indexCount) * 2)
+        return;
+    const uint32_t stride = FvfStride(fvf);
+    if (stride && byteOffset % stride == 0 && (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ) {
+        VkDeviceSize base = 0;
+        m_drawStaticBuffer = StaticBufferFor(data, &base, stride, &m_drawStaticSerial);
+        m_drawStaticOffset = base + byteOffset;
+        if (m_drawStaticBuffer) {
+            uint64_t serial = 0;
+            VkDeviceSize indexBase = 0;
+            m_drawStaticIndexBuffer = StaticBufferFor(indexData, &indexBase, 16, &serial);
+            m_drawStaticIndexOffset = indexBase;
+        }
+    }
+    Draw(primitive, fvf, data->data() + byteOffset, vertexCount, reinterpret_cast<const uint16_t*>(indexData->data()),
+         indexCount);
+    m_drawStaticBuffer = VK_NULL_HANDLE;
+    m_drawStaticIndexBuffer = VK_NULL_HANDLE;
 }
 
 }  // namespace rvk

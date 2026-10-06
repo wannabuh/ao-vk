@@ -58,6 +58,23 @@ Each phase keeps the call log A/B (`tools/calllog-ab.sh`, docs/native.md) identi
 
 ### 3. Retained meshes (the big one)
 
+Measured before starting (Direct on, demanding area, 155 fps): the game thread is the limit (6.44 ms; render thread
+idle 1.43 ms). Of it, the native scene code: scene update 1.48 ms, scene render 1.85 ms (the 1.13 ms hand-off is inside
+those two); the game's own logic the rest (~3.1 ms). The hand-off: 1,306 draws copy their vertices (697 KB), 1,401 draw
+from shared vertex buffers, 101 skinned; 421 KB of indices copied a frame.
+
+**3a. Retained indices** (`[Native] Retain = on`, with `Device`, `Scene` and `Direct` on; off by default until played):
+a native mesh's draw (mesh.cpp `DrawIndexed`, inside `RetainedIndices`) goes through `Direct::drawIndexedVB`. Its
+indices are a native `TriList`'s, which only native code writes (load, AddTriangle, copy, flip, delete - each bumps
+`meshdata::IndexGeneration`), so the backend (`RDevice::DrawIndexedVBRetained`) keeps one copy per array and reuses
+it while the generation holds - the first and last index checked every draw, the whole array after a generation
+change and every 64 frames. The record carries the copy by reference (`ThreadedDevice::DrawIndexedPrimitiveSharedRetained`);
+rvk puts it in the static arena once, like the vertices (`Device::DrawSharedIndexed`), and binds it there instead of
+copying the indices into the ring (`staticIb` in Draw: the draw, the indirect batch key, the pre-pass, the shadow
+casters). The call log line is the COM call's. Check: `tools/calllog-ab.sh Retain`, then in game the 'hand-off draws'
+line (retained count up, KB of indices copied down) and the game thread frame.
+
+
 - `rvk::Mesh`: a static mesh's vertices **and indices** in a GPU buffer, uploaded once (on first draw, or when its
   `RTriMeshData_t` is loaded), with what `Device::Draw` now recomputes per draw computed once: bounds, index hash,
   vertex alpha, the caster identity.

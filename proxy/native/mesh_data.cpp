@@ -91,6 +91,10 @@ void* NewVertexBuffer() { return vc10::Allocate(4); }   // VertexBuffer_c: a poi
 
 Indices& Triangles(void* t) { return Field<Indices>(t, 8); }
 
+uint64_t g_indexGeneration = 1;                     // IndexGeneration: bumped by every TriList writer below
+bool g_indexTracked;                                // ... all of which are installed
+void IndicesChanged() { ++g_indexGeneration; }
+
 void CopyIndices(Indices& to, const uint16_t* from, size_t count)   // vector(range): exactly as many
 {
     to.first = to.last = to.end = nullptr;
@@ -103,6 +107,7 @@ void CopyIndices(Indices& to, const uint16_t* from, size_t count)   // vector(ra
 
 void* __fastcall TriListDelete(void* t, void*, uint8_t flags)   // vtable slot 0 (FUN_100188fb)
 {
+    IndicesChanged();                               // its address may hold another list next
     Triangles(t).release();
     S().destroy(t, nullptr);
     if (flags & 1) vc10::Free(t);
@@ -111,6 +116,7 @@ void* __fastcall TriListDelete(void* t, void*, uint8_t flags)   // vtable slot 0
 
 void __fastcall TriListAddTriangle(void* t, void*, int32_t a, int32_t b, int32_t c)
 {
+    IndicesChanged();
     Triangles(t).push_back(uint16_t(a));
     Triangles(t).push_back(uint16_t(b));
     Triangles(t).push_back(uint16_t(c));
@@ -118,6 +124,7 @@ void __fastcall TriListAddTriangle(void* t, void*, int32_t a, int32_t b, int32_t
 
 void* __fastcall TriListConstructFrom(void* t, void*, void* archive)   // FUN_1001fedf
 {
+    IndicesChanged();
     S().constructFrom(t, nullptr, archive);
     SetVtable(t, kTriListVtable);
     Indices& v = Triangles(t);
@@ -134,6 +141,7 @@ void* __cdecl TriListInstantiate(void* archive) { return TriListConstructFrom(vc
 
 void* __fastcall TriListCopy(void* t, void*, void* from)   // FUN_10048cdf
 {
+    IndicesChanged();
     S().construct(t, nullptr);
     SetVtable(t, kTriListVtable);
     const Indices& v = Triangles(from);
@@ -143,6 +151,7 @@ void* __fastcall TriListCopy(void* t, void*, void* from)   // FUN_10048cdf
 
 void __fastcall TriListFlip(void* t)                  // FUN_1001fe30: every triangle's winding reversed
 {
+    IndicesChanged();
     for (uint16_t* i = Triangles(t).first; i != Triangles(t).last; i += 3) std::swap(i[1], i[2]);
 }
 
@@ -1037,9 +1046,18 @@ void Install(HMODULE orig)
         {0x4E7EF, FN(VisualDataSimpleMeshes), "RVisualData_t::GetSimpleMeshArray"},
     };
 #undef FN
-    int installed = 0;
-    for (const Entry& e : entries) installed += Replace(orig, e.rva, e.target, e.what) ? 1 : 0;
-    Log("mesh data: %d of %d functions native", installed, int(sizeof(entries) / sizeof(entries[0])));
+    int installed = 0, writers = 0;
+    for (const Entry& e : entries) {
+        bool ok = Replace(orig, e.rva, e.target, e.what);
+        installed += ok ? 1 : 0;
+        for (uint32_t writer : {0x188FBu, 0x1FE9Du, 0x1FEDFu, 0x48CDFu, 0x1FE30u})   // the TriList writers
+            if (ok && e.rva == writer) ++writers;
+    }
+    g_indexTracked = writers == 5;
+    Log("mesh data: %d of %d functions native%s", installed, int(sizeof(entries) / sizeof(entries[0])),
+        g_indexTracked ? "" : "; triangle list writes not all native: static meshes' indices are not kept");
 }
+
+uint64_t IndexGeneration() { return g_indexTracked ? g_indexGeneration : 0; }
 
 }  // namespace rnative::meshdata

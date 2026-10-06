@@ -263,7 +263,8 @@ void ThreadedDevice::BeginFrame()
     Enqueue([this, callerNs, records, bytes, repeats, sections, draws](const uint8_t*) {
         m_device.ProfileAddCaller(double(callerNs) * 1e-6);
         m_device.ProfileAddCallerQueue(records, bytes, repeats);
-        m_device.ProfileAddCallerDraws(draws.copied, draws.vertexBytes, draws.shared, draws.skinned, draws.indexBytes);
+        m_device.ProfileAddCallerDraws(draws.copied, draws.vertexBytes, draws.shared, draws.skinned, draws.indexBytes,
+                                       draws.retained);
         m_device.BeginFrame();
         for (uint32_t i = 0; i < sections.n; ++i)   // after BeginFrame: its log (if due) has gone out
             m_device.ProfileCpuAddMs(sections.s[i].first, sections.s[i].second);
@@ -827,6 +828,17 @@ void ThreadedDevice::DrawIndexedPrimitiveShared(uint32_t primitive, uint32_t fvf
         m_device.DrawShared(primitive, fvf, data, byteOffset, vertexCount, reinterpret_cast<const uint16_t*>(idx),
                             indexCount);
     }, indices, indexCount * 2);
+}
+
+void ThreadedDevice::DrawIndexedPrimitiveSharedRetained(uint32_t primitive, uint32_t fvf, const SharedVertices& data,
+                                                        size_t byteOffset, uint32_t vertexCount,
+                                                        const SharedVertices& indexData, uint32_t indexCount)
+{
+    m_drawStats.shared++;
+    m_drawStats.retained++;
+    Enqueue([this, primitive, fvf, vertexCount, indexCount, data, byteOffset, indexData](const uint8_t*) {
+        m_device.DrawSharedIndexed(primitive, fvf, data, byteOffset, vertexCount, indexData, indexCount);
+    });
 }
 
 void ThreadedDevice::SetDrawVisual(uint32_t kind, const char* className, uint32_t owner)
