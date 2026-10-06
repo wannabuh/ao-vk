@@ -55,6 +55,9 @@ void main()
     vec3 root = vec3(0.16, 0.30, 0.08);
     vec3 tip  = vec3(0.52, 0.78, 0.24);
     vec3 base = mix(root, tip, clamp(vShade, 0.0, 1.0));
+    // A little per-blade variation (from the blade's ground position), so a field isn't one flat colour.
+    float v = fract(sin(dot(floor(vPosW.xz * 2.0), vec2(12.9898, 78.233))) * 43758.5453);
+    base *= mix(vec3(0.82, 0.9, 0.7), vec3(1.12, 1.05, 0.9), v);
     outScene = vec4(base * (FL.sunColor.rgb * d * shadow + vec3(0.45)), 1.0);
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * GF.viewport.xy * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
