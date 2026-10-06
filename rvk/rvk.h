@@ -761,6 +761,33 @@ private:
     float m_sunSoftness = 1.0f, m_leafLight = 1.0f, m_nightGlow = 1.5f, m_contact = 0.6f;
     bool m_drawMayDiscard = true;                // the current draw can cut out (alpha test / F_CUTOUT): pick the variant
     bool m_drawPrepassCutout = false;            // pre-passed with the cut-out pre-pass (prepass_cutout.frag)
+    // Two-pass foliage (RVK_FolEdges): a blended cut-out (the game's foliage: blended SRCALPHA / INVSRCALPHA, writing
+    // depth, cut out) is drawn as its core (alpha >= 0.95: blended, with depth, its record's motion.w = 1) and its soft
+    // edges (the rest: motion.w = 2) are queued and drawn without depth writes over the finished scene (FlushEdges:
+    // when its rendering ends, before a clear, before a draw that writes no depth). The game's way - every partly
+    // transparent pixel writing depth - hid whatever was drawn behind it afterwards and showed what was drawn before:
+    // the tree behind, the sky, seen through the leaves' edges. With the edges out of the depth, the core can go into
+    // the cut-out pre-pass too.
+    bool m_foliageEdges = true;
+    bool m_drawSplit = false;                    // the current draw is two-pass foliage
+    struct DeferredEdge {
+        uint32_t primitive, fvf, stride, vertexCount, indexCount, record;
+        VkDeviceSize vbOffset, ibOffset;
+        VkBuffer vb, ib;
+        VkDeviceSize frameLights, prevOffset, prevBytes, smoothOffset, smoothBytes;
+        VkBuffer prevBuffer, smoothBuffer;
+        d3d::Viewport viewport;
+        uint32_t cull, zFunc;
+    };
+    std::vector<DeferredEdge> m_edges;
+    uint64_t m_edgeFlushes = 0, m_edgeDraws = 0;   // logged with the pre-pass (PrepassLog)
+    void FlushEdges();                           // the queued edges, drawn now (in the current rendering)
+    // The main pass's per-draw push (bindings 4, 8, 10), skipped when it equals the last one (StateCache).
+    void PushDrawSet(VkCommandBuffer cmd, VkDeviceSize frameLightsOffset, VkBuffer prevBuffer, VkDeviceSize prevOffset,
+                     VkDeviceSize prevBytes, VkBuffer smoothBuffer, VkDeviceSize smoothOffset, VkDeviceSize smoothBytes);
+public:
+    void SetFoliageEdges(bool on) { m_foliageEdges = on; }
+private:
     uint64_t m_noCutDraws = 0;                   // draws that took the no-discard pipeline (early-Z; logged)
     // Depth pre-pass (prepass.cpp). Armed at the scene's depth clear (the frame's main commands split there: Frame);
     // while armed, each opaque scene draw also draws its depth into the pre-pass, which runs before the scene's

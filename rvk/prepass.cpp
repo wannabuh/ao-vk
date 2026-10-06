@@ -191,14 +191,14 @@ uint32_t Device::PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) co
         return kPreNoZWrite;
     if (zFunc != d3d::CMP_LESS && zFunc != d3d::CMP_LESSEQUAL)
         return kPreZFunc;
-    // Cut-outs go in with the cut-out pre-pass (prepass_cutout.frag: depth where the alpha test passes) only when not
-    // blended: every pixel they keep is then fully opaque and hides what is behind it, in any draw order. Blended
-    // cut-outs (F_CUTOUT, or alpha tested and blended - the game's foliage) stay out: a partly transparent pixel of
-    // theirs writes depth too, and drawn before an opaque pixel behind it that the pre-pass knew about, it would blend
-    // over a background the pre-pass had rejected - seen as bright outlines on leaves, the tree behind showing through.
+    // Cut-outs go in with the cut-out pre-pass (prepass_cutout.frag) when every pixel they write depth for hides what
+    // is behind it in any draw order: alpha tested and not blended (where the test passes), or two-pass foliage's core
+    // (m_drawSplit: blended, its edges drawn later without depth). Other blended cut-outs stay out: a partly
+    // transparent pixel of theirs writes depth too, and drawn before an opaque pixel behind it that the pre-pass knew
+    // about, it would blend over a background the pre-pass had rejected (outlines on leaves, the tree behind showing).
     if (m_drawMayDiscard) {
         bool alphaTested = m_rs[d3d::RS_ALPHATESTENABLE] && !m_rs[d3d::RS_ALPHABLENDENABLE];
-        if (!m_prepassCutoutPipeline || !alphaTested)
+        if (!m_prepassCutoutPipeline || !(alphaTested || m_drawSplit))
             return alphaTested ? kPreAlphaTest : kPreDiscard;
     }
     if (WaterWritesDepth(fvf))
@@ -207,6 +207,8 @@ uint32_t Device::PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) co
         return kPreIn;
     if (m_rs[d3d::RS_SRCBLEND] != d3d::BLEND_SRCALPHA || m_rs[d3d::RS_DESTBLEND] != d3d::BLEND_INVSRCALPHA)
         return kPreBlend;
+    if (m_drawSplit)
+        return kPreIn;                           // two-pass foliage's core (its edges write no depth)
     return AlphaOneCheck(fvf);
 }
 
@@ -243,6 +245,9 @@ void Device::PrepassLog()
         double(m_backdropDraws[3]) / 600.0, double(m_backdropDraws[4]) / 600.0,
         m_depthBounds ? "" : " (no depth bounds test on this GPU)");
     Log("depth pre-pass: scene draws kept out, a frame:%s; segments ended by:%s", out.c_str(), ends.c_str());
+    Log("two-pass foliage: %.0f edge draws a frame in %.1f batches%s", double(m_edgeDraws) / 600.0,
+        double(m_edgeFlushes) / 600.0, m_foliageEdges ? "" : " (off: RVK_FolEdges)");
+    m_edgeDraws = m_edgeFlushes = 0;
     m_prepassDraws = m_prepassSegments = 0;
     std::memset(m_backdropDraws, 0, sizeof(m_backdropDraws));
     std::memset(m_prepassWhy, 0, sizeof(m_prepassWhy));

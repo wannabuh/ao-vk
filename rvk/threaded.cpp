@@ -845,6 +845,11 @@ void ThreadedDevice::SetPlantDetail(float detail)
     Enqueue([this, detail](const uint8_t*) { m_device.SetPlantDetail(detail); });
 }
 
+void ThreadedDevice::SetFoliageEdges(bool on)
+{
+    Enqueue([this, on](const uint8_t*) { m_device.SetFoliageEdges(on); });
+}
+
 void ThreadedDevice::SetDepthPrepass(bool on)
 {
     Enqueue([this, on](const uint8_t*) { m_device.SetDepthPrepass(on); });

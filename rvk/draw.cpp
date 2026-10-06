@@ -1293,6 +1293,7 @@ void Device::Clear(uint32_t count, const Rect* rects, uint32_t flags, uint32_t a
     if (!m_inFrame)
         return;
     FlushGroup();                                // batched draws recorded before the clear must run before it
+    FlushEdges();                                // ... and two-pass foliage's queued edges
     if (!(flags & (d3d::CLEAR_TARGET | d3d::CLEAR_ZBUFFER)))
         return;
     // D3D clears the given rectangles (or the whole viewport), always clipped to the viewport.
@@ -1669,6 +1670,98 @@ void Device::BindGeometry(VkCommandBuffer cmd, VkBuffer vb, VkBuffer ib)
     }
 }
 
+// The main pass's per-draw bindings: 4 the frame lights (rebuilt when the lights change), 8 an animated mesh's last
+// positions, 10 a tessellated draw's averaged normals (else any small part of the ring, unread). Pushed only when one of
+// them differs from the last push in this command buffer (most draws: the frame's lights and the unread stand-ins,
+// again). A push updates only the bindings it names, so the others stay.
+void Device::PushDrawSet(VkCommandBuffer cmd, VkDeviceSize frameLightsOffset, VkBuffer prevBuffer, VkDeviceSize prevOffset,
+                         VkDeviceSize prevBytes, VkBuffer smoothBuffer, VkDeviceSize smoothOffset, VkDeviceSize smoothBytes)
+{
+    Frame& f = m_frames[m_frameIndex];
+    VkDescriptorBufferInfo frameLights{f.ring, frameLightsOffset, sizeof(FrameLights)};
+    VkDescriptorBufferInfo prevPositions{prevBuffer, prevOffset, prevBytes ? prevBytes : 16};
+    VkDescriptorBufferInfo smoothNormals{smoothBuffer, smoothOffset, smoothBytes ? smoothBytes : 16};
+    StateCache& pc = m_cache;
+    bool pushDraw = !pc.drawSetValid || pc.frameLights != frameLightsOffset || pc.prevBuffer != prevPositions.buffer ||
+                    pc.prevOffset != prevPositions.offset || pc.prevRange != prevPositions.range ||
+                    pc.smoothBuffer != smoothNormals.buffer || pc.smoothOffset != smoothNormals.offset ||
+                    pc.smoothRange != smoothNormals.range;
+    if (!pushDraw)
+        return;
+    pc.drawSetValid = true;
+    pc.frameLights = frameLightsOffset;
+    pc.prevBuffer = prevPositions.buffer;
+    pc.prevOffset = prevPositions.offset;
+    pc.prevRange = prevPositions.range;
+    pc.smoothBuffer = smoothNormals.buffer;
+    pc.smoothOffset = smoothNormals.offset;
+    pc.smoothRange = smoothNormals.range;
+    VkWriteDescriptorSet writes[3] = {};
+    auto write = [&](int i, uint32_t binding, VkDescriptorType type) {
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstBinding = binding;
+        writes[i].descriptorCount = 1;
+        writes[i].descriptorType = type;
+    };
+    write(0, 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);          writes[0].pBufferInfo = &frameLights;
+    write(1, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);          writes[1].pBufferInfo = &prevPositions;
+    write(2, 10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);         writes[2].pBufferInfo = &smoothNormals;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 3, writes);
+}
+
+// Two-pass foliage's second pass: the queued soft edges, drawn now - blended, depth tested, no depth written - over
+// what the scene has become since their cores were drawn. Each is replayed with the state it was drawn with (cull,
+// depth compare, viewport, its buffers and per-draw bindings; its own record, motion.w = 2) through ApplyDynamicState,
+// which reads that state from the render states and the draw's flags: those are set for it and put back after.
+void Device::FlushEdges()
+{
+    if (m_edges.empty())
+        return;
+    if (!m_rendering) {                          // (nothing to draw into: dropped)
+        m_edges.clear();
+        return;
+    }
+    FlushGroup();                                // the batched draws before them go first
+    VkCommandBuffer cmd = m_frames[m_frameIndex].main;
+    const uint32_t keys[7] = {d3d::RS_CULLMODE, d3d::RS_ZENABLE, d3d::RS_ZWRITEENABLE, d3d::RS_ZFUNC,
+                              d3d::RS_ALPHABLENDENABLE, d3d::RS_SRCBLEND, d3d::RS_DESTBLEND};
+    uint32_t saved[7];
+    for (int i = 0; i < 7; ++i) saved[i] = m_rs[keys[i]];
+    const d3d::Viewport savedViewport = m_viewport;
+    const bool mayDiscard = m_drawMayDiscard, tess = m_drawTess, label = m_drawIsLabel, prepassed = m_drawPrepassed,
+               backdrop = m_drawBackdrop, overbright = m_drawOverbright2x, terrainBase = m_drawTerrainBase,
+               terrainLight = m_drawTerrainLight;
+    m_drawMayDiscard = true;
+    m_drawTess = m_drawIsLabel = m_drawBackdrop = m_drawOverbright2x = m_drawTerrainBase = m_drawTerrainLight = false;
+    m_drawPrepassed = true;                      // (LESS as LESSEQUAL: its core's depth may be there)
+    for (const DeferredEdge& e : m_edges) {
+        const uint32_t values[7] = {e.cull, 1u, 0u, e.zFunc, 1u, d3d::BLEND_SRCALPHA, d3d::BLEND_INVSRCALPHA};
+        for (int i = 0; i < 7; ++i) m_rs[keys[i]] = values[i];
+        m_viewport = e.viewport;
+        ApplyDynamicState(e.primitive, e.fvf, e.stride);
+        BindGeometry(cmd, e.vb, e.ib);
+        PushDrawSet(cmd, e.frameLights, e.prevBuffer, e.prevOffset, e.prevBytes, e.smoothBuffer, e.smoothOffset,
+                    e.smoothBytes);
+        if (e.indexCount)
+            vkCmdDrawIndexed(cmd, e.indexCount, 1, uint32_t(e.ibOffset / 2), int32_t(e.vbOffset / e.stride), e.record);
+        else
+            vkCmdDraw(cmd, e.vertexCount, 1, uint32_t(e.vbOffset / e.stride), e.record);
+    }
+    ++m_edgeFlushes;
+    m_edgeDraws += uint32_t(m_edges.size());
+    m_edges.clear();
+    for (int i = 0; i < 7; ++i) m_rs[keys[i]] = saved[i];
+    m_viewport = savedViewport;
+    m_drawMayDiscard = mayDiscard;
+    m_drawTess = tess;
+    m_drawIsLabel = label;
+    m_drawPrepassed = prepassed;
+    m_drawBackdrop = backdrop;
+    m_drawOverbright2x = overbright;
+    m_drawTerrainBase = terrainBase;
+    m_drawTerrainLight = terrainLight;
+}
+
 // A fingerprint of everything an instanced batch must share (geometry, format, textures, state); 0 = not mergeable.
 // Consecutive equal keys are draws one instanced draw could cover (their world / per-draw block differs per instance).
 void Device::NoteBatch(uint64_t key)
@@ -1814,6 +1907,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // Retained indices only with the retained vertices (one static draw path).
     const VkBuffer staticIb = m_drawStaticBuffer && indices ? m_drawStaticIndexBuffer : VK_NULL_HANDLE;
 
+    // Two-pass foliage: the queued edges go before a draw that writes no depth (the effects drawn over the scene came
+    // after the foliage, edges included, before).
+    if (!m_edges.empty() && !(m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE]))
+        FlushEdges();
     // Render targets bound as textures must be readable; layout changes can't happen inside rendering.
     bool needTransition = false;
     for (Texture* t : m_textures)
@@ -1821,6 +1918,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             needTransition = true;
     if (needTransition) {
         FlushGroup();                                // the previous group's state is about to be invalidated
+        FlushEdges();                                // (they belong to this rendering)
         ShadeQueryEnd();                             // a query begun in this rendering ends in it
         vkCmdEndRendering(cmd);
         for (Texture* t : m_textures)
@@ -1855,7 +1953,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     PrepareDrawArenas();
     // The arrays are full (a frame with more unique states or draws than reserved): submit what is recorded, wait,
     // and start over. Rare; the targets double for the next frames.
-    if (m_constCount >= m_constCapacity || m_recordCount >= m_recordCapacity) {
+    if (m_constCount >= m_constCapacity || m_recordCount + 2 > m_recordCapacity) {   // (two-pass foliage: 2 records)
         m_constWanted = std::min(m_constWanted * 2u, kMaxDrawConstCapacity);
         m_recordWanted = std::min(m_recordWanted * 2u, kMaxDrawRecordCapacity);
         FlushDrawArenas();
@@ -2201,6 +2299,18 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constIndex = constIndex;
     }
     if (!m_drawMayDiscard) ++m_noCutDraws;       // per draw (the block above runs only when the constants change)
+    // Two-pass foliage (RVK_FolEdges, see FlushEdges): a 3D blended cut-out that writes depth - not characters (their
+    // own passes), labels, particles or water.
+    {
+        uint32_t zf = m_rs[d3d::RS_ZFUNC];
+        m_drawSplit = m_foliageEdges && m_rendering && m_drawMayDiscard && !m_external && !m_drawIsLabel && !m_drawGpu &&
+                      !m_drawIsCharacter && tessLevel <= 0.0f && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW &&
+                      TopologyClassOf(primitive) == 2 && m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE] &&
+                      (zf == d3d::CMP_LESS || zf == d3d::CMP_LESSEQUAL) && m_rs[d3d::RS_ALPHABLENDENABLE] &&
+                      m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA &&
+                      !WaterWritesDepth(fvf);
+        dt.motion[3] = m_drawSplit ? 1.0f : 0.0f;   // its core now (ffp_main.glsl); the edges' record below
+    }
     if (m_drawFoliage) {
         ++m_foliageDraws;
         if (m_drawFoliage == 2u) ++m_foliageLodDraws;
@@ -2351,6 +2461,32 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // GPU-driven M2: this draw's record, and the frame's two arrays (bindings 0 = constants, 12 = records) pushed
     // once per frame's command buffer. The record index travels in firstInstance (gl_InstanceIndex).
     uint32_t recordIndex = AppendRecord(constIndex, dt);
+    if (m_drawSplit) {                           // the edges, queued: the same draw, its own record (motion.w = 2)
+        DrawTransform edge = dt;
+        edge.motion[3] = 2.0f;
+        DeferredEdge e{};
+        e.primitive = primitive;
+        e.fvf = fvf;
+        e.stride = layout.stride;
+        e.vertexCount = vertexCount;
+        e.indexCount = indices ? indexCount : 0;
+        e.record = AppendRecord(constIndex, edge);
+        e.vbOffset = vbOffset;
+        e.ibOffset = ibOffset;
+        e.vb = m_drawStaticBuffer ? m_drawStaticBuffer : f.ring;
+        e.ib = indices ? (staticIb ? staticIb : f.ring) : VK_NULL_HANDLE;
+        e.frameLights = frameLightsOffset;
+        e.prevBuffer = prevPositionsBuffer;
+        e.prevOffset = prevPositionsOffset;
+        e.prevBytes = prevPositionsBytes;
+        e.smoothBuffer = smoothBuffer;
+        e.smoothOffset = smoothOffset;
+        e.smoothBytes = smoothBytes;
+        e.viewport = m_viewport;
+        e.cull = m_rs[d3d::RS_CULLMODE];
+        e.zFunc = m_rs[d3d::RS_ZFUNC];
+        m_edges.push_back(e);
+    }
     if (m_drawPrepassed)
         PrepassDraw(primitive, fvf, layout.stride, vertexCount, indices ? indexCount : 0, vbOffset, ibOffset,
                     m_drawStaticBuffer ? m_drawStaticBuffer : f.ring, staticIb ? staticIb : f.ring, frameLightsOffset,
@@ -2396,40 +2532,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 5, arena);
         m_arenaBound = true;
     }
-    VkDescriptorBufferInfo frameLights{f.ring, frameLightsOffset, sizeof(FrameLights)};
-    // Binding 8: an animated mesh's last positions, else any small part of the ring (unread).
-    VkDescriptorBufferInfo prevPositions{prevPositionsBuffer, prevPositionsOffset, prevPositionsBytes ? prevPositionsBytes : 16};
-    // Binding 10: a tessellated draw's averaged normals, else any small part of the ring (unread).
-    VkDescriptorBufferInfo smoothNormals{smoothBuffer, smoothOffset, smoothBytes ? smoothBytes : 16};
-    // Pushed only when one of them differs from the last push in this command buffer (most draws: the frame's
-    // lights and the unread stand-ins, again). A push updates only the bindings it names, so the others stay.
-    StateCache& pc = m_cache;
-    bool pushDraw = !pc.drawSetValid || pc.frameLights != frameLightsOffset || pc.prevBuffer != prevPositions.buffer ||
-                    pc.prevOffset != prevPositions.offset || pc.prevRange != prevPositions.range ||
-                    pc.smoothBuffer != smoothNormals.buffer || pc.smoothOffset != smoothNormals.offset ||
-                    pc.smoothRange != smoothNormals.range;
-    if (pushDraw) {
-    pc.drawSetValid = true;
-    pc.frameLights = frameLightsOffset;
-    pc.prevBuffer = prevPositions.buffer;
-    pc.prevOffset = prevPositions.offset;
-    pc.prevRange = prevPositions.range;
-    pc.smoothBuffer = smoothNormals.buffer;
-    pc.smoothOffset = smoothNormals.offset;
-    pc.smoothRange = smoothNormals.range;
-    // The per-draw bindings: the frame lights (rebuilt when the lights change) and the two buffers that vary by draw.
-    VkWriteDescriptorSet writes[3] = {};
-    auto write = [&](int i, uint32_t binding, VkDescriptorType type) {
-        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[i].dstBinding = binding;
-        writes[i].descriptorCount = 1;
-        writes[i].descriptorType = type;
-    };
-    write(0, 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);          writes[0].pBufferInfo = &frameLights;
-    write(1, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);          writes[1].pBufferInfo = &prevPositions;
-    write(2, 10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);         writes[2].pBufferInfo = &smoothNormals;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 3, writes);
-    }
+    PushDrawSet(cmd, frameLightsOffset, prevPositionsBuffer, prevPositionsOffset, prevPositionsBytes, smoothBuffer,
+                smoothOffset, smoothBytes);
     if (!m_bindlessBound) {                       // set 1, once per frame's command buffer
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 1, 1, &m_bindlessSet, 0, nullptr);
         m_bindlessBound = true;

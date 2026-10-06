@@ -321,6 +321,10 @@ bool AlphaPass(float a)
     }
 }
 
+// Two-pass foliage (Device::FlushEdges): a blended cut-out is drawn as its core - alpha from here up, with depth - and,
+// later, over the finished scene, its soft edges - below it, without depth (D.motion.w: 1 core, 2 edges, 0 whole).
+const float kFoliageCore = 0.95;
+
 void main()
 {
     gRecord = vRecord;
@@ -331,9 +335,10 @@ void main()
     // below (texture stages; the lit diffuse keeps the vertex alpha).
     vec4 p0 = Sample(0u), p1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
     float pa = Cascade(p0, p1, 1.0).a;
-    // Where the alpha test passes (the pre-pass takes alpha tested draws that aren't blended: prepass.cpp). The
-    // blended rule (alpha 1) stays as a safeguard.
-    if (((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(pa)) || ((C.flags.x & (F_CUTOUT | F_BLENDED)) != 0u && pa < 1.0))
+    // Where the alpha test passes and, blended (only two-pass foliage's core comes here blended: prepass.cpp), where
+    // the core is - its edges write no depth.
+    if (((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(pa)) ||
+        ((C.flags.x & (F_CUTOUT | F_BLENDED)) != 0u && pa < kFoliageCore))
         discard;
 }
 #else
@@ -346,6 +351,9 @@ void main()
         vec4 e0 = Sample(0u), e1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
         float a = Cascade(e0, e1, 1.0).a;
         drop = ((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(a)) || ((C.flags.x & F_CUTOUT) != 0u && a < vCutout);
+        uint split = uint(D.motion.w + 0.5);             // two-pass foliage: the core or the edges only
+        if (split == 1u) drop = drop || a < kFoliageCore;
+        else if (split == 2u) drop = drop || a >= kFoliageCore;
     }
     bool q0 = subgroupQuadBroadcast(drop, 0u), q1 = subgroupQuadBroadcast(drop, 1u);
     bool q2 = subgroupQuadBroadcast(drop, 2u), q3 = subgroupQuadBroadcast(drop, 3u);

@@ -36,14 +36,22 @@
   `gl_Position` invariant so both passes produce the same depth; a pre-passed draw's `LESS` becomes `LESSEQUAL`. Backgrounds (draws ignoring depth, not writing it, before anything
   in the segment wrote depth) get the depth bounds test [clear, clear]: they are shaded only where the pre-pass found
   no opaque surface, which is the only place they stay visible.
-  **Cut-outs** that are alpha tested and not blended (fences, grates, some plants) go in with a second pipeline,
-  `prepass_cutout.frag` (`ffp_main.glsl` built with `RVK_PREPASS_CUTOUT`): it computes the draw's alpha as the main
-  shader's cut-out test does and writes depth only where the alpha test passes - each such pixel is fully opaque and
-  hides what is behind it in any draw order. The cut-out's own main draw keeps its discard. Blended cut-outs (the
-  game's foliage: alpha tested and blended, or blended with depth writes) stay out: their partly transparent pixels
-  write depth too, and one drawn before an opaque pixel behind it would blend over a background the pre-pass had
-  rejected (outlines on leaves, the tree behind showing through). Swaying plants go in under the same rule.
-  `RANDYVK_PREPASS_CUTOUT=0` keeps cut-outs out, `RANDYVK_PREPASS_SWAY=0` swaying plants.
+  **Cut-outs** go in with a second pipeline, `prepass_cutout.frag` (`ffp_main.glsl` built with `RVK_PREPASS_CUTOUT`),
+  which computes the draw's alpha as the main shader's cut-out test does and writes depth only for pixels that hide
+  what is behind them in any draw order: an alpha tested draw that isn't blended where its test passes, and two-pass
+  foliage's core (below). Other blended cut-outs stay out - a partly transparent pixel of theirs writes depth too, and
+  drawn before an opaque pixel behind it that the pre-pass knew about, it would blend over a background the pre-pass
+  had rejected. Swaying plants go in under the same rules. `RANDYVK_PREPASS_CUTOUT=0` keeps cut-outs out,
+  `RANDYVK_PREPASS_SWAY=0` swaying plants.
+- **Two-pass foliage** (setting `RVK_FolEdges`, Plants; on): the game draws its foliage blended with depth writes, so
+  every partly transparent leaf pixel hides whatever is drawn behind it afterwards and shows whatever was drawn before
+  - the tree behind, the sky, seen through some leaves' edges depending on draw order. A blended cut-out that writes
+  depth is now drawn as its core (alpha >= 0.95, blended, with depth: its record's `motion.w` = 1) and its soft edges
+  (the rest: `motion.w` = 2, its own record) are queued and drawn blended without depth writes over the finished
+  scene (`Device::FlushEdges`: when the rendering ends - target switch, copy, flush, scene end - before a clear, and
+  before a draw that writes no depth, so effects still come after them). The replay sets each edge's state (cull,
+  depth compare, viewport, buffers, per-draw bindings) and goes through `ApplyDynamicState`. With the edges out of the
+  depth, the core is exact for the cut-out pre-pass.
 - **Vertex buffers** keep their contents in CPU memory; every draw copies the range it uses into the ring
   buffer, so rewriting a buffer between draws is safe (the game's CPU skinning reuses one buffer).
 - Memory through VMA (from the Vulkan SDK); Vulkan entry points loaded at run time from `vulkan-1.dll`.

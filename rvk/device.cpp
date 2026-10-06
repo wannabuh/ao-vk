@@ -1177,6 +1177,7 @@ void Device::Transition(VkCommandBuffer cmd, Texture* t, VkImageLayout to)
 void Device::EndRendering()
 {
     if (m_rendering) {
+        FlushEdges();                                // two-pass foliage's queued edges: over this rendering's scene
         FlushGroup();                                // the pending batched draws belong to this rendering
         ShadeQueryEnd();                             // a query begun in a rendering ends in it
         PrepassEnd(m_renderEndCause);                // the scene's rendering ends: so does a depth pre-pass segment
@@ -1343,6 +1344,7 @@ void Device::BeginFrame()
     m_sunLuminance = 0.0f;
     m_casters.clear();
     m_blobShadowsReplaced.store(m_shadows && m_shadowValid, std::memory_order_relaxed);
+    m_edges.clear();                             // (two-pass foliage: flushed with every rendering's end already)
     m_profileDraws += m_frameDraw;               // last frame's batching (the profile's log)
     m_frameDraw = 0;
     m_prepassEndedThisFrame = false;
