@@ -82,7 +82,7 @@ float BoxDistance2(const float mn[3], const float mx[3], const float p[3])
 {
     float d2 = 0.0f;
     for (int j = 0; j < 3; ++j) {
-        float d = std::max({mn[j] - p[j], 0.0f, p[j] - mx[j]});
+        float d = std::max(std::max(mn[j] - p[j], 0.0f), p[j] - mx[j]);
         d2 += d * d;
     }
     return d2;
@@ -200,7 +200,7 @@ float Device::PointShadowStrength() const
 bool Device::IsCarrierPart(const CapturedLight& c, const d3d::Matrix& world, const float boundsMin[3],
                            const float boundsMax[3])
 {
-    float extent = std::max({boundsMax[0] - boundsMin[0], boundsMax[1] - boundsMin[1], boundsMax[2] - boundsMin[2]});
+    float extent = std::max(std::max(boundsMax[0] - boundsMin[0], boundsMax[1] - boundsMin[1]), boundsMax[2] - boundsMin[2]);
     if (!c.hasCarrier || extent >= 3.0f)
         return false;
     // The carrier's parts: the body (origin 2.1-2.2 under the light in the dumps) and its attachments (0.5-1.3 under,
@@ -303,8 +303,7 @@ void Device::FindCarriers()
             float dy = it.world.m[3][1] - p.y;
             if (dy <= -2.6f || dy >= 0.3f)       // where IsCarrierPart looks for the carrier's parts
                 continue;
-            float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
-                                     it.boundsMax[2] - it.boundsMin[2]});
+            float extent = std::max(std::max(it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1]), it.boundsMax[2] - it.boundsMin[2]);
             if (extent >= 3.0f)
                 continue;
             float dx = it.world.m[3][0] - p.x, dz = it.world.m[3][2] - p.z, d2 = dx * dx + dz * dz;
@@ -344,8 +343,7 @@ void Device::FindCarriers()
         linked[c.carrierGroup] = 1;
         for (const ShadowItem& it : m_shadowItems) {
             if (it.cached || linked[it.group]) continue;
-            float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
-                                     it.boundsMax[2] - it.boundsMin[2]});
+            float extent = std::max(std::max(it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1]), it.boundsMax[2] - it.boundsMin[2]);
             if (extent >= 3.0f) continue;        // a floor or building whose origin happens to be there
             float dx = it.world.m[3][0] - c.carrier[0], dz = it.world.m[3][2] - c.carrier[2];
             float dy = it.world.m[3][1] - p.y;
@@ -362,7 +360,7 @@ void Device::FindCarriers()
         for (uint32_t g = 0; g < groups; ++g) {
             const auto& b = groupBox[g];
             if (linked[g] || b[0] > b[3]) continue;
-            float extent = std::max({b[3] - b[0], b[4] - b[1], b[5] - b[2]});
+            float extent = std::max(std::max(b[3] - b[0], b[4] - b[1]), b[5] - b[2]);
             float cx = 0.5f * (b[0] + b[3]) - c.carrier[0], cz = 0.5f * (b[2] + b[5]) - c.carrier[2];
             float cy = 0.5f * (b[1] + b[4]) - p.y;
             if (extent < 1.6f && cx * cx + cz * cz < 1.0f && cy > -2.6f && cy < 0.5f &&
@@ -592,7 +590,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             // cast, the one carrying the light too (telling its pieces apart from others' proved unreliable;
             // FindCarriers now only serves CarriedLight). Big objects (buildings, platforms with their pillars) cast
             // even when their box contains the light; the near plane clips geometry right at the light.
-            float extent = std::max({box[3] - box[0], box[4] - box[1], box[5] - box[2]});
+            float extent = std::max(std::max(box[3] - box[0], box[4] - box[1]), box[5] - box[2]);
             bool housing = d2 == 0.0f && extent < 1.5f;              // smaller than a character
             if (housing)
                 continue;

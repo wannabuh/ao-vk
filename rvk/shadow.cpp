@@ -555,7 +555,7 @@ void Device::CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertic
     // Too far from the camera to matter (distant scenery): not worth keeping.
     float d2 = 0.0f;
     for (int j = 0; j < 3; ++j) {
-        float d = std::max({e.boundsMin[j] - m_frameEye[j], 0.0f, m_frameEye[j] - e.boundsMax[j]});
+        float d = std::max(std::max(e.boundsMin[j] - m_frameEye[j], 0.0f), m_frameEye[j] - e.boundsMax[j]);
         d2 += d * d;
     }
     if (d2 > 9.0f * kCasterCacheRange * kCasterCacheRange)
@@ -605,7 +605,7 @@ void Device::UpdateCasterCache()
         if (e.lastSeen != m_frameNumber) {
             float d2 = 0.0f;
             for (int j = 0; j < 3; ++j) {
-                float d = std::max({e.boundsMin[j] - m_frameEye[j], 0.0f, m_frameEye[j] - e.boundsMax[j]});
+                float d = std::max(std::max(e.boundsMin[j] - m_frameEye[j], 0.0f), m_frameEye[j] - e.boundsMax[j]);
                 d2 += d * d;
             }
             // The game draws whatever reaches into the view. A box test against the view is loose near the edges
@@ -1184,8 +1184,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
             // Beyond the nearest cascade, casters a few texels across leave no shadow worth drawing (they still
             // cast in the sharper cascades nearer the camera).
             if (c > 0) {
-                float extent = std::max({item.boundsMax[0] - item.boundsMin[0], item.boundsMax[1] - item.boundsMin[1],
-                                         item.boundsMax[2] - item.boundsMin[2]});
+                float extent = std::max(std::max(item.boundsMax[0] - item.boundsMin[0], item.boundsMax[1] - item.boundsMin[1]), item.boundsMax[2] - item.boundsMin[2]);
                 if (extent < 4.0f * texel) {
                     ++m_shadowCulled;
                     continue;

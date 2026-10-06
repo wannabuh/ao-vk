@@ -15,8 +15,15 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <emmintrin.h>
 
 namespace rnative {
+
+// lrint in the default rounding mode - to nearest, ties to even, as the original's x87 fistp - in one SSE2 instruction.
+// The CRT's lrint saves and restores the floating-point environment around each call: ~12% of the game thread in a
+// profile (render list buckets, the occluder's horizons). Out-of-range values give 0x80000000, as lrint does here.
+inline long Lrint(double x) { return _mm_cvtsd_si32(_mm_set_sd(x)); }
+inline long Lrint(float x) { return _mm_cvtss_si32(_mm_set_ss(x)); }
 
 enum class Mode { Off, On, Verify };
 

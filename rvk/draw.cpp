@@ -2133,7 +2133,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // Night glow candidates: opaque 3D surfaces drawn unlit (self-lit, like windows and signs) or with an emissive
     // material - not effects, the sky, the ground or lighting passes.
     bool additive = m_rs[d3d::RS_ALPHABLENDENABLE] && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_ONE;
-    float emissive = std::max({m_material.emissive.r, m_material.emissive.g, m_material.emissive.b});
+    float emissive = std::max(std::max(m_material.emissive.r, m_material.emissive.g), m_material.emissive.b);
     if (m_nightGlow > 0.0f && hdrTarget && solid3d && !additive && !IsMultiplyPass() &&
         (!(flags & F_LIGHTING) || emissive > 0.05f))
         flags |= F_EMISSIVE;

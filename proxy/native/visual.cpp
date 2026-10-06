@@ -63,11 +63,11 @@ void __fastcall AddToRenderList(Visual* v, void*, int32_t list, int32_t bucket)
         float distance = xm::LengthSquared(d);
         if (0.0f < distance) distance = std::sqrt(distance);
         if (200.0f <= distance) {
-            const float whole = float(std::lrint(double(distance) - 0.49999));
+            const float whole = float(Lrint(double(distance) - 0.49999));
             bucket = int32_t(whole) + 800;
         } else {
             const float scaled = float(double(distance) * 5.0);
-            bucket = int32_t(std::lrint(double(scaled) - 0.49999));
+            bucket = int32_t(Lrint(double(scaled) - 0.49999));
         }
         if (bucket < 0) bucket = 0;
         else if (bucket > 0x707) bucket = 0x707;

@@ -56,13 +56,13 @@ uint32_t DebuggerMode() { return Global<uint32_t>(kDebuggerMode); }
 int32_t __cdecl RoundDown(float x)                  // FUN_1002fc74: x - 0.5 (x + 0.5 below 0), rounded
 {
     const float y = 0.0f <= x ? float(double(x) - 0.5) : float(double(x) + 0.5);
-    return int32_t(std::lrint(y));
+    return int32_t(Lrint(y));
 }
-int32_t __cdecl Round(float x) { return int32_t(std::lrint(x)); }   // FUN_1002fcae
+int32_t __cdecl Round(float x) { return int32_t(Lrint(x)); }   // FUN_1002fcae
 int32_t __cdecl RoundNudged(float x)                // FUN_1002fc3a: 1e-7 away from 0, rounded
 {
     const float y = 0.0f <= x ? float(double(x) + 1.0000000116860974e-07) : float(double(x) - 1.0000000116860974e-07);
-    return int32_t(std::lrint(y));
+    return int32_t(Lrint(y));
 }
 
 bool HasCache(int32_t playfield)                    // the playfields whose heightmaps are cached on disk
@@ -460,14 +460,14 @@ bool __fastcall Visible(Occ* o, void*, void*, float left, float right, float bot
 {
     if (!Heights(o) || !Field<int32_t>(o, kEnabled) || Field<int32_t>(o, kNoHorizon) == 1) return true;
     const float depth = float(((double(z) - 8.0) - 4.0) * 0.25);
-    int32_t s = int32_t(std::lrint(double(depth) - 0.49999));
+    int32_t s = int32_t(Lrint(double(depth) - 0.49999));
     if (s < 0) return true;
     if (Field<int32_t>(o, kSlicesSwept) <= s) s = Field<int32_t>(o, kSlicesSwept) - 1;
     const int32_t cols = Field<int32_t>(o, kColumns);
     const float* horizon = Slices(o)[s].columns;
     const float* outline = &Field<float>(o, kOutline);
-    const int32_t a = int32_t(std::lrint(double(float(((double(left) + 1.0) * 0.5) * double(cols))) - 0.49999));
-    const int32_t b = int32_t(std::lrint(double(float(((double(right) + 1.0) * 0.5) * double(cols))) - 0.49999)) + 1;
+    const int32_t a = int32_t(Lrint(double(float(((double(left) + 1.0) * 0.5) * double(cols))) - 0.49999));
+    const int32_t b = int32_t(Lrint(double(float(((double(right) + 1.0) * 0.5) * double(cols))) - 0.49999)) + 1;
     const int32_t mid = (b - a) / 2 + a;
     const float halfHeight = float((double(top) - double(bottom)) * 0.5);
     const bool debug = (DebuggerMode() & 4) != 0;
