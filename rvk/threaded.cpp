@@ -5,6 +5,8 @@
 #include <iterator>
 
 #include <cstdio>
+#include <cstring>
+#include <string>
 #include <malloc.h>
 
 namespace rvk {
@@ -304,7 +306,16 @@ void ThreadedDevice::BeginFrame()
     for (const auto& g : m_gameSections)
         if (sections.n < 8) sections.s[sections.n++] = g;
     m_gameSections.clear();
+    if (m_recordKindFrames + kCopySampleFrames >= 600) {   // a sample frame of the copied draws ended
+        std::sort(m_copyHashes[0].begin(), m_copyHashes[0].end());
+        if (m_recordKindFrames + kCopySampleFrames == 600) {   // the first: only the hashes to compare with
+            m_copyKinds.clear();
+        }
+        std::swap(m_copyHashes[0], m_copyHashes[1]);
+        m_copyHashes[0].clear();
+    }
     if (++m_recordKindFrames >= 600) {                 // records a frame by origin, the most first
+        LogCopies();
         std::sort(m_recordKinds.begin(), m_recordKinds.end(),
                   [](const RecordKind& a, const RecordKind& b) { return a.count > b.count; });
         std::string line;
@@ -491,6 +502,8 @@ void ThreadedDevice::SetStates(const StateItem* items, uint32_t count)
                                                : true)   // textures: not filtered (as SetTexture)
             kept.push_back(it);
     }
+    m_statesIn += count;
+    m_statesKept += kept.size();
     if (kept.empty())
         return;
     if (m_coalesce) {                                  // with the next draw
@@ -945,9 +958,79 @@ void ThreadedDevice::EndParticleEmitter()
 // ---------------------------------------------------------------------------------------------------
 // Drawing
 
-void ThreadedDevice::DrawPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount)
+// The copied draws' log line (CopyKind): only in the sample frames.
+void ThreadedDevice::CountCopy(const void* vertices, uint32_t vbytes, const void* indices, uint32_t ibytes,
+                               bool fromBuffer)
+{
+    if (m_recordKindFrames + kCopySampleFrames < 600)
+        return;
+    uint64_t h = 0xCBF29CE484222325ull ^ vbytes ^ (uint64_t(ibytes) << 32);
+    auto mix = [&h](const void* p, uint32_t n) {
+        const uint8_t* b = static_cast<const uint8_t*>(p);
+        uint32_t i = 0;
+        for (; i + 8 <= n; i += 8) {
+            uint64_t w;
+            std::memcpy(&w, b + i, 8);
+            h = (h ^ w) * 0x100000001B3ull;
+            h ^= h >> 29;
+        }
+        for (; i < n; ++i) h = (h ^ b[i]) * 0x100000001B3ull;
+    };
+    mix(vertices, vbytes);
+    if (indices) mix(indices, ibytes);
+    m_copyHashes[0].push_back(h);
+    const std::vector<uint64_t>& before = m_copyHashes[1];
+    bool same = std::binary_search(before.begin(), before.end(), h);
+    CopyKind* k = nullptr;
+    for (CopyKind& e : m_copyKinds)
+        if (e.name == m_curVisualName && e.kind == m_curVisualKind && e.fromBuffer == fromBuffer) { k = &e; break; }
+    if (!k) {
+        m_copyKinds.push_back({m_curVisualName, m_curVisualKind, fromBuffer, 0, 0, 0, 0});
+        k = &m_copyKinds.back();
+    }
+    ++k->draws;
+    k->bytes += vbytes + ibytes;
+    if (same) {
+        ++k->same;
+        k->sameBytes += vbytes + ibytes;
+    }
+}
+
+void ThreadedDevice::LogCopies()
+{
+    // The first sample frame only fills the hashes the next compares with: counted from the second (BeginFrame).
+    std::sort(m_copyKinds.begin(), m_copyKinds.end(), [](const CopyKind& a, const CopyKind& b) { return a.bytes > b.bytes; });
+    static const char* const kKinds[] = {"unknown", "character", "character part", "static", "terrain", "room",
+                                         "water", "sky", "blob shadow", "effect", "other"};
+    const double frames = double(kCopySampleFrames - 1);
+    uint64_t draws = 0, bytes = 0, same = 0, sameBytes = 0;
+    for (const CopyKind& k : m_copyKinds) { draws += k.draws; bytes += k.bytes; same += k.same; sameBytes += k.sameBytes; }
+    std::string line;
+    char buf[192];
+    for (size_t i = 0; i < m_copyKinds.size() && i < 10; ++i) {
+        const CopyKind& k = m_copyKinds[i];
+        std::snprintf(buf, sizeof(buf), "%s%s %s%s %.0f draws %.0f KB (%.0f%% same as before)", i ? " | " : "",
+                      k.kind < 11 ? kKinds[k.kind] : "?", k.name ? k.name : "-", k.fromBuffer ? " (buffer)" : "",
+                      double(k.draws) / frames, double(k.bytes) / frames / 1024.0,
+                      k.bytes ? 100.0 * double(k.sameBytes) / double(k.bytes) : 0.0);
+        line += buf;
+    }
+    Log("copied draws a frame: %.0f, %.0f KB, %.0f of them (%.0f KB) the same vertices and indices as a draw the frame "
+        "before; by visual: %s", double(draws) / frames, double(bytes) / frames / 1024.0, double(same) / frames,
+        double(sameBytes) / frames / 1024.0, line.c_str());
+    m_copyKinds.clear();
+    m_copyHashes[0].clear();
+    m_copyHashes[1].clear();
+    Log("state changes a frame (native DeviceState): %.0f sent, %.0f of them not repeats", double(m_statesIn) / 600.0,
+        double(m_statesKept) / 600.0);
+    m_statesIn = m_statesKept = 0;
+}
+
+void ThreadedDevice::DrawPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
+                                   bool fromBuffer)
 {
     uint32_t bytes = FvfStride(fvf) * vertexCount;
+    CountCopy(vertices, bytes, nullptr, 0, fromBuffer);
     m_drawStats.copied++;
     m_drawStats.vertexBytes += bytes;
     EnqueueDraw([this, primitive, fvf, vertexCount](const uint8_t* data) {
@@ -956,10 +1039,11 @@ void ThreadedDevice::DrawPrimitive(uint32_t primitive, uint32_t fvf, const void*
 }
 
 void ThreadedDevice::DrawIndexedPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
-                                          const uint16_t* indices, uint32_t indexCount)
+                                          const uint16_t* indices, uint32_t indexCount, bool fromBuffer)
 {
     // One record holds both arrays: vertices, then indices.
     uint32_t vbytes = FvfStride(fvf) * vertexCount, ibytes = indexCount * 2;
+    CountCopy(vertices, vbytes, indices, ibytes, fromBuffer);
     m_drawStats.copied++;
     m_drawStats.vertexBytes += vbytes;
     m_drawStats.indexBytes += ibytes;
@@ -1003,6 +1087,8 @@ void ThreadedDevice::DrawIndexedPrimitiveSharedRetained(uint32_t primitive, uint
 
 void ThreadedDevice::SetDrawVisual(uint32_t kind, const char* className, uint32_t owner)
 {
+    m_curVisualName = className;
+    m_curVisualKind = kind;
     if (m_coalesce) {                                  // with the next draw: only the latest matters (Device keeps one)
         m_hasPendingVisual = true;
         m_pendingVisualKind = kind;

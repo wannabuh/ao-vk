@@ -471,7 +471,8 @@ HRESULT RDevice::DrawIndexedVBRetained(D3DPRIMITIVETYPE type, RVertexBuffer* vb,
     }
     auto* shared = vb->StaticShared();
     if (!shared) {
-        dev->DrawIndexedPrimitive(type, vb->desc.dwFVF, vb->Bytes() + size_t(start) * vb->stride, vcount, idx, icount);
+        dev->DrawIndexedPrimitive(type, vb->desc.dwFVF, vb->Bytes() + size_t(start) * vb->stride, vcount, idx, icount,
+                                  true);
         return D3D_OK;
     }
     // The kept copy of these indices: reused while no triangle list was written (the generation), with the first and
@@ -640,7 +641,7 @@ HRESULT RDevice::DoDrawPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER
     else if (auto* shared = vb->StaticShared())
         dev->DrawPrimitiveShared(type, vb->desc.dwFVF, *shared, size_t(start) * vb->stride, count);
     else
-        dev->DrawPrimitive(type, vb->desc.dwFVF, vb->Bytes() + size_t(start) * vb->stride, count);
+        dev->DrawPrimitive(type, vb->desc.dwFVF, vb->Bytes() + size_t(start) * vb->stride, count, true);
     return D3D_OK;
 }
 
@@ -660,7 +661,8 @@ HRESULT RDevice::DoDrawIndexedPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTE
     else if (auto* shared = vb->StaticShared())
         dev->DrawIndexedPrimitiveShared(type, vb->desc.dwFVF, *shared, size_t(start) * vb->stride, vcount, idx, icount);
     else
-        dev->DrawIndexedPrimitive(type, vb->desc.dwFVF, vb->Bytes() + size_t(start) * vb->stride, vcount, idx, icount);
+        dev->DrawIndexedPrimitive(type, vb->desc.dwFVF, vb->Bytes() + size_t(start) * vb->stride, vcount, idx, icount,
+                                  true);
     return D3D_OK;
 }
 

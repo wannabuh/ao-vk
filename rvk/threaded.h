@@ -142,9 +142,12 @@ public:
     void SetRenderTarget(Texture* target);
     Texture* GetRenderTarget() const { return m_target; }
 
-    void DrawPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount);
+    // fromBuffer: the vertices are a vertex buffer's written lately (else the caller's memory) - for the copied draws'
+    // log line.
+    void DrawPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
+                       bool fromBuffer = false);
     void DrawIndexedPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
-                              const uint16_t* indices, uint32_t indexCount);
+                              const uint16_t* indices, uint32_t indexCount, bool fromBuffer = false);
     // Vertex buffers live in CPU memory; draws copy the range they use into the record, so the caller may
     // rewrite a buffer right after drawing from it.
     void DrawPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32_t startVertex, uint32_t vertexCount);
@@ -212,6 +215,18 @@ private:
     struct RecordKind { const char* who; uint64_t count; };
     std::vector<RecordKind> m_recordKinds;
     uint64_t m_recordKindFrames = 0;
+    // The draws that copy their vertices into the record, by the visual drawing them (its class) and where the
+    // vertices come from, over the last kCopySampleFrames frames of each ~600: how many and how big, and how many
+    // drew exactly the vertices a draw drew the frame before (could be kept on the GPU instead).
+    static constexpr uint64_t kCopySampleFrames = 8;
+    struct CopyKind { const char* name; uint32_t kind; bool fromBuffer; uint64_t draws, bytes, same, sameBytes; };
+    std::vector<CopyKind> m_copyKinds;
+    std::vector<uint64_t> m_copyHashes[2];             // this sample frame's / the one before's (sorted) content hashes
+    const char* m_curVisualName = nullptr;
+    uint64_t m_statesIn = 0, m_statesKept = 0;         // SetStates' items over the ~600 frames, and those not repeats
+    uint32_t m_curVisualKind = 0;
+    void CountCopy(const void* vertices, uint32_t vbytes, const void* indices, uint32_t ibytes, bool fromBuffer);
+    void LogCopies();
     void CountRecord(const char* who)
     {
         for (RecordKind& k : m_recordKinds)
