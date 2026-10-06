@@ -284,21 +284,22 @@ bool Device::CreateGrassResources(std::string* error)
         m_grassBlade = CreateTexture(64, 64, GrassBladeAtlas(64).data());   // the blades' silhouette atlas
     if (!m_grassBlade)
         return false;
-    // One set: 0 the camera (uniform), 1 the blade atlas, 4 the frame lights, 5 the sun's shadow map.
-    VkDescriptorSetLayoutBinding b[4] = {};
+    // One set: 0 the camera (uniform), 1 the blade atlas, 4 the frame lights, 5 the sun's shadows, 6 the point lights'.
+    VkDescriptorSetLayoutBinding b[5] = {};
     b[0].binding = 0;
     b[1].binding = 1;
     b[2].binding = 4;
     b[3].binding = 5;
+    b[4].binding = 6;
     b[0].descriptorType = b[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    b[1].descriptorType = b[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    b[1].descriptorType = b[3].descriptorType = b[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     for (auto& e : b)
         e.descriptorCount = 1;
     b[0].stageFlags = b[2].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    b[1].stageFlags = b[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    b[1].stageFlags = b[3].stageFlags = b[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 4;
+    sl.bindingCount = 5;
     sl.pBindings = b;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_grassSetLayout),
                "vkCreateDescriptorSetLayout", error))
@@ -654,7 +655,8 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     VkDescriptorBufferInfo lightsInfo{f.ring, m_frameLightsOffset, sizeof(FrameLights)};
     VkDescriptorImageInfo bladeInfo{m_linearSampler, m_grassBlade->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     VkDescriptorImageInfo shadowInfo{m_shadowSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet writes[4] = {};
+    VkDescriptorImageInfo cubeInfo{m_cubeSampler, m_cubeArrayView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet writes[5] = {};
     for (auto& w : writes) {
         w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         w.descriptorCount = 1;
@@ -671,7 +673,10 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     writes[3].dstBinding = 5;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[3].pImageInfo = &shadowInfo;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassLayout, 0, 4, writes);
+    writes[4].dstBinding = 6;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[4].pImageInfo = &cubeInfo;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassLayout, 0, 5, writes);
     VkVertexInputBindingDescription2EXT binding{VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT};
     binding.binding = 0;
     binding.stride = sizeof(GrassVertex);

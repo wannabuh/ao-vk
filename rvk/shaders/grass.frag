@@ -15,6 +15,7 @@ layout(set = 0, binding = 0) uniform GrassFrame {
 } GF;
 layout(set = 0, binding = 1) uniform sampler2D bladeTex;              // the blade atlas (its vein)
 layout(set = 0, binding = 5) uniform sampler2DArrayShadow shadowMap;  // the sun's cascades
+layout(set = 0, binding = 6) uniform samplerCubeArrayShadow pointShadowMaps;   // the point lights' cubes
 // Which of the frame's 64 lights reach this tile (grass.cpp: the tile's box against each light's range), so a blade
 // only tests the few lights that matter, not all of them.
 layout(push_constant) uniform GrassPush { uvec2 lightMask; } GP;
@@ -45,6 +46,34 @@ float SunShadow(vec3 posW)
         return texture(shadowMap, vec4(ndc.xy * 0.5 + 0.5, float(c), ndc.z));
     }
     return 1.0;
+}
+
+// Visibility of a frame light with a cube shadow map (l.spot.z = cube + 1): 1 = lit. The scene's own (ffp_main.glsl),
+// so the grass is shadowed exactly as the surfaces are. Must match Device::RenderPointShadowMaps.
+const float kPointShadowNear = 0.25;
+float PointShadow(Light l, vec3 posW, vec3 n, float nl)
+{
+    vec3 d = posW - l.position.xyz;
+    float dist = length(d);
+    if (dist <= kPointShadowNear) return 1.0;
+    float texel = 2.0 * dist / float(textureSize(pointShadowMaps, 0).x);
+    vec3 nu = normalize(n);
+    float cosAngle = clamp(dot(nu, -d / dist), 0.0, 1.0);
+    d += nu * texel * (1.0 + 2.0 * (1.0 - cosAngle));
+    vec3 a = abs(d);
+    float w = max(a.x, max(a.y, a.z));
+    float f = l.direction.w, nr = kPointShadowNear;
+    float ref = f / (f - nr) - f * nr / ((f - nr) * w);
+    vec3 dirN = d / length(d);
+    vec3 t1 = normalize(cross(dirN, abs(dirN.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+    vec3 t2 = cross(dirN, t1);
+    float r = 0.75 * texel;
+    float layer = l.spot.z - 1.0, s = 0.0;
+    s += texture(pointShadowMaps, vec4(d + (t1 + t2) * r, layer), ref);
+    s += texture(pointShadowMaps, vec4(d + (t1 - t2) * r, layer), ref);
+    s += texture(pointShadowMaps, vec4(d - (t1 + t2) * r, layer), ref);
+    s += texture(pointShadowMaps, vec4(d - (t1 - t2) * r, layer), ref);
+    return 1.0 - (1.0 - 0.25 * s) * FL.shadowParams.w * l.spot.w;
 }
 
 // The frame's nearby point / spot lights that reach this tile, D3D7's attenuation, its range cut faded rather than a
@@ -78,7 +107,11 @@ vec3 LocalLights(vec3 posW, vec3 n)
                 else if (rho < l.spot.x)
                     att *= pow(clamp((rho - l.spot.y) / max(l.spot.x - l.spot.y, 1e-6), 0.0, 1.0), l.atten.w);
             }
-            sum += att * (abs(dot(n, L)) * l.diffuse.rgb + l.ambient.rgb);
+            float nl = abs(dot(n, L));
+            sum += att * l.ambient.rgb;                          // the light's ambient isn't shadowed
+            if (l.spot.z > 0.0 && nl > 0.0 && att > 0.0)
+                att *= PointShadow(l, posW, n, nl);
+            sum += att * nl * l.diffuse.rgb;
         }
     }
     return sum;
