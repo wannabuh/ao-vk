@@ -1063,6 +1063,7 @@ private:
                         const uint16_t* indices, uint32_t indexCount);
     bool GroundHeight(float x, float z, float* y, uint32_t* colour = nullptr, uint32_t* light = nullptr) const;
     bool GroundSeen(float x, float z) const;     // the terrain has been captured near here (grass or not)
+    bool GroundLightSeen(float x, float z) const; // ... and its baked light (the terrain light pass) too
     void GroundNormal(float x, float z, float out[3]) const;   // the ground's upward normal (the slope) at x, z
     // One grass vertex: world position, normal, and how far up the blade (0 root, 1 tip), the wind phase, the blade's
     // height and its root's world y (the tip shrinks towards it at the field's edge).

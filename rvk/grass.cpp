@@ -303,6 +303,24 @@ bool Device::GroundSeen(float x, float z) const
     return false;
 }
 
+// ... and whether the ground's baked light (the terrain light pass) has been captured there. A tile baked before its
+// light arrives keeps a dark light for good, so it waits for it as it waits for the ground (see BuildGrassTile).
+bool Device::GroundLightSeen(float x, float z) const
+{
+    const int32_t cx = int32_t(std::floor(x / kGroundCell));
+    const int32_t cz = int32_t(std::floor(z / kGroundCell));
+    for (int r = 0; r <= 2; ++r)
+        for (int dz = -r; dz <= r; ++dz)
+            for (int dx = -r; dx <= r; ++dx) {
+                if (r > 0 && std::abs(dx) != r && std::abs(dz) != r)
+                    continue;
+                auto it = m_groundHeights.find((uint64_t(uint32_t(cx + dx)) << 32) | uint32_t(cz + dz));
+                if (it != m_groundHeights.end() && it->second.light != 0)
+                    return true;
+            }
+    return false;
+}
+
 bool Device::CreateGrassResources(std::string* error)
 {
     DestroyGrassResources();
@@ -453,9 +471,11 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     tile.lastUsed = m_frameNumber;
     const float x0 = float(tx) * kGrassTileSize, z0 = float(tz) * kGrassTileSize;
     // The ground under the tile may not be captured yet (the game has not drawn the terrain there - right after
-    // loading, or a zone not streamed in). Built now it would be bare for good; leave it unbuilt and try again, giving
-    // up after a few seconds in case there is simply no grass there.
-    if (!GroundSeen(x0 + 0.5f * kGrassTileSize, z0 + 0.5f * kGrassTileSize) && tile.tries < 240)
+    // loading, or a zone not streamed in), nor its baked light (the terrain light pass, which follows the base pass).
+    // Built now it would be bare, or dark for good; leave it unbuilt and try again, giving up after a few seconds in
+    // case there is simply no grass or no light there.
+    const float centreX = x0 + 0.5f * kGrassTileSize, centreZ = z0 + 0.5f * kGrassTileSize;
+    if ((!GroundSeen(centreX, centreZ) || !GroundLightSeen(centreX, centreZ)) && tile.tries < 240)
         return;
     const float spacing = std::max(0.3f, m_grassHeight * 0.75f);
     // A pure random scatter, not a patch grid: a jittered lattice shows as rows at grazing angles (a moire). The
