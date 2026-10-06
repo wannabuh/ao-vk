@@ -5,7 +5,7 @@
 Function names: randy31_orig from a Ghidra function list (build/profile/orig-functions.txt, made with
 `tools/ghidra-run.sh randy31.dll ListFunctions.java <file>` if missing), ours from build/linux-release/randy31.map.
 
-Usage: tools/profile-report.py samples.txt maps.txt [--thread TID] [--top N]
+Usage: tools/profile-report.py samples.txt maps.txt [--thread TID | --rank N] [--top N]
 """
 import bisect
 import collections
@@ -83,8 +83,16 @@ def main():
         parts = line.split()
         if len(parts) >= 2:
             samples.append((parts[0], int(parts[1], 16)))
+    per_thread = collections.Counter(t for t, _ in samples)
+    if "--rank" in args:                                 # the n-th busiest thread (1 = busiest)
+        rank = int(args[args.index("--rank") + 1])
+        ranked = per_thread.most_common()
+        if rank > len(ranked):
+            print(f"no thread #{rank}")
+            return
+        thread = ranked[rank - 1][0]
     if thread is None:                                   # the busiest thread
-        thread = collections.Counter(t for t, _ in samples).most_common(1)[0][0]
+        thread = per_thread.most_common(1)[0][0]
     ips = [ip for t, ip in samples if t == thread]
     mods = modules(args[1])
     starts = [m[0] for m in mods]
