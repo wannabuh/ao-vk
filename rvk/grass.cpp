@@ -485,7 +485,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         // so neighbours aren't identical.
         const uint32_t cell = (hv >> 8) % (kAtlasCols * kAtlasRows);
         const float cu = float(cell % kAtlasCols) * kAtlasW, cv = float(cell / kAtlasCols) * kAtlasH;
-        const float tint = 0.93f + 0.14f * v0;   // a little per-blade variation, not a patchwork of greens
+        const float tint = 0.97f + 0.06f * v0;   // a tiny per-blade variation only: the field is one colour
         const uint32_t r = std::min(255u, uint32_t(float((pcol >> 16) & 0xFF) * tint));
         const uint32_t g = std::min(255u, uint32_t(float((pcol >> 8) & 0xFF) * tint));
         const uint32_t bl = std::min(255u, uint32_t(float(pcol & 0xFF) * tint));

@@ -99,9 +99,10 @@ void main()
         n = -n;
     float d = max(dot(n, -normalize(FL.sunDir.xyz)), 0.0);
     float shadow = mix(1.0, SunShadow(vPosW, n), FL.shadowParams.y);
-    // The ground's own colour, a little brighter than it (a blade catches the sun more than the flat ground does),
-    // dark at the root and bright at the tip - kept close to the ground's own lit colour so the field doesn't glow.
-    vec3 base = vTint * blade.rgb * mix(vec3(0.7), vec3(1.1), clamp(vShade, 0.0, 1.0));
+    // Mostly one grass green, with only a little of the ground's own colour (and the atlas' vein): the field reads as
+    // one crop, not patches of different greens - the ground tint alone made dark ground into dark patches of grass.
+    vec3 tint = mix(vec3(0.30, 0.47, 0.21), vTint, 0.3);
+    vec3 base = tint * blade.rgb * mix(vec3(0.85), vec3(1.1), clamp(vShade, 0.0, 1.0));
     // The ambient follows the sun, so the grass goes dark at night with the rest of the scene.
     float sunLum = clamp(dot(FL.sunColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
     vec3 lit = FL.sunColor.rgb * d * shadow * 0.8 + LocalLights(vPosW, n) + vec3(0.08 + 0.3 * sunLum);
