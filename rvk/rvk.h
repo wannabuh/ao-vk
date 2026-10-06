@@ -1065,16 +1065,18 @@ private:
     void GroundNormal(float x, float z, float out[3]) const;   // the ground's upward normal (the slope) at x, z
     // One grass vertex: world position, normal, and how far up the blade (0 root, 1 tip), the wind phase, the blade's
     // height and its root's world y (the tip shrinks towards it at the field's edge).
+    // Packed to 40 bytes (from 56): the normal as 8-bit signed, the atlas coordinate as 16-bit, the height along the
+    // blade in the colour's alpha (its alpha is otherwise unused) - the field's vertex data is fetched twice a frame
+    // now that it has a depth pre-pass.
     struct GrassVertex {
         float pos[3];      // the cross section's centre, on the blade's axis (the width is expanded in the shader)
-        float normal[3];
-        float uv[2];       // the blade texture's atlas coordinate
-        float shade;
-        float phase;
         float height;
         float baseY;
-        uint32_t colour;   // RGB tint (the ground's texel), 0xAARRGGBB
+        float phase;
         float across;      // how far this edge is from the axis, along the width: the shader billboards it
+        int8_t normal[4];  // the blade's normal, 8-bit signed normalized (SNORM)
+        uint16_t uv[2];    // the blade texture's atlas coordinate, 16-bit normalized (UNORM)
+        uint32_t colour;   // RGB tint (the ground's texel) + the height along the blade in A, 0xAARRGGBB
     };
     // A grid tile's baked grass, on the GPU (grass.cpp BuildGrassTile). Tiles are world-aligned and static: built the
     // first time they come into range and kept until evicted, so a frame costs only the visible tiles' draws (no

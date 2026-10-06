@@ -13,15 +13,14 @@ layout(set = 0, binding = 0) uniform GrassFrame {
     vec4 camera;        // xyz: the camera
 } GF;
 
-layout(location = 0) in vec3 inPos;
-layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec2 inUv;          // the blade atlas coordinate
-layout(location = 3) in float inShade;      // 0 at the root, 1 at the tip
-layout(location = 4) in float inPhase;      // the blade's wind phase
-layout(location = 5) in float inHeight;     // the blade's height
-layout(location = 6) in float inBaseY;      // its root's world y
-layout(location = 7) in vec4 inColour;      // the ground texel's colour (the blade's tint)
-layout(location = 8) in float inAcross;     // how far this edge is from the axis: expanded towards the camera
+layout(location = 0) in vec3 inPos;         // the cross section's centre, on the blade's axis
+layout(location = 1) in vec4 inNormal;      // the blade's normal, 8-bit signed normalized
+layout(location = 2) in vec2 inUv;          // the blade atlas coordinate, 16-bit normalized
+layout(location = 3) in float inHeight;     // the blade's height
+layout(location = 4) in float inBaseY;      // its root's world y
+layout(location = 5) in float inPhase;      // the blade's wind phase
+layout(location = 6) in float inAcross;     // how far this edge is from the axis: expanded towards the camera
+layout(location = 7) in vec4 inColour;      // rgb: the ground texel's colour (the tint); a: the height up the blade
 
 layout(location = 0) out vec3 vPosW;
 layout(location = 1) out vec3 vNormal;
@@ -79,6 +78,7 @@ vec3 PusherOffset(vec3 posW, float h, float plantHeight)
 
 void main()
 {
+    const float inShade = inColour.a;            // 0 at the root, 1 at the tip (packed in the colour's alpha)
     // Fade the blade down to nothing near the field's edge, so its rim isn't a hard circle.
     float dist = length(inPos.xz - GF.camera.xz);
     float fade = clamp((GF.viewport.z - dist) / (GF.viewport.z * 0.5), 0.0, 1.0);
@@ -113,7 +113,7 @@ void main()
     vPosW = inPos;                              // lighting and the shadow lookup: the blade's own spot
     // A per-blade normal, independent of the camera: one that followed the eye swept a band of shading across the
     // field as the camera turned (the dark wave). The blade is lit two-sided anyway, so which way it faces is moot.
-    vNormal = inNormal;
+    vNormal = inNormal.xyz;
     vUv = inUv;
     vShade = inShade;
     vTint = inColour.rgb;
