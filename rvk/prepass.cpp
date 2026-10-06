@@ -191,21 +191,22 @@ uint32_t Device::PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) co
         return kPreNoZWrite;
     if (zFunc != d3d::CMP_LESS && zFunc != d3d::CMP_LESSEQUAL)
         return kPreZFunc;
-    // Cut-outs - alpha tested, blended cut-outs (F_CUTOUT), or both alpha tested and blended (the game's foliage) - go
-    // in with the cut-out pre-pass, which writes their depth only where their pixel ends up fully opaque
-    // (prepass_cutout.frag: the alpha test passes and, if blended, alpha is 1). Their main draw keeps its discard;
-    // what lies behind those pixels, hidden in the end anyway, is rejected early. Blended other than SRCALPHA /
-    // INVSRCALPHA: kept out below.
-    if (m_drawMayDiscard && !m_prepassCutoutPipeline)
-        return m_rs[d3d::RS_ALPHATESTENABLE] && !m_rs[d3d::RS_ALPHABLENDENABLE] ? kPreAlphaTest : kPreDiscard;
+    // Cut-outs go in with the cut-out pre-pass (prepass_cutout.frag: depth where the alpha test passes) only when not
+    // blended: every pixel they keep is then fully opaque and hides what is behind it, in any draw order. Blended
+    // cut-outs (F_CUTOUT, or alpha tested and blended - the game's foliage) stay out: a partly transparent pixel of
+    // theirs writes depth too, and drawn before an opaque pixel behind it that the pre-pass knew about, it would blend
+    // over a background the pre-pass had rejected - seen as bright outlines on leaves, the tree behind showing through.
+    if (m_drawMayDiscard) {
+        bool alphaTested = m_rs[d3d::RS_ALPHATESTENABLE] && !m_rs[d3d::RS_ALPHABLENDENABLE];
+        if (!m_prepassCutoutPipeline || !alphaTested)
+            return alphaTested ? kPreAlphaTest : kPreDiscard;
+    }
     if (WaterWritesDepth(fvf))
         return kPreWater;
     if (!m_rs[d3d::RS_ALPHABLENDENABLE])
         return kPreIn;
     if (m_rs[d3d::RS_SRCBLEND] != d3d::BLEND_SRCALPHA || m_rs[d3d::RS_DESTBLEND] != d3d::BLEND_INVSRCALPHA)
         return kPreBlend;
-    if (m_drawMayDiscard)
-        return kPreIn;                           // blended and cut out: its partly transparent pixels write no depth
     return AlphaOneCheck(fvf);
 }
 

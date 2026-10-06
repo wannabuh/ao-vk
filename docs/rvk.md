@@ -36,14 +36,14 @@
   `gl_Position` invariant so both passes produce the same depth; a pre-passed draw's `LESS` becomes `LESSEQUAL`. Backgrounds (draws ignoring depth, not writing it, before anything
   in the segment wrote depth) get the depth bounds test [clear, clear]: they are shaded only where the pre-pass found
   no opaque surface, which is the only place they stay visible.
-  **Cut-outs** (alpha tested, blended cut-outs, or both alpha tested and blended as the game's foliage is; fences)
-  go in with a second pipeline, `prepass_cutout.frag` (`ffp_main.glsl` built with `RVK_PREPASS_CUTOUT`): it computes
-  the draw's alpha as the main shader's cut-out test does and writes depth only where the pixel ends up fully opaque -
-  where the alpha test passes and, for a draw blended SRCALPHA / INVSRCALPHA (`F_BLENDED`), where its alpha is 1. Whatever lies behind such a pixel is hidden in the final image in any draw
-  order, so the main pass rejects it early; partly transparent pixels write no pre-pass depth and blend over what is
-  behind them as before. The cut-out's own main draw keeps its discard. Swaying plants go in too (the same vertex
-  shader sways them in both passes). `RANDYVK_PREPASS_CUTOUT=0` keeps cut-outs out, `RANDYVK_PREPASS_SWAY=0` swaying
-  plants.
+  **Cut-outs** that are alpha tested and not blended (fences, grates, some plants) go in with a second pipeline,
+  `prepass_cutout.frag` (`ffp_main.glsl` built with `RVK_PREPASS_CUTOUT`): it computes the draw's alpha as the main
+  shader's cut-out test does and writes depth only where the alpha test passes - each such pixel is fully opaque and
+  hides what is behind it in any draw order. The cut-out's own main draw keeps its discard. Blended cut-outs (the
+  game's foliage: alpha tested and blended, or blended with depth writes) stay out: their partly transparent pixels
+  write depth too, and one drawn before an opaque pixel behind it would blend over a background the pre-pass had
+  rejected (outlines on leaves, the tree behind showing through). Swaying plants go in under the same rule.
+  `RANDYVK_PREPASS_CUTOUT=0` keeps cut-outs out, `RANDYVK_PREPASS_SWAY=0` swaying plants.
 - **Vertex buffers** keep their contents in CPU memory; every draw copies the range it uses into the ring
   buffer, so rewriting a buffer between draws is safe (the game's CPU skinning reuses one buffer).
 - Memory through VMA (from the Vulkan SDK); Vulkan entry points loaded at run time from `vulkan-1.dll`.
