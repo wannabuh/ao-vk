@@ -421,7 +421,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
                 float up[3] = {lean * rx, 1.0f, lean * rz};
                 const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
                 up[0] /= ul; up[1] /= ul; up[2] /= ul;
-                const float half = 0.5f * (0.13f + 0.11f * u2) * (0.5f + height);
+                const float half = 0.5f * (0.05f + 0.05f * u2) * (0.5f + height);
                 const float phase = px * 0.3f + pz * 0.25f + u3 * 6.2831853f;
                 float normal[3] = {rz, 0.5f, -rx};
                 const float nl = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
@@ -444,7 +444,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
                     const float cx = px + up[0] * height * t;
                     const float cy = py + up[1] * height * t;
                     const float cz = pz + up[2] * height * t;
-                    const float w = half * (1.0f - 0.45f * t);
+                    const float w = half * (1.0f - t);
                     const float vv = cv + (0.04f + t * 0.92f) * kAtlasH;
                     vertex(row[0][s], cx - rx * w, cy, cz - rz * w, normal, cu + 0.04f * kAtlasW, vv, t, phase, height,
                            py, colour);

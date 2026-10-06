@@ -54,9 +54,9 @@ float SunShadow(vec3 posW, vec3 n)
 
 void main()
 {
+    // The atlas is sampled for its vein only: the blade is a solid, tapered strip (no alpha cut), so the field is not
+    // see-through the way cut-out cards are.
     vec4 blade = texture(bladeTex, vUv);
-    if (blade.a < 0.4)
-        discard;                                 // outside the blade's silhouette
     vec3 n = normalize(vNormal);
     float d = max(dot(n, -normalize(FL.sunDir.xyz)), 0.0);
     float shadow = mix(1.0, SunShadow(vPosW, n), FL.shadowParams.y);
