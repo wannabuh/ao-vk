@@ -561,7 +561,12 @@ private:
         bool animated;                           // ShadowCaster animated
         uint32_t owner;                          // ShadowCaster owner
         uint32_t kind;                           // ShadowCaster kind (VisualKind)
+        // Made at its first draw this frame and shared by every cascade and cube face it is drawn into (the pass's
+        // light matrix is a push constant): its record (kNoShadowRecord: the arena was full) and its group key.
+        uint32_t record = ~0u;
+        uint64_t key = 0;
     };
+    static constexpr uint32_t kNoShadowRecord = ~1u;
     std::vector<ShadowItem> m_shadowItems;       // EndFrame: what the shadow passes draw
     // What a shadow pass has bound, so unchanged state isn't re-issued.
     struct ShadowBind {
@@ -573,7 +578,8 @@ private:
     };
     void CollectShadowItems();
     void GroupShadowItems(const std::vector<uint32_t>& drawOf);
-    void DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowItem& item, const d3d::Matrix& lightViewProj);
+    void DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, ShadowItem& item);
+    void ShadowPassMatrix(VkCommandBuffer cmd, const d3d::Matrix& lightViewProj);   // the cascade's / face's, pushed
     // M4: shadow casters are batched like the scene's draws - one record per caster (read by gl_InstanceIndex) and
     // one indirect call per group of casters that share their bindings.
     void BindShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowItem& item);

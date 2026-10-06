@@ -248,9 +248,13 @@ bool Device::CreateShadowResources(std::string* error)
     sl.pBindings = bindings;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_shadowSetLayout), "shadow set layout", error))
         return false;
+    // The pass's light view-projection (a cascade's or a cube face's): the caster records are shared between passes.
+    VkPushConstantRange pass{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(d3d::Matrix)};
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pl.setLayoutCount = 1;
     pl.pSetLayouts = &m_shadowSetLayout;
+    pl.pushConstantRangeCount = 1;
+    pl.pPushConstantRanges = &pass;
     if (!Check(vkCreatePipelineLayout(m_device, &pl, nullptr, &m_shadowPipelineLayout), "shadow pipeline layout", error))
         return false;
 
@@ -975,53 +979,68 @@ void Device::FlushShadowGroup(VkCommandBuffer cmd)
     m_shadowGroup.count = 0;
 }
 
-// Records one caster into the shadow map being rendered (the shadow pipelines, depth only).
-void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowItem& item,
-                            const d3d::Matrix& lightViewProj)
+// The light view-projection of the cascade or cube face being drawn (shadow.vert's push constant). Each pass sets it
+// after its previous batch was issued (FlushShadowGroup) and before its first caster.
+void Device::ShadowPassMatrix(VkCommandBuffer cmd, const d3d::Matrix& lightViewProj)
 {
-    // A group's key: what every draw in it shares. The per-caster transform, alpha and sway live in the record.
-    uint64_t key = 0x9E3779B97F4A7C15ull;
-    auto mix = [&key](uint64_t x) { key = (key ^ x) * 0xFF51AFD7ED558CCDull; key ^= key >> 32; };
+    vkCmdPushConstants(cmd, m_shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(lightViewProj), &lightViewProj);
+}
+
+// Records one caster into the shadow map being rendered (the shadow pipelines, depth only). Its record and group key
+// are made at its first draw of the frame and reused by every later cascade and cube face: the per-pass work is the
+// bindings and one indirect command.
+void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, ShadowItem& item)
+{
+    if (!item.key) {
+        // A group's key: what every draw in it shares. The per-caster transform, alpha and sway live in the record.
+        uint64_t key = 0x9E3779B97F4A7C15ull;
+        auto mix = [&key](uint64_t x) { key = (key ^ x) * 0xFF51AFD7ED558CCDull; key ^= key >> 32; };
+        bool cached = item.buffer && !item.ibBuffer;
+        mix(item.texture ? 1u : 0u);
+        mix(item.primitive);
+        mix(item.stride);
+        mix(uint32_t(item.texOffset) + 1u);
+        mix(reinterpret_cast<uintptr_t>(item.texture));
+        mix(uint64_t(item.buffer));
+        mix(uint64_t(item.ibBuffer));
+        mix(item.indexCount != 0 ? 1u : 0u);
+        mix(cached ? 1u : 0u);
+        if (cached) mix(item.ibOffset);
+        item.key = key ? key : 1;
+    }
+    if (item.record == kNoShadowRecord)
+        return;                                  // the record arena was full when it was first drawn
     bool indexed = item.indexCount != 0;
-    bool cached = item.buffer && !item.ibBuffer;
-    mix(item.texture ? 1u : 0u);
-    mix(item.primitive);
-    mix(item.stride);
-    mix(uint32_t(item.texOffset) + 1u);
-    mix(reinterpret_cast<uintptr_t>(item.texture));
-    mix(uint64_t(item.buffer));
-    mix(uint64_t(item.ibBuffer));
-    mix(indexed ? 1u : 0u);
-    mix(cached ? 1u : 0u);
-    if (cached) mix(item.ibOffset);
-    if (!key) key = 1;
-    if (m_shadowGroup.active && (m_shadowGroup.key != key || m_shadowGroup.indexed != indexed))
+    if (m_shadowGroup.active && (m_shadowGroup.key != item.key || m_shadowGroup.indexed != indexed))
         FlushShadowGroup(cmd);
     BindShadowItem(cmd, bind, item);
-    ShadowRecord r;
-    r.worldLightViewProj = Mul(item.world, lightViewProj);
-    r.alpha[0] = item.alphaRef;
-    r.alpha[1] = r.alpha[2] = r.alpha[3] = 0.0f;
-    // A swaying plant (only with its texture bound - sway.glsl reads it): the wind in model space, so the combined
-    // matrix can stay; world displacement d = m * W (3x3), so m = d * inverse(W).
-    std::memset(r.sway, 0, sizeof(r.sway) + sizeof(r.windModel) + sizeof(r.origin));
-    d3d::Matrix inverse;
-    if (item.sway[3] > 0.5f && item.texture && m_sway > 0.0f && InvertMatrix(item.world, &inverse)) {
-        float wind[4];
-        Wind(wind);
-        std::memcpy(r.sway, item.sway, sizeof(r.sway));
-        for (int j = 0; j < 3; ++j) r.windModel[j] = wind[0] * inverse.m[0][j] + wind[1] * inverse.m[2][j];
-        r.origin[0] = item.world.m[3][0];
-        r.origin[1] = item.world.m[3][2];
-        r.origin[2] = wind[2];
+    if (item.record == ~0u) {
+        ShadowRecord r;
+        r.world = item.world;
+        r.alpha[0] = item.alphaRef;
+        r.alpha[1] = r.alpha[2] = r.alpha[3] = 0.0f;
+        // A swaying plant (only with its texture bound - sway.glsl reads it): the wind in model space, so the matrices
+        // can stay; world displacement d = m * W (3x3), so m = d * inverse(W).
+        std::memset(r.sway, 0, sizeof(r.sway) + sizeof(r.windModel) + sizeof(r.origin));
+        d3d::Matrix inverse;
+        if (item.sway[3] > 0.5f && item.texture && m_sway > 0.0f && InvertMatrix(item.world, &inverse)) {
+            float wind[4];
+            Wind(wind);
+            std::memcpy(r.sway, item.sway, sizeof(r.sway));
+            for (int j = 0; j < 3; ++j) r.windModel[j] = wind[0] * inverse.m[0][j] + wind[1] * inverse.m[2][j];
+            r.origin[0] = item.world.m[3][0];
+            r.origin[1] = item.world.m[3][2];
+            r.origin[2] = wind[2];
+        }
+        item.record = AppendShadowRecord(r);
+        if (item.record == ~0u) {                // the arena is full: skip (very rare; the maps lose this caster)
+            item.record = kNoShadowRecord;
+            static bool logged = false;
+            if (!logged) { logged = true; Log("shadow record arena full (%u)\n", m_shadowArenaCapacity); }
+            return;
+        }
     }
-    uint32_t rec = AppendShadowRecord(r);
-    if (rec == ~0u) {                            // the arena is full: skip (very rare; the map loses this caster)
-        static bool logged = false;
-        if (!logged) { logged = true; Log("shadow record arena full (%u)\n", m_shadowArenaCapacity); }
-        return;
-    }
-    ShadowCommand(cmd, item, rec, key);
+    ShadowCommand(cmd, item, item.record, item.key);
 }
 
 // End of frame, after the main pass: render this frame's casters from the sun into the map for the next frame.
@@ -1124,6 +1143,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         vkCmdSetScissor(cmd, 0, 1, &scissor);
         // Bias in depth units grows with the cascade's depth range; slope bias per texel stays the same.
         vkCmdSetDepthBias(cmd, 2.0f * 600.0f / depth, 0.0f, 2.5f);
+        ShadowPassMatrix(cmd, lightViewProj);
         ShadowBind bind;
         bool last = c == count - 1;
         double cullStart = ProfileCpu();
@@ -1151,12 +1171,12 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         ProfileCpuAdd("shadow cull", cullStart);
         double drawStart = ProfileCpu();
         for (uint32_t i : m_cascadeVisible) {
-            const ShadowItem& item = m_shadowItems[i];
+            ShadowItem& item = m_shadowItems[i];
             if (item.cached) ++m_cachedCastersDrawn;
             ++m_shadowDrawn;
             if (uint32_t(item.kind) == uint32_t(VisualKind::Static)) ++m_shadowStaticDrawn;
             if (item.animated) ++m_shadowAnimatedDrawn;
-            DrawShadowItem(cmd, bind, item, lightViewProj);
+            DrawShadowItem(cmd, bind, item);
         }
         FlushShadowGroup(cmd);                   // the cascade's last batch (M4)
         m_shadowDrawMs += ProfileCpu() - drawStart;

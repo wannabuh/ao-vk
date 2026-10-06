@@ -57,10 +57,10 @@ struct DrawRecord {
 static_assert(sizeof(DrawRecord) == 16 + sizeof(DrawTransform), "record layout");
 static_assert(sizeof(DrawRecord) % 16 == 0, "record stride");
 
-// One shadow caster's per-draw data (shadow.cpp; shadow.vert reads it by gl_InstanceIndex). Same shape as the old
-// push constant, so the shader's math is unchanged.
+// One shadow caster's data (shadow.cpp; shadow.vert reads it by gl_InstanceIndex), made once a frame and shared by
+// every cascade and cube face it is drawn into: the pass's light view-projection is a push constant.
 struct ShadowRecord {
-    d3d::Matrix worldLightViewProj;
+    d3d::Matrix world;
     float alpha[4];
     float sway[4];       // plants: model y of the base, 1 / model height, tip sway, on
     float windModel[4];  // the wind in model space

@@ -590,11 +590,12 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
                 vkCmdSetDepthBias(cmd, 1.0f, 0.0f, 1.5f);
             }
             d3d::Matrix vp = FaceViewProj(face, pos, kPointShadowNear, l.range);
+            ShadowPassMatrix(cmd, vp);
             for (uint32_t i : inRange) {
-                const ShadowItem& it = m_shadowItems[i];
+                ShadowItem& it = m_shadowItems[i];
                 if (BoxInClip(it.boundsMin, it.boundsMax, vp, true) == -1)
                     continue;
-                DrawShadowItem(cmd, bind, it, vp);
+                DrawShadowItem(cmd, bind, it);
                 ++m_pointShadowDraws;
             }
             FlushShadowGroup(cmd);               // this face's batch (M4)
