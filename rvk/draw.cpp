@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -1971,7 +1972,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsOpaque = cutoutTexture;
     m_constantsHoles = textureHoles;
     m_constantsNormalMap = normalMap;
-    DrawConstants c{};
+    DrawConstants c;                             // every field is set below (the lights up to lightInfo[0])
     c.view = m_view;
     c.proj = m_proj;
     c.texMatrix[0] = m_texMatrix[0];
@@ -2128,7 +2129,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c.lightInfo[1] = localLights;
     c.lightInfo[2] = override ? carrier : 0;   // frame light (index + 1) this draw carries: it doesn't light it
     c.lightInfo[3] = 0;
-    constIndex = AppendConstant(c);            // shared with the next draws that keep this state
+    constIndex = AppendConstant(c, offsetof(DrawConstants, lights) + size_t(lightCount) * sizeof(GpuLight));
+                                               // shared with the next draws that keep this state
     m_constIndex = constIndex;
     }
     if (!m_drawMayDiscard) ++m_noCutDraws;       // per draw (the block above runs only when the constants change)

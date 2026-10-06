@@ -1202,7 +1202,7 @@ private:
     bool m_arenaBound = false;                   // bindings 0 and 12 pushed in this frame's command buffer
     void PrepareDrawArenas();                    // reserve the arrays in the ring if the generation changed
     void FlushDrawArenas();                      // start the arrays over after a mid-frame submit (the GPU has read them)
-    uint32_t AppendConstant(const detail::DrawConstants& c);
+    uint32_t AppendConstant(const detail::DrawConstants& c, size_t bytes);   // the first `bytes` (the lights in use)
     uint32_t AppendRecord(uint32_t constIndex, const detail::DrawTransform& d);
     // M3: consecutive draws that share pipeline, dynamic state, descriptor bindings and vertex/index buffers are
     // recorded as indirect commands (one per draw, carrying its geometry and record index) and issued together.

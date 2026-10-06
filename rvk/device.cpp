@@ -1123,11 +1123,12 @@ void Device::NoteGroup(uint32_t count)
         ++m_singleDraws;
 }
 
-uint32_t Device::AppendConstant(const DrawConstants& c)
+// The shader reads the lights only up to lightInfo.x, so only those are copied (the slot keeps its full size).
+uint32_t Device::AppendConstant(const DrawConstants& c, size_t bytes)
 {
     uint32_t index = m_constCount++;
     std::memcpy(m_frames[m_frameIndex].ringData + m_constsBase + VkDeviceSize(index) * sizeof(DrawConstants), &c,
-                sizeof(c));
+                std::min(bytes, sizeof(c)));
     return index;
 }
 
@@ -1281,7 +1282,10 @@ void Device::BeginFrame()
     }
     Frame& f = m_frames[m_frameIndex];
     bool uploadsPending = f.uploadsRecorded;          // recorded between frames, already waited for
+    double waitStart = ProfileCpu();
     WaitFrame(f, "GPU frame work");
+    // The render thread waiting for the GPU to finish this slot's last frame: large means GPU-bound (profile).
+    double waitMs = ProfileCpu() - waitStart;
     vkResetFences(m_device, 1, &f.fence);
     CollectGarbage();
     ApplyShadowResolution();
@@ -1324,6 +1328,7 @@ void Device::BeginFrame()
     m_cache = StateCache{};
     ++m_frameNumber;
     ProfileBeginFrame(f.main);
+    ProfileCpuAddMs("wait for the GPU (frame slot)", waitMs);
     UpdatePushTrail();
     m_tessCharsPrev.swap(m_tessChars);           // characters drawn last frame (their rigid parts: TessellateDraw)
     m_tessChars.clear();
@@ -1397,6 +1402,7 @@ void Device::EndFrame()
 
     uint32_t imageIndex = 0;
     bool present = false;
+    double presentStart = ProfileCpu();              // acquire + submit + present: driver time (profile)
     if (m_swapchain) {
         // Bounded wait: if no image comes within 250 ms, skip presenting this frame instead of freezing.
         VkResult r = vkAcquireNextImageKHR(m_device, m_swapchain, 250000000ull, f.imageAvailable, VK_NULL_HANDLE, &imageIndex);
@@ -1459,6 +1465,7 @@ void Device::EndFrame()
         if (r == VK_SUBOPTIMAL_KHR || r == VK_ERROR_OUT_OF_DATE_KHR)
             m_swapchainStale = true;
     }
+    ProfileCpuAdd("acquire + submit + present", presentStart);
     if (screenshot) {
         WaitFrame(f, "GPU frame work");
         SaveScreenshot();
