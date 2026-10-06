@@ -332,6 +332,14 @@ public:
     void SetSceneLights(const SceneLight* lights, uint32_t count);
     // Null = the main target. Like D3D, resets the viewport to the whole target.
     void SetRenderTarget(Texture* target);
+    // The interface layer (interface.cpp): the game's interface drawn into an image of its own and shown over each
+    // frame, so it needn't be redrawn every frame (the game skips GUI.dll's drawing in between). Around the
+    // interface's drawing: Begin(true) draws it into the layer (cleared first), Begin(false) means it isn't drawn
+    // this frame; End shows the layer over the main target.
+    void InterfaceBegin(bool redraw);
+    void InterfaceEnd();
+    // The layer holds an interface drawn at the current size (else the next frame must redraw it). Any thread.
+    bool InterfaceLayerReady() const { return m_uiLayerReady.load(std::memory_order_relaxed); }
     Texture* GetRenderTarget() const { return m_target == m_main ? nullptr : m_target; }
 
     void DrawPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount);
@@ -1121,6 +1129,14 @@ private:
     void DestroyHdrResources();
     void BeginScene();
     void EndScene();
+    // The interface layer (interface.cpp).
+    Texture* m_uiLayer = nullptr;
+    Texture* m_uiLayerReturn = nullptr;          // the target the interface began on (the main one)
+    bool m_uiLayerActive = false;                // the interface's draws go into the layer
+    bool m_uiLayerOpen = false;                  // between InterfaceBegin and InterfaceEnd
+    std::atomic<bool> m_uiLayerReady{false};
+    VkPipeline m_uiCompositePipeline = VK_NULL_HANDLE;
+    void InterfaceSceneEnd();                    // what the interface's first draw does: the scene ends
     // GPU profiling (profile.cpp): a mark when the scene's draw class changes, so the 4.8 ms "scene" block splits
     // into opaque / terrain base / terrain light / foliage.
     int m_sceneClass = 0;

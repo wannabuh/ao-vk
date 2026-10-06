@@ -34,12 +34,20 @@ struct Direct {
                           const uint16_t* indices, uint32_t indexCount, uint64_t indexGeneration);
     // The renderer drops blob shadow draws (its sun shadows replace them).
     bool (*blobShadowsReplaced)();
+    // Around the interface's drawing (gui.cpp, GUI.dll's WindowController_c::Render): begin returns whether to draw it
+    // this frame - false: the renderer shows the last one drawn (its interface layer, RVK_UiRate). end after it.
+    bool (*interfaceBegin)();
+    void (*interfaceEnd)();
 };
 void SetDirect(const Direct* direct);       // null: none (the backend's device is gone)
 
 // True when the renderer draws its own shadows instead of the game's blob shadows (direct channel on): the blob
 // shadows' per-frame work (cat_skin.cpp: its callback over skinned positions) can be skipped.
 bool BlobShadowsReplaced();
+
+// The direct channel's interfaceBegin / interfaceEnd (true / nothing without it).
+bool InterfaceBegin();
+void InterfaceEnd();
 
 // Around a native mesh's draw (mesh.cpp): its indices are a native triangle list's, unchanged while `generation`
 // (meshdata::IndexGeneration, non-zero) is. [Native] Retain = on.

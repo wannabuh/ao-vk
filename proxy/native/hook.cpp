@@ -159,6 +159,36 @@ void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t co
     return tramp;
 }
 
+void* HookAt(uint8_t* at, size_t count, const size_t* rel32, size_t rel32Count, void* target, const char* what)
+{
+    if (count < 5 || count > kTrampSize - 5)
+        return nullptr;
+    uint8_t* tramp = NewTrampoline();
+    if (!tramp)
+        return nullptr;
+    std::memcpy(tramp, at, count);
+    for (size_t i = 0; i < rel32Count; ++i) {
+        const size_t o = rel32[i];
+        int32_t rel;
+        std::memcpy(&rel, at + o, 4);
+        uintptr_t dest = reinterpret_cast<uintptr_t>(at + o + 4) + rel;
+        rel = int32_t(dest - reinterpret_cast<uintptr_t>(tramp + o + 4));
+        std::memcpy(tramp + o, &rel, 4);
+    }
+    WriteJump(tramp + count, at + count);
+    DWORD protect;
+    if (!VirtualProtect(at, count, PAGE_EXECUTE_READWRITE, &protect)) {
+        Log("%s: can't patch %p", what, (void*)at);
+        return nullptr;
+    }
+    WriteJump(at, target);
+    for (size_t i = 5; i < count; ++i)
+        at[i] = 0xCC;
+    VirtualProtect(at, count, protect, &protect);
+    FlushInstructionCache(GetCurrentProcess(), at, count);
+    return tramp;
+}
+
 namespace {
 
 // "module+offset" for an address (module = file name), or the bare address.

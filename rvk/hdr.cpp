@@ -59,6 +59,9 @@ const uint32_t kTaaSpirv[] = {
 const uint32_t kSharpenSpirv[] = {
 #include "sharpen.frag.inc"
 };
+const uint32_t kUiCompositeSpirv[] = {
+#include "ui_composite.frag.inc"
+};
 const uint32_t kMotionBlurSpirv[] = {
 #include "motion_blur.frag.inc"
 };
@@ -163,8 +166,9 @@ bool Device::CreateHdrResources(std::string* error)
     VkShaderModule vert;
     if (!module(kFullscreenVertSpirv, sizeof(kFullscreenVertSpirv), &vert))
         return false;
-    // A full-target triangle with one fragment shader, no depth; additive blending for the bloom upsampling.
-    auto fullscreen = [&](const uint32_t* code, size_t size, VkFormat format, bool additive, VkPipelineLayout layout,
+    // A full-target triangle with one fragment shader, no depth. blend: 0 none, 1 additive (the bloom upsampling), 2
+    // a premultiplied image over the target (the interface layer).
+    auto fullscreen = [&](const uint32_t* code, size_t size, VkFormat format, int blend, VkPipelineLayout layout,
                           VkPipeline* out) {
         VkShaderModule frag;
         if (!module(code, size, &frag))
@@ -191,10 +195,17 @@ bool Device::CreateHdrResources(std::string* error)
         VkPipelineDepthStencilStateCreateInfo dss{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
         VkPipelineColorBlendAttachmentState att{};
         att.colorWriteMask = 0xF;
-        if (additive) {
+        if (blend == 1) {
             att.blendEnable = VK_TRUE;
             att.srcColorBlendFactor = att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
             att.srcAlphaBlendFactor = att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            att.colorBlendOp = att.alphaBlendOp = VK_BLEND_OP_ADD;
+        } else if (blend == 2) {
+            att.blendEnable = VK_TRUE;
+            att.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            att.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;   // the target's alpha stays
+            att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
             att.colorBlendOp = att.alphaBlendOp = VK_BLEND_OP_ADD;
         }
         VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
@@ -236,6 +247,8 @@ bool Device::CreateHdrResources(std::string* error)
                          &m_contactPipeline) &&
               fullscreen(kTaaSpirv, sizeof(kTaaSpirv), hdrFormat, false, m_bloomLayout, &m_taaPipeline) &&
               fullscreen(kSharpenSpirv, sizeof(kSharpenSpirv), kColorFormat, false, m_bloomLayout, &m_sharpenPipeline) &&
+              fullscreen(kUiCompositeSpirv, sizeof(kUiCompositeSpirv), kColorFormat, 2, m_bloomLayout,
+                         &m_uiCompositePipeline) &&
               fullscreen(kMotionBlurSpirv, sizeof(kMotionBlurSpirv), kColorFormat, false, m_bloomLayout, &m_motionPipeline) &&
               fullscreen(kTileMaxSpirv, sizeof(kTileMaxSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout,
                          &m_tileMaxPipeline) &&
@@ -275,13 +288,15 @@ void Device::DestroyHdrResources()
     for (Texture*& t : m_contactTex)
         if (t) { DestroyTextureNow(t); t = nullptr; }
     if (m_tonemapped) { DestroyTextureNow(m_tonemapped); m_tonemapped = nullptr; }
+    if (m_uiLayer) { DestroyTextureNow(m_uiLayer); m_uiLayer = nullptr; }
+    m_uiLayerReady.store(false, std::memory_order_relaxed);
     for (Texture*& t : m_motionTiles)
         if (t) { DestroyTextureNow(t); t = nullptr; }
     for (Texture** t : {&m_dofIn, &m_dofOut, &m_dofHalf, &m_dofBlur, &m_dofTiles[0], &m_dofTiles[1], &m_dofFocus[0], &m_dofFocus[1]})
         if (*t) { DestroyTextureNow(*t); *t = nullptr; }
     for (VkPipeline* p : {&m_bloomDown, &m_bloomUp, &m_aoPipeline, &m_aoBlurPipeline, &m_giPipeline, &m_giBlurPipeline,
                           &m_volumePipeline, &m_volumeBlurPipeline, &m_ssrPipeline,
-                          &m_contactPipeline, &m_taaPipeline, &m_sharpenPipeline,
+                          &m_contactPipeline, &m_taaPipeline, &m_sharpenPipeline, &m_uiCompositePipeline,
                           &m_motionPipeline,
                           &m_tileMaxPipeline, &m_neighbourMaxPipeline, &m_objectBlurPipeline, &m_dofCompositePipeline,
                           &m_dofFocusPipeline, &m_dofPrefilterPipeline, &m_dofTilesPipeline, &m_dofGatherPipeline,

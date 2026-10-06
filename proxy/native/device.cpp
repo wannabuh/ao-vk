@@ -609,6 +609,9 @@ void SetDirect(const Direct* direct) { g_direct = direct; }
 
 bool BlobShadowsReplaced() { return g_directOn && g_direct && g_direct->blobShadowsReplaced && g_direct->blobShadowsReplaced(); }
 
+bool InterfaceBegin() { return !g_directOn || !g_direct || !g_direct->interfaceBegin || g_direct->interfaceBegin(); }
+void InterfaceEnd() { if (g_directOn && g_direct && g_direct->interfaceEnd) g_direct->interfaceEnd(); }
+
 RetainedIndices::RetainedIndices(uint64_t generation) : m_previous(g_retainGeneration)
 {
     g_retainGeneration = g_retainOn && g_directOn ? generation : 0;

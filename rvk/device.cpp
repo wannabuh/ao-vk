@@ -1248,6 +1248,8 @@ void Device::SetRenderTarget(Texture* target)
 {
     if (!target)
         target = m_main;
+    if (m_uiLayerActive && target == m_main && m_uiLayer)
+        target = m_uiLayer;                      // the interface is being drawn into its layer
     if (!target->m_renderTarget || !target->m_image) {
         Log("SetRenderTarget: not a (usable) render target\n");
         return;

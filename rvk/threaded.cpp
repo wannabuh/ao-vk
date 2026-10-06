@@ -863,6 +863,16 @@ void ThreadedDevice::SetFoliageEdges(bool on)
     Enqueue([this, on](const uint8_t*) { m_device.SetFoliageEdges(on); });
 }
 
+void ThreadedDevice::InterfaceBegin(bool redraw)
+{
+    Enqueue([this, redraw](const uint8_t*) { m_device.InterfaceBegin(redraw); });
+}
+
+void ThreadedDevice::InterfaceEnd()
+{
+    Enqueue([this](const uint8_t*) { m_device.InterfaceEnd(); });
+}
+
 void ThreadedDevice::SetDepthPrepass(bool on)
 {
     Enqueue([this, on](const uint8_t*) { m_device.SetDepthPrepass(on); });

@@ -100,6 +100,10 @@ public:
     void SetFoliageLod(float distance);
     void SetDepthPrepass(bool on);
     void SetFoliageEdges(bool on);
+    // The interface layer (Device::InterfaceBegin / InterfaceEnd).
+    void InterfaceBegin(bool redraw);
+    void InterfaceEnd();
+    bool InterfaceLayerReady() const { return m_device.InterfaceLayerReady(); }
     void SetShadowResolution(uint32_t sun, uint32_t point);
     void SetPointLightIntensity(float lights, float characters);
     void SetTessellation(float shape, float distance, uint32_t level);

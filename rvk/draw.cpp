@@ -1548,12 +1548,16 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
         vkCmdSetColorBlendEquationEXT(cmd, 1, 1, &eq);
         c.glowBlendSet = true;
     }
-    VkBool32 blend = m_rs[d3d::RS_ALPHABLENDENABLE] != 0;
+    // The interface layer (interface.cpp): every draw blends - its colour as asked (unblended: ONE, ZERO) - and its
+    // alpha accumulates its coverage.
+    const bool uiLayer = m_uiLayerActive && m_target == m_uiLayer;
+    VkBool32 blend = m_rs[d3d::RS_ALPHABLENDENABLE] != 0 || uiLayer;
     if (c.blendEnable != blend) {
         vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &blend);
         c.blendEnable = blend;
     }
     uint32_t src = m_rs[d3d::RS_SRCBLEND], dst = m_rs[d3d::RS_DESTBLEND];
+    if (uiLayer && !m_rs[d3d::RS_ALPHABLENDENABLE]) { src = d3d::BLEND_ONE; dst = d3d::BLEND_ZERO; }
     if (m_drawOverbright2x) { src = kBlendOverbright2x; dst = kBlendOverbright2x; }
     if (src == d3d::BLEND_BOTHSRCALPHA) { src = d3d::BLEND_SRCALPHA; dst = d3d::BLEND_INVSRCALPHA; }
     if (src == d3d::BLEND_BOTHINVSRCALPHA) { src = d3d::BLEND_INVSRCALPHA; dst = d3d::BLEND_SRCALPHA; }
@@ -1562,6 +1566,16 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
         VkColorBlendEquationEXT eq{};
         eq.srcColorBlendFactor = eq.srcAlphaBlendFactor = BlendFactor(src);
         eq.dstColorBlendFactor = eq.dstAlphaBlendFactor = BlendFactor(dst);
+        if (uiLayer) {
+            // Coverage: a draw over what is there (alpha blended, premultiplied, unblended) adds its alpha's; one adding
+            // to it or multiplying it covers nothing.
+            bool multiplies = src == d3d::BLEND_DESTCOLOR || src == d3d::BLEND_INVDESTCOLOR || dst == d3d::BLEND_SRCCOLOR ||
+                              dst == d3d::BLEND_INVSRCCOLOR || src == kBlendOverbright2x;
+            bool covers = !multiplies && (dst == d3d::BLEND_INVSRCALPHA || dst == d3d::BLEND_ZERO);
+            eq.srcAlphaBlendFactor = covers ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ZERO;
+            eq.dstAlphaBlendFactor = covers && dst == d3d::BLEND_INVSRCALPHA ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA
+                                     : covers ? VK_BLEND_FACTOR_ZERO : VK_BLEND_FACTOR_ONE;
+        }
         if (src == kBlendOverbright2x) {
             // dst * src * 2 from a halved src: src * dst + dst * src. Alpha as the game's multiply: dst * src.
             eq.srcColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR;

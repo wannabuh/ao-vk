@@ -52,6 +52,18 @@
   before a draw that writes no depth, so effects still come after them). The replay sets each edge's state (cull,
   depth compare, viewport, buffers, per-draw bindings) and goes through `ApplyDynamicState`. With the edges out of the
   depth, the core is exact for the cut-out pre-pass.
+- **Interface refresh rate** (setting `RVK_UiRate`, General; 0 = every frame, the default): GUI.dll's drawing of the
+  interface costs the game thread ~1.5 ms a frame (its view tree, and ~1,000 draws). With a rate, the interface is
+  drawn only that many times a second into an image of its own, which is put over every frame. `rnative::gui`
+  (proxy/native/gui.cpp) wraps GUI.dll's `WindowController_c::Render` - the interface's per-frame work (what is under
+  the mouse, the pointer's shape, tooltips) runs every frame - and makes its top-level `View::_CallRender` calls, the
+  drawing, return at once on frames that don't redraw (the backend decides: `RVK_UiRate`, or the renderer has no
+  current layer). The renderer (rvk/interface.cpp) ends the scene where the interface's first draw would, draws a
+  redrawn interface into `m_uiLayer` (cleared; every draw blends, its alpha accumulating coverage, so the layer is
+  premultiplied) and blends the layer over the main target (ONE, INV_SRC_ALPHA) at the end of `Render`. Exact for
+  alpha-blended and additive interface draws; an unblended one keeps its texture's alpha as coverage, one multiplying
+  the frame is approximated. Hooks are only made with a rate set; the two entries' code is checked (MSVC's exception
+  prologue calling GUI.dll's `_EH_prolog`), so another GUI.dll build is left alone (logged).
 - **Vertex buffers** keep their contents in CPU memory; every draw copies the range it uses into the ring
   buffer, so rewriting a buffer between draws is safe (the game's CPU skinning reuses one buffer).
 - Memory through VMA (from the Vulkan SDK); Vulkan entry points loaded at run time from `vulkan-1.dll`.

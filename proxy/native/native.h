@@ -51,6 +51,10 @@ struct HookFixups {
 };
 void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t count, void* target, const char* what,
                 const HookFixups& fixups = {});
+// The same at an address in another module (GUI.dll), whose code the caller has checked: its first `count` bytes run
+// in the returned trampoline (rel32 operands at the given offsets re-aimed), then the rest of it. Not registered for
+// NativeFor / AddressFor (those are Randy's offsets).
+void* HookAt(uint8_t* at, size_t count, const size_t* rel32, size_t rel32Count, void* target, const char* what);
 
 // The client build the replacements were written against (randy31_orig.dll's PE timestamp 0x5CD328BA and image size
 // 0x1ED000): Replace works only on it.
