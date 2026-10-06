@@ -2437,6 +2437,14 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         gmix(frameLightsOffset);
         gmix(m_drawPrepassed ? 1u : 0u);          // its depth compare (ApplyDynamicState)
         gmix(m_drawBackdrop ? 1u : 0u);           // its depth bounds
+        // The rest of what ApplyDynamicState sets: render state that isn't in the constant block (a state change
+        // that writes the same block keeps its index), and the draw's flags it reads.
+        gmix(uint64_t(m_rs[d3d::RS_CULLMODE]) | uint64_t(m_rs[d3d::RS_ZENABLE] != 0) << 8 |
+             uint64_t(m_rs[d3d::RS_ZWRITEENABLE] != 0) << 9 | uint64_t(m_rs[d3d::RS_ALPHABLENDENABLE] != 0) << 10 |
+             uint64_t(m_drawMayDiscard) << 11 | uint64_t(m_drawIsLabel) << 12 | uint64_t(m_drawOverbright2x) << 13 |
+             uint64_t(m_drawTerrainBase) << 14 | uint64_t(m_drawTerrainLight) << 15 |
+             uint64_t(m_rs[d3d::RS_ZFUNC]) << 16 | uint64_t(m_rs[d3d::RS_SRCBLEND]) << 32 |
+             uint64_t(m_rs[d3d::RS_DESTBLEND]) << 48);
         groupKey = k ? k : 1;
     }
     if (m_group.active && (groupKey == 0 || groupKey != m_group.key))
