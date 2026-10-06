@@ -414,6 +414,9 @@ bool Device::CreateLogicalDevice(std::string* error)
     m_groupIndirect = features.features.drawIndirectFirstInstance && features.features.multiDrawIndirect;
     enabled.features.drawIndirectFirstInstance = features.features.drawIndirectFirstInstance;
     enabled.features.multiDrawIndirect = features.features.multiDrawIndirect;
+    // Profiling: fragment shader invocations per scene class (profile.cpp, "scene shading" - the overdraw).
+    m_shadeQueries = features.features.pipelineStatisticsQuery;
+    enabled.features.pipelineStatisticsQuery = features.features.pipelineStatisticsQuery;
     Log("draw grouping (indirect firstInstance + multiDrawIndirect): %s", m_groupIndirect ? "yes" : "no");
 
     float priority = 1.0f;
@@ -1160,6 +1163,7 @@ void Device::EndRendering()
 {
     if (m_rendering) {
         FlushGroup();                                // the pending batched draws belong to this rendering
+        ShadeQueryEnd();                             // a query begun in a rendering ends in it
         vkCmdEndRendering(m_frames[m_frameIndex].main);
         m_rendering = false;
     }
@@ -1211,6 +1215,8 @@ void Device::BeginRenderingOn(Texture* target)
     ri.pDepthAttachment = &depth;
     vkCmdBeginRendering(cmd, &ri);
     m_rendering = true;
+    if (target == m_scene)
+        ShadeQueryBegin();                       // the current scene class goes on counting (profile.cpp)
 }
 
 void Device::SetAnisotropy(uint32_t level)

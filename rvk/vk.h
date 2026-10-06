@@ -86,6 +86,8 @@
     X(vkDestroyQueryPool) \
     X(vkGetQueryPoolResults) \
     X(vkCmdResetQueryPool) \
+    X(vkCmdBeginQuery) \
+    X(vkCmdEndQuery) \
     X(vkCmdWriteTimestamp2) \
     X(vkCmdSetColorWriteMaskEXT) \
     X(vkCmdSetViewport) \

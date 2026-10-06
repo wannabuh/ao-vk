@@ -1181,7 +1181,27 @@ private:
     // Profiling (profile.cpp): GPU timestamps per frame slot, CPU times of the frame's recording.
     static constexpr uint32_t kProfileMarks = 48;
     static constexpr uint32_t kSceneClassMarks = 30;   // of them for the scene's class split (16 others a frame)
-    struct ProfileFrame { VkQueryPool pool = VK_NULL_HANDLE; uint32_t count = 0; const char* names[kProfileMarks] = {}; };
+    // The scene's shading (fragment shader invocations, a pipeline statistics query) per scene class: one query per
+    // stretch of a class within a rendering, summed by class.
+    static constexpr uint32_t kShadeQueries = 256;
+    static constexpr int kSceneClasses = 11;      // ProfileSceneClass's names (0 = none)
+    struct ProfileFrame {
+        VkQueryPool pool = VK_NULL_HANDLE;
+        uint32_t count = 0;
+        const char* names[kProfileMarks] = {};
+        VkQueryPool shadePool = VK_NULL_HANDLE;
+        uint32_t shadeCount = 0;                  // queries begun (and ended) this frame
+        bool shadeActive = false;
+        uint8_t shadeClass[kShadeQueries] = {};
+        uint64_t shadePixels = 0;                 // the scene target's pixels (what the counts are divided by)
+        bool shadeOverflow = false;               // ran out of queries: the rest of the frame went uncounted
+    };
+    bool m_shadeQueries = false;                  // pipelineStatisticsQuery enabled
+    uint64_t m_shadeSum[kSceneClasses] = {};      // fragment shader invocations by class since the last log
+    uint64_t m_shadePixels = 0;                   // the frames' scene pixels, summed alike
+    uint32_t m_shadeOverflowFrames = 0;           // of those frames, how many ran out of queries (undercounted)
+    void ShadeQueryBegin();                       // in a scene rendering: start counting for m_sceneClass
+    void ShadeQueryEnd();
     std::array<ProfileFrame, kFramesInFlight> m_profile;
     float m_timestampPeriod = 1.0f;
     uint32_t m_profileFrames = 0;
