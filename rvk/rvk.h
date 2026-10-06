@@ -723,6 +723,8 @@ private:
     float m_sunSoftness = 1.0f, m_leafLight = 1.0f, m_nightGlow = 1.5f, m_contact = 0.6f;
     bool m_foliage = false;                      // the foliage flag/LOD (off: it matched ~96% of statics; see Draw)
     bool m_drawMayDiscard = true;                // the current draw can cut out (alpha test / F_CUTOUT): pick the variant
+    bool m_drawForceOpaque = false;              // the draw's alpha is provably 1: skip its blend (Draw forceOpaque)
+    uint64_t m_forceOpaqueDraws = 0;             // draws that took the opaque-blend path (logged)
     uint64_t m_noCutDraws = 0;                   // draws that took the no-discard pipeline (early-Z; logged)
     Texture* m_contactTex[2] = {};               // half resolution: contact shadow (1 = lit), view depth (ping-pong)
     VkPipeline m_contactPipeline = VK_NULL_HANDLE;
@@ -756,7 +758,7 @@ private:
     // indices' hash, remembered by a fingerprint of the mesh (sizes and 16 sampled vertices and indices) - a static
     // mesh drawn again (most of them) needs no pass over its vertices; an animated one (CPU-skinned) changes its
     // fingerprint every frame and gets one pass, shared by its users.
-    struct MeshInfo { float boundsMin[3], boundsMax[3]; uint64_t indexHash; uint64_t firstFrame, lastFrame; };
+    struct MeshInfo { float boundsMin[3], boundsMax[3]; uint64_t indexHash; uint64_t firstFrame, lastFrame; bool alphaOpaque = true; };
     std::unordered_map<uint64_t, MeshInfo> m_meshInfo;
     const MeshInfo* m_drawMesh = nullptr;        // the current draw's (null: external geometry, pre-transformed)
     const skin::Job* m_drawSkin = nullptr;       // the current draw is this skinned character piece (DrawSkinned)
@@ -1117,6 +1119,7 @@ private:
     uint32_t m_constantsFoliageLod = 0;          // FoliageFar: 0 near, 1 far foliage, 2 far plant
     bool m_constantsCharacter = false;
     bool m_constantsOpaque = false;              // the draw's textures are fully opaque (F_CUTOUT omitted; Draw)
+    bool m_constantsForceOpaque = false;         // ... and its alpha is provably 1: draw it opaque (no blend)
     uint32_t m_constantsCarrier = 0;
     void BeginRenderingOn(Texture* target);
     void EndRendering();

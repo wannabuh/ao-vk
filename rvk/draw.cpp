@@ -1058,6 +1058,7 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
         auto it = m_meshInfo.find(key);
         if (it == m_meshInfo.end()) {
             MeshInfo info{};
+            info.alphaOpaque = false;             // a GPU-skinned piece: its vertex colours aren't scanned (conservative)
             std::memcpy(info.boundsMin, m_drawSkin->boundsMin, sizeof(info.boundsMin));
             std::memcpy(info.boundsMax, m_drawSkin->boundsMax, sizeof(info.boundsMax));
             info.indexHash = indexCount == m_drawSkin->source->indices.size() ? m_drawSkin->source->indexHash
@@ -1117,6 +1118,7 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
         return;
     }
     MeshInfo info{};
+    int diffuseOffset = DecodeFvf(fvf).offset[2], specularOffset = DecodeFvf(fvf).offset[3];
     for (int j = 0; j < 3; ++j) { info.boundsMin[j] = 1e30f; info.boundsMax[j] = -1e30f; }
     const uint8_t* verts = static_cast<const uint8_t*>(vertices);
     for (uint32_t i = 0; i < vertexCount; ++i) {
@@ -1126,6 +1128,9 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
             info.boundsMin[j] = std::min(info.boundsMin[j], p[j]);
             info.boundsMax[j] = std::max(info.boundsMax[j], p[j]);
         }
+        // Every vertex colour's alpha 1: a blended draw of this mesh can then be drawn opaque (Draw forceOpaque).
+        if (diffuseOffset >= 0 && verts[size_t(i) * stride + diffuseOffset + 3] != 0xFF) info.alphaOpaque = false;
+        if (specularOffset >= 0 && verts[size_t(i) * stride + specularOffset + 3] != 0xFF) info.alphaOpaque = false;
     }
     info.indexHash = indices && indexCount ? HashBytes(indices, size_t(indexCount) * 2, indexCount) : 0;
     info.firstFrame = info.lastFrame = m_frameNumber;
@@ -1434,7 +1439,7 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
         vkCmdSetColorBlendEquationEXT(cmd, 1, 1, &eq);
         c.glowBlendSet = true;
     }
-    VkBool32 blend = m_rs[d3d::RS_ALPHABLENDENABLE] != 0;
+    VkBool32 blend = (m_rs[d3d::RS_ALPHABLENDENABLE] != 0 && !m_drawForceOpaque) ? VK_TRUE : VK_FALSE;
     if (c.blendEnable != blend) {
         vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &blend);
         c.blendEnable = blend;
@@ -1837,6 +1842,20 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                          m_rs[d3d::RS_ALPHABLENDENABLE] && !m_rs[d3d::RS_ALPHATESTENABLE] &&
                          m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA;
     if (cutoutTexture) ++m_opaqueDraws;
+    // The blend is a no-op when the final alpha is 1 - and it provably is when every alpha input is 1: the textures
+    // (above), the vertex colours (MeshInfo::alphaOpaque), the material and the texture factor. The stage alpha ops
+    // must also keep 1 (every op except SUBTRACT does for all-1 inputs; a complemented arg would turn 1 into 0).
+    bool alphaOpsKeepOne = true;
+    for (int s = 0; s < 2 && alphaOpsKeepOne; ++s) {
+        if (m_tss[s][d3d::TSS_COLOROP] == d3d::TOP_DISABLE) break;
+        if (m_tss[s][d3d::TSS_ALPHAOP] == d3d::TOP_SUBTRACT ||
+            (m_tss[s][d3d::TSS_ALPHAARG1] & 0x10u) || (m_tss[s][d3d::TSS_ALPHAARG2] & 0x10u))
+            alphaOpsKeepOne = false;
+    }
+    bool forceOpaque = cutoutTexture && alphaOpsKeepOne && m_material.diffuse.a >= 1.0f && m_material.specular.a >= 1.0f &&
+                       ((m_rs[d3d::RS_TEXTUREFACTOR] >> 24) == 0xFF) && m_drawMesh && m_drawMesh->alphaOpaque;
+    m_drawForceOpaque = forceOpaque;
+    if (forceOpaque) ++m_forceOpaqueDraws;
     // The ground's base pass (unlit, the texture the lighting pass multiplies): its local-light fraction and motion
     // attachments are replaced by that pass (depth-equal, right after) or are zero anyway, so don't write them here
     // - the ground covers much of the screen and is overdrawn, so those writes are pure bandwidth.
@@ -1872,7 +1891,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                    m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
                    m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
                    m_constantsFoliageLod != foliageLod || m_constantsNormalMap != normalMap ||
-                   m_constantsCharacter != m_drawIsCharacter || m_constantsOpaque != cutoutTexture;
+                   m_constantsCharacter != m_drawIsCharacter || m_constantsOpaque != cutoutTexture ||
+                   m_constantsForceOpaque != forceOpaque;
     uint32_t constIndex = m_constIndex;
     if (rewrite) {
     m_constantsGeneration = m_ringGeneration;
@@ -1886,6 +1906,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsFoliageLod = foliageLod;
     m_constantsCharacter = m_drawIsCharacter;
     m_constantsOpaque = cutoutTexture;
+    m_constantsForceOpaque = forceOpaque;
     m_constantsNormalMap = normalMap;
     DrawConstants c{};
     c.view = m_view;
