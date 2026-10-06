@@ -377,6 +377,7 @@ void Device::EndScene()
     EndRendering();
     ProfileSceneClass(0);                        // close the last scene class for the GPU profile
     m_shadeClass = 0;                            // (its shading query ended with the rendering)
+    RenderGrassField(cmd);                       // RVK_GrassOn: our ground grass, over the scene
     ProfileMark("scene");
     double cpu = ProfileCpu();
     Transition(cmd, m_scene, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);

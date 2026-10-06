@@ -867,6 +867,8 @@ int g_walkerSkip = 0;
 bool g_walkerLight = false;    // --walker-light: the round "character" carries a point light at head height and swings
                                // an arm beside its body (its own light's shadow on itself)          // --walker-skip N: the "character" animates only every N-th frame (crowds: the game skips)    // --walker-round: the "character" a low-polygon smooth-shaded 8-sided column
 int g_grassDense = 1;          // --grass-dense K: K x K as many tufts, K times closer (a field, for profiling)      // --grass-flip: the tufts modelled upside down, turned up by their world matrix
+bool g_grassFieldOn = false;   // --grass-field: the procedural ground grass (RVK_GrassOn) over the shadow test's terrain
+float g_grassFieldDist = 25.0f;
 
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
 // (left) and unlit like Anarchy Online's ground base pass (right) - from a camera above and behind.
@@ -1719,6 +1721,8 @@ int main(int argc, char** argv)
         else if (a == "--grass-walk" && i + 1 < argc) g_grassWalk = float(std::atof(argv[++i]));
         else if (a == "--grass-walk-speed" && i + 1 < argc) g_grassWalkSpeed = float(std::atof(argv[++i]));
         else if (a == "--grass-flip") g_grassFlip = true;
+        else if (a == "--grass-field") { g_grassFieldOn = true; hdr = true; }
+        else if (a == "--grass-field-dist" && i + 1 < argc) g_grassFieldDist = float(std::atof(argv[++i]));
         else if (a == "--walker-round") g_walkerRound = true;
         else if (a == "--walker-light") g_walkerLight = true;
         else if (a == "--walker-skip" && i + 1 < argc) g_walkerSkip = std::atoi(argv[++i]);
@@ -1823,6 +1827,8 @@ int main(int argc, char** argv)
     dev.SetGrassPush(grassPush);
     dev.SetPlantDetail(plantDetail);
     dev.SetFoliageLod(foliageLod);
+    if (g_grassFieldOn)                  // --grass-field: the procedural ground grass (needs HDR: its pass draws into the scene)
+        dev.SetGrassField(true, g_grassFieldDist, 3.0f, 0.5f);
     dev.SetShadowResolution(uint32_t(sunRes), uint32_t(ptRes));
     dev.SetPointLightIntensity(ptLight, ptLight);
     dev.SetTessellation(tess, 20.0f, uint32_t(tessLevel));

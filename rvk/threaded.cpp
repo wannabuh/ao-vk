@@ -883,6 +883,13 @@ void ThreadedDevice::SetFoliageLod(float distance)
     Enqueue([this, distance](const uint8_t*) { m_device.SetFoliageLod(distance); });
 }
 
+void ThreadedDevice::SetGrassField(bool on, float distance, float density, float height)
+{
+    Enqueue([this, on, distance, density, height](const uint8_t*) {
+        m_device.SetGrassField(on, distance, density, height);
+    });
+}
+
 void ThreadedDevice::SetShadowResolution(uint32_t sun, uint32_t point)
 {
     Enqueue([this, sun, point](const uint8_t*) { m_device.SetShadowResolution(sun, point); });

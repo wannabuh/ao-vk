@@ -198,6 +198,7 @@ Device::~Device()
     DestroyProfiler();
     DestroyParticleResources();
     DestroySkinResources();
+    DestroyGrassResources();
     DestroyStaticGeometry();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_setLayout) vkDestroyDescriptorSetLayout(m_device, m_setLayout, nullptr);
@@ -405,6 +406,10 @@ bool Device::CreateLogicalDevice(std::string* error)
     enabled.pNext = &enV13;
     enabled.features.samplerAnisotropy = features.features.samplerAnisotropy;
     m_maxAnisotropy = features.features.samplerAnisotropy ? m_props.limits.maxSamplerAnisotropy : 0.0f;
+    // The ground grass pipeline (grass.cpp) writes the scene colour only: its five colour attachments carry different
+    // write masks, which needs independent blend.
+    m_independentBlend = features.features.independentBlend;
+    enabled.features.independentBlend = features.features.independentBlend;
     // Out-of-range vertex indices in game data read zeros instead of faulting the GPU.
     enabled.features.robustBufferAccess = features.features.robustBufferAccess;
     enabled.features.textureCompressionBC = features.features.textureCompressionBC;
@@ -853,6 +858,7 @@ bool Device::CreatePipelines(std::string* error)
     if (!ok || !CreateShadowResources(error) || !CreatePointShadowResources(error) || !CreateHdrResources(error) ||
         !CreateParticleResources(error) || !CreateSkinResources(error))
         return false;
+    CreateGrassResources(error);                 // not fatal: without it the ground grass is simply unavailable
     char gpuSkin[8] = "";
     if (GetEnvironmentVariableA("RANDYVK_GPU_SKIN", gpuSkin, sizeof(gpuSkin)) && gpuSkin[0] == '0')
         m_gpuSkin = false;
@@ -1315,6 +1321,10 @@ void Device::BeginFrame()
         Log("foliage: %llu draws, %llu of them far (LOD) (last 600 frames)", (unsigned long long)m_foliageDraws,
             (unsigned long long)m_foliageLodDraws);
         Log("no-discard pipeline (early-Z): %llu draws (last 600 frames)", (unsigned long long)m_noCutDraws);
+        if (m_grassOn)
+            Log("ground grass: %llu frames drawn, %.0f blades a frame (last 600 frames)",
+                (unsigned long long)m_grassDraws, double(m_grassBlades) / std::max<uint64_t>(m_grassDraws, 1));
+        m_grassDraws = m_grassBlades = 0;
         PrepassLog();
         m_ringPeak = 0;
         m_midFrameFlushes = 0;

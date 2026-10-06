@@ -98,6 +98,7 @@ public:
     void SetGrassPush(float strength);
     void SetPlantDetail(float detail);
     void SetFoliageLod(float distance);
+    void SetGrassField(bool on, float distance, float density, float height);
     void SetDepthPrepass(bool on);
     void SetFoliageEdges(bool on);
     // The interface layer (Device::InterfaceBegin / InterfaceEnd).

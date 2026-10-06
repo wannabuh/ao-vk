@@ -1918,6 +1918,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     Frame& f = m_frames[m_frameIndex];
     VkCommandBuffer cmd = f.main;
     FvfLayout layout = DecodeFvf(fvf);
+    // RVK_GrassOn: the terrain's ground heights feed the procedural grass (grass.cpp CaptureTerrain / RenderGrassField).
+    if (m_grassOn && !m_external && vertices && IsTerrain(fvf))
+        CaptureTerrain(vertices, layout, vertexCount);
     DrawMeshInfo(fvf, layout.stride, vertices, vertexCount, indices, indexCount);
     PushCandidateDraw(fvf);
     // A swaying plant: its big quads split into small ones (cached), so they bend rather than tilt as a whole.

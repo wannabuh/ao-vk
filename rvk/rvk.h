@@ -232,6 +232,15 @@ public:
     void SetGrassPush(float strength) { m_grassPush = strength; m_frameLightsDirty = true; }
     // Plants' big quads split into pieces for smooth bending (0 = off; 1 = pieces about 0.3 units across).
     void SetPlantDetail(float detail) { m_plantDetail = detail; }
+    // Procedural ground grass (RVK_GrassOn, grass.cpp): blades generated over the terrain near the camera. off by
+    // default; distance is the radius (world units), density the blades per patch, height the blade height.
+    void SetGrassField(bool on, float distance, float density, float height)
+    {
+        m_grassOn = on;
+        m_grassDistance = distance;
+        m_grassDensity = density;
+        m_grassHeight = height;
+    }
     // Shadow map sizes in pixels: the sun's (each cascade) and the point lights' (each cube face). Takes effect at
     // the next frame (the maps are recreated).
     void SetShadowResolution(uint32_t sun, uint32_t point)
@@ -1019,6 +1028,23 @@ private:
     std::unordered_map<uint64_t, float> m_plantMaxEdge;   // a plant mesh's longest edge (model units)
     float m_plantDetail = 1.0f;
     float m_foliageLod = 35.0f;                  // RVK_FoliageLod (draw.cpp FoliageFar)
+    // Procedural ground grass (RVK_GrassOn, grass.cpp): the ground heights are sampled from the terrain draws into a
+    // world-space grid (CaptureTerrain); a pass in EndScene generates and draws camera-centred blades over it.
+    static constexpr float kGroundCell = 0.5f;   // the ground grid's cell size (world units)
+    bool m_grassOn = false;                      // RVK_GrassOn (off: nothing drawn, nothing captured)
+    float m_grassDistance = 25.0f;               // RVK_GrassDist (radius around the camera, world units)
+    float m_grassDensity = 3.0f;                 // RVK_GrassDensity (blades per patch)
+    float m_grassHeight = 0.5f;                  // RVK_GrassHeight (world units)
+    std::unordered_map<uint64_t, float> m_groundHeights;   // ground y by quantised world x, z cell
+    void CaptureTerrain(const void* vertices, const detail::FvfLayout& layout, uint32_t vertexCount);
+    bool GroundHeight(float x, float z, float* y) const;
+    void RenderGrassField(VkCommandBuffer cmd);
+    bool CreateGrassResources(std::string* error);
+    void DestroyGrassResources();
+    uint64_t m_grassDraws = 0, m_grassBlades = 0;   // counters, logged with the foliage line
+    VkPipelineLayout m_grassLayout = VK_NULL_HANDLE;
+    VkPipeline m_grassPipeline = VK_NULL_HANDLE;
+    bool m_independentBlend = false;             // device feature: the grass pipeline's per-attachment write masks
     float m_pointLightScale = 1.0f, m_charLightScale = 1.0f;   // SetPointLightIntensity
     float LightScale(const d3d::Light& l) const;
     bool FoliageFar() const;                  // pieces per 0.3 world units (0 = plants drawn as the game gives them)
