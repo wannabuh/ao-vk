@@ -1,8 +1,9 @@
 #version 450
-// Procedural ground grass (RVK_GrassOn, rvk/grass.cpp): a solid, tapered blade tinted by the ground's own colour, lit
-// by the sun (with its shadow map) and by the frame's nearby point / spot lights. Writes the scene colour and the
-// motion vectors (grass is static in the world, bar the wind: the vertex shader's position covers both); the glow,
-// light-fraction and albedo attachments keep what the scene left.
+// Procedural ground grass (RVK_GrassOn, rvk/grass.cpp): a solid, tapered blade of mostly one colour, lit by the sun
+// (with its shadow map) and by the frame's nearby point / spot lights. A blade is a flat, thin strip, so both of its
+// faces take light (the light's direction, not the eye's: flipping the normal to the eye made blades light up one by
+// one as the camera turned). Writes the scene colour and the motion vectors; the glow, light-fraction and albedo
+// attachments keep what the scene left.
 #include "frame_lights.glsl"                    // FL (binding 4): the sun, its shadow cascades, the frame's lights
 
 layout(set = 0, binding = 0) uniform GrassFrame {
@@ -29,14 +30,11 @@ layout(location = 6) in vec4 vPrevClip;
 layout(location = 0) out vec4 outScene;
 layout(location = 3) out vec4 outMotion;
 
-// Sun visibility at a blade point: 1 lit, 0 in shadow. The first cascade that covers the point (the near, sharp one),
-// one tap; a 3x3 PCF is not worth its cost on a blade, thicker with overdraw.
-float SunShadow(vec3 posW, vec3 n)
+// Sun visibility at a blade point: 1 lit, 0 in shadow. The first cascade that covers the point, one tap; a thin blade
+// is shadowed by where it stands, whichever way it faces, so there is no facing early-out here.
+float SunShadow(vec3 posW)
 {
     if (FL.shadowParams.x < 0.5 || dot(FL.sunColor.rgb, FL.sunColor.rgb) <= 0.0)
-        return 1.0;
-    vec3 L = -normalize(FL.sunDir.xyz);
-    if (dot(normalize(n), L) <= 0.0)
         return 1.0;
     int count = int(FL.shadowParams.z);
     for (int c = 0; c < count; ++c) {
@@ -49,8 +47,8 @@ float SunShadow(vec3 posW, vec3 n)
     return 1.0;
 }
 
-// The frame's nearby point / spot lights that reach this tile (D3D7's attenuation, its range cut faded out rather than
-// a hard circle). No shadows on a blade.
+// The frame's nearby point / spot lights that reach this tile, D3D7's attenuation, its range cut faded rather than a
+// hard circle. Each face of a blade takes the light (abs), so a lit blade is lit whichever way it stands.
 vec3 LocalLights(vec3 posW, vec3 n)
 {
     vec3 sum = vec3(0.0);
@@ -80,7 +78,7 @@ vec3 LocalLights(vec3 posW, vec3 n)
                 else if (rho < l.spot.x)
                     att *= pow(clamp((rho - l.spot.y) / max(l.spot.x - l.spot.y, 1e-6), 0.0, 1.0), l.atten.w);
             }
-            sum += att * (max(dot(n, L), 0.0) * l.diffuse.rgb + l.ambient.rgb);
+            sum += att * (abs(dot(n, L)) * l.diffuse.rgb + l.ambient.rgb);
         }
     }
     return sum;
@@ -91,21 +89,16 @@ void main()
     // The atlas is sampled for its vein only: the blade is a solid, tapered strip (no alpha cut), so the field is not
     // see-through the way cut-out cards are.
     vec4 blade = texture(bladeTex, vUv);
-    // A blade is a flat, double-sided strip (nothing is culled), so light both of its faces: flip the normal towards
-    // the eye. Otherwise a blade whose normal points away from a light goes black although its lit side is what is
-    // seen - dark spears across an otherwise lit field, worst with a point light off to one side.
     vec3 n = normalize(vNormal);
-    if (dot(n, GF.camera.xyz - vPosW) < 0.0)
-        n = -n;
-    float d = max(dot(n, -normalize(FL.sunDir.xyz)), 0.0);
-    float shadow = mix(1.0, SunShadow(vPosW, n), FL.shadowParams.y);
-    // Mostly one grass green, with only a little of the ground's own colour (and the atlas' vein): the field reads as
-    // one crop, not patches of different greens - the ground tint alone made dark ground into dark patches of grass.
-    vec3 tint = mix(vec3(0.30, 0.47, 0.21), vTint, 0.3);
-    vec3 base = tint * blade.rgb * mix(vec3(0.85), vec3(1.1), clamp(vShade, 0.0, 1.0));
+    float d = abs(dot(n, -normalize(FL.sunDir.xyz)));       // a thin blade takes the sun on either face
+    float shadow = mix(1.0, SunShadow(vPosW), FL.shadowParams.y);
+    // Mostly one grass green, with only a little of the ground's own colour (and the atlas' vein); a gentle root-to-tip
+    // gradient, kept bright at the base too (a dark base read as neglected roots).
+    vec3 tint = mix(vec3(0.34, 0.52, 0.24), vTint, 0.3);
+    vec3 base = tint * blade.rgb * mix(vec3(0.92), vec3(1.08), clamp(vShade, 0.0, 1.0));
     // The ambient follows the sun, so the grass goes dark at night with the rest of the scene.
     float sunLum = clamp(dot(FL.sunColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
-    vec3 lit = FL.sunColor.rgb * d * shadow * 0.8 + LocalLights(vPosW, n) + vec3(0.08 + 0.3 * sunLum);
+    vec3 lit = FL.sunColor.rgb * d * shadow + LocalLights(vPosW, n) + vec3(0.12 + 0.4 * sunLum);
     outScene = vec4(base * lit, 1.0);
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * GF.viewport.xy * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
