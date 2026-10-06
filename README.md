@@ -163,6 +163,8 @@ Some useful ones:
 | `RVK_CharLight` | 1 | brightness of lights characters carry (lower it if your own light feels too strong) |
 | `RVK_TessOn`, `RVK_Tess*` | on | rounder characters: roundness, detail, distance |
 | `RVK_FoliageLod` | 35 | distance from which foliage is shaded cheaply |
+| `RVK_GrassOn` | 0 | our own ground grass: procedural blades over the terrain (off = the game's foliage only) |
+| `RVK_GrassDist` / `RVK_GrassDensity` / `RVK_GrassHeight` | 25 / 3 / 0.5 | how far the grass reaches (world units), blades per patch, blade height |
 
 ### Hotkeys (Ctrl+Shift + key)
 
