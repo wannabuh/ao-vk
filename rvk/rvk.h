@@ -241,6 +241,8 @@ public:
     }
     // Foliage beyond this distance (world units) is shaded more cheaply (0 = off).
     void SetFoliageLod(float distance) { m_foliageLod = distance; }
+    // Depth pre-pass (prepass.cpp): the scene's opaque draws' depth first, so each pixel is shaded about once.
+    void SetDepthPrepass(bool on) { m_prepassOn = on; }
     // Phong tessellation of characters: shape (0 = off, 1 = fully round), distance, the level up close.
     void SetTessellation(float shape, float distance, uint32_t level)
     {
@@ -379,6 +381,11 @@ public:
 private:
     struct Frame {
         VkCommandBuffer upload = VK_NULL_HANDLE, main = VK_NULL_HANDLE;
+        // Depth pre-pass (prepass.cpp): the frame's main commands split at the scene's depth clear - `mainA` up to
+        // it, `prepass` (the clear and the depth of the opaque draws that follow), `mainB` from it on; `main` is the
+        // one being recorded (mainA unless split). Submitted in that order.
+        VkCommandBuffer mainA = VK_NULL_HANDLE, prepass = VK_NULL_HANDLE, mainB = VK_NULL_HANDLE;
+        bool split = false;
         VkFence fence = VK_NULL_HANDLE;
         VkSemaphore imageAvailable = VK_NULL_HANDLE;
         VkBuffer ring = VK_NULL_HANDLE;
@@ -723,6 +730,39 @@ private:
     float m_sunSoftness = 1.0f, m_leafLight = 1.0f, m_nightGlow = 1.5f, m_contact = 0.6f;
     bool m_drawMayDiscard = true;                // the current draw can cut out (alpha test / F_CUTOUT): pick the variant
     uint64_t m_noCutDraws = 0;                   // draws that took the no-discard pipeline (early-Z; logged)
+    // Depth pre-pass (prepass.cpp). Armed at the scene's depth clear (the frame's main commands split there: Frame);
+    // while armed, each opaque scene draw also draws its depth into the pre-pass, which runs before the scene's
+    // draws. Disarmed when the scene's rendering ends (a target switch, a copy, a flush, the scene's end) or at a
+    // second depth clear - from there on draws go only to the main pass, as without it.
+    bool m_prepassOn = true;                     // RVK_Prepass
+    bool m_prepassArmed = false;
+    bool m_drawPrepassed = false;                // the current draw is in the pre-pass (its depth test passes equal)
+    VkPipeline m_prepassPipeline = VK_NULL_HANDLE;   // ffp.vert only, depth attachment only
+    struct PrepassCache {
+        bool bound = false;                      // pipeline, front face, depth state, arrays, set 1
+        uint32_t topology = ~0u, cull = ~0u, fvf = ~0u;
+        VkViewport viewport{};
+        VkRect2D scissor{};
+        VkBuffer vb = VK_NULL_HANDLE, ib = VK_NULL_HANDLE;
+        VkDeviceSize frameLights = ~0ull, prevOffset = ~0ull, smoothOffset = ~0ull;
+        VkBuffer prevBuffer = VK_NULL_HANDLE, smoothBuffer = VK_NULL_HANDLE;
+        VkImage depth = VK_NULL_HANDLE;          // the depth buffer it draws into (armed)
+    } m_pre;
+    bool CreatePrepassPipeline(VkShaderModule vert);   // false: the pre-pass stays off
+    uint64_t m_prepassDraws = 0, m_prepassSegments = 0;   // logged every 600 frames
+    bool PrepassArm(const VkClearRect* rects, uint32_t count, float z);   // at a scene depth clear: split, arm
+    void PrepassEnd();                           // end the armed segment (its commands are complete)
+    bool PrepassEligible(uint32_t primitive, uint32_t fvf, bool swaying) const;
+    bool AlphaIsOne(uint32_t fvf) const;         // the draw's output alpha is 1 (its blend can't show what's behind)
+    void PrepassDraw(uint32_t primitive, uint32_t fvf, uint32_t stride, uint32_t vertexCount, uint32_t indexCount,
+                     VkDeviceSize vbOffset, VkDeviceSize ibOffset, VkBuffer vb, VkBuffer ib,
+                     VkDeviceSize frameLightsOffset, VkBuffer prevBuffer, VkDeviceSize prevOffset, VkDeviceSize prevBytes,
+                     VkBuffer smoothBuffer, VkDeviceSize smoothOffset, VkDeviceSize smoothBytes, uint32_t recordIndex);
+    uint32_t FrameCommands(Frame& f, VkCommandBuffer out[4]);   // what a submission runs (ends the pre-pass)
+    void FrameCommandsSubmitted(Frame& f);       // back to one main command buffer
+    // Shared with ApplyDynamicState: the D3D viewport as Vulkan's (and its scissor), the FVF's vertex input.
+    void ViewportState(VkViewport* vp, VkRect2D* scissor) const;
+    static void SetVertexInput(VkCommandBuffer cmd, uint32_t fvf, uint32_t stride);
     Texture* m_contactTex[2] = {};               // half resolution: contact shadow (1 = lit), view depth (ping-pong)
     VkPipeline m_contactPipeline = VK_NULL_HANDLE;
     bool RenderContactShadows(VkCommandBuffer cmd);
@@ -755,7 +795,12 @@ private:
     // indices' hash, remembered by a fingerprint of the mesh (sizes and 16 sampled vertices and indices) - a static
     // mesh drawn again (most of them) needs no pass over its vertices; an animated one (CPU-skinned) changes its
     // fingerprint every frame and gets one pass, shared by its users.
-    struct MeshInfo { float boundsMin[3], boundsMax[3]; uint64_t indexHash; uint64_t firstFrame, lastFrame; };
+    struct MeshInfo {
+        float boundsMin[3], boundsMax[3];
+        uint64_t indexHash;
+        uint64_t firstFrame, lastFrame;
+        bool diffuseAlphaOne = true, specularAlphaOne = true;   // every vertex colour's alpha byte is 255 (pre-pass)
+    };
     std::unordered_map<uint64_t, MeshInfo> m_meshInfo;
     const MeshInfo* m_drawMesh = nullptr;        // the current draw's (null: external geometry, pre-transformed)
     const skin::Job* m_drawSkin = nullptr;       // the current draw is this skinned character piece (DrawSkinned)

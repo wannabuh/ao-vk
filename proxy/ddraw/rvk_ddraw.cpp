@@ -120,7 +120,7 @@ static void ProfileSweep(bool start)
 {
     struct Step { const char* label; const char* setting; float value; };
     static const Step kSteps[] = {
-        {"baseline", nullptr, 0}, {"soft shadows off", "RVK_SunSoft", 0}, {"point shadows off", "RVK_PtOn", 0},
+        {"baseline", nullptr, 0}, {"depth pre-pass off", "RVK_Prepass", 0}, {"soft shadows off", "RVK_SunSoft", 0}, {"point shadows off", "RVK_PtOn", 0},
         {"sun shadows off", "RVK_SunShadow", 0}, {"contact shadows off", "RVK_ContactOn", 0},
         {"leaf light off", "RVK_LeafOn", 0}, {"relief (bump) off", "RVK_BumpOn", 0}, {"light override off", "RVK_LightOver", 0},
         {"per-pixel lighting off", "RVK_PixelLight", 0}, {"night glow off", "RVK_NightOn", 0}, {"sway off", "RVK_SwayOn", 0},

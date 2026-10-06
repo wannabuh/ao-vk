@@ -37,6 +37,7 @@ struct Setting {
 Setting g_settings[] = {
     // name               label                                                     section             type    min    max    step   default env                        value parent           choices
     {"RVK_Enhance",    "All renderer enhancements (off = the game's own look; Ctrl+Shift+E)", "General", Bool, 0, 1, 1, 1, nullptr, 0},
+    {"RVK_Prepass",    "Depth pre-pass (faster: each pixel of the scene lit about once)", "General", Bool, 0, 1, 1, 1, nullptr, 0},
 
     {"RVK_PixelLight", "Per-pixel lighting",                                       "Lighting",         Bool,  0, 1, 1, 1, "RANDYVK_PIXEL_LIGHTING", 0},
     {"RVK_LightOver",  "All nearby lights light every surface (light override)",   "Lighting",         Bool,  0, 1, 1, 1, "RANDYVK_LIGHT_OVERRIDE", 0},
@@ -253,6 +254,7 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
         for (const Setting& other : g_settings)
             if (&other != &s) Apply(other, d);
     }
+    else if (is("RVK_Prepass")) d->SetDepthPrepass(V(n) != 0.0f);
     else if (is("RVK_PixelLight")) d->SetPixelLighting(V(n) != 0.0f);
     else if (is("RVK_LightOver")) d->SetLightOverride(V(n) != 0.0f);
     else if (is("RVK_OwnLight")) d->SetCarrierLit(V(n) != 0.0f);

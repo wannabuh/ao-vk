@@ -26,6 +26,14 @@
 - **Textures**: A8R8G8B8, X8R8G8B8, R5G6B5, A1R5G5B5, X1R5G5B5, A4R4G4B4, L8, A8, A8L8, DXT1-5 (BC1-3),
   with mip levels; D3D's 16-bit layouts match Vulkan's PACK16 formats, luminance/alpha formats use view
   swizzles. `UpdateTexture` uploads a region of one level through the frame's upload command buffer.
+- **Depth pre-pass** (`rvk/prepass.cpp`, setting `RVK_Prepass`): the frame's main commands are split at the
+  scene's depth clear into `mainA` (before it), a depth-only pre-pass (the clear, then the depth of every opaque
+  draw that follows, recorded as the draws come) and `mainB` (the rest), submitted in that order. The scene's
+  draws then find the nearest opaque depth already there and early-Z rejects what is hidden, so the expensive
+  scene shader runs about once per pixel. "Opaque": no discard, depth written, not blended or blended by an alpha
+  that is provably 1 (`AlphaIsOne`); not characters, swaying plants, labels or particles. A segment ends with the
+  scene's rendering (target switch, copy, flush, end of the scene) or at a second depth clear. `ffp.vert` declares
+  `gl_Position` invariant so both passes produce the same depth; a pre-passed draw's `LESS` becomes `LESSEQUAL`.
 - **Vertex buffers** keep their contents in CPU memory; every draw copies the range it uses into the ring
   buffer, so rewriting a buffer between draws is safe (the game's CPU skinning reuses one buffer).
 - Memory through VMA (from the Vulkan SDK); Vulkan entry points loaded at run time from `vulkan-1.dll`.

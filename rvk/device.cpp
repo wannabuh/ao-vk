@@ -190,6 +190,7 @@ Device::~Device()
     for (VkPipeline p : m_pipelinesHdrNoCut) if (p) vkDestroyPipeline(m_device, p, nullptr);
     for (VkPipeline p : m_tessPipelines) if (p) vkDestroyPipeline(m_device, p, nullptr);
     for (VkPipeline p : m_tessPipelinesNoCut) if (p) vkDestroyPipeline(m_device, p, nullptr);
+    if (m_prepassPipeline) vkDestroyPipeline(m_device, m_prepassPipeline, nullptr);
     DestroyShadowResources();
     DestroyPointShadowResources();
     DestroyHdrResources();
@@ -835,6 +836,8 @@ bool Device::CreatePipelines(std::string* error)
     }
     if (tesc) vkDestroyShaderModule(m_device, tesc, nullptr);
     if (tese) vkDestroyShaderModule(m_device, tese, nullptr);
+    if (ok)
+        CreatePrepassPipeline(vert);             // not fatal: without it the scene draws as before
     vkDestroyShaderModule(m_device, vert, nullptr);
     vkDestroyShaderModule(m_device, fragGlow, nullptr);
     vkDestroyShaderModule(m_device, frag, nullptr);
@@ -874,12 +877,14 @@ bool Device::CreateFrames(std::string* error)
         VkCommandBufferAllocateInfo ai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
         ai.commandPool = m_pool;
         ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        ai.commandBufferCount = 2;
-        VkCommandBuffer cmds[2];
+        ai.commandBufferCount = 4;
+        VkCommandBuffer cmds[4];
         if (!Check(vkAllocateCommandBuffers(m_device, &ai, cmds), "vkAllocateCommandBuffers", error))
             return false;
         f.upload = cmds[0];
-        f.main = cmds[1];
+        f.main = f.mainA = cmds[1];
+        f.prepass = cmds[2];                     // the depth pre-pass (prepass.cpp)
+        f.mainB = cmds[3];
         VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
         VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
@@ -1164,6 +1169,7 @@ void Device::EndRendering()
     if (m_rendering) {
         FlushGroup();                                // the pending batched draws belong to this rendering
         ShadeQueryEnd();                             // a query begun in a rendering ends in it
+        PrepassEnd();                                // the scene's rendering ends: so does a depth pre-pass segment
         vkCmdEndRendering(m_frames[m_frameIndex].main);
         m_rendering = false;
     }
@@ -1291,6 +1297,9 @@ void Device::BeginFrame()
         Log("foliage: %llu draws, %llu of them far (LOD) (last 600 frames)", (unsigned long long)m_foliageDraws,
             (unsigned long long)m_foliageLodDraws);
         Log("no-discard pipeline (early-Z): %llu draws (last 600 frames)", (unsigned long long)m_noCutDraws);
+        Log("depth pre-pass: %llu draws in %llu segments (last 600 frames)%s", (unsigned long long)m_prepassDraws,
+            (unsigned long long)m_prepassSegments, m_prepassPipeline ? "" : " - no pipeline");
+        m_prepassDraws = m_prepassSegments = 0;
         m_ringPeak = 0;
         m_midFrameFlushes = 0;
         m_opaqueDraws = 0;
@@ -1406,14 +1415,14 @@ void Device::EndFrame()
     }
     vkEndCommandBuffer(f.main);
 
-    VkCommandBuffer cmds[2];
+    VkCommandBuffer cmds[5];
     uint32_t cmdCount = 0;
     if (f.uploadsRecorded) {
         FinishSkinUploads(f.upload);
         vkEndCommandBuffer(f.upload);
         cmds[cmdCount++] = f.upload;
     }
-    cmds[cmdCount++] = f.main;
+    cmdCount += FrameCommands(f, cmds + cmdCount);   // main, or split around the depth pre-pass
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = cmdCount;
@@ -1428,6 +1437,7 @@ void Device::EndFrame()
     f.serial = ++m_submitted;
     vkQueueSubmit(m_queue, 1, &si, f.fence);
     f.uploadsRecorded = false;
+    FrameCommandsSubmitted(f);
     if (present) {
         VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         pi.waitSemaphoreCount = 1;
@@ -1453,7 +1463,7 @@ void Device::SubmitAndWait()
     Frame& f = m_frames[m_frameIndex];
     EndRendering();
     vkEndCommandBuffer(f.main);
-    VkCommandBuffer cmds[2];
+    VkCommandBuffer cmds[5];
     uint32_t n = 0;
     if (f.uploadsRecorded) {
         FinishSkinUploads(f.upload);
@@ -1461,7 +1471,7 @@ void Device::SubmitAndWait()
         cmds[n++] = f.upload;
         f.uploadsRecorded = false;
     }
-    cmds[n++] = f.main;
+    n += FrameCommands(f, cmds + n);
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = n;
     si.pCommandBuffers = cmds;
@@ -1469,6 +1479,8 @@ void Device::SubmitAndWait()
     vkQueueSubmit(m_queue, 1, &si, f.fence);
     WaitFrame(f, "mid-frame flush");
     vkResetFences(m_device, 1, &f.fence);
+    FrameCommandsSubmitted(f);                 // f.main stays the buffer being recorded
+    m_arenaBound = m_bindlessBound = m_shadowArenaBound = false;   // a re-begun command buffer has nothing pushed
     VkCommandBufferBeginInfo b{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     b.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(f.main, &b);          // the frame goes on; the caller resumes rendering

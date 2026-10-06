@@ -1058,6 +1058,7 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
         auto it = m_meshInfo.find(key);
         if (it == m_meshInfo.end()) {
             MeshInfo info{};
+            info.diffuseAlphaOne = info.specularAlphaOne = false;   // a GPU-skinned piece: colours not scanned
             std::memcpy(info.boundsMin, m_drawSkin->boundsMin, sizeof(info.boundsMin));
             std::memcpy(info.boundsMax, m_drawSkin->boundsMax, sizeof(info.boundsMax));
             info.indexHash = indexCount == m_drawSkin->source->indices.size() ? m_drawSkin->source->indexHash
@@ -1119,6 +1120,9 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
         return;
     }
     MeshInfo info{};
+    FvfLayout fl = DecodeFvf(fvf);
+    int diffuseAlpha = fl.offset[2] >= 0 ? fl.offset[2] + 3 : -1;   // D3DCOLOR: B, G, R, A
+    int specularAlpha = fl.offset[3] >= 0 ? fl.offset[3] + 3 : -1;
     for (int j = 0; j < 3; ++j) { info.boundsMin[j] = 1e30f; info.boundsMax[j] = -1e30f; }
     const uint8_t* verts = static_cast<const uint8_t*>(vertices);
     for (uint32_t i = 0; i < vertexCount; ++i) {
@@ -1128,6 +1132,9 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
             info.boundsMin[j] = std::min(info.boundsMin[j], p[j]);
             info.boundsMax[j] = std::max(info.boundsMax[j], p[j]);
         }
+        // Vertex colours' alpha (AlphaIsOne: a blended draw whose alpha is 1 can go into the depth pre-pass).
+        if (diffuseAlpha >= 0 && verts[size_t(i) * stride + diffuseAlpha] != 0xFF) info.diffuseAlphaOne = false;
+        if (specularAlpha >= 0 && verts[size_t(i) * stride + specularAlpha] != 0xFF) info.specularAlphaOne = false;
     }
     info.indexHash = indices && indexCount ? HashBytes(indices, size_t(indexCount) * 2, indexCount) : 0;
     info.firstFrame = info.lastFrame = m_frameNumber;
@@ -1240,19 +1247,7 @@ void Device::Clear(uint32_t count, const Rect* rects, uint32_t flags, uint32_t a
     if (!m_inFrame)
         return;
     FlushGroup();                                // batched draws recorded before the clear must run before it
-    VkClearAttachment att[2];
-    uint32_t n = 0;
-    if (flags & d3d::CLEAR_TARGET) {
-        att[n] = {VK_IMAGE_ASPECT_COLOR_BIT, 0, {}};
-        ArgbToFloat(argb, att[n].clearValue.color.float32);
-        ++n;
-    }
-    if (flags & d3d::CLEAR_ZBUFFER) {
-        att[n] = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, {}};
-        att[n].clearValue.depthStencil = {z, 0};
-        ++n;
-    }
-    if (!n)
+    if (!(flags & (d3d::CLEAR_TARGET | d3d::CLEAR_ZBUFFER)))
         return;
     // D3D clears the given rectangles (or the whole viewport), always clipped to the viewport.
     int32_t vx0 = int32_t(std::min(m_viewport.x, m_target->m_width));
@@ -1271,7 +1266,28 @@ void Device::Clear(uint32_t count, const Rect* rects, uint32_t flags, uint32_t a
         if (x1 > x0 && y1 > y0)
             clears.push_back({{{x0, y0}, {uint32_t(x1 - x0), uint32_t(y1 - y0)}}, 0, 1});
     }
-    if (!clears.empty())
+    if (clears.empty())
+        return;
+    // The scene's depth clear starts the depth pre-pass, which then does the clear (it runs before everything
+    // recorded from here on); a second one ends it, and clears here as usual.
+    bool depth = (flags & d3d::CLEAR_ZBUFFER) != 0;
+    if (depth && m_prepassArmed)
+        PrepassEnd();
+    else if (depth && PrepassArm(clears.data(), uint32_t(clears.size()), z))
+        depth = false;
+    VkClearAttachment att[2];
+    uint32_t n = 0;
+    if (flags & d3d::CLEAR_TARGET) {
+        att[n] = {VK_IMAGE_ASPECT_COLOR_BIT, 0, {}};
+        ArgbToFloat(argb, att[n].clearValue.color.float32);
+        ++n;
+    }
+    if (depth) {
+        att[n] = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, {}};
+        att[n].clearValue.depthStencil = {z, 0};
+        ++n;
+    }
+    if (n)
         vkCmdClearAttachments(m_frames[m_frameIndex].main, n, att, uint32_t(clears.size()), clears.data());
 }
 
@@ -1356,6 +1372,47 @@ void Device::DrawIndexedPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32
     Draw(primitive, vb->m_fvf, vb->m_data.data() + size_t(startVertex) * vb->m_stride, vertexCount, indices, indexCount);
 }
 
+// The D3D viewport as Vulkan's: negative height flips Y so D3D's clip space maps the same way; +0.5 matches D3D pixel
+// centres. The scissor is the viewport within the target.
+void Device::ViewportState(VkViewport* vp, VkRect2D* scissor) const
+{
+    vp->x = float(m_viewport.x) + 0.5f;
+    vp->y = float(m_viewport.y + m_viewport.height) + 0.5f;
+    vp->width = float(m_viewport.width);
+    vp->height = -float(m_viewport.height);
+    vp->minDepth = m_viewport.minZ;
+    vp->maxDepth = m_viewport.maxZ;
+    uint32_t w = m_target->m_width, h = m_target->m_height;
+    uint32_t sx = std::min(m_viewport.x, w), sy = std::min(m_viewport.y, h);
+    *scissor = {{int32_t(sx), int32_t(sy)}, {std::min(m_viewport.width, w - sx), std::min(m_viewport.height, h - sy)}};
+}
+
+// Vertex layout: binding 0 = the draw's vertex buffer (draws address it through their vertex offset), binding 1 =
+// zeros for attributes the format lacks.
+void Device::SetVertexInput(VkCommandBuffer cmd, uint32_t fvf, uint32_t stride)
+{
+    FvfLayout layout = DecodeFvf(fvf);
+    VkVertexInputBindingDescription2EXT bindings[2] = {
+        {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 0, stride, VK_VERTEX_INPUT_RATE_VERTEX, 1},
+        {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 1, 0, VK_VERTEX_INPUT_RATE_VERTEX, 1},
+    };
+    VkVertexInputAttributeDescription2EXT attrs[6];
+    for (uint32_t i = 0; i < 6; ++i) {
+        attrs[i] = {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT};
+        attrs[i].location = i;
+        if (layout.offset[i] >= 0) {
+            attrs[i].binding = 0;
+            attrs[i].format = layout.format[i];
+            attrs[i].offset = uint32_t(layout.offset[i]);
+        } else {
+            attrs[i].binding = 1;
+            attrs[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+            attrs[i].offset = 0;
+        }
+    }
+    vkCmdSetVertexInputEXT(cmd, 2, bindings, 6, attrs);
+}
+
 void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride)
 {
     VkCommandBuffer cmd = m_frames[m_frameIndex].main;
@@ -1389,21 +1446,13 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
         c.valid = true;
     }
 
-    // Negative height flips Y so D3D's clip space maps the same way; +0.5 matches D3D pixel centres.
     VkViewport vp;
-    vp.x = float(m_viewport.x) + 0.5f;
-    vp.y = float(m_viewport.y + m_viewport.height) + 0.5f;
-    vp.width = float(m_viewport.width);
-    vp.height = -float(m_viewport.height);
-    vp.minDepth = m_viewport.minZ;
-    vp.maxDepth = m_viewport.maxZ;
+    VkRect2D scissor;
+    ViewportState(&vp, &scissor);
     if (std::memcmp(&vp, &c.viewport, sizeof(vp)) != 0) {
         vkCmdSetViewport(cmd, 0, 1, &vp);
         c.viewport = vp;
     }
-    uint32_t w = m_target->m_width, h = m_target->m_height;
-    uint32_t sx = std::min(m_viewport.x, w), sy = std::min(m_viewport.y, h);
-    VkRect2D scissor{{int32_t(sx), int32_t(sy)}, {std::min(m_viewport.width, w - sx), std::min(m_viewport.height, h - sy)}};
     if (std::memcmp(&scissor, &c.scissor, sizeof(scissor)) != 0) {
         vkCmdSetScissor(cmd, 0, 1, &scissor);
         c.scissor = scissor;
@@ -1424,6 +1473,8 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     if (WaterWritesDepth(fvf))
         zWrite = 1;
     uint32_t zFunc = m_rs[d3d::RS_ZFUNC];
+    if (m_drawPrepassed && zFunc == d3d::CMP_LESS)
+        zFunc = d3d::CMP_LESSEQUAL;              // its own depth is already in the buffer (the pre-pass): pass equal
     if (c.depthTest != zEnable) { vkCmdSetDepthTestEnable(cmd, zEnable); c.depthTest = zEnable; }
     if (c.depthWrite != zWrite) { vkCmdSetDepthWriteEnable(cmd, zWrite); c.depthWrite = zWrite; }
     if (c.depthOp != zFunc) { vkCmdSetDepthCompareOp(cmd, CompareOp(zFunc)); c.depthOp = zFunc; }
@@ -1540,28 +1591,7 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     }
 
     if (c.fvf != fvf) {
-        // Vertex layout: binding 0 = the frame's ring buffer (draws address it through their vertex offset),
-        // binding 1 = zeros for attributes the format lacks.
-        FvfLayout layout = DecodeFvf(fvf);
-        VkVertexInputBindingDescription2EXT bindings[2] = {
-            {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 0, stride, VK_VERTEX_INPUT_RATE_VERTEX, 1},
-            {VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT, nullptr, 1, 0, VK_VERTEX_INPUT_RATE_VERTEX, 1},
-        };
-        VkVertexInputAttributeDescription2EXT attrs[6];
-        for (uint32_t i = 0; i < 6; ++i) {
-            attrs[i] = {VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT};
-            attrs[i].location = i;
-            if (layout.offset[i] >= 0) {
-                attrs[i].binding = 0;
-                attrs[i].format = layout.format[i];
-                attrs[i].offset = uint32_t(layout.offset[i]);
-            } else {
-                attrs[i].binding = 1;
-                attrs[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-                attrs[i].offset = 0;
-            }
-        }
-        vkCmdSetVertexInputEXT(cmd, 2, bindings, 6, attrs);
+        SetVertexInput(cmd, fvf, stride);
         c.fvf = fvf;
     }
     if (!c.buffersBound) {
@@ -1719,6 +1749,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             needTransition = true;
     if (needTransition) {
         FlushGroup();                                // the previous group's state is about to be invalidated
+        ShadeQueryEnd();                             // a query begun in this rendering ends in it
         vkCmdEndRendering(cmd);
         for (Texture* t : m_textures)
             if (t && t->m_renderTarget)
@@ -2142,6 +2173,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // topology, the constants (render state, material, lights - any change makes a new constIndex), the vertex and
     // index buffers, and the per-draw descriptor blocks. Geometry offsets and the record index are per command, so
     // draws of different meshes with the same state still share one call.
+    // Depth pre-pass (prepass.cpp): an opaque scene draw also draws its depth into the pre-pass, which runs before the
+    // scene's draws; its own depth test then passes on equal.
+    m_drawPrepassed = m_prepassArmed && PrepassEligible(primitive, fvf, swaying);
     uint64_t groupKey = 0;
     if (m_groupIndirect && indices && !m_external && !(m_particlePending && fvf == kParticleFvf)) {
         bool hdr = m_target->m_format == Format::RGBA16F;
@@ -2166,6 +2200,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         gmix(smoothOffset);
         gmix(smoothBytes);
         gmix(frameLightsOffset);
+        gmix(m_drawPrepassed ? 1u : 0u);          // its depth compare (ApplyDynamicState)
         groupKey = k ? k : 1;
     }
     if (m_group.active && (groupKey == 0 || groupKey != m_group.key))
@@ -2191,6 +2226,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // GPU-driven M2: this draw's record, and the frame's two arrays (bindings 0 = constants, 12 = records) pushed
     // once per frame's command buffer. The record index travels in firstInstance (gl_InstanceIndex).
     uint32_t recordIndex = AppendRecord(constIndex, dt);
+    if (m_drawPrepassed)
+        PrepassDraw(primitive, fvf, layout.stride, vertexCount, indices ? indexCount : 0, vbOffset, ibOffset,
+                    m_drawStaticBuffer ? m_drawStaticBuffer : f.ring, f.ring, frameLightsOffset, prevPositionsBuffer,
+                    prevPositionsOffset, prevPositionsBytes, smoothBuffer, smoothOffset, smoothBytes, recordIndex);
     if (!extending) {
     ApplyDynamicState(primitive, fvf, layout.stride);
     if (!m_arenaBound) {

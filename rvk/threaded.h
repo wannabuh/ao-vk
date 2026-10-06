@@ -83,6 +83,7 @@ public:
     void SetGrassPush(float strength);
     void SetPlantDetail(float detail);
     void SetFoliageLod(float distance);
+    void SetDepthPrepass(bool on);
     void SetShadowResolution(uint32_t sun, uint32_t point);
     void SetPointLightIntensity(float lights, float characters);
     void SetTessellation(float shape, float distance, uint32_t level);

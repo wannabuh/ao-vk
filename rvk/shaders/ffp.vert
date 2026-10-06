@@ -31,6 +31,9 @@ layout(location = 14) out vec3 vSmoothN;     // tessellated draws (D.tess.x): th
                                              // this position (world), which the Phong shape follows - no cracks at
                                              // hard edges, where a position has several normals
 layout(location = 15) flat out uint vRecord; // the draw's record index (M3: gl_InstanceIndex), for the later stages
+// The depth pre-pass (prepass.cpp) runs this shader without a fragment stage: the same position to the bit, so the
+// scene's draw passes its own pre-pass depth on equal.
+invariant gl_Position;
 // Tessellated draws: per vertex the averaged normal (model space, 3 floats), from the draw's base vertex D.tess.z.
 layout(set = 0, binding = 10, std430) readonly buffer SmoothNormals { float smoothN[]; } SN;
 // Last frame's vertex positions of an animated (CPU-skinned) mesh, model space, 3 floats a vertex (D.motion.y).

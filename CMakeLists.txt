@@ -52,7 +52,7 @@ foreach(shader ffp.vert ffp.tesc ffp.tese ffp.frag ffp_glow.frag ffp_nocut.frag 
     list(APPEND RVK_SHADER_INCS "${out}")
 endforeach()
 
-add_library(rvk STATIC rvk/vk.cpp rvk/vma.cpp rvk/device.cpp rvk/resources.cpp rvk/draw.cpp rvk/diag.cpp rvk/shadow.cpp rvk/pointshadow.cpp rvk/hdr.cpp rvk/particles.cpp rvk/grading.cpp rvk/profile.cpp rvk/skin.cpp rvk/skin_gpu.cpp rvk/static_gpu.cpp rvk/threaded.cpp ${RVK_SHADER_INCS})
+add_library(rvk STATIC rvk/vk.cpp rvk/vma.cpp rvk/device.cpp rvk/resources.cpp rvk/draw.cpp rvk/diag.cpp rvk/shadow.cpp rvk/pointshadow.cpp rvk/hdr.cpp rvk/particles.cpp rvk/grading.cpp rvk/profile.cpp rvk/skin.cpp rvk/skin_gpu.cpp rvk/static_gpu.cpp rvk/prepass.cpp rvk/threaded.cpp ${RVK_SHADER_INCS})
 target_include_directories(rvk PUBLIC rvk PRIVATE "${RVK_SHADER_OUT}")
 # Vulkan headers and VMA come from the SDK; /imsvc keeps their warnings quiet.
 target_compile_options(rvk PUBLIC "/imsvc${VULKAN_SDK_DIR}/include")
