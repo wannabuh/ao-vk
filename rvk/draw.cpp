@@ -1058,7 +1058,6 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
         auto it = m_meshInfo.find(key);
         if (it == m_meshInfo.end()) {
             MeshInfo info{};
-            info.alphaOpaque = false;             // a GPU-skinned piece: its vertex colours aren't scanned (conservative)
             std::memcpy(info.boundsMin, m_drawSkin->boundsMin, sizeof(info.boundsMin));
             std::memcpy(info.boundsMax, m_drawSkin->boundsMax, sizeof(info.boundsMax));
             info.indexHash = indexCount == m_drawSkin->source->indices.size() ? m_drawSkin->source->indexHash
@@ -1120,7 +1119,6 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
         return;
     }
     MeshInfo info{};
-    int diffuseOffset = DecodeFvf(fvf).offset[2], specularOffset = DecodeFvf(fvf).offset[3];
     for (int j = 0; j < 3; ++j) { info.boundsMin[j] = 1e30f; info.boundsMax[j] = -1e30f; }
     const uint8_t* verts = static_cast<const uint8_t*>(vertices);
     for (uint32_t i = 0; i < vertexCount; ++i) {
@@ -1130,9 +1128,6 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
             info.boundsMin[j] = std::min(info.boundsMin[j], p[j]);
             info.boundsMax[j] = std::max(info.boundsMax[j], p[j]);
         }
-        // Every vertex colour's alpha 1: a blended draw of this mesh can then be drawn opaque (Draw forceOpaque).
-        if (diffuseOffset >= 0 && verts[size_t(i) * stride + diffuseOffset + 3] != 0xFF) info.alphaOpaque = false;
-        if (specularOffset >= 0 && verts[size_t(i) * stride + specularOffset + 3] != 0xFF) info.alphaOpaque = false;
     }
     info.indexHash = indices && indexCount ? HashBytes(indices, size_t(indexCount) * 2, indexCount) : 0;
     info.firstFrame = info.lastFrame = m_frameNumber;
@@ -1442,7 +1437,7 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
         vkCmdSetColorBlendEquationEXT(cmd, 1, 1, &eq);
         c.glowBlendSet = true;
     }
-    VkBool32 blend = (m_rs[d3d::RS_ALPHABLENDENABLE] != 0 && !m_drawForceOpaque) ? VK_TRUE : VK_FALSE;
+    VkBool32 blend = m_rs[d3d::RS_ALPHABLENDENABLE] != 0;
     if (c.blendEnable != blend) {
         vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &blend);
         c.blendEnable = blend;
@@ -1862,35 +1857,6 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                          m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA;
     if (cutoutTexture) ++m_opaqueDraws;
     bool textureHoles = m_textures[0] && !m_textures[0]->m_opaque;   // foliage (below) needs a texture with holes
-    // The blend is a no-op when the final alpha is 1. Prove it from what the stage alpha ops actually read: the
-    // textures (opaque, above), the vertex colours (MeshInfo::alphaOpaque), the texture factor and the material.
-    // The running alpha starts as the diffuse colour's (ffp_main.glsl Cascade: current = gDiffuse), so stage 0's
-    // CURRENT, a disabled stage 0 alpha op and a cascade that ends at stage 0 all read the vertex / material alpha.
-    bool alphaProvable = true, needVertexAlpha = false, needTfactor = false;
-    bool currentIsDiffuse = true;
-    for (int s = 0; s < 2 && alphaProvable; ++s) {
-        if (m_tss[s][d3d::TSS_COLOROP] == d3d::TOP_DISABLE) break;   // the cascade ends with the running alpha
-        uint32_t op = m_tss[s][d3d::TSS_ALPHAOP];
-        if (op == d3d::TOP_DISABLE) continue;                       // keeps the running alpha
-        if (op == d3d::TOP_SUBTRACT) { alphaProvable = false; break; }
-        for (uint32_t arg : {m_tss[s][d3d::TSS_ALPHAARG1], m_tss[s][d3d::TSS_ALPHAARG2]}) {
-            if (arg & 0x10u) { alphaProvable = false; break; }      // a complemented arg turns 1 into 0
-            switch (arg & 0xFu) {
-            case d3d::TA_DIFFUSE: case d3d::TA_SPECULAR: needVertexAlpha = true; break;
-            case d3d::TA_TFACTOR: needTfactor = true; break;
-            case d3d::TA_CURRENT: if (currentIsDiffuse) needVertexAlpha = true; break;
-            case d3d::TA_TEXTURE: break;                            // the opaque texture
-            default: needVertexAlpha = true; break;                 // Arg's default is the specular colour
-            }
-        }
-        currentIsDiffuse = false;                                   // 1 from here on when this stage's args are
-    }
-    if (currentIsDiffuse) needVertexAlpha = true;                   // no stage replaced the diffuse alpha
-    bool forceOpaque = cutoutTexture && alphaProvable && m_material.diffuse.a >= 1.0f && m_material.specular.a >= 1.0f &&
-                       (!needVertexAlpha || (m_drawMesh && m_drawMesh->alphaOpaque)) &&
-                       (!needTfactor || ((m_rs[d3d::RS_TEXTUREFACTOR] >> 24) == 0xFF));
-    m_drawForceOpaque = forceOpaque;
-    if (forceOpaque) ++m_forceOpaqueDraws;
     // The ground's base pass (unlit, the texture the lighting pass multiplies): its local-light fraction and motion
     // attachments are replaced by that pass (depth-equal, right after) or are zero anyway, so don't write them here
     // - the ground covers much of the screen and is overdrawn, so those writes are pure bandwidth.
@@ -1927,8 +1893,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                    m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
                    m_constantsFoliageLod != foliageLod || m_constantsNormalMap != normalMap ||
                    m_constantsCharacter != m_drawIsCharacter || m_constantsOpaque != cutoutTexture ||
-                   m_constantsHoles != textureHoles ||
-                   m_constantsForceOpaque != forceOpaque;
+                   m_constantsHoles != textureHoles;
     uint32_t constIndex = m_constIndex;
     if (rewrite) {
     m_constantsGeneration = m_ringGeneration;
@@ -1943,7 +1908,6 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsCharacter = m_drawIsCharacter;
     m_constantsOpaque = cutoutTexture;
     m_constantsHoles = textureHoles;
-    m_constantsForceOpaque = forceOpaque;
     m_constantsNormalMap = normalMap;
     DrawConstants c{};
     c.view = m_view;

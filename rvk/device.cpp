@@ -1285,13 +1285,11 @@ void Device::BeginFrame()
         Log("foliage: %llu draws, %llu of them far (LOD) (last 600 frames)", (unsigned long long)m_foliageDraws,
             (unsigned long long)m_foliageLodDraws);
         Log("no-discard pipeline (early-Z): %llu draws (last 600 frames)", (unsigned long long)m_noCutDraws);
-        Log("opaque-blend fast path: %llu draws (last 600 frames)", (unsigned long long)m_forceOpaqueDraws);
         m_ringPeak = 0;
         m_midFrameFlushes = 0;
         m_opaqueDraws = 0;
         m_foliageDraws = m_foliageLodDraws = 0;
         m_noCutDraws = 0;
-        m_forceOpaqueDraws = 0;
     }
     ++m_ringGeneration;                          // a different slot's ring: cached offsets are invalid
     BeginSkinFrame();
