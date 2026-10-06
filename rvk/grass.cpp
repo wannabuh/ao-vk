@@ -51,7 +51,7 @@ uint32_t HashCell(int32_t x, int32_t z)
 
 float Unit(uint32_t h) { return float(h & 0xFFFFFFu) / float(0x1000000u); }
 
-// Smooth value noise in [0, 1] over the world, for clumps of grass and bare gaps (low frequency).
+// Smooth value noise in [0, 1] over the world.
 float HashF(int32_t x, int32_t z) { return Unit(HashCell(x, z)); }
 float ValueNoise(float x, float z)
 {
@@ -61,6 +61,17 @@ float ValueNoise(float x, float z)
     fz = fz * fz * (3.0f - 2.0f * fz);
     const float a = HashF(xi, zi), b = HashF(xi + 1, zi), c = HashF(xi, zi + 1), d = HashF(xi + 1, zi + 1);
     return (a * (1.0f - fx) + b * fx) * (1.0f - fz) + (c * (1.0f - fx) + d * fx) * fz;
+}
+
+// The clump noise for the grass's density. Two octaves, each sampled in a rotated frame: value noise alone is aligned
+// to the world axes, so its dense and sparse bands line up with them and read as rows at a grazing angle (turning 90
+// degrees hides them). The rotation and the second octave break that.
+float ClumpNoise(float x, float z)
+{
+    constexpr float c = 0.86602540f, s = 0.5f;   // 30 degrees
+    const float a = ValueNoise((x * c - z * s) * 0.075f, (x * s + z * c) * 0.075f);
+    const float b = ValueNoise((x * s + z * c) * 0.19f + 11.3f, (x * c - z * s) * 0.19f + 7.1f);
+    return a * 0.7f + b * 0.3f;
 }
 
 // The blade atlas: a grid of tapered leaf silhouettes with a vein, sampled by the blades. Each cell's shape (width,
@@ -398,9 +409,9 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
                                     int32_t(uint32_t(k) * 2654435761u));
         const float u1 = Unit(h), u2 = Unit(h * 2246822519u), u3 = Unit(h * 3266489917u), u4 = Unit(h * 40503u);
         const float px = x0 + u1 * kGrassTileSize, pz = z0 + u2 * kGrassTileSize;
-        // Clumps: a low-frequency noise drops blades and leaves bare gaps.
-        const float clump = ValueNoise(px * 0.09f, pz * 0.09f);
-        if (u4 > 0.25f + 0.75f * clump)
+        // Clumps: a low-frequency noise drops blades and leaves bare gaps (rotated, so no axis-aligned rows).
+        const float clump = ClumpNoise(px, pz);
+        if (u4 > 0.35f + 0.65f * clump)
             continue;
         float py;
         uint32_t pcol = 0x3C6A2Au;
