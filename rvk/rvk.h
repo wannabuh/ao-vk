@@ -69,6 +69,7 @@ private:
     uint32_t m_width = 0, m_height = 0, m_levels = 1;
     Format m_format = Format::A8R8G8B8;
     bool m_renderTarget = false;
+    bool m_opaque = false;             // the texture's pixels are all alpha 1 (a blended static draw can be opaque)
     Texture* m_normalMap = nullptr;    // tangent-space normal map drawn with this texture (owned; SetNormalMap)
     uint32_t m_bindless = ~0u;         // its slot in the bindless image array (M1)
     // Layout as of the end of the commands recorded so far (main command buffer for render targets;
@@ -462,6 +463,7 @@ private:
     Texture* m_constantsBumpBase = nullptr;
     bool m_drawTerrainBase = false;              // the current draw is the ground's unlit base pass (Draw)
     bool m_drawTerrainLight = false;             // ... or its multiplying lightmap pass
+    uint64_t m_opaqueDraws = 0;                  // the opaque fast path's draws (logged every 600 frames)
     VkSampler m_bumpSampler = VK_NULL_HANDLE;
     static uint64_t TerrainChunkKey(const void* vertices, uint32_t vertexCount, uint32_t stride, uint32_t indexCount);
     uint32_t m_dumpVertexCount = 0;
@@ -1105,6 +1107,7 @@ private:
     bool m_constantsTerrain = false, m_constantsLabel = false;
     uint32_t m_constantsFoliageLod = 0;          // FoliageFar: 0 near, 1 far foliage, 2 far plant
     bool m_constantsCharacter = false;
+    bool m_constantsOpaque = false;              // the draw's textures are fully opaque (F_CUTOUT omitted; Draw)
     uint32_t m_constantsCarrier = 0;
     void BeginRenderingOn(Texture* target);
     void EndRendering();

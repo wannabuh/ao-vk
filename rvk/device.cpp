@@ -1263,8 +1263,10 @@ void Device::BeginFrame()
     if (m_frameNumber % 600 == 599) {            // how full frames get (logged with the profiler's numbers)
         Log("ring buffer: peak %.1f of %llu MB a frame, %u mid-frame flushes (last 600 frames)",
             double(m_ringPeak) / 1048576.0, (unsigned long long)(f.ringSize >> 20), m_midFrameFlushes);
+        Log("opaque static fast path: %llu draws (last 600 frames)", (unsigned long long)m_opaqueDraws);
         m_ringPeak = 0;
         m_midFrameFlushes = 0;
+        m_opaqueDraws = 0;
     }
     ++m_ringGeneration;                          // a different slot's ring: cached offsets are invalid
     BeginSkinFrame();

@@ -1819,6 +1819,17 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // The big constant block: reused unless something feeding it changed since it was written.
     uint32_t texMask = (m_textures[0] ? 1u : 0u) | (m_textures[1] ? 2u : 0u);
     bool terrain = IsTerrain(fvf);
+    // The game draws most statics blended (SRCALPHA/INVSRCALPHA) with depth writes, so their texture's holes don't
+    // write depth (F_CUTOUT). When the texture has no transparency at all, the cut-out discard can never drop a
+    // fragment, and dropping it lets early-Z reject the draw's overdraw (the blend stays, so any partial vertex
+    // alpha still blends as before).
+    bool cutoutTexture = !terrain && !m_drawIsLabel && m_textures[0] && m_textures[0]->m_opaque &&
+                         (!m_textures[1] || m_textures[1]->m_opaque) &&
+                         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW && m_rs[d3d::RS_ZENABLE] &&
+                         m_rs[d3d::RS_ZWRITEENABLE] && m_rs[d3d::RS_ZFUNC] != d3d::CMP_ALWAYS &&
+                         m_rs[d3d::RS_ALPHABLENDENABLE] && !m_rs[d3d::RS_ALPHATESTENABLE] &&
+                         m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA;
+    if (cutoutTexture) ++m_opaqueDraws;
     // The ground's base pass (unlit, the texture the lighting pass multiplies): its local-light fraction and motion
     // attachments are replaced by that pass (depth-equal, right after) or are zero anyway, so don't write them here
     // - the ground covers much of the screen and is overdrawn, so those writes are pure bandwidth.
@@ -1854,7 +1865,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                    m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
                    m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
                    m_constantsFoliageLod != foliageLod || m_constantsNormalMap != normalMap ||
-                   m_constantsCharacter != m_drawIsCharacter;
+                   m_constantsCharacter != m_drawIsCharacter || m_constantsOpaque != cutoutTexture;
     uint32_t constIndex = m_constIndex;
     if (rewrite) {
     m_constantsGeneration = m_ringGeneration;
@@ -1867,6 +1878,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsBumpBase = m_drawBumpBase;
     m_constantsFoliageLod = foliageLod;
     m_constantsCharacter = m_drawIsCharacter;
+    m_constantsOpaque = cutoutTexture;
     m_constantsNormalMap = normalMap;
     DrawConstants c{};
     c.view = m_view;
@@ -1970,7 +1982,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // Blended (not additive) with depth writes, as the game draws most statics: the see-through parts must not write
     // depth or motion - plants' quads would show in the ambient occlusion and smear in the motion blur. Fragments
     // nearly invisible anyway are dropped; a plant's (ffp.vert vCutout) below half, like its shadow.
-    if (solid3d && m_rs[d3d::RS_ALPHABLENDENABLE] && !m_rs[d3d::RS_ALPHATESTENABLE] &&
+    if (solid3d && !cutoutTexture && m_rs[d3d::RS_ALPHABLENDENABLE] && !m_rs[d3d::RS_ALPHATESTENABLE] &&
         m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA)
         flags |= F_CUTOUT;
     // Night glow candidates: opaque 3D surfaces drawn unlit (self-lit, like windows and signs) or with an emissive

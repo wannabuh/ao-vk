@@ -192,12 +192,100 @@ Texture* Device::CreateRenderTarget(uint32_t width, uint32_t height)
     return CreateImage(width, height, Format::A8R8G8B8, 1, true);
 }
 
+// Whether the pixels prove a texture fully opaque (alpha 1 everywhere), so a draw that blends it as a static (the
+// game's cut-out idiom) can take the opaque path instead: no blend and no discard, so early-Z works and the
+// overdraw of a screen full of blended statics collapses. Conservative: false means "not known to be opaque".
+static bool PixelsOpaque(Format fmt, const void* data, uint32_t width, uint32_t height, uint32_t pitch)
+{
+    const uint8_t* base = static_cast<const uint8_t*>(data);
+    auto rows = [&](auto check) {               // check(row, x) for every pixel
+        for (uint32_t y = 0; y < height; ++y)
+            if (!check(base + size_t(y) * pitch)) return false;
+        return true;
+    };
+    switch (fmt) {
+    case Format::X8R8G8B8: case Format::R5G6B5: case Format::X1R5G5B5: case Format::L8:
+        return true;                            // no alpha channel: the shader reads alpha 1
+    case Format::A8R8G8B8:
+        return rows([&](const uint8_t* row) {
+            for (uint32_t x = 0; x < width; ++x) if (row[size_t(x) * 4 + 3] != 0xFF) return false;
+            return true; });
+    case Format::A1R5G5B5:
+        return rows([&](const uint8_t* row) {
+            auto r = reinterpret_cast<const uint16_t*>(row);
+            for (uint32_t x = 0; x < width; ++x) if ((r[x] & 0x8000u) == 0) return false;
+            return true; });
+    case Format::A4R4G4B4:
+        return rows([&](const uint8_t* row) {
+            auto r = reinterpret_cast<const uint16_t*>(row);
+            for (uint32_t x = 0; x < width; ++x) if (((r[x] >> 12) & 0xF) != 0xF) return false;
+            return true; });
+    case Format::A8:
+        return rows([&](const uint8_t* row) {
+            for (uint32_t x = 0; x < width; ++x) if (row[x] != 0xFF) return false;
+            return true; });
+    case Format::A8L8:
+        return rows([&](const uint8_t* row) {
+            for (uint32_t x = 0; x < width; ++x) if (row[size_t(x) * 2 + 1] != 0xFF) return false;
+            return true; });
+    case Format::DXT1: {
+        uint32_t bx = (width + 3) / 4, by = (height + 3) / 4;
+        for (uint32_t y = 0; y < by; ++y) {
+            const uint8_t* row = base + size_t(y) * pitch;
+            for (uint32_t x = 0; x < bx; ++x) {
+                const uint8_t* blk = row + size_t(x) * 8;
+                uint16_t c0 = uint16_t(blk[0] | blk[1] << 8), c1 = uint16_t(blk[2] | blk[3] << 8);
+                if (c0 <= c1) {                 // 3-colour mode: the index-3 pixels are transparent
+                    uint32_t bits;
+                    std::memcpy(&bits, blk + 4, 4);
+                    for (int p = 0; p < 16; ++p) if (((bits >> (2 * p)) & 3u) == 3u) return false;
+                }
+            }
+        }
+        return true;
+    }
+    case Format::DXT2: case Format::DXT3: {
+        uint32_t bx = (width + 3) / 4, by = (height + 3) / 4;
+        for (uint32_t y = 0; y < by; ++y) {
+            const uint8_t* row = base + size_t(y) * pitch;
+            for (uint32_t x = 0; x < bx; ++x)
+                for (int b = 0; b < 8; ++b)      // explicit 4-bit alpha: opaque iff every nibble is 0xF
+                    if (row[size_t(x) * 16 + b] != 0xFF) return false;
+        }
+        return true;
+    }
+    case Format::DXT4: case Format::DXT5: {
+        uint32_t bx = (width + 3) / 4, by = (height + 3) / 4;
+        for (uint32_t y = 0; y < by; ++y) {
+            const uint8_t* row = base + size_t(y) * pitch;
+            for (uint32_t x = 0; x < bx; ++x) {
+                const uint8_t* blk = row + size_t(x) * 16;
+                if (blk[0] != 0xFF || blk[1] != 0xFF) return false;   // both ends 255: every interpolated alpha is 255
+            }
+        }
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
 void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                            const void* data, uint32_t pitch)
 {
     if (!t || !t->m_image || level >= t->m_levels || !width || !height)
         return;
     uint32_t rowBytes = FormatRowBytes(t->m_format, width), rows = FormatRows(t->m_format, height);
+
+    // Whether the texture is fully opaque, for the static-draw opaque fast path (Draw): only a full level-0 upload
+    // proves it; a partial update makes it unknown again.
+    if (level == 0) {
+        if (x == 0 && y == 0 && width >= t->m_width && height >= t->m_height &&
+            pitch >= FormatRowBytes(t->m_format, t->m_width))
+            t->m_opaque = PixelsOpaque(t->m_format, data, t->m_width, t->m_height, pitch);
+        else
+            t->m_opaque = false;
+    }
 
     // Stage tightly packed rows in this frame's ring buffer; the upload command buffer runs before the
     // frame's draws.
