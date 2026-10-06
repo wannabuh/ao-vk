@@ -1861,15 +1861,6 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // The foliage level of detail depends on the draw's distance, not the render state: part of the block's key, or
     // a run of plants with the same state would all get the first one's (flickering as the camera moves).
     uint32_t foliageLod = FoliageFar() ? (m_drawSway[3] > 0.5f ? 2u : 1u) : 0u;
-    if (foliage) {                               // how much of this is real foliage? (logged; see rvk.h counters)
-        bool opaqueTexture = m_textures[0] && m_textures[0]->m_opaque;
-        ++m_foliageDraws;
-        if (opaqueTexture) ++m_foliageOpaqueDraws;
-        if (foliageLod) {
-            ++m_foliageLodDraws;
-            if (opaqueTexture) ++m_foliageLodOpaqueDraws;
-        }
-    }
     bool rewrite = m_constantsDirty || m_constantsGeneration != m_ringGeneration || m_constantsFvf != fvf ||
                    m_constantsTexMask != texMask || m_constantsTerrain != terrain || m_constantsLabel != m_drawIsLabel ||
                    m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
@@ -1987,6 +1978,15 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         flags = (flags & ~(F_BUMP | F_BUMPBASE | F_NORMALMAP)) | F_SHADOWCHEAP;
         if (foliageLod == 2u && (flags & F_PERPIXEL))
             flags = (flags & ~F_PERPIXEL) | F_VERTEXSUN;
+    }
+    if (foliage) {                               // how much of this is real foliage? (logged; see rvk.h counters)
+        bool opaqueTexture = m_textures[0] && m_textures[0]->m_opaque;
+        ++m_foliageDraws;
+        if (opaqueTexture) ++m_foliageOpaqueDraws;
+        if (foliageLod) {
+            ++m_foliageLodDraws;
+            if (opaqueTexture) ++m_foliageLodOpaqueDraws;
+        }
     }
     // Blended (not additive) with depth writes, as the game draws most statics: the see-through parts must not write
     // depth or motion - plants' quads would show in the ambient occlusion and smear in the motion blur. Fragments
