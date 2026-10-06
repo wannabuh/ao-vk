@@ -126,7 +126,10 @@ void main()
     // see-through the way cut-out cards are.
     vec4 blade = texture(bladeTex, vUv);
     vec3 n = normalize(vNormal);
-    float d = abs(dot(n, -normalize(FL.sunDir.xyz)));       // a thin blade takes the sun on either face
+    // A blade's normal is mostly horizontal, so it catches far less of the sun than the flat ground (n.L ~0.45 against
+    // 1.0). An up-biased normal lights the grass as much as the ground it stands in, the sun as well as the lamps.
+    vec3 ln = normalize(vec3(n.x, 2.0, n.z));
+    float d = abs(dot(ln, -normalize(FL.sunDir.xyz)));
     float shadow = mix(1.0, SunShadow(vPosW), FL.shadowParams.y);
     // Mostly one grass green, with only a little of the ground's own colour (and the atlas' vein); a gentle root-to-tip
     // gradient, kept bright at the base too (a dark base read as neglected roots).
