@@ -27,12 +27,15 @@
 #include "native/vc10.h"
 
 #include <cstring>
+#include <vector>
 
 namespace rnative::device {
 
 namespace {
 
 HMODULE g_orig;
+const Direct* g_direct;                             // the rvk backend's direct channel (SetDirect), or null
+bool g_directOn;                                    // [Native] Direct = on: use it
 const uint32_t* g_debuggerMode;                     // Debugger_t::m_nDebuggerMode: 0x100 draws nothing, 0x200 copies
 void* const* g_render;                              // render_t::m_pcInstance
 
@@ -434,13 +437,16 @@ void TakeChanged(uint32_t* bits, int words, Fn&& fn)
     for (int i = 0; i < n; ++i) fn(list[i]);
 }
 
-// The render states changed since the last update, to the device (FUN_1001ba52).
-void FlushRenderStates(uint8_t* ds, void* device, bool apply)
+// The render states changed since the last update, to the device (FUN_1001ba52) - or, with `batch`, into it (the
+// direct channel makes the calls later, in this order).
+void FlushRenderStates(uint8_t* ds, void* device, bool apply, std::vector<StateChange>* batch = nullptr)
 {
     if (ds[kRsFlag]) {
         TakeChanged(&Field<uint32_t>(ds, kRsChanged), 5, [&](uint32_t s) {
             const uint32_t v = Field<uint32_t>(ds, kRsWanted + s * 4);
-            if (apply)
+            if (batch)
+                batch->push_back({StateChange::RenderState, 0, s, v, nullptr});
+            else if (apply)
                 if (HRESULT hr = Com(device, 0x50, DWORD(s), DWORD(v))) Failed("render_t::SetRenderState", hr);
             Field<uint32_t>(ds, kRsApplied + s * 4) = v;
         });
@@ -448,19 +454,26 @@ void FlushRenderStates(uint8_t* ds, void* device, bool apply)
     }
 }
 
+// The changes go to the device as one call through the direct channel when the backend is rvk (docs/device-on-rvk.md
+// phase 1); otherwise as the original makes them, one D3D call each.
 void __fastcall UpdateDevice(uint8_t* ds)
 {
     void* render = *g_render;
     void* device = Device(render);
     const bool apply = !NoDraw() && device;
-    FlushRenderStates(ds, device, apply);
+    static std::vector<StateChange> changes;        // the game thread's (the DeviceState is one, used from there)
+    std::vector<StateChange>* batch = apply && g_directOn && g_direct ? &changes : nullptr;
+    changes.clear();
+    FlushRenderStates(ds, device, apply, batch);
     for (uint32_t stage = 0; stage < Field<uint32_t>(ds, kStages); ++stage) {
         uint8_t* changed = ds + kTssChanged + stage * 8;
         if (!changed[4]) continue;
         TakeChanged(reinterpret_cast<uint32_t*>(changed), 1, [&](uint32_t t) {
             const uint32_t i = stage * 0x19 + t;
             const uint32_t v = Field<uint32_t>(ds, kTssWanted + i * 4);
-            if (apply)
+            if (batch)
+                batch->push_back({StateChange::StageState, stage, t, v, nullptr});
+            else if (apply)
                 if (HRESULT hr = Com(device, 0x94, DWORD(stage), DWORD(t), DWORD(v)))
                     Failed("render_t::SetTextureStageState", hr);
             Field<uint32_t>(ds, kTssApplied + i * 4) = v;
@@ -470,12 +483,25 @@ void __fastcall UpdateDevice(uint8_t* ds)
     if (ds[kTexFlag]) {
         TakeChanged(&Field<uint32_t>(ds, kTexChanged), 1, [&](uint32_t stage) {
             void* surface = Field<void*>(ds, kTexWanted + stage * 4);
-            if (apply)
-                if (HRESULT hr = Com(device, 0x8C, DWORD(stage), surface ? *static_cast<void**>(surface) : nullptr))
-                    Failed("render_t::SetTexture", hr);
+            void* d3dSurface = surface ? *static_cast<void**>(surface) : nullptr;
+            if (batch)
+                batch->push_back({StateChange::Texture, stage, 0, 0, d3dSurface});
+            else if (apply)
+                if (HRESULT hr = Com(device, 0x8C, DWORD(stage), d3dSurface)) Failed("render_t::SetTexture", hr);
             Field<void*>(ds, kTexApplied + stage * 4) = surface;
         });
         ds[kTexFlag] = 0;
+    }
+    if (!batch || changes.empty())
+        return;
+    if (g_direct->applyStates(device, changes.data(), uint32_t(changes.size())))
+        return;
+    for (const StateChange& c : changes) {          // not the backend's device: one D3D call each, as above
+        HRESULT hr = c.kind == StateChange::RenderState ? Com(device, 0x50, DWORD(c.type), DWORD(c.value))
+                     : c.kind == StateChange::StageState
+                         ? Com(device, 0x94, DWORD(c.stage), DWORD(c.type), DWORD(c.value))
+                         : Com(device, 0x8C, DWORD(c.stage), c.surface);
+        if (hr) Failed("render_t: a state change", hr);
     }
 }
 
@@ -572,6 +598,8 @@ const char* __fastcall StatsNameName(void*, void*, uint32_t) { return "Unknown";
 
 }  // namespace
 
+void SetDirect(const Direct* direct) { g_direct = direct; }
+
 uint32_t FormatSize(uint32_t fvf)                   // FUN_100116c7
 {
     uint32_t size = 0;
@@ -588,6 +616,7 @@ void Install(HMODULE orig)
     if (GetMode("Device", Mode::Off) != Mode::On)
         return;
     g_orig = orig;
+    g_directOn = GetMode("Direct", Mode::Off) == Mode::On;   // docs/device-on-rvk.md
     g_debuggerMode = reinterpret_cast<const uint32_t*>(GetProcAddress(orig, "?m_nDebuggerMode@Debugger_t@@2IA"));
     g_render = reinterpret_cast<void* const*>(GetProcAddress(orig, "?m_pcInstance@render_t@@0PAV1@A"));
     if (!g_debuggerMode || !g_render || !KnownBuild(orig)) {
@@ -651,7 +680,8 @@ void Install(HMODULE orig)
 #undef FN
     int installed = 0;
     for (const Entry& e : entries) installed += Replace(orig, e.rva, e.target, e.what) ? 1 : 0;
-    Log("device layer: %d of %d functions native", installed, int(sizeof(entries) / sizeof(entries[0])));
+    Log("device layer: %d of %d functions native%s", installed, int(sizeof(entries) / sizeof(entries[0])),
+        g_directOn ? "; state updates through the direct channel when the backend is rvk" : "");
     stateblob::Install(orig);
     dynamicvb::Install(orig);
     randy::Install(orig);

@@ -346,21 +346,21 @@ void ThreadedDevice::SetViewport(const d3d::Viewport& vp)
     Enqueue([this, vp](const uint8_t*) { m_device.SetViewport(vp); });
 }
 
-void ThreadedDevice::SetRenderState(uint32_t state, uint32_t value)
+bool ThreadedDevice::KeepRenderState(uint32_t state, uint32_t value)
 {
     if (state < 256) {
         SentState& s = *m_sent;
         if (s.rsValid[state] && s.rs[state] == value) {
             ++m_frameRepeats;
-            return;
+            return false;
         }
         s.rs[state] = value;
         s.rsValid[state] = true;
     }
-    Enqueue([this, state, value](const uint8_t*) { m_device.SetRenderState(state, value); });
+    return true;
 }
 
-void ThreadedDevice::SetTextureStageState(uint32_t stage, uint32_t type, uint32_t value)
+bool ThreadedDevice::KeepStageState(uint32_t stage, uint32_t type, uint32_t value)
 {
     if (stage < 8 && type < 32) {
         SentState& s = *m_sent;
@@ -370,12 +370,51 @@ void ThreadedDevice::SetTextureStageState(uint32_t stage, uint32_t type, uint32_
             s.tssValid[stage][d3d::TSS_ADDRESSU] = s.tssValid[stage][d3d::TSS_ADDRESSV] = true;
         } else if (s.tssValid[stage][type] && s.tss[stage][type] == value) {
             ++m_frameRepeats;
-            return;
+            return false;
         }
         s.tss[stage][type] = value;
         s.tssValid[stage][type] = true;
     }
-    Enqueue([this, stage, type, value](const uint8_t*) { m_device.SetTextureStageState(stage, type, value); });
+    return true;
+}
+
+void ThreadedDevice::SetRenderState(uint32_t state, uint32_t value)
+{
+    if (KeepRenderState(state, value))
+        Enqueue([this, state, value](const uint8_t*) { m_device.SetRenderState(state, value); });
+}
+
+void ThreadedDevice::SetTextureStageState(uint32_t stage, uint32_t type, uint32_t value)
+{
+    if (KeepStageState(stage, type, value))
+        Enqueue([this, stage, type, value](const uint8_t*) { m_device.SetTextureStageState(stage, type, value); });
+}
+
+void ThreadedDevice::SetStates(const StateItem* items, uint32_t count)
+{
+    std::vector<StateItem>& kept = m_stateScratch;
+    kept.clear();
+    for (uint32_t i = 0; i < count; ++i) {
+        const StateItem& it = items[i];
+        if (it.kind == StateItem::RenderState ? KeepRenderState(it.type, it.value)
+            : it.kind == StateItem::StageState ? KeepStageState(it.stage, it.type, it.value)
+                                               : true)   // textures: not filtered (as SetTexture)
+            kept.push_back(it);
+    }
+    if (kept.empty())
+        return;
+    uint32_t n = uint32_t(kept.size());
+    Enqueue([this, n](const uint8_t* data) {
+        const auto* list = reinterpret_cast<const StateItem*>(data);
+        for (uint32_t i = 0; i < n; ++i) {
+            const StateItem& it = list[i];
+            switch (it.kind) {
+            case StateItem::RenderState: m_device.SetRenderState(it.type, it.value); break;
+            case StateItem::StageState: m_device.SetTextureStageState(it.stage, it.type, it.value); break;
+            case StateItem::Texture: m_device.SetTexture(it.stage, it.texture); break;
+            }
+        }
+    }, kept.data(), n * uint32_t(sizeof(StateItem)));
 }
 
 void ThreadedDevice::SetTransform(uint32_t type, const d3d::Matrix& m)

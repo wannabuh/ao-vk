@@ -1,6 +1,7 @@
 // rvk backend: IDirect3DDevice7 and IDirect3DVertexBuffer7.
 #include "rvk_backend.h"
 #include "native/scene.h"
+#include "native/device.h"
 
 #include <cmath>
 #include <cstdarg>
@@ -32,6 +33,9 @@ D3DMATRIX Multiply(const D3DMATRIX& a, const D3DMATRIX& b)
             z[i][j] = x[i][0] * y[0][j] + x[i][1] * y[1][j] + x[i][2] * y[2][j] + x[i][3] * y[3][j];
     return r;
 }
+
+void DirectAttach(RDevice* device);                 // the direct channel (below)
+void DirectDetach(RDevice* device);
 
 rvk::Texture* TextureOf(RSurface* s)
 {
@@ -93,10 +97,12 @@ RDevice::RDevice(RDirect3D* d3d, RSurface* target, REFCLSID clsid) : m_d3d(d3d),
         dev->SetRenderTarget(target->kind == RSurface::Kind::Main ? nullptr : TextureOf(target));
         dev->SetViewport(*reinterpret_cast<rvk::d3d::Viewport*>(&m_viewport));
     }
+    DirectAttach(this);
 }
 
 RDevice::~RDevice()
 {
+    DirectDetach(this);
     for (RSurface*& t : m_textures)
         if (t) { t->Release(); t = nullptr; }
     m_target->Release();
@@ -399,6 +405,81 @@ HRESULT RDevice::DoSetTexture(DWORD stage, LPDIRECTDRAWSURFACE7 iface)
         dev->SetTexture(stage, TextureOf(s));
     return D3D_OK;
 }
+
+void RDevice::ApplyStates(const rnative::device::StateChange* changes, uint32_t count)
+{
+    using Change = rnative::device::StateChange;
+    using Item = rvk::ThreadedDevice::StateItem;
+    static const unsigned rsIndex = ComIndex("IDirect3DDevice7::SetRenderState"),
+                          tssIndex = ComIndex("IDirect3DDevice7::SetTextureStageState"),
+                          texIndex = ComIndex("IDirect3DDevice7::SetTexture");
+    ComScope scope(rsIndex);
+    m_stateItems.clear();
+    for (uint32_t i = 0; i < count; ++i) {
+        const Change& c = changes[i];
+        switch (c.kind) {
+        case Change::RenderState:                   // as DoSetRenderState
+            CountComCall(rsIndex);
+            CALL_LOG("RS %d %lu", int(c.type), (unsigned long)c.value);
+            if (c.type < 256) m_rs[c.type] = c.value;
+            m_stateItems.push_back({Item::RenderState, 0, c.type, c.value, nullptr});
+            break;
+        case Change::StageState:                    // as DoSetTextureStageState
+            CountComCall(tssIndex);
+            CALL_LOG("TSS %lu %d %lu", (unsigned long)c.stage, int(c.type), (unsigned long)c.value);
+            if (c.stage >= 8 || c.type >= 32) break;
+            m_tss[c.stage][c.type] = c.value;
+            if (c.type == D3DTSS_ADDRESS) m_tss[c.stage][D3DTSS_ADDRESSU] = m_tss[c.stage][D3DTSS_ADDRESSV] = c.value;
+            m_stateItems.push_back({Item::StageState, c.stage, c.type, c.value, nullptr});
+            break;
+        case Change::Texture: {                     // as DoSetTexture
+            CountComCall(texIndex);
+            CALL_LOG("TEX %lu %u", (unsigned long)c.stage, LogId(c.surface));
+            if (c.stage >= 8) break;
+            auto* s = static_cast<RSurface*>(static_cast<IDirectDrawSurface7*>(c.surface));
+            if (s) s->AddRef();
+            if (m_textures[c.stage]) m_textures[c.stage]->Release();
+            m_textures[c.stage] = s;
+            m_stateItems.push_back({Item::Texture, c.stage, 0, 0, TextureOf(s)});
+            break;
+        }
+        }
+    }
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
+        dev->SetStates(m_stateItems.data(), uint32_t(m_stateItems.size()));
+}
+
+namespace {
+
+RDevice* g_directDevice;                            // the device the direct channel serves (the last one made)
+
+bool DirectApplyStates(void* d3dDevice, const rnative::device::StateChange* changes, uint32_t count)
+{
+    // Only our device: Randy's pointer is the IDirect3DDevice7 we handed out (a wrapper or another backend's
+    // device is not ours, and gets the calls one by one).
+    if (!g_directDevice || d3dDevice != static_cast<IDirect3DDevice7*>(g_directDevice))
+        return false;
+    g_directDevice->ApplyStates(changes, count);
+    return true;
+}
+
+const rnative::device::Direct kDirect{&DirectApplyStates};
+
+void DirectAttach(RDevice* device)
+{
+    g_directDevice = device;
+    rnative::device::SetDirect(&kDirect);
+}
+
+void DirectDetach(RDevice* device)
+{
+    if (g_directDevice != device)
+        return;
+    g_directDevice = nullptr;
+    rnative::device::SetDirect(nullptr);
+}
+
+}  // namespace
 
 HRESULT RDevice::DoGetTexture(DWORD stage, LPDIRECTDRAWSURFACE7* out)
 {

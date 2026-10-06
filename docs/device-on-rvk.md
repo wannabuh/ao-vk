@@ -42,6 +42,10 @@ Each phase keeps the call log A/B (`tools/calllog-ab.sh`, docs/native.md) identi
   in order. Repeats are still dropped against what was last sent.
 - Expected: about half of the 9,000 records a frame go; no COM lock / counter per state on the game thread.
 - Checks: call log A/B identical; the hand-off line's record count drops.
+- Status: implemented, `[Native] Direct = on` (with `Device = on`; off by default). `native/device.h` `Direct` /
+  `StateChange`, `RDevice::ApplyStates` (rvk_device.cpp: the same device copies, call log lines and call counts as
+  the single calls), `ThreadedDevice::SetStates` (one record; repeats dropped as before). Not yet run in game or
+  through the call log A/B.
 
 ### 2. Draws without the COM layer
 

@@ -26,6 +26,7 @@ void CallLogFrame(uint64_t presented);            // each present (rvk_device.cp
 bool AttachSkin(void* d3dVertexBuffer, std::shared_ptr<rvk::skin::Job> job);
 }  // namespace rvkproxy
 namespace rnative::scene { struct SceneLight; }
+namespace rnative::device { struct StateChange; }
 namespace rvkproxy {
 void SceneLights(const rnative::scene::SceneLight* lights, size_t count);   // rvk_device.cpp
 
@@ -313,6 +314,10 @@ public:
     // Software vertex processing (IDirect3DVertexBuffer7::ProcessVertices) with this device's state.
     HRESULT ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, DWORD count, RVertexBuffer* src,
                             DWORD srcIndex, DWORD flags);
+    // The native DeviceState's update as one call (the direct channel, native/device.h): the same effect, call log
+    // lines and statistics as its SetRenderState / SetTextureStageState / SetTexture calls one by one, but one record
+    // for the render thread.
+    void ApplyStates(const rnative::device::StateChange* changes, uint32_t count);
 
 protected:
     void* Cast(REFIID iid) override { return iid == IID_IDirect3DDevice7 ? this : nullptr; }
@@ -362,6 +367,7 @@ private:
     D3DVIEWPORT7 m_viewport{};
     D3DMATERIAL7 m_material{};
     std::vector<std::pair<D3DLIGHT7, BOOL>> m_lights;
+    std::vector<rvk::ThreadedDevice::StateItem> m_stateItems;   // ApplyStates' scratch
 };
 
 }  // namespace rvkproxy

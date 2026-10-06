@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstring>
 #include <new>
+#include <vector>
 #include <utility>
 
 namespace rvk {
@@ -52,6 +53,14 @@ public:
     const d3d::Viewport& GetViewport() const { return m_viewport; }
     void SetRenderState(uint32_t state, uint32_t value);
     void SetTextureStageState(uint32_t stage, uint32_t type, uint32_t value);
+    // Several state changes as one record (the native DeviceState's update: docs/device-on-rvk.md phase 1), applied
+    // in order. Repeats of what was last sent are dropped, as by the single setters.
+    struct StateItem {
+        enum Kind : uint32_t { RenderState, StageState, Texture } kind;
+        uint32_t stage, type, value;             // RenderState: type = state; Texture: stage
+        rvk::Texture* texture;
+    };
+    void SetStates(const StateItem* items, uint32_t count);
     void SetTransform(uint32_t type, const d3d::Matrix& m);
     void SetMaterial(const d3d::Material& m);
     void SetLight(uint32_t index, const d3d::Light& light);
@@ -208,6 +217,9 @@ private:
     // match by accident. Not for lights (Device collects the frame's lights from every SetLight / LightEnable) or
     // textures (a destroyed texture's address can come back as a new one). The viewport is forgotten whenever the
     // device resets it (SetRenderTarget, Resize).
+    bool KeepRenderState(uint32_t state, uint32_t value);              // false: a repeat (counted)
+    bool KeepStageState(uint32_t stage, uint32_t type, uint32_t value);
+    std::vector<StateItem> m_stateScratch;             // SetStates: the items kept
     struct SentState {
         uint32_t rs[256];
         bool rsValid[256];
