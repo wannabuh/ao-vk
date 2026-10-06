@@ -112,6 +112,20 @@ def main():
     print(f"thread {thread}: {len(ips)} samples")
     for name, n in per_module.most_common(12):
         print(f"  {100.0 * n / total:5.1f}%  {name}")
+    # randy31.dll by part: the native Randy code (rnative::<part>), the D3D7 backend (rvkproxy), rvk itself, the rest
+    # (CRT, STL, unnamed).
+    parts = collections.Counter()
+    for name, n in per_func.items():
+        if not name.lower().startswith("randy31.dll!"):
+            continue
+        m = re.search(r"@([A-Za-z_0-9]+)@rnative@@", name)
+        part = ("rnative::" + m.group(1)) if m else ("rvkproxy (D3D7 backend)" if "@rvkproxy@@" in name
+                                                    else "rvk (renderer)" if "@rvk@@" in name else "CRT / STL / other")
+        parts[part] += n
+    if parts:
+        print("randy31.dll by part:")
+        for name, n in parts.most_common(14):
+            print(f"  {100.0 * n / total:5.1f}%  {name}")
     print("functions:")
     for name, n in per_func.most_common(top):
         print(f"  {100.0 * n / total:5.1f}%  {name}")

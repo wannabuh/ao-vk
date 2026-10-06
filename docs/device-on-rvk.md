@@ -87,6 +87,20 @@ line (retained count up, KB of indices copied down) and the game thread frame.
 
 ### 4. Retained state (materials)
 
+Profiled first (tools/profile-game.sh): no single hot spot is left on the game thread - after removing the CRT's
+rounding (~12%) and the blob shadow's CPU skinning, the native code's time is spread over every draw: about 2.3
+hand-off records each (states, world matrix, material, the draw) at ~170 ns of game-thread time a record.
+
+**4a. One record per draw** (rvk/threaded.cpp; default on, `RANDYVK_COALESCE=0` turns it off): render / texture stage
+states, textures, the world matrix and the material no longer become records of their own. They wait in the
+ThreadedDevice and travel as a prefix of the next draw's record (`EnqueueDraw`: every draw entry point), applied by the
+worker just before the draw. Any other record (`Enqueue`, `UpdateTexture`), `Sync` and the frame's end flush them first
+(`FlushPending`: a draw record that draws nothing), so the device sees the same sequence: Device applies states, the
+world matrix and the material independently of each other, and the states keep their order. Check: the 'game thread
+hand-off' records a frame (about 6,700 before) and 'game thread in rvk (submit)'.
+
+**4b. Retained material blocks** (next):
+
 - A mesh's state (render states, stages, textures, material) is the same every frame: `RMaterial_t` /
   `RDeltaState` (native material.cpp) get an rvk state block built once and rebuilt on change; a draw names the
   block instead of the loose state, and the render thread's constant block becomes a lookup.

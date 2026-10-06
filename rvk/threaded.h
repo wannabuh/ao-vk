@@ -206,6 +206,33 @@ private:
     template <typename F>
     void Enqueue(F&& f, const void* data = nullptr, uint32_t dataBytes = 0, void** dataCopy = nullptr);
 
+    // One record per draw (docs/device-on-rvk.md phase 4a): render / texture stage states, textures, the world
+    // matrix and the material wait here and go with the next draw, in its record (EnqueueDraw), instead of a record
+    // each. Any other record, Sync and the frame's end send them first (FlushPending), so the device sees the same
+    // sequence. Device applies states, the world matrix and the material independently of each other, so only the
+    // states' own order matters.
+    // RANDYVK_COALESCE=0: off (a record each, as before).
+    struct PendingHead {                               // a draw record's prefix: this, then `states` StateItems
+        uint32_t states, hasWorld, hasMaterial, pad;
+        d3d::Matrix world;
+        d3d::Material material;
+    };
+    bool m_coalesce = true;
+    bool m_hasPendingWorld = false, m_hasPendingMaterial = false;
+    d3d::Matrix m_pendingWorld{};
+    d3d::Material m_pendingMaterial{};
+    std::vector<StateItem> m_pendingStates;
+    bool HasPending() const { return m_hasPendingWorld || m_hasPendingMaterial || !m_pendingStates.empty(); }
+    void AddPendingState(const StateItem& item);
+    uint32_t PendingBytes() const;
+    void WritePending(uint8_t* out);                   // PendingBytes() bytes; clears what is pending
+    void ApplyPending(const uint8_t* in);              // worker: the prefix written by WritePending
+    void FlushPending();                               // a record of its own (before a record that isn't a draw)
+    void ApplyStates(const StateItem* items, uint32_t count);   // worker
+    // A draw's record: the pending prefix (if any), then `a` and `b` (copied, contiguous); f(data) gets their copy.
+    template <typename F>
+    void EnqueueDraw(F&& f, const void* a = nullptr, uint32_t aBytes = 0, const void* b = nullptr, uint32_t bBytes = 0);
+
     void Worker();
     bool RunOne(uint32_t& readPos);                    // executes the record at readPos (worker or direct mode)
     static DWORD WINAPI WorkerMain(void* self);

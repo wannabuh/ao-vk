@@ -45,6 +45,11 @@ bool ThreadedDevice::Init(HWND window, uint32_t width, uint32_t height, std::str
     m_width = width;
     m_height = height;
     m_viewport = {0, 0, width, height, 0.0f, 1.0f};
+    char coalesce[8] = "";
+    if (GetEnvironmentVariableA("RANDYVK_COALESCE", coalesce, sizeof(coalesce)) && coalesce[0] == '0') {
+        m_coalesce = false;
+        Log("state changes: a record each (RANDYVK_COALESCE=0)");
+    }
     m_ring = static_cast<uint8_t*>(_aligned_malloc(kQueueBytes, 64));
     if (!threaded) {
         Log("worker thread disabled: rendering on the calling thread");
@@ -143,6 +148,8 @@ void ThreadedDevice::Publish()
 template <typename F>
 void ThreadedDevice::Enqueue(F&& f, const void* data, uint32_t dataBytes, void** dataCopy)
 {
+    if (HasPending())
+        FlushPending();                                // what waited for a draw goes first
     using Fn = std::decay_t<F>;
     constexpr uint32_t kFnBytes = Align16(sizeof(Fn));
     // Sampled: two clock reads per call on the hottest path would cost more than the calls themselves.
@@ -159,6 +166,41 @@ void ThreadedDevice::Enqueue(F&& f, const void* data, uint32_t dataBytes, void**
         Fn* fn = static_cast<Fn*>(p);
         (*fn)(static_cast<uint8_t*>(p) + kFnBytes);
         fn->~Fn();
+    };
+    Commit();
+    if (timed)
+        m_callerNs += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                   std::chrono::steady_clock::now() - callStart).count()) * 64;
+}
+
+template <typename F>
+void ThreadedDevice::EnqueueDraw(F&& f, const void* a, uint32_t aBytes, const void* b, uint32_t bBytes)
+{
+    using Fn = std::decay_t<F>;
+    struct Wrapped {
+        Fn fn;
+        ThreadedDevice* self;
+        uint32_t prefixBytes;                          // the pending states / world ahead of the draw's data
+    };
+    constexpr uint32_t kFnBytes = Align16(sizeof(Wrapped));
+    bool timed = (m_callerSample++ & 63u) == 0;        // as Enqueue
+    std::chrono::steady_clock::time_point callStart;
+    if (timed) callStart = std::chrono::steady_clock::now();
+    const uint32_t prefixBytes = HasPending() ? PendingBytes() : 0;
+    uint8_t* payload = Reserve(kFnBytes + prefixBytes + aBytes + bBytes);
+    uint8_t* data = payload + kFnBytes;
+    if (prefixBytes)
+        WritePending(data);
+    if (aBytes) std::memcpy(data + prefixBytes, a, aBytes);
+    if (bBytes) std::memcpy(data + prefixBytes + aBytes, b, bBytes);
+    new (payload) Wrapped{Fn(std::forward<F>(f)), this, prefixBytes};
+    reinterpret_cast<Header*>(payload - sizeof(Header))->run = [](void* p) {
+        Wrapped* w = static_cast<Wrapped*>(p);
+        uint8_t* d = static_cast<uint8_t*>(p) + kFnBytes;
+        if (w->prefixBytes)
+            w->self->ApplyPending(d);
+        w->fn(d + w->prefixBytes);
+        w->~Wrapped();
     };
     Commit();
     if (timed)
@@ -233,6 +275,8 @@ bool ThreadedDevice::RunOne(uint32_t& r)
 
 void ThreadedDevice::Sync()
 {
+    if (HasPending())
+        FlushPending();
     Publish();
     uint64_t target = m_recordsQueued.load();
     while (m_recordsDone.load(std::memory_order_acquire) < target) {
@@ -402,13 +446,21 @@ bool ThreadedDevice::KeepStageState(uint32_t stage, uint32_t type, uint32_t valu
 
 void ThreadedDevice::SetRenderState(uint32_t state, uint32_t value)
 {
-    if (KeepRenderState(state, value))
+    if (!KeepRenderState(state, value))
+        return;
+    if (m_coalesce)
+        AddPendingState({StateItem::RenderState, 0, state, value, nullptr});
+    else
         Enqueue([this, state, value](const uint8_t*) { m_device.SetRenderState(state, value); });
 }
 
 void ThreadedDevice::SetTextureStageState(uint32_t stage, uint32_t type, uint32_t value)
 {
-    if (KeepStageState(stage, type, value))
+    if (!KeepStageState(stage, type, value))
+        return;
+    if (m_coalesce)
+        AddPendingState({StateItem::StageState, stage, type, value, nullptr});
+    else
         Enqueue([this, stage, type, value](const uint8_t*) { m_device.SetTextureStageState(stage, type, value); });
 }
 
@@ -425,19 +477,68 @@ void ThreadedDevice::SetStates(const StateItem* items, uint32_t count)
     }
     if (kept.empty())
         return;
+    if (m_coalesce) {                                  // with the next draw
+        for (const StateItem& it : kept)
+            AddPendingState(it);
+        return;
+    }
     uint32_t n = uint32_t(kept.size());
-    Enqueue([this, n](const uint8_t* data) {
-        const auto* list = reinterpret_cast<const StateItem*>(data);
-        for (uint32_t i = 0; i < n; ++i) {
-            const StateItem& it = list[i];
-            switch (it.kind) {
-            case StateItem::RenderState: m_device.SetRenderState(it.type, it.value); break;
-            case StateItem::StageState: m_device.SetTextureStageState(it.stage, it.type, it.value); break;
-            case StateItem::Texture: m_device.SetTexture(it.stage, it.texture); break;
-            }
-        }
-    }, kept.data(), n * uint32_t(sizeof(StateItem)));
+    Enqueue([this, n](const uint8_t* data) { ApplyStates(reinterpret_cast<const StateItem*>(data), n); },
+            kept.data(), n * uint32_t(sizeof(StateItem)));
 }
+
+void ThreadedDevice::ApplyStates(const StateItem* list, uint32_t n)
+{
+    for (uint32_t i = 0; i < n; ++i) {
+        const StateItem& it = list[i];
+        switch (it.kind) {
+        case StateItem::RenderState: m_device.SetRenderState(it.type, it.value); break;
+        case StateItem::StageState: m_device.SetTextureStageState(it.stage, it.type, it.value); break;
+        case StateItem::Texture: m_device.SetTexture(it.stage, it.texture); break;
+        }
+    }
+}
+
+void ThreadedDevice::AddPendingState(const StateItem& item)
+{
+    m_pendingStates.push_back(item);
+    if (m_pendingStates.size() >= 4096)                // (a long run without a draw: don't grow without end)
+        FlushPending();
+}
+
+uint32_t ThreadedDevice::PendingBytes() const
+{
+    return Align16(uint32_t(sizeof(PendingHead) + m_pendingStates.size() * sizeof(StateItem)));
+}
+
+void ThreadedDevice::WritePending(uint8_t* out)
+{
+    PendingHead head{};
+    head.states = uint32_t(m_pendingStates.size());
+    head.hasWorld = m_hasPendingWorld ? 1u : 0u;
+    head.world = m_pendingWorld;
+    head.hasMaterial = m_hasPendingMaterial ? 1u : 0u;
+    head.material = m_pendingMaterial;
+    std::memcpy(out, &head, sizeof(head));
+    if (head.states)
+        std::memcpy(out + sizeof(head), m_pendingStates.data(), m_pendingStates.size() * sizeof(StateItem));
+    m_pendingStates.clear();
+    m_hasPendingWorld = m_hasPendingMaterial = false;
+}
+
+void ThreadedDevice::ApplyPending(const uint8_t* in)
+{
+    PendingHead head;
+    std::memcpy(&head, in, sizeof(head));
+    ApplyStates(reinterpret_cast<const StateItem*>(in + sizeof(head)), head.states);
+    if (head.hasWorld)
+        m_device.SetTransform(d3d::World, head.world);
+    if (head.hasMaterial)
+        m_device.SetMaterial(head.material);
+}
+
+// What is pending as a record of its own: a draw record that draws nothing (EnqueueDraw writes the prefix).
+void ThreadedDevice::FlushPending() { EnqueueDraw([](const uint8_t*) {}); }
 
 void ThreadedDevice::SetTransform(uint32_t type, const d3d::Matrix& m)
 {
@@ -449,6 +550,11 @@ void ThreadedDevice::SetTransform(uint32_t type, const d3d::Matrix& m)
         }
         s.transform[type] = m;
         s.transformValid[type] = true;
+    }
+    if (m_coalesce && type == d3d::World) {            // with the next draw
+        m_pendingWorld = m;
+        m_hasPendingWorld = true;
+        return;
     }
     Enqueue([this, type, m](const uint8_t*) { m_device.SetTransform(type, m); });
 }
@@ -462,6 +568,11 @@ void ThreadedDevice::SetMaterial(const d3d::Material& m)
     }
     s.material = m;
     s.materialValid = true;
+    if (m_coalesce) {                                  // with the next draw
+        m_pendingMaterial = m;
+        m_hasPendingMaterial = true;
+        return;
+    }
     Enqueue([this, m](const uint8_t*) { m_device.SetMaterial(m); });
 }
 
@@ -736,6 +847,10 @@ void ThreadedDevice::SetLightHeadroom(float headroom)
 
 void ThreadedDevice::SetTexture(uint32_t stage, Texture* texture)
 {
+    if (m_coalesce) {
+        AddPendingState({StateItem::Texture, stage, 0, 0, texture});
+        return;
+    }
     Enqueue([this, stage, texture](const uint8_t*) { m_device.SetTexture(stage, texture); });
 }
 
@@ -778,7 +893,7 @@ void ThreadedDevice::DrawPrimitive(uint32_t primitive, uint32_t fvf, const void*
     uint32_t bytes = FvfStride(fvf) * vertexCount;
     m_drawStats.copied++;
     m_drawStats.vertexBytes += bytes;
-    Enqueue([this, primitive, fvf, vertexCount](const uint8_t* data) {
+    EnqueueDraw([this, primitive, fvf, vertexCount](const uint8_t* data) {
         m_device.DrawPrimitive(primitive, fvf, data, vertexCount);
     }, vertices, bytes);
 }
@@ -791,29 +906,17 @@ void ThreadedDevice::DrawIndexedPrimitive(uint32_t primitive, uint32_t fvf, cons
     m_drawStats.copied++;
     m_drawStats.vertexBytes += vbytes;
     m_drawStats.indexBytes += ibytes;
-    auto run = [this, primitive, fvf, vertexCount, indexCount, vbytes](const uint8_t* data) {
+    EnqueueDraw([this, primitive, fvf, vertexCount, indexCount, vbytes](const uint8_t* data) {
         m_device.DrawIndexedPrimitive(primitive, fvf, data, vertexCount, reinterpret_cast<const uint16_t*>(data + vbytes),
                                       indexCount);
-    };
-    using Fn = decltype(run);
-    constexpr uint32_t kFnBytes = Align16(sizeof(Fn));
-    uint8_t* payload = Reserve(kFnBytes + vbytes + ibytes);
-    std::memcpy(payload + kFnBytes, vertices, vbytes);
-    std::memcpy(payload + kFnBytes + vbytes, indices, ibytes);
-    new (payload) Fn(run);
-    reinterpret_cast<Header*>(payload - sizeof(Header))->run = [](void* p) {
-        Fn* fn = static_cast<Fn*>(p);
-        (*fn)(static_cast<uint8_t*>(p) + kFnBytes);
-        fn->~Fn();
-    };
-    Commit();
+    }, vertices, vbytes, indices, ibytes);
 }
 
 void ThreadedDevice::DrawPrimitiveShared(uint32_t primitive, uint32_t fvf, const SharedVertices& data, size_t byteOffset,
                                          uint32_t vertexCount)
 {
     m_drawStats.shared++;
-    Enqueue([this, primitive, fvf, vertexCount, data, byteOffset](const uint8_t*) {
+    EnqueueDraw([this, primitive, fvf, vertexCount, data, byteOffset](const uint8_t*) {
         m_device.DrawShared(primitive, fvf, data, byteOffset, vertexCount, nullptr, 0);
     });
 }
@@ -824,7 +927,7 @@ void ThreadedDevice::DrawIndexedPrimitiveShared(uint32_t primitive, uint32_t fvf
 {
     m_drawStats.shared++;
     m_drawStats.indexBytes += indexCount * 2;
-    Enqueue([this, primitive, fvf, vertexCount, indexCount, data, byteOffset](const uint8_t* idx) {
+    EnqueueDraw([this, primitive, fvf, vertexCount, indexCount, data, byteOffset](const uint8_t* idx) {
         m_device.DrawShared(primitive, fvf, data, byteOffset, vertexCount, reinterpret_cast<const uint16_t*>(idx),
                             indexCount);
     }, indices, indexCount * 2);
@@ -836,7 +939,7 @@ void ThreadedDevice::DrawIndexedPrimitiveSharedRetained(uint32_t primitive, uint
 {
     m_drawStats.shared++;
     m_drawStats.retained++;
-    Enqueue([this, primitive, fvf, vertexCount, indexCount, data, byteOffset, indexData](const uint8_t*) {
+    EnqueueDraw([this, primitive, fvf, vertexCount, indexCount, data, byteOffset, indexData](const uint8_t*) {
         m_device.DrawSharedIndexed(primitive, fvf, data, byteOffset, vertexCount, indexData, indexCount);
     });
 }
@@ -859,7 +962,7 @@ void ThreadedDevice::DrawPrimitiveSkinned(uint32_t primitive, uint32_t fvf, cons
     if (!job || size_t(startVertex) + vertexCount > job->source->vertices.size())
         return;
     m_drawStats.skinned++;
-    Enqueue([this, primitive, fvf, job, startVertex, vertexCount](const uint8_t*) {
+    EnqueueDraw([this, primitive, fvf, job, startVertex, vertexCount](const uint8_t*) {
         m_device.DrawSkinned(primitive, fvf, *job, startVertex, vertexCount, nullptr, 0);
     });
 }
@@ -874,14 +977,14 @@ void ThreadedDevice::DrawIndexedPrimitiveSkinned(uint32_t primitive, uint32_t fv
     // The piece's own triangles (as almost always): the job's copy of them, no copy per draw.
     const skin::Source& source = *job->source;
     if (indices == source.gameIndices && indexCount <= source.indices.size()) {
-        Enqueue([this, primitive, fvf, job, startVertex, vertexCount, indexCount](const uint8_t*) {
+        EnqueueDraw([this, primitive, fvf, job, startVertex, vertexCount, indexCount](const uint8_t*) {
             m_device.DrawSkinned(primitive, fvf, *job, startVertex, vertexCount, job->source->indices.data(),
                                  indexCount);
         });
         return;
     }
     m_drawStats.indexBytes += indexCount * 2;
-    Enqueue([this, primitive, fvf, job, startVertex, vertexCount, indexCount](const uint8_t* idx) {
+    EnqueueDraw([this, primitive, fvf, job, startVertex, vertexCount, indexCount](const uint8_t* idx) {
         m_device.DrawSkinned(primitive, fvf, *job, startVertex, vertexCount, reinterpret_cast<const uint16_t*>(idx),
                              indexCount);
     }, indices, indexCount * 2);
@@ -946,6 +1049,8 @@ void ThreadedDevice::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint3
     };
     using Fn = decltype(run);
     constexpr uint32_t kFnBytes = Align16(sizeof(Fn));
+    if (HasPending())
+        FlushPending();                                // a record of its own: what waited goes first (as Enqueue)
     uint8_t* payload = Reserve(kFnBytes + rowBytes * rows);
     for (uint32_t r = 0; r < rows; ++r)
         std::memcpy(payload + kFnBytes + size_t(r) * rowBytes, static_cast<const uint8_t*>(data) + size_t(r) * pitch, rowBytes);
