@@ -897,7 +897,12 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
     auto groundPixels = Checker(64, 8, 0xFFC8C0B0, 0xFFA09888);
     auto fencePixels = Checker(64, 8, 0xFF806040, 0x00000000);
     Texture* ground = dev.CreateTexture(64, 64, groundPixels.data());
-    auto grassPixels = Checker(64, 8, 0xFF3C6A2A, 0xFF2E5320);   // --grass-field: a green ground, for the grass filter
+    // --grass-field: a green ground with a vertical brick stripe, for the grass filter (and its texture/not-texture
+    // edge): grass must grow on the green and leave the stripe bare.
+    std::vector<uint32_t> grassPixels(64 * 64);
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x)
+            grassPixels[y * 64 + x] = (x >= 26 && x < 38) ? 0xFF8A6A4A : ((x / 4 + y / 4) & 1 ? 0xFF3C6A2A : 0xFF2E5320);
     Texture* grassGround = dev.CreateTexture(64, 64, grassPixels.data());
     Texture* fence = dev.CreateTexture(64, 64, fencePixels.data());
     std::vector<uint32_t> blobPixels(64, 0xFFFFFFFF);

@@ -1038,7 +1038,7 @@ private:
     float m_foliageLod = 35.0f;                  // RVK_FoliageLod (draw.cpp FoliageFar)
     // Procedural ground grass (RVK_GrassOn, grass.cpp): the ground heights are sampled from the terrain draws into a
     // world-space grid (CaptureTerrain); a pass in EndScene generates and draws camera-centred blades over it.
-    static constexpr float kGroundCell = 0.5f;   // the ground grid's cell size (world units)
+    static constexpr float kGroundCell = 0.25f;  // the ground grid's cell size (world units)
     bool m_grassOn = false;                      // RVK_GrassOn (off: nothing drawn, nothing captured)
     float m_grassDistance = 25.0f;               // RVK_GrassDist (radius around the camera, world units)
     float m_grassDensity = 3.0f;                 // RVK_GrassBlades (blades per patch)
@@ -1046,7 +1046,8 @@ private:
     bool m_grassTex = true;                      // RVK_GrassTex: grass only where the ground's texel is green
     struct GroundCell { float y; bool grass; };
     std::unordered_map<uint64_t, GroundCell> m_groundHeights;   // the ground by world x, z cell (grass or not)
-    void CaptureTerrain(const void* vertices, const detail::FvfLayout& layout, uint32_t vertexCount);
+    void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
+                        const uint16_t* indices, uint32_t indexCount);
     bool GroundHeight(float x, float z, float* y) const;
     void RenderGrassField(VkCommandBuffer cmd);
     bool CreateGrassResources(std::string* error);

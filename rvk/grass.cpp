@@ -90,50 +90,86 @@ bool Texture::GrassTexel(float u, float v) const
 }
 
 // Records the terrain's ground into a world grid (m_groundHeights), for the grass blades to sit on, and whether the
-// ground there is grass (its own texture's texel green). Called for the terrain's base pass only (IsTerrain): its
-// stage-0 texture is the ground's own, while the lighting pass multiplies a lightmap. Only cells within reach of the
-// camera are kept, so a long session roaming a zone can't grow the grid without bound. With RVK_GrassTex off, every
-// terrain cell counts as grass.
-void Device::CaptureTerrain(const void* vertices, const FvfLayout& layout, uint32_t vertexCount)
+// ground there is grass. Called for the terrain's base pass only (IsTerrain): its stage-0 texture is the ground's own,
+// while the lighting pass multiplies a lightmap. Each covered cell is filled from the triangle that contains its
+// centre - the height and the texture coordinate are interpolated - so the grass/not boundary follows the texture, not
+// the coarser terrain vertices (a vertex sampled alone would spill grass half a cell past the edge). Only cells within
+// reach of the camera are kept. With RVK_GrassTex off, every terrain cell counts as grass.
+void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const void* vertices, uint32_t vertexCount,
+                            const uint16_t* indices, uint32_t indexCount)
 {
-    if (!m_grassOn || !vertices || !m_frameEyeValid || layout.offset[0] < 0)
+    if (!m_grassOn || !vertices || !m_frameEyeValid || layout.offset[0] < 0 || layout.offset[4] < 0)
         return;
     if (m_rs[d3d::RS_LIGHTING] || m_rs[d3d::RS_ALPHABLENDENABLE])
         return;                                  // the ground's base pass
+    if (primitive < d3d::TriangleList || primitive > d3d::TriangleFan)
+        return;
     const Texture* tex = m_textures[0];
     const bool filter = m_grassTex && tex;
-    const bool hasUv = layout.offset[4] >= 0;
     const uint8_t* src = static_cast<const uint8_t*>(vertices);
-    const float reach = m_grassDistance + 24.0f;
-    const size_t posOff = size_t(layout.offset[0]), uvOff = hasUv ? size_t(layout.offset[4]) : 0;
-    for (uint32_t i = 0; i < vertexCount; ++i) {
-        const uint8_t* v = src + size_t(i) * layout.stride;
-        float p[3];
-        std::memcpy(p, v + posOff, sizeof(p));
-        float dx = p[0] - m_frameEye[0], dz = p[2] - m_frameEye[2];
-        if (dx * dx + dz * dz > reach * reach)
-            continue;
-        int32_t cx = int32_t(std::floor(p[0] / kGroundCell));
-        int32_t cz = int32_t(std::floor(p[2] / kGroundCell));
-        uint64_t key = (uint64_t(uint32_t(cx)) << 32) | uint32_t(cz);
-        bool grass = true;
-        if (filter) {
-            float uv[2] = {0.0f, 0.0f};
-            if (hasUv)
-                std::memcpy(uv, v + uvOff, sizeof(uv));
-            grass = tex->GrassTexel(uv[0], uv[1]);
-        }
-        GroundCell& cell = m_groundHeights[key];  // the latest wins (one chunk covers a cell)
-        cell.y = p[1];
-        cell.grass = grass;
-    }
-    if (m_groundHeights.size() > 4000000)
+    const size_t stride = layout.stride, posOff = size_t(layout.offset[0]), uvOff = size_t(layout.offset[4]);
+    auto vertexIn = [&](uint32_t i, float p[3], float uv[2]) {
+        const uint8_t* v = src + size_t(i) * stride;
+        std::memcpy(p, v + posOff, 12);
+        std::memcpy(uv, v + uvOff, 8);
+    };
+    const float reach = m_grassDistance + 24.0f, reach2 = reach * reach;
+    const uint32_t count = indices ? indexCount : vertexCount;
+    auto at = [&](uint32_t i) -> uint32_t { return indices ? indices[i] : i; };
+    auto triangle = [&](uint32_t a, uint32_t b, uint32_t c) {
+        if (a >= vertexCount || b >= vertexCount || c >= vertexCount)
+            return;
+        float pa[3], pb[3], pc[3], ua[2], ub[2], uc[2];
+        vertexIn(a, pa, ua);
+        vertexIn(b, pb, ub);
+        vertexIn(c, pc, uc);
+        const float d = (pb[2] - pc[2]) * (pa[0] - pc[0]) + (pc[0] - pb[0]) * (pa[2] - pc[2]);
+        if (std::fabs(d) < 1e-6f)
+            return;                              // degenerate in x, z (nothing to cover)
+        const float minX = std::min({pa[0], pb[0], pc[0]}), maxX = std::max({pa[0], pb[0], pc[0]});
+        const float minZ = std::min({pa[2], pb[2], pc[2]}), maxZ = std::max({pa[2], pb[2], pc[2]});
+        if (maxX < m_frameEye[0] - reach || minX > m_frameEye[0] + reach ||
+            maxZ < m_frameEye[2] - reach || minZ > m_frameEye[2] + reach)
+            return;
+        const int32_t cx0 = int32_t(std::floor(minX / kGroundCell)), cx1 = int32_t(std::floor(maxX / kGroundCell));
+        const int32_t cz0 = int32_t(std::floor(minZ / kGroundCell)), cz1 = int32_t(std::floor(maxZ / kGroundCell));
+        for (int32_t cz = cz0; cz <= cz1; ++cz)
+            for (int32_t cx = cx0; cx <= cx1; ++cx) {
+                const float qx = (float(cx) + 0.5f) * kGroundCell, qz = (float(cz) + 0.5f) * kGroundCell;
+                const float dx = qx - m_frameEye[0], dz = qz - m_frameEye[2];
+                if (dx * dx + dz * dz > reach2)
+                    continue;
+                const float l0 = ((pb[2] - pc[2]) * (qx - pc[0]) + (pc[0] - pb[0]) * (qz - pc[2])) / d;
+                const float l1 = ((pc[2] - pa[2]) * (qx - pc[0]) + (pa[0] - pc[0]) * (qz - pc[2])) / d;
+                const float l2 = 1.0f - l0 - l1;
+                if (l0 < -0.001f || l1 < -0.001f || l2 < -0.001f)
+                    continue;
+                GroundCell& cell = m_groundHeights[(uint64_t(uint32_t(cx)) << 32) | uint32_t(cz)];
+                cell.y = l0 * pa[1] + l1 * pb[1] + l2 * pc[1];
+                if (filter) {
+                    const float u = l0 * ua[0] + l1 * ub[0] + l2 * uc[0];
+                    const float v = l0 * ua[1] + l1 * ub[1] + l2 * uc[1];
+                    cell.grass = tex->GrassTexel(u, v);
+                } else {
+                    cell.grass = true;
+                }
+            }
+    };
+    if (primitive == d3d::TriangleList)
+        for (uint32_t i = 0; i + 2 < count; i += 3)
+            triangle(at(i), at(i + 1), at(i + 2));
+    else if (primitive == d3d::TriangleStrip)
+        for (uint32_t i = 0; i + 2 < count; ++i)
+            (i & 1) ? triangle(at(i + 1), at(i), at(i + 2)) : triangle(at(i), at(i + 1), at(i + 2));
+    else
+        for (uint32_t i = 1; i + 1 < count; ++i)
+            triangle(at(0), at(i), at(i + 1));
+    if (m_groundHeights.size() > 8000000)
         m_groundHeights.clear();                 // a guard only; the reach test above keeps it near the camera
 }
 
-// The ground height under a world x, z, if grass grows there. Searches the neighbouring cells too: the terrain's own
-// vertex spacing is coarser than kGroundCell, so the exact cell is often empty; the nearest ground found decides (a
-// non-grass ground there means no grass, however close a grass cell beyond it is).
+// The ground height under a world x, z, if grass grows there. Searches the neighbouring cells too (a stray gap at the
+// captured region's edge); the nearest ground found decides (a non-grass ground there means no grass).
 bool Device::GroundHeight(float x, float z, float* y) const
 {
     int32_t cx = int32_t(std::floor(x / kGroundCell));
