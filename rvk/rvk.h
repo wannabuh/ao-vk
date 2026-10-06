@@ -242,6 +242,14 @@ public:
     void SetPlantDetail(float detail) { m_plantDetail = detail; }
     // Procedural ground grass (RVK_GrassOn, grass.cpp): blades generated over the terrain near the camera. off by
     // default; distance is the radius (world units), density the blades per patch, height the blade height.
+    // The blades' width as a multiplier (1 = the built-in width). Baked, so a change rebuilds the tiles.
+    void SetGrassWidth(float width)
+    {
+        if (width != m_grassWidth) {
+            m_grassWidth = width;
+            m_grassDirty = true;
+        }
+    }
     void SetGrassField(bool on, float distance, float density, float height, bool texOnly)
     {
         // The blades are baked into tiles, so a change to their density, height or the ground filter must rebuild
@@ -1052,6 +1060,7 @@ private:
     float m_grassDistance = 25.0f;               // RVK_GrassDist (radius around the camera, world units)
     float m_grassDensity = 5.0f;                 // RVK_GrassBlades (blades a patch)
     float m_grassHeight = 0.5f;                  // RVK_GrassHeight (world units)
+    float m_grassWidth = 1.0f;                   // RVK_GrassWidth: a multiplier on the blades' width
     bool m_grassTex = true;                      // RVK_GrassTex: grass only where the ground's texel is green
     float m_grassPrevTime = 0.0f;                // the wind clock last frame, so a blade's motion vector is exact
     struct GroundCell { float y; bool grass; uint32_t colour; };   // colour: the ground texel's RGB (the grass tint)

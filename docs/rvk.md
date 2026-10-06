@@ -78,7 +78,8 @@
   and drawn from its buffer (nothing is generated per frame). Each blade samples a procedural atlas (`GrassBladeAtlas`,
   built once at init: a grid of tapered leaf silhouettes with a vein; the blade is solid - the alpha is not cut, so the
   field is not see-through), is tinted by the ground's own texel colour (with a little per-blade variation), varies in
-  height, width, lean, tilt and wind phase. The blades are placed by a random scatter, not a patch grid (a jittered
+  height, width (`RVK_GrassWidth` scales the width), lean, tilt and wind phase. The blades are placed by a random
+  scatter, not a patch grid (a jittered
   lattice shows as rows at grazing angles); a low-frequency value noise clumps them and leaves bare patches.
   `RenderGrassField` draws the visible tiles (in
   range and roughly in front) into the scene rendering at its end (`EndScene`, before the post passes) through a

@@ -538,7 +538,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
         up[0] /= ul; up[1] /= ul; up[2] /= ul;
         const float droop = 0.06f + 0.18f * v4;  // a little arc over towards the tip
-        const float half = 0.5f * (0.03f + 0.03f * v2) * (0.5f + height);   // narrower blades
+        const float half = 0.5f * (0.03f + 0.03f * v2) * (0.5f + height) * m_grassWidth;   // RVK_GrassWidth
         const float phase = (px * 0.3f + pz * 0.25f) + v1 * 6.2831853f;
         float normal[3] = {rz, 0.5f, -rx};
         const float nl = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
