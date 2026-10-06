@@ -471,11 +471,9 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     tile.lastUsed = m_frameNumber;
     const float x0 = float(tx) * kGrassTileSize, z0 = float(tz) * kGrassTileSize;
     // The ground under the tile may not be captured yet (the game has not drawn the terrain there - right after
-    // loading, or a zone not streamed in), nor its baked light (the terrain light pass, which follows the base pass).
-    // Built now it would be bare, or dark for good; leave it unbuilt and try again, giving up after a few seconds in
-    // case there is simply no grass or no light there.
-    const float centreX = x0 + 0.5f * kGrassTileSize, centreZ = z0 + 0.5f * kGrassTileSize;
-    if ((!GroundSeen(centreX, centreZ) || !GroundLightSeen(centreX, centreZ)) && tile.tries < 240)
+    // loading, or a zone not streamed in). Built now it would be bare for good; leave it unbuilt and try again, giving
+    // up after a few seconds in case there is simply no grass there.
+    if (!GroundSeen(x0 + 0.5f * kGrassTileSize, z0 + 0.5f * kGrassTileSize) && tile.tries < 240)
         return;
     const float spacing = std::max(0.3f, m_grassHeight * 0.75f);
     // A pure random scatter, not a patch grid: a jittered lattice shows as rows at grazing angles (a moire). The

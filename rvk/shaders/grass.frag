@@ -133,14 +133,10 @@ void main()
     // gradient, kept bright at the base too (a dark base read as neglected roots).
     vec3 tint = mix(vec3(0.50, 0.70, 0.34), vTint, 0.55);
     vec3 base = tint * blade.rgb * mix(vec3(0.92), vec3(1.08), clamp(vShade, 0.0, 1.0));
-    // Where the terrain's own baked light (its light pass) was captured, the grass lights from it - so it matches the
-    // ground exactly, in every time of day, instead of a hand-set sun and ambient. Elsewhere, the approximation.
+    // The terrain's baked light (its light pass) turned out dark where the capture read it, so the grass keeps the
+    // sun + ambient approximation (vLight is captured and passed but not used yet - see grass.cpp). To be revisited.
     float sunLum = clamp(dot(FL.sunColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
-    vec3 lit;
-    if (dot(vLight, vec3(1.0)) > 0.001)
-        lit = vLight + LocalLights(vPosW, n);    // the ground's light, plus the live lamps
-    else
-        lit = FL.sunColor.rgb * d * shadow + LocalLights(vPosW, n) + vec3(0.22 + 0.6 * sunLum);
+    vec3 lit = FL.sunColor.rgb * d * shadow + LocalLights(vPosW, n) + vec3(0.22 + 0.6 * sunLum);
     outScene = vec4(base * lit, 1.0);
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * GF.viewport.xy * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
