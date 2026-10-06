@@ -11,10 +11,12 @@
 // Only a contiguous stretch of the scene's rendering is pre-passed - the segment ends (PrepassEnd) when that rendering
 // ends (a target switch, a copy of the scene, a flush, the end of the scene) or at a second depth clear - because
 // within it an opaque surface drawn later only hides what was drawn earlier where it covers it anyway. "Opaque": no
-// discard, depth written, and either not blended or blended by its alpha with that alpha provably 1 (AlphaIsOne).
+// discard, depth written, and either not blended or blended by its alpha with that alpha provably 1 (AlphaOneCheck).
 #include "internal.h"
 
+#include <cstdio>
 #include <cstring>
+#include <string>
 #include <utility>
 
 namespace rvk {
@@ -68,17 +70,23 @@ bool Device::CreatePrepassPipeline(VkShaderModule vert)
 
 // The draw's output alpha is exactly 1, so blending it by its alpha (SRCALPHA / INVSRCALPHA) is the same as drawing it
 // opaque. Follows ffp_main.glsl Cascade: the running alpha starts as the diffuse colour's; each stage's alpha op of
-// arguments that are all 1 gives 1 (clamped), except SUBTRACT and complemented arguments.
-bool Device::AlphaIsOne(uint32_t fvf) const
+// arguments that are all 1 gives 1 (clamped), except SUBTRACT and complemented arguments. Only the arguments the op
+// reads count: D3D's default stage 0 alpha is SELECTARG1 (the texture) with CURRENT (the diffuse) as an unread arg 2.
+// kPreIn when provable, else the input that may be below 1.
+uint32_t Device::AlphaOneCheck(uint32_t fvf) const
 {
     bool needDiffuse = false, needTfactor = false, currentIsDiffuse = true;
     for (int s = 0; s < 2; ++s) {
         if (m_tss[s][d3d::TSS_COLOROP] == d3d::TOP_DISABLE) break;   // the cascade ends with the running alpha
         uint32_t op = m_tss[s][d3d::TSS_ALPHAOP];
         if (op == d3d::TOP_DISABLE) continue;                       // keeps the running alpha
-        if (op == d3d::TOP_SUBTRACT) return false;
-        for (uint32_t arg : {m_tss[s][d3d::TSS_ALPHAARG1], m_tss[s][d3d::TSS_ALPHAARG2]}) {
-            if (arg & 0x10u) return false;                          // a complemented argument turns 1 into 0
+        if (op == d3d::TOP_SUBTRACT) return kPreAlphaArg;
+        uint32_t args[2], n = 0;
+        if (op != d3d::TOP_SELECTARG2) args[n++] = m_tss[s][d3d::TSS_ALPHAARG1];
+        if (op != d3d::TOP_SELECTARG1) args[n++] = m_tss[s][d3d::TSS_ALPHAARG2];
+        for (uint32_t i = 0; i < n; ++i) {
+            uint32_t arg = args[i];
+            if (arg & 0x10u) return kPreAlphaArg;                   // a complemented argument turns 1 into 0
             switch (arg & 0xFu) {
             case d3d::TA_DIFFUSE: needDiffuse = true; break;
             case d3d::TA_CURRENT: if (currentIsDiffuse) needDiffuse = true; break;
@@ -86,53 +94,94 @@ bool Device::AlphaIsOne(uint32_t fvf) const
             case d3d::TA_TEXTURE: {
                 // Unbound: the shader reads alpha 1. Bound: no transparent texel, and no border (its colour's alpha).
                 Texture* t = m_textures[s];
-                if (t && !t->m_opaque) return false;
+                if (t && !t->m_opaque) return kPreAlphaTexture;
                 if (t && (m_tss[s][d3d::TSS_ADDRESSU] == d3d::TADDRESS_BORDER ||
                           m_tss[s][d3d::TSS_ADDRESSV] == d3d::TADDRESS_BORDER))
-                    return false;
+                    return kPreAlphaTexture;
                 break;
             }
-            default: return false;                                  // the specular alpha (0 without one): unknown
+            default: return kPreAlphaArg;                           // the specular alpha (0 without one): unknown
             }
         }
         currentIsDiffuse = false;
     }
     if (currentIsDiffuse) needDiffuse = true;                       // no stage replaced the diffuse alpha
     if (needTfactor && (m_rs[d3d::RS_TEXTUREFACTOR] >> 24) != 0xFF)
-        return false;
+        return kPreAlphaTfactor;
     if (!needDiffuse)
-        return true;
+        return kPreIn;
     // The diffuse alpha (ffp.vert): lit, the material's diffuse source's; unlit, the vertex colour's (1 without one).
     bool hasDiffuse = (fvf & d3d::FVF_DIFFUSE) != 0, hasSpecular = (fvf & d3d::FVF_SPECULAR) != 0;
     if (m_rs[d3d::RS_LIGHTING]) {
         uint32_t source = m_rs[d3d::RS_DIFFUSEMATERIALSOURCE];
         bool colorVertex = m_rs[d3d::RS_COLORVERTEX] != 0;
-        if (colorVertex && source == 1 && hasDiffuse) return m_drawMesh && m_drawMesh->diffuseAlphaOne;
-        if (colorVertex && source == 2 && hasSpecular) return m_drawMesh && m_drawMesh->specularAlphaOne;
-        return m_material.diffuse.a >= 1.0f;
+        if (colorVertex && source == 1 && hasDiffuse)
+            return m_drawMesh && m_drawMesh->diffuseAlphaOne ? kPreIn : kPreAlphaDiffuse;
+        if (colorVertex && source == 2 && hasSpecular)
+            return m_drawMesh && m_drawMesh->specularAlphaOne ? kPreIn : kPreAlphaDiffuse;
+        return m_material.diffuse.a >= 1.0f ? kPreIn : kPreAlphaMaterial;
     }
-    return !hasDiffuse || (m_drawMesh && m_drawMesh->diffuseAlphaOne);
+    return !hasDiffuse || (m_drawMesh && m_drawMesh->diffuseAlphaOne) ? kPreIn : kPreAlphaDiffuse;
 }
 
-// While armed: may this draw go into the pre-pass? Opaque scene geometry drawn with the same vertex shader path the
-// pre-pass takes - not characters (tessellated, skinned on the GPU), swaying plants, labels, particles or effects.
-bool Device::PrepassEligible(uint32_t primitive, uint32_t fvf, bool swaying) const
+// May this draw go into the pre-pass (kPreIn), and if not, why. Opaque scene geometry drawn with the same vertex
+// shader path the pre-pass takes - not characters (tessellated, skinned on the GPU), swaying plants, labels,
+// particles or effects - while a segment is armed.
+uint32_t Device::PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) const
 {
-    if (m_target != m_scene || m_external || m_drawTess || m_drawGpu || m_drawIsCharacter || m_drawIsLabel || swaying)
-        return false;
-    if ((fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW || TopologyClassOf(primitive) != 2)
-        return false;
-    if (m_particlePending && fvf == kParticleFvf)
-        return false;
+    if (!m_prepassArmed)
+        return m_prepassEndedThisFrame ? kPreAfter : kPreBefore;
+    if (m_drawTess || m_drawGpu || m_drawIsCharacter)
+        return kPreCharacter;
+    if (swaying)
+        return kPreSway;
+    if (m_target != m_scene || m_external || m_drawIsLabel || (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW ||
+        TopologyClassOf(primitive) != 2 || (m_particlePending && fvf == kParticleFvf))
+        return kPreKind;
     uint32_t zFunc = m_rs[d3d::RS_ZFUNC];
     if (!m_rs[d3d::RS_ZENABLE] || !m_rs[d3d::RS_ZWRITEENABLE] || (zFunc != d3d::CMP_LESS && zFunc != d3d::CMP_LESSEQUAL))
-        return false;
-    if (m_drawMayDiscard || WaterWritesDepth(fvf))
-        return false;
+        return kPreDepth;
+    if (m_drawMayDiscard)
+        return kPreDiscard;
+    if (WaterWritesDepth(fvf))
+        return kPreWater;
     if (!m_rs[d3d::RS_ALPHABLENDENABLE])
-        return true;
-    return m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA &&
-           AlphaIsOne(fvf);
+        return kPreIn;
+    if (m_rs[d3d::RS_SRCBLEND] != d3d::BLEND_SRCALPHA || m_rs[d3d::RS_DESTBLEND] != d3d::BLEND_INVSRCALPHA)
+        return kPreBlend;
+    return AlphaOneCheck(fvf);
+}
+
+// Every 600 frames: how many draws went in, why the scene's other 3D draws didn't (a frame's average), and what ended
+// the segments.
+void Device::PrepassLog()
+{
+    static const char* const why[kPreWhyCount] = {
+        "in", "before the depth clear", "after the segment", "characters", "swaying", "label/particle/other",
+        "depth state", "cut-out/alpha test", "water", "blend mode", "alpha: vertex colour", "alpha: material",
+        "alpha: texture", "alpha: argument", "alpha: texture factor"};
+    static const char* const end[kEndCount] = {"other", "scene end", "target switch", "copy", "read-back", "flush",
+                                               "depth clear"};
+    std::string out, ends;
+    char buf[64];
+    for (uint32_t i = 1; i < kPreWhyCount; ++i)
+        if (m_prepassWhy[i]) {
+            std::snprintf(buf, sizeof(buf), " %s %.0f |", why[i], double(m_prepassWhy[i]) / 600.0);
+            out += buf;
+        }
+    for (uint32_t i = 0; i < kEndCount; ++i)
+        if (m_prepassEndCause[i]) {
+            std::snprintf(buf, sizeof(buf), " %s %llu |", end[i], (unsigned long long)m_prepassEndCause[i]);
+            ends += buf;
+        }
+    if (!out.empty()) out.pop_back();
+    if (!ends.empty()) ends.pop_back();
+    Log("depth pre-pass: %.0f draws a frame in %llu segments (last 600 frames)%s", double(m_prepassDraws) / 600.0,
+        (unsigned long long)m_prepassSegments, m_prepassPipeline ? "" : " - no pipeline");
+    Log("depth pre-pass: scene draws kept out, a frame:%s; segments ended by:%s", out.c_str(), ends.c_str());
+    m_prepassDraws = m_prepassSegments = 0;
+    std::memset(m_prepassWhy, 0, sizeof(m_prepassWhy));
+    std::memset(m_prepassEndCause, 0, sizeof(m_prepassEndCause));
 }
 
 // The scene's depth clear: end the main commands here (mainA), start the pre-pass with the clear, and go on recording
@@ -189,11 +238,13 @@ bool Device::PrepassArm(const VkClearRect* rects, uint32_t count, float z)
 }
 
 // The segment ends: the pre-pass is complete, its depth made visible to the tests of the main commands after it.
-void Device::PrepassEnd()
+void Device::PrepassEnd(uint32_t cause)
 {
     if (!m_prepassArmed)
         return;
     m_prepassArmed = false;
+    m_prepassEndedThisFrame = true;
+    ++m_prepassEndCause[cause < kEndCount ? cause : kEndOther];
     VkCommandBuffer cmd = m_frames[m_frameIndex].prepass;
     vkCmdEndRendering(cmd);
     const VkPipelineStageFlags2 tests =
@@ -311,7 +362,7 @@ void Device::PrepassDraw(uint32_t primitive, uint32_t fvf, uint32_t stride, uint
 // mainB. The current main command buffer must already be ended; an armed pre-pass is ended here.
 uint32_t Device::FrameCommands(Frame& f, VkCommandBuffer out[4])
 {
-    PrepassEnd();
+    PrepassEnd(kEndFlush);
     if (!f.split) {
         out[0] = f.main;
         return 1;

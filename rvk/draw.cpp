@@ -1132,7 +1132,7 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
             info.boundsMin[j] = std::min(info.boundsMin[j], p[j]);
             info.boundsMax[j] = std::max(info.boundsMax[j], p[j]);
         }
-        // Vertex colours' alpha (AlphaIsOne: a blended draw whose alpha is 1 can go into the depth pre-pass).
+        // Vertex colours' alpha (AlphaOneCheck: a blended draw whose alpha is 1 can go into the depth pre-pass).
         if (diffuseAlpha >= 0 && verts[size_t(i) * stride + diffuseAlpha] != 0xFF) info.diffuseAlphaOne = false;
         if (specularAlpha >= 0 && verts[size_t(i) * stride + specularAlpha] != 0xFF) info.specularAlphaOne = false;
     }
@@ -1272,7 +1272,7 @@ void Device::Clear(uint32_t count, const Rect* rects, uint32_t flags, uint32_t a
     // recorded from here on); a second one ends it, and clears here as usual.
     bool depth = (flags & d3d::CLEAR_ZBUFFER) != 0;
     if (depth && m_prepassArmed)
-        PrepassEnd();
+        PrepassEnd(kEndClear);
     else if (depth && PrepassArm(clears.data(), uint32_t(clears.size()), z))
         depth = false;
     VkClearAttachment att[2];
@@ -1302,6 +1302,7 @@ void Device::CopyTexture(Texture* dst, const Rect* dstRect, Texture* src, const 
         return;
     }
     VkCommandBuffer cmd = m_frames[m_frameIndex].main;
+    m_renderEndCause = kEndCopy;
     EndRendering();
     VkImageLayout srcRestore = src->m_layout;
     Transition(cmd, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -2175,7 +2176,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // draws of different meshes with the same state still share one call.
     // Depth pre-pass (prepass.cpp): an opaque scene draw also draws its depth into the pre-pass, which runs before the
     // scene's draws; its own depth test then passes on equal.
-    m_drawPrepassed = m_prepassArmed && PrepassEligible(primitive, fvf, swaying);
+    uint32_t prepassWhy = PrepassCheck(primitive, fvf, swaying);
+    m_drawPrepassed = prepassWhy == kPreIn;
+    if (m_scenePhase && m_target == m_scene && !m_external && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW)
+        ++m_prepassWhy[prepassWhy];              // the scene's 3D draws, by why they are (not) pre-passed (log)
     uint64_t groupKey = 0;
     if (m_groupIndirect && indices && !m_external && !(m_particlePending && fvf == kParticleFvf)) {
         bool hdr = m_target->m_format == Format::RGBA16F;

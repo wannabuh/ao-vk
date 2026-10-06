@@ -349,6 +349,7 @@ void Device::EndScene()
     m_scenePhase = false;
     VkCommandBuffer cmd = m_frames[m_frameIndex].main;
     bool wasMain = m_target == m_scene;
+    m_renderEndCause = kEndScene;
     EndRendering();
     ProfileSceneClass(0);                        // close the last scene class for the GPU profile
     ProfileMark("scene");

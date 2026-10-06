@@ -31,7 +31,7 @@
   draw that follows, recorded as the draws come) and `mainB` (the rest), submitted in that order. The scene's
   draws then find the nearest opaque depth already there and early-Z rejects what is hidden, so the expensive
   scene shader runs about once per pixel. "Opaque": no discard, depth written, not blended or blended by an alpha
-  that is provably 1 (`AlphaIsOne`); not characters, swaying plants, labels or particles. A segment ends with the
+  that is provably 1 (`AlphaOneCheck`); not characters, swaying plants, labels or particles. A segment ends with the
   scene's rendering (target switch, copy, flush, end of the scene) or at a second depth clear. `ffp.vert` declares
   `gl_Position` invariant so both passes produce the same depth; a pre-passed draw's `LESS` becomes `LESSEQUAL`.
 - **Vertex buffers** keep their contents in CPU memory; every draw copies the range it uses into the ring

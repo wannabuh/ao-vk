@@ -1169,10 +1169,11 @@ void Device::EndRendering()
     if (m_rendering) {
         FlushGroup();                                // the pending batched draws belong to this rendering
         ShadeQueryEnd();                             // a query begun in a rendering ends in it
-        PrepassEnd();                                // the scene's rendering ends: so does a depth pre-pass segment
+        PrepassEnd(m_renderEndCause);                // the scene's rendering ends: so does a depth pre-pass segment
         vkCmdEndRendering(m_frames[m_frameIndex].main);
         m_rendering = false;
     }
+    m_renderEndCause = kEndOther;
 }
 
 void Device::BeginRenderingOn(Texture* target)
@@ -1241,6 +1242,7 @@ void Device::SetRenderTarget(Texture* target)
         return;
     }
     if (target != m_target && m_inFrame) {
+        m_renderEndCause = kEndTarget;
         EndRendering();
         m_target = target;
         BeginRenderingOn(target);
@@ -1297,9 +1299,7 @@ void Device::BeginFrame()
         Log("foliage: %llu draws, %llu of them far (LOD) (last 600 frames)", (unsigned long long)m_foliageDraws,
             (unsigned long long)m_foliageLodDraws);
         Log("no-discard pipeline (early-Z): %llu draws (last 600 frames)", (unsigned long long)m_noCutDraws);
-        Log("depth pre-pass: %llu draws in %llu segments (last 600 frames)%s", (unsigned long long)m_prepassDraws,
-            (unsigned long long)m_prepassSegments, m_prepassPipeline ? "" : " - no pipeline");
-        m_prepassDraws = m_prepassSegments = 0;
+        PrepassLog();
         m_ringPeak = 0;
         m_midFrameFlushes = 0;
         m_opaqueDraws = 0;
@@ -1328,6 +1328,7 @@ void Device::BeginFrame()
     m_sunLuminance = 0.0f;
     m_casters.clear();
     m_frameDraw = 0;
+    m_prepassEndedThisFrame = false;
     m_groupCalls = m_groupDraws = m_singleDraws = 0;
     m_shadowGroupCalls = m_shadowGroupDraws = 0;
     m_casterViews.clear();
@@ -1362,6 +1363,7 @@ void Device::EndFrame()
     }
     EndScene();                                  // if the interface didn't end it (no interface drawn)
     Frame& f = m_frames[m_frameIndex];
+    m_renderEndCause = kEndScene;
     EndRendering();
     ProfileMark("interface");
     double cpu = ProfileCpu();
@@ -1461,6 +1463,7 @@ void Device::EndFrame()
 void Device::SubmitAndWait()
 {
     Frame& f = m_frames[m_frameIndex];
+    m_renderEndCause = kEndFlush;
     EndRendering();
     vkEndCommandBuffer(f.main);
     VkCommandBuffer cmds[5];
@@ -1510,6 +1513,7 @@ bool Device::ReadPixels(Texture* target, void* out)
     region.imageExtent = {t->m_width, t->m_height, 1};
     if (m_inFrame) {
         VkCommandBuffer cmd = m_frames[m_frameIndex].main;
+        m_renderEndCause = kEndReadback;
         EndRendering();
         Transition(cmd, t, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
         vkCmdCopyImageToBuffer(cmd, t->m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &region);

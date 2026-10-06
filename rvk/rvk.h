@@ -749,11 +749,22 @@ private:
         VkImage depth = VK_NULL_HANDLE;          // the depth buffer it draws into (armed)
     } m_pre;
     bool CreatePrepassPipeline(VkShaderModule vert);   // false: the pre-pass stays off
-    uint64_t m_prepassDraws = 0, m_prepassSegments = 0;   // logged every 600 frames
+    uint64_t m_prepassDraws = 0, m_prepassSegments = 0;   // logged every 600 frames (PrepassLog)
+    // Why a scene draw isn't in the pre-pass (PrepassCheck; counted for the log), and why segments end.
+    enum PrepassWhy : uint32_t {
+        kPreIn, kPreBefore, kPreAfter, kPreCharacter, kPreSway, kPreKind, kPreDepth, kPreDiscard, kPreWater, kPreBlend,
+        kPreAlphaDiffuse, kPreAlphaMaterial, kPreAlphaTexture, kPreAlphaArg, kPreAlphaTfactor, kPreWhyCount
+    };
+    enum RenderEnd : uint32_t { kEndOther, kEndScene, kEndTarget, kEndCopy, kEndReadback, kEndFlush, kEndClear, kEndCount };
+    uint64_t m_prepassWhy[kPreWhyCount] = {};
+    uint64_t m_prepassEndCause[kEndCount] = {};
+    uint32_t m_renderEndCause = kEndOther;       // why the next EndRendering happens (set by its callers)
+    bool m_prepassEndedThisFrame = false;        // a segment ended: later draws are "after end"
     bool PrepassArm(const VkClearRect* rects, uint32_t count, float z);   // at a scene depth clear: split, arm
-    void PrepassEnd();                           // end the armed segment (its commands are complete)
-    bool PrepassEligible(uint32_t primitive, uint32_t fvf, bool swaying) const;
-    bool AlphaIsOne(uint32_t fvf) const;         // the draw's output alpha is 1 (its blend can't show what's behind)
+    void PrepassEnd(uint32_t cause);             // end the armed segment (its commands are complete)
+    uint32_t PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) const;   // kPreIn: into the pre-pass
+    uint32_t AlphaOneCheck(uint32_t fvf) const;  // kPreIn: the output alpha is provably 1; else the input in the way
+    void PrepassLog();                           // every 600 frames
     void PrepassDraw(uint32_t primitive, uint32_t fvf, uint32_t stride, uint32_t vertexCount, uint32_t indexCount,
                      VkDeviceSize vbOffset, VkDeviceSize ibOffset, VkBuffer vb, VkBuffer ib,
                      VkDeviceSize frameLightsOffset, VkBuffer prevBuffer, VkDeviceSize prevOffset, VkDeviceSize prevBytes,
