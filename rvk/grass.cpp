@@ -534,6 +534,32 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
             out.push_back(row[1][s]); out.push_back(row[1][s + 1]); out.push_back(row[0][s + 1]);
         }
     }
+    // Each subset is stored near-to-far from the tile's centre (a fixed point, so it does not change with the camera).
+    // The camera is usually within a tile or so of that centre, so its nearest blades are drawn first and early-Z
+    // rejects the ones they hide - the field is opaque and its overdraw is most of its cost.
+    auto sortNearFirst = [&](std::vector<GrassVertex>& v) {
+        const size_t n = v.size() / kGrassVertsPerBlade;
+        if (n < 2)
+            return;
+        const float cx = x0 + 0.5f * kGrassTileSize, cz = z0 + 0.5f * kGrassTileSize;
+        std::vector<uint32_t> order(n);
+        for (uint32_t i = 0; i < n; ++i)
+            order[i] = i;
+        auto dist2 = [&](uint32_t i) {
+            const float* p = v[size_t(i) * kGrassVertsPerBlade].pos;
+            const float dx = p[0] - cx, dz = p[2] - cz;
+            return dx * dx + dz * dz;
+        };
+        std::sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) { return dist2(a) < dist2(b); });
+        std::vector<GrassVertex> sorted;
+        sorted.reserve(v.size());
+        for (uint32_t i : order)
+            sorted.insert(sorted.end(), v.begin() + size_t(i) * kGrassVertsPerBlade,
+                          v.begin() + size_t(i + 1) * kGrassVertsPerBlade);
+        v.swap(sorted);
+    };
+    sortNearFirst(sparseV);
+    sortNearFirst(denseV);
     // The sparse subset first, so a distant tile is drawn with vkCmdDraw(sparseCount) alone.
     std::vector<GrassVertex> verts;
     verts.reserve(sparseV.size() + denseV.size());
