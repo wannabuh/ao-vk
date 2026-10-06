@@ -23,6 +23,7 @@ void RvkLog(const char* fmt, ...);
 void ParticleFrame();                             // each presented frame (rvk_particles.cpp)
 bool RvkBackend();                                // RANDYVK_DDRAW=rvk installed (com_trace.cpp)
 void CallLogFrame(uint64_t presented);            // each present (rvk_device.cpp: RANDYVK_CALLLOG)
+void VertexBufferFrame(uint64_t presented);       // each present (rvk_device.cpp: the rewrites' log line)
 // Native deferred skinning (proxy/native/cat_skin.cpp): gives a vertex buffer its skin job; false if it can't take it.
 bool AttachSkin(void* d3dVertexBuffer, std::shared_ptr<rvk::skin::Job> job);
 }  // namespace rvkproxy
@@ -239,9 +240,18 @@ public:
     // referenced by queued draws gets a copy of its own to write into (copy on write), so those keep what they drew.
     std::shared_ptr<std::vector<uint8_t>> buf;
     uint32_t stride = 0;
-    uint64_t lastWriteFrame = 0;
+    uint64_t lastWriteFrame = 0;                 // the frame its contents last changed (a rewrite of the same: not)
     uint8_t* Bytes() { return buf->data(); }
     void Written();
+    // After a write (Unlock, ProcessVertices into it): a rewrite of exactly what it held - the game rewrites some
+    // buffers every frame unchanged - leaves it static, its snapshot (and the renderer's GPU copy of it) kept. Not
+    // checked after a write that changed it, for a while that doubles each time (buffers that do change).
+    void WriteDone();
+    std::shared_ptr<std::vector<uint8_t>> before;   // the snapshot before the write in progress (null: none)
+    uint64_t beforeWriteFrame = 0;
+    uint64_t contentHash = 0;
+    bool hashValid = false, writing = false;
+    uint32_t skipChecks = 0, backoff = 0;
     const std::shared_ptr<const std::vector<uint8_t>>* StaticShared();   // null: written lately (copy per draw)
     std::shared_ptr<const std::vector<uint8_t>> shared;                  // StaticShared's const view of buf
     // A character piece skinned by the renderer when drawn (native deferred skinning, AttachSkin); its vertices in
@@ -252,7 +262,7 @@ public:
 protected:
     void* Cast(REFIID iid) override { return iid == IID_IDirect3DVertexBuffer7 ? this : nullptr; }
     HRESULT DoLock(DWORD flags, LPVOID* out, LPDWORD size) override;
-    HRESULT DoUnlock() override { return DD_OK; }
+    HRESULT DoUnlock() override;
     HRESULT DoGetVertexBufferDesc(LPD3DVERTEXBUFFERDESC out) override;
     HRESULT DoOptimize(LPDIRECT3DDEVICE7, DWORD) override { return DD_OK; }
     HRESULT DoProcessVertices(DWORD op, DWORD dstIndex, DWORD count, LPDIRECT3DVERTEXBUFFER7 src, DWORD srcIndex,

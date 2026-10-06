@@ -175,6 +175,7 @@ void RvkState::Present()
         return;
     ++presentCount;
     CallLogFrame(presentCount);
+    VertexBufferFrame(presentCount);
     Frame();                  // a present without any rendering still shows a frame
     device->EndFrame();
     ParticleFrame();
