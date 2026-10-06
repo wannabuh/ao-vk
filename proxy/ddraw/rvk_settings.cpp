@@ -68,8 +68,9 @@ Setting g_settings[] = {
     {"RVK_FolLodOn",   "Cheaper shading of distant foliage",                       "Plants",           Bool,  0, 1, 1, 1, nullptr, 0},
     {"RVK_FoliageLod", "From this distance (world units)",                         "Plants",           Int,   10, 150, 1, 35, nullptr, 0, "RVK_FolLodOn"},
     {"RVK_GrassOn",    "Ground grass (procedural blades over the terrain)",         "Plants",           Bool,  0, 1, 1, 0, nullptr, 0},
+    {"RVK_GrassTex",   "Only on grassy ground (by the ground texture's colour)",    "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_GrassOn"},
     {"RVK_GrassDist",  "Grass up to this distance (world units)",                   "Plants",           Int,   8, 80, 1, 25, nullptr, 0, "RVK_GrassOn"},
-    {"RVK_GrassDensity","Blades per patch",                                         "Plants",           Float, 1, 6, 0.5f, 3, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassBlades","Blades per patch",                                          "Plants",           Float, 1, 6, 0.5f, 3, nullptr, 0, "RVK_GrassOn"},
     {"RVK_GrassHeight","Blade height (world units)",                                "Plants",           Float, 0.15f, 2, 0.05f, 0.5f, nullptr, 0, "RVK_GrassOn"},
 
     {"RVK_SunShadow",  "Sun shadows",                                              "Shadows",          Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
@@ -290,8 +291,10 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_GrassPush")) d->SetGrassPush(V(n));
     else if (is("RVK_PlantDetail")) d->SetPlantDetail(V(n));
     else if (is("RVK_FoliageLod")) d->SetFoliageLod(V(n));
-    else if (is("RVK_GrassOn") || is("RVK_GrassDist") || is("RVK_GrassDensity") || is("RVK_GrassHeight"))
-        d->SetGrassField(V("RVK_GrassOn") != 0.0f, V("RVK_GrassDist"), V("RVK_GrassDensity"), V("RVK_GrassHeight"));
+    else if (is("RVK_GrassOn") || is("RVK_GrassTex") || is("RVK_GrassDist") || is("RVK_GrassBlades") ||
+             is("RVK_GrassHeight"))
+        d->SetGrassField(V("RVK_GrassOn") != 0.0f, V("RVK_GrassDist"), V("RVK_GrassBlades"), V("RVK_GrassHeight"),
+                         V("RVK_GrassTex") != 0.0f);
     else if (is("RVK_Taa") || is("RVK_Sharpen")) d->SetTaa(V("RVK_Taa") != 0.0f, V("RVK_Sharpen"));
     else if (is("RVK_Saturation") || is("RVK_Contrast") || is("RVK_Warmth") || is("RVK_NightTint") ||
              is("RVK_Vignette") || is("RVK_LutAmount"))

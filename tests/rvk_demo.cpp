@@ -869,6 +869,8 @@ bool g_walkerLight = false;    // --walker-light: the round "character" carries 
 int g_grassDense = 1;          // --grass-dense K: K x K as many tufts, K times closer (a field, for profiling)      // --grass-flip: the tufts modelled upside down, turned up by their world matrix
 bool g_grassFieldOn = false;   // --grass-field: the procedural ground grass (RVK_GrassOn) over the shadow test's terrain
 float g_grassFieldDist = 25.0f;
+bool g_grassFieldTex = true;   // --grass-field-any: over every ground, not only where the ground texture is green
+bool g_grassFieldTan = false;  // --grass-field-tan: leave the terrain's tan ground (a filter that must reject it)
 
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
 // (left) and unlit like Anarchy Online's ground base pass (right) - from a camera above and behind.
@@ -895,6 +897,8 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
     auto groundPixels = Checker(64, 8, 0xFFC8C0B0, 0xFFA09888);
     auto fencePixels = Checker(64, 8, 0xFF806040, 0x00000000);
     Texture* ground = dev.CreateTexture(64, 64, groundPixels.data());
+    auto grassPixels = Checker(64, 8, 0xFF3C6A2A, 0xFF2E5320);   // --grass-field: a green ground, for the grass filter
+    Texture* grassGround = dev.CreateTexture(64, 64, grassPixels.data());
     Texture* fence = dev.CreateTexture(64, 64, fencePixels.data());
     std::vector<uint32_t> blobPixels(64, 0xFFFFFFFF);
     std::vector<uint32_t> lightmapPixels(64, 0xFFC0C0C0);
@@ -988,9 +992,12 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
                 uint16_t q[6] = {a, c, b, b, c, d};
                 tidx.insert(tidx.end(), q, q + 6);
             }
+        if (g_grassFieldOn && !g_grassFieldTan)
+            dev.SetTexture(0, grassGround);      // --grass-field: green ground, so RVK_GrassTex accepts it
         dev.SetRenderState(RS_LIGHTING, 0);
         dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
         dev.DrawIndexedPrimitive(TriangleList, kFvfTerrain, terrain.data(), uint32_t(terrain.size()), tidx.data(), uint32_t(tidx.size()));
+        dev.SetTexture(0, ground);
         Light lamp{};
         lamp.type = LIGHT_POINT;
         lamp.diffuse = {1.0f, 0.8f, 0.4f, 1};
@@ -1722,6 +1729,8 @@ int main(int argc, char** argv)
         else if (a == "--grass-walk-speed" && i + 1 < argc) g_grassWalkSpeed = float(std::atof(argv[++i]));
         else if (a == "--grass-flip") g_grassFlip = true;
         else if (a == "--grass-field") { g_grassFieldOn = true; hdr = true; }
+        else if (a == "--grass-field-any") g_grassFieldTex = false;
+        else if (a == "--grass-field-tan") g_grassFieldTan = true;
         else if (a == "--grass-field-dist" && i + 1 < argc) g_grassFieldDist = float(std::atof(argv[++i]));
         else if (a == "--walker-round") g_walkerRound = true;
         else if (a == "--walker-light") g_walkerLight = true;
@@ -1828,7 +1837,7 @@ int main(int argc, char** argv)
     dev.SetPlantDetail(plantDetail);
     dev.SetFoliageLod(foliageLod);
     if (g_grassFieldOn)                  // --grass-field: the procedural ground grass (needs HDR: its pass draws into the scene)
-        dev.SetGrassField(true, g_grassFieldDist, 3.0f, 0.5f);
+        dev.SetGrassField(true, g_grassFieldDist, 3.0f, 0.5f, g_grassFieldTex);
     dev.SetShadowResolution(uint32_t(sunRes), uint32_t(ptRes));
     dev.SetPointLightIntensity(ptLight, ptLight);
     dev.SetTessellation(tess, 20.0f, uint32_t(tessLevel));

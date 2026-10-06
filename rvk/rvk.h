@@ -60,6 +60,10 @@ public:
     uint32_t Levels() const { return m_levels; }
     Format GetFormat() const { return m_format; }
     bool IsRenderTarget() const { return m_renderTarget; }
+    // Whether the texture's colour at (u, v) is green enough to be grass: the ground's own texel there, not the whole
+    // texture's average, so a tile atlas holding several grounds still classifies per ground (grass.cpp). False until
+    // a full level-0 upload has been sampled.
+    bool GrassTexel(float u, float v) const;
 
 private:
     friend class Device;
@@ -70,6 +74,9 @@ private:
     Format m_format = Format::A8R8G8B8;
     bool m_renderTarget = false;
     bool m_opaque = false;             // the texture's pixels are all alpha 1 (a blended static draw can be opaque)
+    static constexpr uint32_t kThumb = 8;              // the classification grid (kThumb x kThumb, RGB)
+    uint8_t m_thumb[kThumb * kThumb * 3] = {};         // sampled from level 0 (PixelsThumbnail)
+    bool m_thumbValid = false;
     Texture* m_normalMap = nullptr;    // tangent-space normal map drawn with this texture (owned; SetNormalMap)
     uint32_t m_bindless = ~0u;         // its slot in the bindless image array (M1)
     // Layout as of the end of the commands recorded so far (main command buffer for render targets;
@@ -234,12 +241,13 @@ public:
     void SetPlantDetail(float detail) { m_plantDetail = detail; }
     // Procedural ground grass (RVK_GrassOn, grass.cpp): blades generated over the terrain near the camera. off by
     // default; distance is the radius (world units), density the blades per patch, height the blade height.
-    void SetGrassField(bool on, float distance, float density, float height)
+    void SetGrassField(bool on, float distance, float density, float height, bool texOnly)
     {
         m_grassOn = on;
         m_grassDistance = distance;
         m_grassDensity = density;
         m_grassHeight = height;
+        m_grassTex = texOnly;
     }
     // Shadow map sizes in pixels: the sun's (each cascade) and the point lights' (each cube face). Takes effect at
     // the next frame (the maps are recreated).
@@ -1033,9 +1041,11 @@ private:
     static constexpr float kGroundCell = 0.5f;   // the ground grid's cell size (world units)
     bool m_grassOn = false;                      // RVK_GrassOn (off: nothing drawn, nothing captured)
     float m_grassDistance = 25.0f;               // RVK_GrassDist (radius around the camera, world units)
-    float m_grassDensity = 3.0f;                 // RVK_GrassDensity (blades per patch)
+    float m_grassDensity = 3.0f;                 // RVK_GrassBlades (blades per patch)
     float m_grassHeight = 0.5f;                  // RVK_GrassHeight (world units)
-    std::unordered_map<uint64_t, float> m_groundHeights;   // ground y by quantised world x, z cell
+    bool m_grassTex = true;                      // RVK_GrassTex: grass only where the ground's texel is green
+    struct GroundCell { float y; bool grass; };
+    std::unordered_map<uint64_t, GroundCell> m_groundHeights;   // the ground by world x, z cell (grass or not)
     void CaptureTerrain(const void* vertices, const detail::FvfLayout& layout, uint32_t vertexCount);
     bool GroundHeight(float x, float z, float* y) const;
     void RenderGrassField(VkCommandBuffer cmd);

@@ -75,33 +75,65 @@ void SetVertex(GrassVertex& v, float x, float y, float z, const float n[3], floa
 
 }  // namespace
 
-// Records the terrain's ground heights into a world grid (m_groundHeights), for the grass blades to sit on. Called for
-// every terrain draw (IsTerrain) while the grass is on; only cells within reach of the camera are kept, so a long
-// session roaming a zone can't grow the grid without bound.
+// Whether the texture's colour at (u, v) is green enough to be grass: green dominant by ~12% and not nearly black.
+// Samples the small grid taken at upload (resources.cpp PixelsThumbnail), so a tile atlas holding grass, sand and
+// brick classifies each one; a texture that couldn't be sampled (an unsupported format) is never grass.
+bool Texture::GrassTexel(float u, float v) const
+{
+    if (!m_thumbValid)
+        return false;
+    const float fu = u - std::floor(u), fv = v - std::floor(v);   // wrap
+    const uint32_t i = uint32_t(std::clamp(int(fu * float(kThumb)), 0, int(kThumb) - 1));
+    const uint32_t j = uint32_t(std::clamp(int(fv * float(kThumb)), 0, int(kThumb) - 1));
+    const uint8_t* c = m_thumb + (size_t(j) * kThumb + i) * 3;
+    return c[1] > 24 && int(c[1]) * 100 > int(c[0]) * 112 && int(c[1]) * 100 > int(c[2]) * 112;
+}
+
+// Records the terrain's ground into a world grid (m_groundHeights), for the grass blades to sit on, and whether the
+// ground there is grass (its own texture's texel green). Called for the terrain's base pass only (IsTerrain): its
+// stage-0 texture is the ground's own, while the lighting pass multiplies a lightmap. Only cells within reach of the
+// camera are kept, so a long session roaming a zone can't grow the grid without bound. With RVK_GrassTex off, every
+// terrain cell counts as grass.
 void Device::CaptureTerrain(const void* vertices, const FvfLayout& layout, uint32_t vertexCount)
 {
     if (!m_grassOn || !vertices || !m_frameEyeValid || layout.offset[0] < 0)
         return;
+    if (m_rs[d3d::RS_LIGHTING] || m_rs[d3d::RS_ALPHABLENDENABLE])
+        return;                                  // the ground's base pass
+    const Texture* tex = m_textures[0];
+    const bool filter = m_grassTex && tex;
+    const bool hasUv = layout.offset[4] >= 0;
     const uint8_t* src = static_cast<const uint8_t*>(vertices);
     const float reach = m_grassDistance + 24.0f;
-    const size_t posOff = size_t(layout.offset[0]);
+    const size_t posOff = size_t(layout.offset[0]), uvOff = hasUv ? size_t(layout.offset[4]) : 0;
     for (uint32_t i = 0; i < vertexCount; ++i) {
+        const uint8_t* v = src + size_t(i) * layout.stride;
         float p[3];
-        std::memcpy(p, src + size_t(i) * layout.stride + posOff, sizeof(p));
+        std::memcpy(p, v + posOff, sizeof(p));
         float dx = p[0] - m_frameEye[0], dz = p[2] - m_frameEye[2];
         if (dx * dx + dz * dz > reach * reach)
             continue;
         int32_t cx = int32_t(std::floor(p[0] / kGroundCell));
         int32_t cz = int32_t(std::floor(p[2] / kGroundCell));
         uint64_t key = (uint64_t(uint32_t(cx)) << 32) | uint32_t(cz);
-        m_groundHeights[key] = p[1];             // the base and the light pass agree; the latest wins
+        bool grass = true;
+        if (filter) {
+            float uv[2] = {0.0f, 0.0f};
+            if (hasUv)
+                std::memcpy(uv, v + uvOff, sizeof(uv));
+            grass = tex->GrassTexel(uv[0], uv[1]);
+        }
+        GroundCell& cell = m_groundHeights[key];  // the latest wins (one chunk covers a cell)
+        cell.y = p[1];
+        cell.grass = grass;
     }
     if (m_groundHeights.size() > 4000000)
         m_groundHeights.clear();                 // a guard only; the reach test above keeps it near the camera
 }
 
-// The ground height under a world x, z, if the terrain has been seen there. Searches the neighbouring cells too: the
-// terrain's own vertex spacing is coarser than kGroundCell, so the exact cell is often empty.
+// The ground height under a world x, z, if grass grows there. Searches the neighbouring cells too: the terrain's own
+// vertex spacing is coarser than kGroundCell, so the exact cell is often empty; the nearest ground found decides (a
+// non-grass ground there means no grass, however close a grass cell beyond it is).
 bool Device::GroundHeight(float x, float z, float* y) const
 {
     int32_t cx = int32_t(std::floor(x / kGroundCell));
@@ -113,10 +145,12 @@ bool Device::GroundHeight(float x, float z, float* y) const
                     continue;                    // only the ring at this radius
                 uint64_t key = (uint64_t(uint32_t(cx + dx)) << 32) | uint32_t(cz + dz);
                 auto it = m_groundHeights.find(key);
-                if (it != m_groundHeights.end()) {
-                    *y = it->second;
-                    return true;
-                }
+                if (it == m_groundHeights.end())
+                    continue;
+                if (!it->second.grass)
+                    return false;                // the nearest ground here isn't grass
+                *y = it->second.y;
+                return true;
             }
     }
     return false;

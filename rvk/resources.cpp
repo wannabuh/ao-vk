@@ -270,6 +270,97 @@ static bool PixelsOpaque(Format fmt, const void* data, uint32_t width, uint32_t 
     }
 }
 
+// One texel's colour (RGB, 0..255), 8-bit per channel, for the ground-texture classification thumbnail below. Handles
+// the formats the game's terrain textures use; false for one it can't read (then the texture classifies as not grass).
+static bool TexelRgb(Format fmt, const uint8_t* base, uint32_t pitch, uint32_t x, uint32_t y, uint8_t out[3])
+{
+    auto rgb565 = [](uint16_t v, uint8_t o[3]) {
+        o[0] = uint8_t((v >> 11) << 3 | (v >> 13));
+        o[1] = uint8_t(((v >> 5) & 0x3F) << 2 | ((v >> 9) & 3));
+        o[2] = uint8_t((v & 0x1F) << 3 | ((v >> 2) & 7));
+    };
+    switch (fmt) {
+    case Format::A8R8G8B8: case Format::X8R8G8B8: {
+        const uint8_t* p = base + size_t(y) * pitch + size_t(x) * 4;
+        out[0] = p[2]; out[1] = p[1]; out[2] = p[0];
+        return true;
+    }
+    case Format::R5G6B5: {
+        uint16_t v;
+        std::memcpy(&v, base + size_t(y) * pitch + size_t(x) * 2, 2);
+        rgb565(v, out);
+        return true;
+    }
+    case Format::X1R5G5B5: case Format::A1R5G5B5: {
+        uint16_t v;
+        std::memcpy(&v, base + size_t(y) * pitch + size_t(x) * 2, 2);
+        out[0] = uint8_t(((v >> 10) & 0x1F) * 255 / 31);
+        out[1] = uint8_t(((v >> 5) & 0x1F) * 255 / 31);
+        out[2] = uint8_t((v & 0x1F) * 255 / 31);
+        return true;
+    }
+    case Format::A4R4G4B4: {
+        uint16_t v;
+        std::memcpy(&v, base + size_t(y) * pitch + size_t(x) * 2, 2);
+        out[0] = uint8_t(((v >> 8) & 0xF) * 17);
+        out[1] = uint8_t(((v >> 4) & 0xF) * 17);
+        out[2] = uint8_t((v & 0xF) * 17);
+        return true;
+    }
+    case Format::L8: {
+        out[0] = out[1] = out[2] = base[size_t(y) * pitch + x];
+        return true;
+    }
+    case Format::A8L8: {
+        out[0] = out[1] = out[2] = base[size_t(y) * pitch + size_t(x) * 2];
+        return true;
+    }
+    case Format::DXT1: case Format::DXT2: case Format::DXT3: case Format::DXT4: case Format::DXT5: {
+        const uint32_t blockBytes = fmt == Format::DXT1 ? 8 : 16;
+        const uint8_t* blk = base + size_t(y / 4) * pitch + size_t(x / 4) * blockBytes;
+        uint16_t c0, c1;
+        std::memcpy(&c0, blk, 2);
+        std::memcpy(&c1, blk + 2, 2);
+        uint32_t bits;
+        std::memcpy(&bits, blk + 4, 4);
+        const uint32_t ci = (bits >> (2 * ((y % 4) * 4 + (x % 4)))) & 3u;
+        uint8_t a[3], b[3];
+        rgb565(c0, a);
+        rgb565(c1, b);
+        const bool transparent = fmt == Format::DXT1 && c0 <= c1;
+        if (ci == 0) { out[0] = a[0]; out[1] = a[1]; out[2] = a[2]; }
+        else if (ci == 1) { out[0] = b[0]; out[1] = b[1]; out[2] = b[2]; }
+        else if (ci == 2 || !transparent) {
+            const int w0 = ci == 2 ? 2 : 1, w1 = ci == 2 ? 1 : 2;
+            out[0] = uint8_t((w0 * a[0] + w1 * b[0]) / 3);
+            out[1] = uint8_t((w0 * a[1] + w1 * b[1]) / 3);
+            out[2] = uint8_t((w0 * a[2] + w1 * b[2]) / 3);
+        } else {
+            out[0] = out[1] = out[2] = 0;
+        }
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+// Samples a texture on a small grid (RGB) for the ground-texture classification (grass.cpp Texture::GrassTexel).
+static bool PixelsThumbnail(Format fmt, const void* data, uint32_t width, uint32_t height, uint32_t pitch,
+                            uint8_t* out, uint32_t n)
+{
+    const uint8_t* base = static_cast<const uint8_t*>(data);
+    for (uint32_t j = 0; j < n; ++j)
+        for (uint32_t i = 0; i < n; ++i) {
+            uint32_t x = (i * width) / n, y = (j * height) / n;
+            x = x < width ? x : width - 1;
+            y = y < height ? y : height - 1;
+            if (!TexelRgb(fmt, base, pitch, x, y, out + (size_t(j) * n + i) * 3))
+                return false;
+        }
+    return true;
+}
+
 void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                            const void* data, uint32_t pitch)
 {
@@ -285,6 +376,11 @@ void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, u
             t->m_opaque = PixelsOpaque(t->m_format, data, t->m_width, t->m_height, pitch);
         else
             t->m_opaque = false;
+        // The colour grid the ground-grass classification reads (grass.cpp): a full level-0 upload only.
+        t->m_thumbValid = x == 0 && y == 0 && width >= t->m_width && height >= t->m_height &&
+                          pitch >= FormatRowBytes(t->m_format, t->m_width) &&
+                          PixelsThumbnail(t->m_format, data, t->m_width, t->m_height, pitch, t->m_thumb,
+                                          Texture::kThumb);
     }
 
     // Stage tightly packed rows in this frame's ring buffer; the upload command buffer runs before the
