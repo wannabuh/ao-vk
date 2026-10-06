@@ -912,6 +912,8 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
     Texture* lightmap = dev.CreateTexture(8, 8, lightmapPixels.data());
     Texture* blobTex = dev.CreateTexture(8, 8, blobPixels.data());
     for (int frame = 0; frame < frames; ++frame) {
+        if (g_grassFieldOn && frame == 5)
+            dev.SetGrassField(true, g_grassFieldDist, 7.0f, 0.5f, g_grassFieldTex);   // a change rebuilds the tiles
         if (frame == frames - 1) {
             dev.RequestScreenshot(shot);
             if (!dump.empty()) dev.RequestFrameDump(dump);     // the shadow test dumps its last frame

@@ -75,11 +75,11 @@ std::vector<uint32_t> GrassBladeAtlas(uint32_t size)
     for (uint32_t cell = 0; cell < kAtlasCols * kAtlasRows; ++cell) {
         const uint32_t ox = (cell % kAtlasCols) * cw, oy = (cell / kAtlasCols) * ch;
         const uint32_t hh = HashCell(int32_t(cell) * 7 + 1, int32_t(cell) * 13 + 2);
-        const float w0 = 0.30f + 0.20f * Unit(hh);            // the base half width (of the cell's half width)
+        const float w0 = 0.40f + 0.22f * Unit(hh);            // the base half width (of the cell's half width)
         const float curve = (Unit(hh * 2246822519u) - 0.5f) * 0.5f;   // the blade bends
         for (uint32_t y = 0; y < ch; ++y) {
             const float t = (float(y) + 0.5f) / float(ch);    // 0 root .. 1 tip
-            const float taper = std::pow(1.0f - t, 0.6f);
+            const float taper = std::pow(1.0f - t, 0.45f);
             const float centre = 0.5f + curve * t * t;
             const float half = w0 * taper;
             for (uint32_t x = 0; x < cw; ++x) {
@@ -358,6 +358,9 @@ void Device::DestroyGrassTiles()
         if (tile.buffer)
             vmaDestroyBuffer(m_allocator, tile.buffer, tile.allocation);
     m_grassTiles.clear();
+    for (auto& t : m_grassTrash)
+        vmaDestroyBuffer(m_allocator, t.buffer, t.allocation);
+    m_grassTrash.clear();
 }
 
 // Bakes one tile's grass: a patch of ground every `spacing` units across the tile, its height and grass/not sampled
@@ -418,7 +421,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
                 float up[3] = {lean * rx, 1.0f, lean * rz};
                 const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
                 up[0] /= ul; up[1] /= ul; up[2] /= ul;
-                const float half = 0.5f * (0.08f + 0.07f * u2) * (0.5f + height);
+                const float half = 0.5f * (0.13f + 0.11f * u2) * (0.5f + height);
                 const float phase = px * 0.3f + pz * 0.25f + u3 * 6.2831853f;
                 float normal[3] = {rz, 0.5f, -rx};
                 const float nl = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
@@ -441,7 +444,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
                     const float cx = px + up[0] * height * t;
                     const float cy = py + up[1] * height * t;
                     const float cz = pz + up[2] * height * t;
-                    const float w = half * (1.0f - 0.7f * t);
+                    const float w = half * (1.0f - 0.45f * t);
                     const float vv = cv + (0.04f + t * 0.92f) * kAtlasH;
                     vertex(row[0][s], cx - rx * w, cy, cz - rz * w, normal, cu + 0.04f * kAtlasW, vv, t, phase, height,
                            py, colour);
@@ -490,6 +493,27 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     UpdateFrameEye();
     if (!m_frameEyeValid)
         return;
+    // A setting changed (RVK_GrassBlades / RVK_GrassHeight / RVK_GrassTex): retire every tile so it is rebuilt with the
+    // new parameters. The buffers are freed only once no frame in flight can still read them.
+    if (m_grassDirty) {
+        m_grassDirty = false;
+        for (auto& [key, tile] : m_grassTiles) {
+            if (tile.buffer)
+                m_grassTrash.push_back({tile.buffer, tile.allocation, m_frameNumber});
+            tile.buffer = VK_NULL_HANDLE;
+            tile.allocation = nullptr;
+            tile.vertexCount = tile.sparseCount = 0;
+            tile.built = false;
+        }
+    }
+    for (auto it = m_grassTrash.begin(); it != m_grassTrash.end();) {
+        if (it->frame + 3 <= m_frameNumber) {
+            vmaDestroyBuffer(m_allocator, it->buffer, it->allocation);
+            it = m_grassTrash.erase(it);
+        } else {
+            ++it;
+        }
+    }
     const float half = kGrassTileSize * 0.5f;
     const float tileRadius = m_grassDistance + half * 1.5f;
     const int32_t tx0 = int32_t(std::floor((m_frameEye[0] - tileRadius) / kGrassTileSize));

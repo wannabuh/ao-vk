@@ -55,7 +55,7 @@ float SunShadow(vec3 posW, vec3 n)
 void main()
 {
     vec4 blade = texture(bladeTex, vUv);
-    if (blade.a < 0.5)
+    if (blade.a < 0.4)
         discard;                                 // outside the blade's silhouette
     vec3 n = normalize(vNormal);
     float d = max(dot(n, -normalize(FL.sunDir.xyz)), 0.0);

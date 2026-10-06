@@ -244,6 +244,12 @@ public:
     // default; distance is the radius (world units), density the blades per patch, height the blade height.
     void SetGrassField(bool on, float distance, float density, float height, bool texOnly)
     {
+        // The blades are baked into tiles, so a change to their density, height or the ground filter must rebuild
+        // them: mark the tiles stale and (for the filter) re-classify the ground. The distance is per frame.
+        if (m_grassOn && (density != m_grassDensity || height != m_grassHeight || texOnly != m_grassTex))
+            m_grassDirty = true;
+        if (texOnly != m_grassTex)
+            m_groundHeights.clear();
         m_grassOn = on;
         m_grassDistance = distance;
         m_grassDensity = density;
@@ -1077,6 +1083,9 @@ private:
     };
     std::unordered_map<uint64_t, GrassTile> m_grassTiles;
     static constexpr float kGrassTileSize = 8.0f;   // world units a tile covers
+    bool m_grassDirty = false;                      // a setting changed: rebuild the tiles
+    struct GrassTrash { VkBuffer buffer; VmaAllocation_T* allocation; uint64_t frame; };
+    std::vector<GrassTrash> m_grassTrash;           // retired tile buffers, freed once no frame can use them
     void BuildGrassTile(int32_t tx, int32_t tz);
     void DestroyGrassTiles();
     void RenderGrassField(VkCommandBuffer cmd);
