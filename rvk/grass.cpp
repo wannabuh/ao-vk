@@ -625,10 +625,13 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
                     continue;
             }
             it->second.lastUsed = frame;
-            // Cull a tile wholly behind the camera from the draw: its centre more than its own half-diagonal behind
-            // the plane through the camera, so no part of it can be seen - the rear half of the field, half its cost.
-            // It is still built (already, above) so turning round does not have to build it then (no hitch).
-            if (dx * m_frameForward[0] + dz * m_frameForward[2] < -half * 1.5f)
+            // Cull the field outside a wide cone around the view direction (the sides and behind): no part of it can
+            // be seen. Deliberately conservative - ~75 degrees off the view, wider than any horizontal field of view -
+            // and the tile under the camera is never culled. The tiles are still built (above), so turning is free.
+            const float fh = std::sqrt(m_frameForward[0] * m_frameForward[0] + m_frameForward[2] * m_frameForward[2]);
+            const float dl = std::sqrt(dx * dx + dz * dz);
+            if (fh > 1e-3f && dl > kGrassTileSize &&
+                (dx * m_frameForward[0] + dz * m_frameForward[2]) / (dl * fh) < 0.25f)
                 continue;
             uint32_t count = it->second.vertexCount;
             if (count && it->second.sparseCount && dx * dx + dz * dz > lod2)
