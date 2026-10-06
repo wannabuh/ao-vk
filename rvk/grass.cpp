@@ -411,7 +411,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         const float px = x0 + u1 * kGrassTileSize, pz = z0 + u2 * kGrassTileSize;
         // Clumps: a low-frequency noise drops blades and leaves bare gaps (rotated, so no axis-aligned rows).
         const float clump = ClumpNoise(px, pz);
-        if (u4 > 0.35f + 0.65f * clump)
+        if (u4 > 0.5f + 0.5f * clump)
             continue;
         float py;
         uint32_t pcol = 0x3C6A2Au;
@@ -526,20 +526,19 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     const int32_t tz1 = int32_t(std::floor((m_frameEye[2] + tileRadius) / kGrassTileSize));
     const uint64_t frame = m_frameNumber;
     std::vector<std::pair<uint64_t, uint32_t>> visible;
-    int build = 0;
     for (int32_t tz = tz0; tz <= tz1; ++tz)
         for (int32_t tx = tx0; tx <= tx1; ++tx) {
             const float cx = (float(tx) + 0.5f) * kGrassTileSize, cz = (float(tz) + 0.5f) * kGrassTileSize;
             const float dx = cx - m_frameEye[0], dz = cz - m_frameEye[2];
             if (dx * dx + dz * dz > tileRadius * tileRadius)
                 continue;
-            if (dx * m_frameForward[0] + dz * m_frameForward[2] < -half)
-                continue;                        // behind the camera (its near half is all that can be seen)
+            // No view cull and no build limit: a tile that leaves the view or is not built yet pops its grass in and
+            // out as the camera turns or moves, which reads as bands. Every tile in range is built (once) and drawn;
+            // the depth test deals with the ones behind.
             const uint64_t key = (uint64_t(uint32_t(tx)) << 32) | uint32_t(tz);
             auto it = m_grassTiles.find(key);
-            if (it == m_grassTiles.end()) {
-                if (build++ < 3)                 // a few a frame, so a new area doesn't hitch
-                    BuildGrassTile(tx, tz);
+            if (it == m_grassTiles.end() || !it->second.built) {   // ... unbuilt too: a retired tile rebuilds
+                BuildGrassTile(tx, tz);
                 it = m_grassTiles.find(key);
                 if (it == m_grassTiles.end())
                     continue;
