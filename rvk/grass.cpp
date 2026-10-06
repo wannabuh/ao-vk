@@ -473,7 +473,9 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     if (verts.empty())
         return;                                  // no grass here (remembered as built: nothing to draw)
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    bi.size = VkDeviceSize(verts.size()) * sizeof(GrassVertex);
+    // Padded to a page: VMA maps the whole allocation for a host-visible buffer, and an unaligned size trips
+    // minPlacedMemoryMapAlignment on the mapping (VUID-VkMemoryMapInfo-flags-09651).
+    bi.size = (VkDeviceSize(verts.size()) * sizeof(GrassVertex) + 0xFFFull) & ~VkDeviceSize(0xFFF);
     bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
     VmaAllocationCreateInfo ac{};
     ac.usage = VMA_MEMORY_USAGE_AUTO;
