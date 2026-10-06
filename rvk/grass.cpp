@@ -677,6 +677,7 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     // (a boundary in mid-field did pop - the earlier one was).
     const float lod = m_grassDistance * 0.9f, lod2 = lod * lod;
     std::vector<std::pair<uint64_t, uint32_t>> visible;
+    int build = 0;                               // tiles built this frame (bounded: a burst is a stutter)
     for (int32_t tz = tz0; tz <= tz1; ++tz)
         for (int32_t tx = tx0; tx <= tx1; ++tx) {
             const float cx = (float(tx) + 0.5f) * kGrassTileSize, cz = (float(tz) + 0.5f) * kGrassTileSize;
@@ -686,11 +687,14 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
             const uint64_t key = (uint64_t(uint32_t(tx)) << 32) | uint32_t(tz);
             auto it = m_grassTiles.find(key);
             if (it == m_grassTiles.end() || !it->second.built) {   // ... unbuilt too: a retired tile rebuilds
+                if (build >= 4)
+                    continue;                        // a few builds a frame: a burst of them spikes the frame
                 BuildGrassTile(tx, tz);
                 it = m_grassTiles.find(key);
-                if (it == m_grassTiles.end())
-                    continue;
-            }
+                if (it == m_grassTiles.end() || !it->second.built)
+                    continue;                        // the ground here is not captured yet: retry, but do not draw
+                ++build;                             // only a tile that really built counts (else a tile over
+            }                                        //   nothing starves the ones over ground)
             it->second.lastUsed = frame;
             // Cull the field outside a wide cone around the view direction (the sides and behind): no part of it can
             // be seen. Deliberately conservative - ~75 degrees off the view, wider than any horizontal field of view -
