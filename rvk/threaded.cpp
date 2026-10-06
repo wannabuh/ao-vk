@@ -1,6 +1,8 @@
 #include "threaded.h"
 
+#include <algorithm>
 #include <chrono>
+#include <iterator>
 
 #include <cstdio>
 #include <malloc.h>
@@ -230,6 +232,8 @@ void ThreadedDevice::BeginFrame()
     uint64_t callerNs = m_callerNs, records = m_frameRecords, bytes = m_frameBytes, repeats = m_frameRepeats;
     m_callerNs = 0;
     m_frameRecords = m_frameBytes = m_frameRepeats = 0;
+    std::fill(std::begin(m_sent->lightValid), std::end(m_sent->lightValid), false);   // see SentState
+    std::fill(std::begin(m_sent->enabledValid), std::end(m_sent->enabledValid), false);
     Enqueue([this, callerNs, records, bytes, repeats](const uint8_t*) {
         m_device.ProfileAddCaller(double(callerNs) * 1e-6);
         m_device.ProfileAddCallerQueue(records, bytes, repeats);
@@ -383,11 +387,29 @@ void ThreadedDevice::SetMaterial(const d3d::Material& m)
 
 void ThreadedDevice::SetLight(uint32_t index, const d3d::Light& light)
 {
+    SentState& s = *m_sent;
+    if (index < SentState::kLights) {
+        if (s.lightValid[index] && std::memcmp(&s.light[index], &light, sizeof(light)) == 0) {
+            ++m_frameRepeats;
+            return;
+        }
+        s.light[index] = light;
+        s.lightValid[index] = true;
+    }
     Enqueue([this, index, light](const uint8_t*) { m_device.SetLight(index, light); });
 }
 
 void ThreadedDevice::LightEnable(uint32_t index, bool enable)
 {
+    SentState& s = *m_sent;
+    if (index < SentState::kLights) {
+        if (s.enabledValid[index] && s.enabled[index] == enable) {
+            ++m_frameRepeats;
+            return;
+        }
+        s.enabled[index] = enable;
+        s.enabledValid[index] = true;
+    }
     Enqueue([this, index, enable](const uint8_t*) { m_device.LightEnable(index, enable); });
 }
 

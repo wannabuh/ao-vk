@@ -219,6 +219,13 @@ private:
         bool materialValid;
         d3d::Viewport viewport;
         bool viewportValid;
+        // Lights: forgotten at every frame's start - the device captures the frame's light set from the frame's
+        // first SetLight / LightEnable of each light (Device::CaptureLight), so those always go through.
+        static constexpr uint32_t kLights = 16;
+        d3d::Light light[kLights];
+        bool lightValid[kLights];
+        bool enabled[kLights];
+        bool enabledValid[kLights];
     };
     std::unique_ptr<SentState> m_sent = std::make_unique<SentState>();   // value-initialised: nothing valid
     alignas(64) std::atomic<uint32_t> m_readPos{0};    // consumer: next record
