@@ -41,13 +41,8 @@ float SunShadow(vec3 posW, vec3 n)
         vec3 ndc = sc.xyz / sc.w;
         if (max(abs(ndc.x), abs(ndc.y)) >= 1.0 || ndc.z <= 0.0 || ndc.z >= 1.0)
             continue;
-        vec2 uv = ndc.xy * 0.5 + 0.5;
-        vec2 ts = 1.0 / vec2(textureSize(shadowMap, 0).xy);
-        float sum = 0.0;
-        for (int y = -1; y <= 1; ++y)
-            for (int x = -1; x <= 1; ++x)
-                sum += texture(shadowMap, vec4(uv + vec2(x, y) * ts, float(c), ndc.z));
-        return sum / 9.0;
+        // One tap: a blade is tiny and the field is thick with overdraw, so a 3x3 PCF is not worth its cost here.
+        return texture(shadowMap, vec4(ndc.xy * 0.5 + 0.5, float(c), ndc.z));
     }
     return 1.0;
 }
@@ -63,7 +58,10 @@ void main()
     // The ground's own colour, brighter than it (the blade catches the light more than the flat ground does), dark at
     // the root and bright at the tip.
     vec3 base = vTint * 1.9 * blade.rgb * mix(vec3(0.6), vec3(1.45), clamp(vShade, 0.0, 1.0));
-    outScene = vec4(base * (FL.sunColor.rgb * d * shadow + vec3(0.55)), 1.0);
+    // The ambient follows the sun, so the grass goes dark at night with the rest of the scene (a fixed ambient would
+    // leave it glowing green in the dark).
+    float sunLum = clamp(dot(FL.sunColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+    outScene = vec4(base * (FL.sunColor.rgb * d * shadow + vec3(0.10 + 0.5 * sunLum)), 1.0);
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * GF.viewport.xy * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
 }

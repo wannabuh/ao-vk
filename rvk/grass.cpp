@@ -567,8 +567,9 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     gf.viewport[0] = float(m_scene->m_width);
     gf.viewport[1] = float(m_scene->m_height);
     gf.viewport[2] = m_grassDistance;
-    gf.viewport[3] = 0.0f;
+    gf.viewport[3] = m_grassPrevTime;            // the wind clock last frame (the blades' motion vectors)
     gf.wind[0] = float(SwayClock());
+    m_grassPrevTime = gf.wind[0];
     gf.wind[1] = 0.56f;
     gf.wind[2] = 0.35f;                          // a wind direction (normalised in the shader)
     gf.wind[3] = std::max(m_sway, 0.3f);         // the plants' sway strength scales the wind
@@ -631,6 +632,16 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     attrs[6].location = 6; attrs[6].format = f1; attrs[6].offset = 44;
     attrs[7].location = 7; attrs[7].format = VK_FORMAT_B8G8R8A8_UNORM; attrs[7].offset = 48;
     vkCmdSetVertexInputEXT(cmd, 1, &binding, 8, attrs);
+    // Draw the nearest tiles first: with the depth write on, early-Z then rejects the blades they hide (the far ones'
+    // fragments), which is where most of the overdraw of a thick field is.
+    auto tileDist2 = [&](uint64_t key) {
+        const int32_t tx = int32_t(uint32_t(key >> 32)), tz = int32_t(uint32_t(key));
+        const float cx = (float(tx) + 0.5f) * kGrassTileSize - m_frameEye[0];
+        const float cz = (float(tz) + 0.5f) * kGrassTileSize - m_frameEye[2];
+        return cx * cx + cz * cz;
+    };
+    std::sort(visible.begin(), visible.end(),
+              [&](const auto& a, const auto& b) { return tileDist2(a.first) < tileDist2(b.first); });
     uint64_t drawn = 0;
     for (const auto& [key, count] : visible) {
         const GrassTile& tile = m_grassTiles[key];

@@ -1053,6 +1053,7 @@ private:
     float m_grassDensity = 5.0f;                 // RVK_GrassBlades (blades a patch)
     float m_grassHeight = 0.5f;                  // RVK_GrassHeight (world units)
     bool m_grassTex = true;                      // RVK_GrassTex: grass only where the ground's texel is green
+    float m_grassPrevTime = 0.0f;                // the wind clock last frame, so a blade's motion vector is exact
     struct GroundCell { float y; bool grass; uint32_t colour; };   // colour: the ground texel's RGB (the grass tint)
     std::unordered_map<uint64_t, GroundCell> m_groundHeights;   // the ground by world x, z cell (grass or not)
     void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,

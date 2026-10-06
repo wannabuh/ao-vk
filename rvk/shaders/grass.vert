@@ -34,17 +34,19 @@ void main()
     float dist = length(inPos.xz - GF.camera.xz);
     float fade = clamp((GF.viewport.z - dist) / (GF.viewport.z * 0.35), 0.0, 1.0);
     fade = fade * fade * (3.0 - 2.0 * fade);
-    vec3 p = inPos;
-    p.y = inBaseY + (inPos.y - inBaseY) * fade;
+    vec3 root = inPos;
+    root.y = inBaseY + (inPos.y - inBaseY) * fade;
     // The wind, per blade: a travelling gust, bending the upper part more (the square of the height along the blade).
-    float t = GF.wind.x;
-    float w = 0.6 * sin(t * 1.9 + inPhase) + 0.25 * sin(t * 3.7 + inPhase * 1.7) +
-              0.35 * (0.5 + 0.5 * sin(t * 0.37 + inPhase * 0.1));
+    // The position is computed for now and for last frame's wind too, so the motion vectors carry the blade's own
+    // movement - without it the temporal anti-aliasing smears the swaying grass.
     vec3 wdir = vec3(GF.wind.y, 0.0, GF.wind.z);
-    p += wdir * (0.12 * inHeight * fade * GF.wind.w * w * inShade * inShade);
-    vec4 world = vec4(p, 1.0);
-    vClip = GF.viewProj * world;
-    vPrevClip = GF.prevViewProj * world;
+    float amp = 0.12 * inHeight * fade * GF.wind.w * inShade * inShade;
+    float now = 0.6 * sin(GF.wind.x * 1.9 + inPhase) + 0.25 * sin(GF.wind.x * 3.7 + inPhase * 1.7) +
+                0.35 * (0.5 + 0.5 * sin(GF.wind.x * 0.37 + inPhase * 0.1));
+    float before = 0.6 * sin(GF.viewport.w * 1.9 + inPhase) + 0.25 * sin(GF.viewport.w * 3.7 + inPhase * 1.7) +
+                   0.35 * (0.5 + 0.5 * sin(GF.viewport.w * 0.37 + inPhase * 0.1));
+    vClip = GF.viewProj * vec4(root + wdir * (amp * now), 1.0);
+    vPrevClip = GF.prevViewProj * vec4(root + wdir * (amp * before), 1.0);
     gl_Position = vClip;
     vPosW = inPos;                              // lighting and the shadow lookup: the blade's own spot
     vNormal = inNormal;
