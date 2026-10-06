@@ -487,7 +487,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         tile.allocation = nullptr;
         return;
     }
-    std::memcpy(info.pMappedData, verts.data(), size_t(bi.size));
+    std::memcpy(info.pMappedData, verts.data(), size_t(verts.size()) * sizeof(GrassVertex));   // the real bytes only
     vmaFlushAllocation(m_allocator, tile.allocation, 0, VK_WHOLE_SIZE);   // the GPU reads it: make the write visible
     tile.vertexCount = uint32_t(verts.size());
 }
