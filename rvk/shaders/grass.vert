@@ -111,7 +111,9 @@ void main()
     vPrevClip = GF.prevViewProj * vec4(axis - bendNow + bendBefore + across, 1.0);
     gl_Position = vClip;
     vPosW = inPos;                              // lighting and the shadow lookup: the blade's own spot
-    vNormal = normalize(vec3(-vh.x, 0.6 * max(vl, 1e-3), -vh.y));   // faces the camera, tilted a little up
+    // A per-blade normal, independent of the camera: one that followed the eye swept a band of shading across the
+    // field as the camera turned (the dark wave). The blade is lit two-sided anyway, so which way it faces is moot.
+    vNormal = inNormal;
     vUv = inUv;
     vShade = inShade;
     vTint = inColour.rgb;
