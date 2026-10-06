@@ -13,16 +13,20 @@ layout(set = 0, binding = 0) uniform GrassFrame {
 
 layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec3 inNormal;
-layout(location = 2) in float inShade;      // 0 at the root, 1 at the tip
-layout(location = 3) in float inPhase;      // the blade's wind phase
-layout(location = 4) in float inHeight;     // the blade's height
-layout(location = 5) in float inBaseY;      // its root's world y
+layout(location = 2) in vec2 inUv;          // the blade atlas coordinate
+layout(location = 3) in float inShade;      // 0 at the root, 1 at the tip
+layout(location = 4) in float inPhase;      // the blade's wind phase
+layout(location = 5) in float inHeight;     // the blade's height
+layout(location = 6) in float inBaseY;      // its root's world y
+layout(location = 7) in vec4 inColour;      // the ground texel's colour (the blade's tint)
 
 layout(location = 0) out vec3 vPosW;
 layout(location = 1) out vec3 vNormal;
-layout(location = 2) out float vShade;
-layout(location = 3) out vec4 vClip;
-layout(location = 4) out vec4 vPrevClip;
+layout(location = 2) out vec2 vUv;
+layout(location = 3) out float vShade;
+layout(location = 4) out vec3 vTint;
+layout(location = 5) out vec4 vClip;
+layout(location = 6) out vec4 vPrevClip;
 
 void main()
 {
@@ -44,5 +48,7 @@ void main()
     gl_Position = vClip;
     vPosW = inPos;                              // lighting and the shadow lookup: the blade's own spot
     vNormal = inNormal;
+    vUv = inUv;
     vShade = inShade;
+    vTint = inColour.rgb;
 }

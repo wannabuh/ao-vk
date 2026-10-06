@@ -1,24 +1,27 @@
 #version 450
-// Procedural ground grass (RVK_GrassOn, rvk/grass.cpp): a solid blade lit by the sun, darker at the root and brighter
-// at the tip, darkened where the sun's shadow map says it is in shadow. Writes the scene colour and the motion vectors
-// (grass is static in the world, so its motion is the camera's); the glow, light-fraction and albedo attachments keep
-// what the scene left.
+// Procedural ground grass (RVK_GrassOn, rvk/grass.cpp): a blade shaped by the procedural atlas (a tapered silhouette
+// with a vein), tinted by the ground's own colour and lit by the sun, darkened where the sun's shadow map says it is
+// in shadow. Writes the scene colour and the motion vectors (grass is static in the world: the camera's motion); the
+// glow, light-fraction and albedo attachments keep what the scene left.
 #include "frame_lights.glsl"                    // FL (binding 4): the sun, its shadow cascades and their parameters
 
 layout(set = 0, binding = 0) uniform GrassFrame {
     mat4 viewProj;
     mat4 prevViewProj;
-    vec4 viewport;      // xy: target size; z: the field radius
+    vec4 viewport;
     vec4 wind;
     vec4 camera;
 } GF;
-layout(set = 0, binding = 5) uniform sampler2DArrayShadow shadowMap;   // the sun's cascades
+layout(set = 0, binding = 1) uniform sampler2D bladeTex;              // the blade atlas
+layout(set = 0, binding = 5) uniform sampler2DArrayShadow shadowMap;  // the sun's cascades
 
 layout(location = 0) in vec3 vPosW;
 layout(location = 1) in vec3 vNormal;
-layout(location = 2) in float vShade;
-layout(location = 3) in vec4 vClip;
-layout(location = 4) in vec4 vPrevClip;
+layout(location = 2) in vec2 vUv;
+layout(location = 3) in float vShade;
+layout(location = 4) in vec3 vTint;
+layout(location = 5) in vec4 vClip;
+layout(location = 6) in vec4 vPrevClip;
 
 layout(location = 0) out vec4 outScene;
 layout(location = 3) out vec4 outMotion;
@@ -51,16 +54,16 @@ float SunShadow(vec3 posW, vec3 n)
 
 void main()
 {
+    vec4 blade = texture(bladeTex, vUv);
+    if (blade.a < 0.5)
+        discard;                                 // outside the blade's silhouette
     vec3 n = normalize(vNormal);
     float d = max(dot(n, -normalize(FL.sunDir.xyz)), 0.0);
     float shadow = mix(1.0, SunShadow(vPosW, n), FL.shadowParams.y);
-    vec3 root = vec3(0.16, 0.30, 0.08);
-    vec3 tip  = vec3(0.52, 0.78, 0.24);
-    vec3 base = mix(root, tip, clamp(vShade, 0.0, 1.0));
-    // A little per-blade variation (from the blade's ground position), so a field isn't one flat colour.
-    float v = fract(sin(dot(floor(vPosW.xz * 2.0), vec2(12.9898, 78.233))) * 43758.5453);
-    base *= mix(vec3(0.82, 0.9, 0.7), vec3(1.12, 1.05, 0.9), v);
-    outScene = vec4(base * (FL.sunColor.rgb * d * shadow + vec3(0.45)), 1.0);
+    // The ground's own colour, brighter than it (the blade catches the light more than the flat ground does), dark at
+    // the root and bright at the tip.
+    vec3 base = vTint * 1.9 * blade.rgb * mix(vec3(0.6), vec3(1.45), clamp(vShade, 0.0, 1.0));
+    outScene = vec4(base * (FL.sunColor.rgb * d * shadow + vec3(0.55)), 1.0);
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * GF.viewport.xy * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
 }

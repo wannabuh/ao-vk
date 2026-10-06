@@ -60,9 +60,10 @@ public:
     uint32_t Levels() const { return m_levels; }
     Format GetFormat() const { return m_format; }
     bool IsRenderTarget() const { return m_renderTarget; }
-    // Whether the texture's colour at (u, v) is green enough to be grass: the ground's own texel there, not the whole
-    // texture's average, so a tile atlas holding several grounds still classifies per ground (grass.cpp). False until
-    // a full level-0 upload has been sampled.
+    // The texture's colour at (u, v), RGB 0..255, from the small grid taken at upload (resources.cpp
+    // PixelsThumbnail); false until a full level-0 upload has been sampled. GrassTexel: whether it is green enough to
+    // be grass (the ground's own texel, so a tile atlas holding several grounds classifies per ground). grass.cpp.
+    bool TexelRgbAt(float u, float v, uint8_t rgb[3]) const;
     bool GrassTexel(float u, float v) const;
 
 private:
@@ -1044,20 +1045,22 @@ private:
     float m_grassDensity = 5.0f;                 // RVK_GrassBlades (blades a patch)
     float m_grassHeight = 0.5f;                  // RVK_GrassHeight (world units)
     bool m_grassTex = true;                      // RVK_GrassTex: grass only where the ground's texel is green
-    struct GroundCell { float y; bool grass; };
+    struct GroundCell { float y; bool grass; uint32_t colour; };   // colour: the ground texel's RGB (the grass tint)
     std::unordered_map<uint64_t, GroundCell> m_groundHeights;   // the ground by world x, z cell (grass or not)
     void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
                         const uint16_t* indices, uint32_t indexCount);
-    bool GroundHeight(float x, float z, float* y) const;
+    bool GroundHeight(float x, float z, float* y, uint32_t* colour = nullptr) const;
     // One grass vertex: world position, normal, and how far up the blade (0 root, 1 tip), the wind phase, the blade's
     // height and its root's world y (the tip shrinks towards it at the field's edge).
     struct GrassVertex {
         float pos[3];
         float normal[3];
+        float uv[2];       // the blade texture's atlas coordinate
         float shade;
         float phase;
         float height;
         float baseY;
+        uint32_t colour;   // RGB tint (the ground's texel), 0xAARRGGBB
     };
     // A grid tile's baked grass, on the GPU (grass.cpp BuildGrassTile). Tiles are world-aligned and static: built the
     // first time they come into range and kept until evicted, so a frame costs only the visible tiles' draws (no
@@ -1077,9 +1080,10 @@ private:
     bool CreateGrassResources(std::string* error);
     void DestroyGrassResources();
     uint64_t m_grassDraws = 0, m_grassBlades = 0;   // counters, logged with the foliage line
-    VkDescriptorSetLayout m_grassSetLayout = VK_NULL_HANDLE;   // the grass pass's matrices (one uniform buffer)
+    VkDescriptorSetLayout m_grassSetLayout = VK_NULL_HANDLE;   // camera (UBO), blade atlas, frame lights, shadow map
     VkPipelineLayout m_grassLayout = VK_NULL_HANDLE;
     VkPipeline m_grassPipeline = VK_NULL_HANDLE;
+    Texture* m_grassBlade = nullptr;             // the procedural blade atlas (owned), generated at init
     bool m_independentBlend = false;             // device feature: the grass pipeline's per-attachment write masks
     float m_pointLightScale = 1.0f, m_charLightScale = 1.0f;   // SetPointLightIntensity
     float LightScale(const d3d::Light& l) const;

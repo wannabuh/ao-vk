@@ -63,12 +63,46 @@ float ValueNoise(float x, float z)
     return (a * (1.0f - fx) + b * fx) * (1.0f - fz) + (c * (1.0f - fx) + d * fx) * fz;
 }
 
+// The blade atlas: a grid of tapered leaf silhouettes with a vein, sampled by the blades. Each cell's shape (width,
+// bend) differs, so a field isn't one shape repeated. A8R8G8B8, little-endian (bytes b, g, r, a).
+constexpr uint32_t kAtlasCols = 4, kAtlasRows = 2;
+constexpr float kAtlasW = 1.0f / float(kAtlasCols), kAtlasH = 1.0f / float(kAtlasRows);
+
+std::vector<uint32_t> GrassBladeAtlas(uint32_t size)
+{
+    std::vector<uint32_t> px(size_t(size) * size, 0);
+    const uint32_t cw = size / kAtlasCols, ch = size / kAtlasRows;
+    for (uint32_t cell = 0; cell < kAtlasCols * kAtlasRows; ++cell) {
+        const uint32_t ox = (cell % kAtlasCols) * cw, oy = (cell / kAtlasCols) * ch;
+        const uint32_t hh = HashCell(int32_t(cell) * 7 + 1, int32_t(cell) * 13 + 2);
+        const float w0 = 0.30f + 0.20f * Unit(hh);            // the base half width (of the cell's half width)
+        const float curve = (Unit(hh * 2246822519u) - 0.5f) * 0.5f;   // the blade bends
+        for (uint32_t y = 0; y < ch; ++y) {
+            const float t = (float(y) + 0.5f) / float(ch);    // 0 root .. 1 tip
+            const float taper = std::pow(1.0f - t, 0.6f);
+            const float centre = 0.5f + curve * t * t;
+            const float half = w0 * taper;
+            for (uint32_t x = 0; x < cw; ++x) {
+                const float s = (float(x) + 0.5f) / float(cw);
+                const float d = std::fabs(s - centre);
+                const float a = std::clamp((half - d) * float(cw) + 0.5f, 0.0f, 1.0f);
+                const float vein = 1.0f - 0.22f * std::exp(-((s - centre) * (s - centre)) / 0.0012f);
+                const uint8_t r = uint8_t(std::clamp(225.0f * vein, 0.0f, 255.0f));
+                const uint8_t g = uint8_t(std::clamp(235.0f * vein, 0.0f, 255.0f));
+                const uint8_t bl = uint8_t(std::clamp(210.0f * vein, 0.0f, 255.0f));
+                const uint8_t al = uint8_t(a * 255.0f);
+                px[size_t(oy + y) * size + ox + x] =
+                    uint32_t(bl) | (uint32_t(g) << 8) | (uint32_t(r) << 16) | (uint32_t(al) << 24);
+            }
+        }
+    }
+    return px;
+}
+
 }  // namespace
 
-// Whether the texture's colour at (u, v) is green enough to be grass: green dominant by ~12% and not nearly black.
-// Samples the small grid taken at upload (resources.cpp PixelsThumbnail), so a tile atlas holding grass, sand and
-// brick classifies each one; a texture that couldn't be sampled (an unsupported format) is never grass.
-bool Texture::GrassTexel(float u, float v) const
+// The texture's colour at (u, v), RGB 0..255, from the small grid taken at upload (resources.cpp PixelsThumbnail).
+bool Texture::TexelRgbAt(float u, float v, uint8_t rgb[3]) const
 {
     if (!m_thumbValid)
         return false;
@@ -76,7 +110,17 @@ bool Texture::GrassTexel(float u, float v) const
     const uint32_t i = uint32_t(std::clamp(int(fu * float(kThumb)), 0, int(kThumb) - 1));
     const uint32_t j = uint32_t(std::clamp(int(fv * float(kThumb)), 0, int(kThumb) - 1));
     const uint8_t* c = m_thumb + (size_t(j) * kThumb + i) * 3;
-    return c[1] > 24 && int(c[1]) * 100 > int(c[0]) * 112 && int(c[1]) * 100 > int(c[2]) * 112;
+    rgb[0] = c[0]; rgb[1] = c[1]; rgb[2] = c[2];
+    return true;
+}
+
+// Whether the texture's colour at (u, v) is green enough to be grass: green dominant by ~12% and not nearly black.
+// So a tile atlas holding grass, sand and brick classifies each one; a texture that couldn't be sampled (an
+// unsupported format) is never grass.
+bool Texture::GrassTexel(float u, float v) const
+{
+    uint8_t c[3];
+    return TexelRgbAt(u, v, c) && c[1] > 24 && int(c[1]) * 100 > int(c[0]) * 112 && int(c[1]) * 100 > int(c[2]) * 112;
 }
 
 // Records the terrain's ground into a world grid (m_groundHeights), for the grass blades to sit on, and whether the
@@ -136,13 +180,16 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
                     continue;
                 GroundCell& cell = m_groundHeights[(uint64_t(uint32_t(cx)) << 32) | uint32_t(cz)];
                 cell.y = l0 * pa[1] + l1 * pb[1] + l2 * pc[1];
+                uint8_t rgb[3] = {0x3C, 0x6A, 0x2A};      // a default grass green (no filter, or no texel read)
+                bool have = false;
                 if (filter) {
                     const float u = l0 * ua[0] + l1 * ub[0] + l2 * uc[0];
                     const float v = l0 * ua[1] + l1 * ub[1] + l2 * uc[1];
-                    cell.grass = tex->GrassTexel(u, v);
-                } else {
-                    cell.grass = true;
+                    have = tex->TexelRgbAt(u, v, rgb);
                 }
+                cell.grass = !filter || (have && rgb[1] > 24 && int(rgb[1]) * 100 > int(rgb[0]) * 112 &&
+                                         int(rgb[1]) * 100 > int(rgb[2]) * 112);
+                cell.colour = uint32_t(rgb[0]) << 16 | uint32_t(rgb[1]) << 8 | rgb[2];
             }
     };
     if (primitive == d3d::TriangleList)
@@ -160,7 +207,7 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
 
 // The ground height under a world x, z, if grass grows there. Searches the neighbouring cells too (a stray gap at the
 // captured region's edge); the nearest ground found decides (a non-grass ground there means no grass).
-bool Device::GroundHeight(float x, float z, float* y) const
+bool Device::GroundHeight(float x, float z, float* y, uint32_t* colour) const
 {
     int32_t cx = int32_t(std::floor(x / kGroundCell));
     int32_t cz = int32_t(std::floor(z / kGroundCell));
@@ -176,6 +223,8 @@ bool Device::GroundHeight(float x, float z, float* y) const
                 if (!it->second.grass)
                     return false;                // the nearest ground here isn't grass
                 *y = it->second.y;
+                if (colour)
+                    *colour = it->second.colour;
                 return true;
             }
     }
@@ -187,20 +236,25 @@ bool Device::CreateGrassResources(std::string* error)
     DestroyGrassResources();
     if (!m_independentBlend)
         return true;                             // the blade pipeline's per-attachment write masks need it: no grass
-    // One set: 0 the camera (uniform), 4 the frame lights (the sun and its shadow cascades), 5 the sun's shadow map.
-    VkDescriptorSetLayoutBinding b[3] = {};
+    if (!m_grassBlade)
+        m_grassBlade = CreateTexture(64, 64, GrassBladeAtlas(64).data());   // the blades' silhouette atlas
+    if (!m_grassBlade)
+        return false;
+    // One set: 0 the camera (uniform), 1 the blade atlas, 4 the frame lights, 5 the sun's shadow map.
+    VkDescriptorSetLayoutBinding b[4] = {};
     b[0].binding = 0;
-    b[1].binding = 4;
-    b[2].binding = 5;
-    b[0].descriptorType = b[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    b[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    b[1].binding = 1;
+    b[2].binding = 4;
+    b[3].binding = 5;
+    b[0].descriptorType = b[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    b[1].descriptorType = b[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     for (auto& e : b)
         e.descriptorCount = 1;
-    b[0].stageFlags = b[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    b[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    b[0].stageFlags = b[2].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    b[1].stageFlags = b[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 3;
+    sl.bindingCount = 4;
     sl.pBindings = b;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_grassSetLayout),
                "vkCreateDescriptorSetLayout", error))
@@ -280,6 +334,10 @@ bool Device::CreateGrassResources(std::string* error)
 void Device::DestroyGrassResources()
 {
     DestroyGrassTiles();
+    if (m_grassBlade) {
+        DestroyTexture(m_grassBlade);
+        m_grassBlade = nullptr;
+    }
     if (m_grassPipeline) {
         vkDestroyPipeline(m_device, m_grassPipeline, nullptr);
         m_grassPipeline = VK_NULL_HANDLE;
@@ -319,11 +377,12 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     const int32_t ix0 = int32_t(std::floor(x0 / spacing)), ix1 = int32_t(std::ceil((x0 + kGrassTileSize) / spacing));
     const int32_t iz0 = int32_t(std::floor(z0 / spacing)), iz1 = int32_t(std::ceil((z0 + kGrassTileSize) / spacing));
     std::vector<GrassVertex> verts;
-    auto vertex = [](GrassVertex& v, float x, float y, float z, const float n[3], float shade, float phase,
-                     float height, float baseY) {
+    auto vertex = [](GrassVertex& v, float x, float y, float z, const float n[3], float u, float vv, float shade,
+                     float phase, float height, float baseY, uint32_t colour) {
         v.pos[0] = x; v.pos[1] = y; v.pos[2] = z;
         v.normal[0] = n[0]; v.normal[1] = n[1]; v.normal[2] = n[2];
-        v.shade = shade; v.phase = phase; v.height = height; v.baseY = baseY;
+        v.uv[0] = u; v.uv[1] = vv;
+        v.shade = shade; v.phase = phase; v.height = height; v.baseY = baseY; v.colour = colour;
     };
     for (int32_t iz = iz0; iz <= iz1; ++iz)
         for (int32_t ix = ix0; ix <= ix1; ++ix) {
@@ -331,7 +390,8 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
             if (bx < x0 || bx >= x0 + kGrassTileSize || bz < z0 || bz >= z0 + kGrassTileSize)
                 continue;                        // belongs to another tile
             float gy;
-            if (!GroundHeight(bx, bz, &gy))
+            uint32_t gcol = 0x3C6A2Au;
+            if (!GroundHeight(bx, bz, &gy, &gcol))
                 continue;                        // no grass ground here
             const uint32_t cellHash = HashCell(ix, iz);
             // Clumps: a low-frequency noise thins the patches and drops whole ones, leaving bare gaps.
@@ -347,7 +407,8 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
                 const float u1 = Unit(h), u2 = Unit(h * 2246822519u), u3 = Unit(h * 3266489917u);
                 const float px = bx + (u1 - 0.5f) * spacing, pz = bz + (u2 - 0.5f) * spacing;
                 float py;
-                if (!GroundHeight(px, pz, &py))
+                uint32_t pcol = gcol;
+                if (!GroundHeight(px, pz, &py, &pcol))
                     py = gy;
                 const float height = m_grassHeight * (0.45f + 1.2f * u3);
                 const float yaw = u1 * 6.2831853f;
@@ -356,12 +417,22 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
                 float up[3] = {lean * rx, 1.0f, lean * rz};
                 const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
                 up[0] /= ul; up[1] /= ul; up[2] /= ul;
-                const float half = 0.5f * (0.02f + 0.03f * u2) * (0.5f + height);
+                const float half = 0.5f * (0.08f + 0.07f * u2) * (0.5f + height);
                 const float phase = px * 0.3f + pz * 0.25f + u3 * 6.2831853f;
                 float normal[3] = {rz, 0.5f, -rx};
                 const float nl = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
                 normal[0] /= nl; normal[1] /= nl; normal[2] /= nl;
-                // A tapered strip: a few cross sections from the root to the tip, each half as wide as the one below.
+                // The blade texture's atlas cell (a shape and shade) and the ground's own colour, varied a little
+                // per blade, so neighbours aren't identical.
+                const uint32_t cell = (h >> 8) % (kAtlasCols * kAtlasRows);
+                const float cu = float(cell % kAtlasCols) * kAtlasW, cv = float(cell / kAtlasCols) * kAtlasH;
+                const float tint = 0.82f + 0.36f * u1;
+                const uint32_t r = std::min(255u, uint32_t(float((pcol >> 16) & 0xFF) * tint));
+                const uint32_t g = std::min(255u, uint32_t(float((pcol >> 8) & 0xFF) * tint));
+                const uint32_t bl = std::min(255u, uint32_t(float(pcol & 0xFF) * tint));
+                const uint32_t colour = 0xFF000000u | (r << 16) | (g << 8) | bl;
+                // A tapered strip: a few cross sections from the root to the tip. The width only narrows a little -
+                // the texture's silhouette tapers the rest.
                 constexpr int kSeg = 2;
                 GrassVertex row[2][kSeg + 1];
                 for (int s = 0; s <= kSeg; ++s) {
@@ -369,9 +440,12 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
                     const float cx = px + up[0] * height * t;
                     const float cy = py + up[1] * height * t;
                     const float cz = pz + up[2] * height * t;
-                    const float w = half * (1.0f - t);
-                    vertex(row[0][s], cx - rx * w, cy, cz - rz * w, normal, t, phase, height, py);
-                    vertex(row[1][s], cx + rx * w, cy, cz + rz * w, normal, t, phase, height, py);
+                    const float w = half * (1.0f - 0.7f * t);
+                    const float vv = cv + (0.04f + t * 0.92f) * kAtlasH;
+                    vertex(row[0][s], cx - rx * w, cy, cz - rz * w, normal, cu + 0.04f * kAtlasW, vv, t, phase, height,
+                           py, colour);
+                    vertex(row[1][s], cx + rx * w, cy, cz + rz * w, normal, cu + 0.96f * kAtlasW, vv, t, phase, height,
+                           py, colour);
                 }
                 for (int s = 0; s < kSeg; ++s) {
                     verts.push_back(row[0][s]); verts.push_back(row[1][s]); verts.push_back(row[0][s + 1]);
@@ -484,37 +558,44 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassPipeline);
     VkDescriptorBufferInfo frameInfo{f.ring, frameOffset, sizeof(GrassFrame)};
     VkDescriptorBufferInfo lightsInfo{f.ring, m_frameLightsOffset, sizeof(FrameLights)};
+    VkDescriptorImageInfo bladeInfo{m_linearSampler, m_grassBlade->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     VkDescriptorImageInfo shadowInfo{m_shadowSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet writes[3] = {};
-    writes[0].sType = writes[1].sType = writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    VkWriteDescriptorSet writes[4] = {};
+    for (auto& w : writes) {
+        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w.descriptorCount = 1;
+    }
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writes[0].pBufferInfo = &frameInfo;
-    writes[1].dstBinding = 4;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[1].pBufferInfo = &lightsInfo;
-    writes[2].dstBinding = 5;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[2].pImageInfo = &shadowInfo;
-    for (auto& w : writes)
-        w.descriptorCount = 1;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassLayout, 0, 3, writes);
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].pImageInfo = &bladeInfo;
+    writes[2].dstBinding = 4;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[2].pBufferInfo = &lightsInfo;
+    writes[3].dstBinding = 5;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[3].pImageInfo = &shadowInfo;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassLayout, 0, 4, writes);
     VkVertexInputBindingDescription2EXT binding{VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT};
     binding.binding = 0;
     binding.stride = sizeof(GrassVertex);
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
     binding.divisor = 1;
-    VkVertexInputAttributeDescription2EXT attrs[6] = {};
+    VkVertexInputAttributeDescription2EXT attrs[8] = {};
     for (auto& a : attrs)
         a.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT;
-    const VkFormat f3 = VK_FORMAT_R32G32B32_SFLOAT, f1 = VK_FORMAT_R32_SFLOAT;
+    const VkFormat f3 = VK_FORMAT_R32G32B32_SFLOAT, f2 = VK_FORMAT_R32G32_SFLOAT, f1 = VK_FORMAT_R32_SFLOAT;
     attrs[0].location = 0; attrs[0].format = f3; attrs[0].offset = 0;
     attrs[1].location = 1; attrs[1].format = f3; attrs[1].offset = 12;
-    attrs[2].location = 2; attrs[2].format = f1; attrs[2].offset = 24;
-    attrs[3].location = 3; attrs[3].format = f1; attrs[3].offset = 28;
-    attrs[4].location = 4; attrs[4].format = f1; attrs[4].offset = 32;
-    attrs[5].location = 5; attrs[5].format = f1; attrs[5].offset = 36;
-    vkCmdSetVertexInputEXT(cmd, 1, &binding, 6, attrs);
+    attrs[2].location = 2; attrs[2].format = f2; attrs[2].offset = 24;
+    attrs[3].location = 3; attrs[3].format = f1; attrs[3].offset = 32;
+    attrs[4].location = 4; attrs[4].format = f1; attrs[4].offset = 36;
+    attrs[5].location = 5; attrs[5].format = f1; attrs[5].offset = 40;
+    attrs[6].location = 6; attrs[6].format = f1; attrs[6].offset = 44;
+    attrs[7].location = 7; attrs[7].format = VK_FORMAT_B8G8R8A8_UNORM; attrs[7].offset = 48;
+    vkCmdSetVertexInputEXT(cmd, 1, &binding, 8, attrs);
     uint64_t drawn = 0;
     for (uint64_t key : visible) {
         const GrassTile& tile = m_grassTiles[key];
