@@ -644,11 +644,13 @@ private:
     // Static casters remembered across frames, so objects the camera turned away from (and the game therefore
     // no longer draws) keep casting. A caster drawn unchanged for kPromoteFrames frames in a row is copied here.
     static constexpr uint32_t kPromoteFrames = 20, kMaxCachedCasters = 16384;
+    struct ArenaChunk;
     struct CachedCaster {
-        VkBuffer buffer;
-        VmaAllocation_T* allocation;
+        // Its vertices then indices in a slot of the caster arena (shared buffers: casters batch together).
+        ArenaChunk* chunk;
+        VkDeviceSize slot, slotBytes;            // the slot (freed with ArenaFree)
+        VkDeviceSize vbOffset, indexOffset;      // in the chunk's buffer (vbOffset a multiple of the stride)
         uint32_t primitive, stride, vertexCount, indexCount;
-        VkDeviceSize indexOffset;
         d3d::Matrix world;
         float boundsMin[3], boundsMax[3];        // world space
         Texture* texture;
@@ -884,6 +886,7 @@ private:
     struct ArenaChunk {
         VkBuffer buffer = VK_NULL_HANDLE;
         VmaAllocation_T* allocation = nullptr;
+        uint8_t* mapped = nullptr;               // the caster arena's (host memory); null for the static arena
         VkDeviceSize size = 0, used = 0;
         std::vector<std::pair<VkDeviceSize, VkDeviceSize>> free;   // (offset, size) slots returned by eviction
     };
@@ -896,13 +899,15 @@ private:
     };
     std::unordered_map<const std::vector<uint8_t>*, StaticGeometry> m_staticGeometry;
     std::vector<std::unique_ptr<ArenaChunk>> m_staticArena;
+    std::vector<std::unique_ptr<ArenaChunk>> m_casterArena;   // remembered shadow casters (host memory, mapped)
     bool m_staticResident = true;                // RANDYVK_STATIC_GPU=0: copied into the ring per draw as before
     VkDeviceSize m_staticBytes = 0;              // on the GPU now
     VkBuffer m_drawStaticBuffer = VK_NULL_HANDLE;   // the current draw's vertices are in this buffer, at this offset
     VkDeviceSize m_drawStaticOffset = 0;
     VkBuffer m_drawStaticIndexBuffer = VK_NULL_HANDLE;   // with m_drawStaticBuffer: its indices retained here, at
     VkDeviceSize m_drawStaticIndexOffset = 0;            // this offset (DrawSharedIndexed); else through the ring
-    ArenaChunk* ArenaPlace(VkDeviceSize bytes, VkDeviceSize align, VkDeviceSize* offset);
+    // A slot in the static arena (device memory, filled by uploads) or, `casters`, the caster arena (host memory).
+    ArenaChunk* ArenaPlace(VkDeviceSize bytes, VkDeviceSize align, VkDeviceSize* offset, bool casters = false);
     void ArenaFree(ArenaChunk* chunk, VkDeviceSize offset, VkDeviceSize bytes);   // reusable once the GPU is done
     void CollectArenaSlots();                    // CollectGarbage: slots no submission in flight can still read
     struct DeadArenaSlot { uint64_t tag; ArenaChunk* chunk; VkDeviceSize offset, bytes; };

@@ -317,8 +317,7 @@ bool Device::CreateShadowResources(std::string* error)
 
 void Device::DestroyShadowResources()
 {
-    for (auto& [key, e] : m_casterCache) vmaDestroyBuffer(m_allocator, e.buffer, e.allocation);
-    m_casterCache.clear();
+    m_casterCache.clear();                       // their arena goes with the static one (DestroyStaticGeometry)
     for (auto& [tag, b] : m_deadBuffers) vmaDestroyBuffer(m_allocator, b.first, b.second);
     m_deadBuffers.clear();
     for (VkPipeline& p : m_shadowPipelines) if (p) { vkDestroyPipeline(m_device, p, nullptr); p = VK_NULL_HANDLE; }
@@ -560,27 +559,27 @@ void Device::CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertic
     }
     if (d2 > 9.0f * kCasterCacheRange * kCasterCacheRange)
         return;
+    // One slot of the caster arena: the vertices (at a multiple of the stride, so the draw's vertexOffset is exact),
+    // then the indices (2-aligned: firstIndex = offset / 2). Shared buffers let remembered casters batch together
+    // (each in a buffer of its own was a batch, binds and an indirect call of its own, per cascade and cube face).
     VkDeviceSize vbBytes = VkDeviceSize(c.stride) * c.vertexCount;
-    e.indexOffset = (vbBytes + 3) & ~VkDeviceSize(3);
-    VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    bi.size = e.indexOffset + VkDeviceSize(c.indexCount) * 2 + 4;
-    bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    VmaAllocationCreateInfo ac{};
-    ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-    ac.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-    VmaAllocationInfo info;
-    if (vmaCreateBuffer(m_allocator, &bi, &ac, &e.buffer, &e.allocation, &info) != VK_SUCCESS)
+    VkDeviceSize indexAt = (vbBytes + 3) & ~VkDeviceSize(3);
+    e.slotBytes = indexAt + VkDeviceSize(c.indexCount) * 2 + 4;
+    e.chunk = ArenaPlace(e.slotBytes, c.stride, &e.slot, true);
+    if (!e.chunk || !e.chunk->mapped)
         return;
-    auto* dst = static_cast<uint8_t*>(info.pMappedData);
+    e.vbOffset = e.slot;
+    e.indexOffset = e.slot + indexAt;
+    uint8_t* dst = e.chunk->mapped + e.slot;
     std::memcpy(dst, vertices, vbBytes);
     if (c.indexCount)
-        std::memcpy(dst + e.indexOffset, indices, size_t(c.indexCount) * 2);
+        std::memcpy(dst + indexAt, indices, size_t(c.indexCount) * 2);
     m_casterCache.emplace(key, e);
 }
 
 void Device::ForgetCachedCaster(std::unordered_map<uint64_t, CachedCaster>::iterator it)
 {
-    m_deadBuffers.push_back({DeathTag(), {it->second.buffer, it->second.allocation}});
+    ArenaFree(it->second.chunk, it->second.slot, it->second.slotBytes);   // reused once the GPU is done with it
     m_casterCache.erase(it);
 }
 
@@ -781,10 +780,10 @@ void Device::CollectShadowItems()
         if (e.lastSeen == m_frameNumber && std::find(staleKeys.begin(), staleKeys.end(), key) == staleKeys.end())
             continue;                            // drawn this frame: in the list above
         ShadowItem it;
-        it.buffer = e.buffer;
+        it.buffer = e.chunk->buffer;             // the caster arena: vertices and indices at their offsets
         it.owner = 0;
-        it.ibBuffer = VK_NULL_HANDLE;
-        it.vbOffset = 0;
+        it.ibBuffer = e.chunk->buffer;
+        it.vbOffset = e.vbOffset;
         it.ibOffset = e.indexOffset;
         it.primitive = e.primitive;
         it.stride = e.stride;
@@ -815,14 +814,26 @@ void Device::CollectShadowItems()
         }
         if (uint32_t(m_shadowItems[i].kind) == uint32_t(VisualKind::Static)) ++m_shadowStaticItems;
     }
-    // Batch-key order for the passes (stable: equal keys keep the game's order).
+    // The passes' order: by what a change costs a call for - pipeline, topology, vertex layout (SetVertexInputEXT),
+    // texture (a descriptor push), buffers (binds) - then by batch key, so equal batches are contiguous (stable: equal
+    // keys keep the game's order). Hash order alone scattered those states: a bind or push between most batches.
     m_shadowOrder.resize(m_shadowItems.size());
+    static std::vector<std::pair<uint64_t, uint64_t>> sortKeys;   // (state order, batch key) per item
+    sortKeys.resize(m_shadowItems.size());
     for (uint32_t i = 0; i < m_shadowItems.size(); ++i) {
-        m_shadowItems[i].key = ShadowItemKey(m_shadowItems[i]);
+        ShadowItem& it = m_shadowItems[i];
+        it.key = ShadowItemKey(it);
         m_shadowOrder[i] = i;
+        uint64_t buffers = (uint64_t(it.buffer) * 0x9E3779B97F4A7C15ull) ^ (uint64_t(it.ibBuffer) * 0xC2B2AE3D27D4EB4Full);
+        uint64_t state = uint64_t(it.texture ? 1 : 0) << 63 | uint64_t(it.indexCount != 0) << 62 |
+                         uint64_t(it.primitive & 7) << 59 | uint64_t(std::min<uint32_t>(it.stride, 255)) << 51 |
+                         uint64_t(uint32_t(it.texOffset + 1) & 0xFF) << 43 |
+                         uint64_t((reinterpret_cast<uintptr_t>(it.texture) >> 4) & 0xFFFF) << 27 |
+                         ((buffers >> 37) & 0x7FFFFFF);
+        sortKeys[i] = {state, it.key};
     }
     std::stable_sort(m_shadowOrder.begin(), m_shadowOrder.end(),
-                     [this](uint32_t a, uint32_t b) { return m_shadowItems[a].key < m_shadowItems[b].key; });
+                     [](uint32_t a, uint32_t b) { return sortKeys[a] < sortKeys[b]; });
     m_shadowOrderBox.resize(m_shadowOrder.size() * 6);
     for (size_t k = 0; k < m_shadowOrder.size(); ++k) {
         const ShadowItem& it = m_shadowItems[m_shadowOrder[k]];

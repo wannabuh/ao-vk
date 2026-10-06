@@ -19,14 +19,16 @@ using namespace detail;
 
 namespace {
 constexpr VkDeviceSize kStaticArenaChunk = 32u << 20;
+constexpr VkDeviceSize kCasterArenaChunk = 8u << 20;
 VkDeviceSize AlignUp(VkDeviceSize v, VkDeviceSize a) { return a ? (v + a - 1) / a * a : v; }
 }  // namespace
 
 // A slot in a static-arena chunk: a freed slot that fits (re-aligned), else the current chunk's tail, else a new
 // chunk. The offset is a multiple of `align` (the FVF stride), so a draw's vertexOffset = offset / stride is exact.
-Device::ArenaChunk* Device::ArenaPlace(VkDeviceSize bytes, VkDeviceSize align, VkDeviceSize* offset)
+Device::ArenaChunk* Device::ArenaPlace(VkDeviceSize bytes, VkDeviceSize align, VkDeviceSize* offset, bool casters)
 {
-    for (auto& c : m_staticArena) {
+    auto& arena = casters ? m_casterArena : m_staticArena;
+    for (auto& c : arena) {
         for (auto it = c->free.begin(); it != c->free.end(); ++it) {
             VkDeviceSize at = AlignUp(it->first, align), end = it->first + it->second;
             if (at + bytes <= end) {
@@ -38,22 +40,29 @@ Device::ArenaChunk* Device::ArenaPlace(VkDeviceSize bytes, VkDeviceSize align, V
             }
         }
     }
-    if (m_staticArena.empty() || AlignUp(m_staticArena.back()->used, align) + bytes > m_staticArena.back()->size) {
-        VkDeviceSize size = std::max(kStaticArenaChunk, bytes);
+    if (arena.empty() || AlignUp(arena.back()->used, align) + bytes > arena.back()->size) {
+        VkDeviceSize size = std::max(casters ? kCasterArenaChunk : kStaticArenaChunk, bytes);
         auto c = std::make_unique<ArenaChunk>();
         VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
         bi.size = size;
         bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |   // retained indices too
-                   VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+                   (casters ? 0 : VK_BUFFER_USAGE_TRANSFER_DST_BIT);
         VmaAllocationCreateInfo ac{};
-        ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-        if (vmaCreateBuffer(m_allocator, &bi, &ac, &c->buffer, &c->allocation, nullptr) != VK_SUCCESS)
+        VmaAllocationInfo info{};
+        if (casters) {                           // written by the CPU once per caster, read by the shadow passes
+            ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+            ac.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        } else {
+            ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        }
+        if (vmaCreateBuffer(m_allocator, &bi, &ac, &c->buffer, &c->allocation, &info) != VK_SUCCESS)
             return nullptr;
         c->size = size;
-        Log("static arena: new chunk, %.1f MB", double(size) / 1048576.0);
-        m_staticArena.push_back(std::move(c));
+        c->mapped = casters ? static_cast<uint8_t*>(info.pMappedData) : nullptr;
+        Log("%s arena: new chunk, %.1f MB", casters ? "shadow caster" : "static", double(size) / 1048576.0);
+        arena.push_back(std::move(c));
     }
-    ArenaChunk* c = m_staticArena.back().get();
+    ArenaChunk* c = arena.back().get();
     *offset = AlignUp(c->used, align);
     c->used = *offset + bytes;
     return c;
@@ -154,6 +163,9 @@ void Device::DestroyStaticGeometry()
     for (auto& c : m_staticArena)
         if (c->buffer) vmaDestroyBuffer(m_allocator, c->buffer, c->allocation);
     m_staticArena.clear();
+    for (auto& c : m_casterArena)                // (the caster cache was cleared before: DestroyShadowResources)
+        if (c->buffer) vmaDestroyBuffer(m_allocator, c->buffer, c->allocation);
+    m_casterArena.clear();
     m_deadArenaSlots.clear();
     m_staticGeometry.clear();
     m_staticBytes = 0;
