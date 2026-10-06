@@ -259,9 +259,12 @@ bool Device::CreateGrassResources(std::string* error)
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_grassSetLayout),
                "vkCreateDescriptorSetLayout", error))
         return false;
+    VkPushConstantRange range{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 8};   // the per-tile frame-light mask (uvec2)
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pl.setLayoutCount = 1;
     pl.pSetLayouts = &m_grassSetLayout;
+    pl.pushConstantRangeCount = 1;
+    pl.pPushConstantRanges = &range;
     if (!Check(vkCreatePipelineLayout(m_device, &pl, nullptr, &m_grassLayout), "vkCreatePipelineLayout", error))
         return false;
     auto module = [&](const uint32_t* code, size_t size, VkShaderModule* out) {
@@ -642,9 +645,38 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     };
     std::sort(visible.begin(), visible.end(),
               [&](const auto& a, const auto& b) { return tileDist2(a.first) < tileDist2(b.first); });
+    // Which of the frame's 64 lights reach a tile, so a blade only tests the few that matter (the frame lights the
+    // scene lights by too, so only with the light override on).
+    const bool localLights = m_lightOverride && m_pixelLighting && !m_frameLightSpheres.empty();
+    auto tileMask = [&](uint64_t key) -> uint64_t {
+        if (!localLights)
+            return 0;
+        const int32_t tx = int32_t(uint32_t(key >> 32)), tz = int32_t(uint32_t(key));
+        const float x0 = float(tx) * kGrassTileSize, z0 = float(tz) * kGrassTileSize;
+        const float x1 = x0 + kGrassTileSize, z1 = z0 + kGrassTileSize;
+        float y0 = -1e30f, y1 = 1e30f, gy;
+        if (GroundHeight((x0 + x1) * 0.5f, (z0 + z1) * 0.5f, &gy)) {
+            y0 = gy - 1.0f;
+            y1 = gy + m_grassHeight * 2.0f + 1.0f;
+        }
+        uint64_t mask = 0;
+        const size_t n = std::min<size_t>(m_frameLightSpheres.size(), 64);
+        for (size_t i = 0; i < n; ++i) {
+            const LightSphere& s = m_frameLightSpheres[i];
+            const float dx = std::max({x0 - s.x, 0.0f, s.x - x1});
+            const float dz = std::max({z0 - s.z, 0.0f, s.z - z1});
+            const float dy = std::max({y0 - s.y, 0.0f, s.y - y1});
+            if (dx * dx + dy * dy + dz * dz <= s.r2)
+                mask |= uint64_t(1) << i;
+        }
+        return mask;
+    };
     uint64_t drawn = 0;
     for (const auto& [key, count] : visible) {
         const GrassTile& tile = m_grassTiles[key];
+        const uint64_t mask = tileMask(key);
+        const uint32_t mask2[2] = {uint32_t(mask), uint32_t(mask >> 32)};
+        vkCmdPushConstants(cmd, m_grassLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 8, mask2);
         VkDeviceSize vbOffset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &tile.buffer, &vbOffset);
         vkCmdDraw(cmd, count, 1, 0, 0);

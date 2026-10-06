@@ -1,9 +1,9 @@
 #version 450
-// Procedural ground grass (RVK_GrassOn, rvk/grass.cpp): a blade shaped by the procedural atlas (a tapered silhouette
-// with a vein), tinted by the ground's own colour and lit by the sun, darkened where the sun's shadow map says it is
-// in shadow. Writes the scene colour and the motion vectors (grass is static in the world: the camera's motion); the
-// glow, light-fraction and albedo attachments keep what the scene left.
-#include "frame_lights.glsl"                    // FL (binding 4): the sun, its shadow cascades and their parameters
+// Procedural ground grass (RVK_GrassOn, rvk/grass.cpp): a solid, tapered blade tinted by the ground's own colour, lit
+// by the sun (with its shadow map) and by the frame's nearby point / spot lights. Writes the scene colour and the
+// motion vectors (grass is static in the world, bar the wind: the vertex shader's position covers both); the glow,
+// light-fraction and albedo attachments keep what the scene left.
+#include "frame_lights.glsl"                    // FL (binding 4): the sun, its shadow cascades, the frame's lights
 
 layout(set = 0, binding = 0) uniform GrassFrame {
     mat4 viewProj;
@@ -12,8 +12,11 @@ layout(set = 0, binding = 0) uniform GrassFrame {
     vec4 wind;
     vec4 camera;
 } GF;
-layout(set = 0, binding = 1) uniform sampler2D bladeTex;              // the blade atlas
+layout(set = 0, binding = 1) uniform sampler2D bladeTex;              // the blade atlas (its vein)
 layout(set = 0, binding = 5) uniform sampler2DArrayShadow shadowMap;  // the sun's cascades
+// Which of the frame's 64 lights reach this tile (grass.cpp: the tile's box against each light's range), so a blade
+// only tests the few lights that matter, not all of them.
+layout(push_constant) uniform GrassPush { uvec2 lightMask; } GP;
 
 layout(location = 0) in vec3 vPosW;
 layout(location = 1) in vec3 vNormal;
@@ -27,7 +30,7 @@ layout(location = 0) out vec4 outScene;
 layout(location = 3) out vec4 outMotion;
 
 // Sun visibility at a blade point: 1 lit, 0 in shadow. The first cascade that covers the point (the near, sharp one),
-// a small PCF; no soft-shadow blocker search (a blade is tiny).
+// one tap; a 3x3 PCF is not worth its cost on a blade, thicker with overdraw.
 float SunShadow(vec3 posW, vec3 n)
 {
     if (FL.shadowParams.x < 0.5 || dot(FL.sunColor.rgb, FL.sunColor.rgb) <= 0.0)
@@ -41,10 +44,46 @@ float SunShadow(vec3 posW, vec3 n)
         vec3 ndc = sc.xyz / sc.w;
         if (max(abs(ndc.x), abs(ndc.y)) >= 1.0 || ndc.z <= 0.0 || ndc.z >= 1.0)
             continue;
-        // One tap: a blade is tiny and the field is thick with overdraw, so a 3x3 PCF is not worth its cost here.
         return texture(shadowMap, vec4(ndc.xy * 0.5 + 0.5, float(c), ndc.z));
     }
     return 1.0;
+}
+
+// The frame's nearby point / spot lights that reach this tile (D3D7's attenuation, its range cut faded out rather than
+// a hard circle). No shadows on a blade.
+vec3 LocalLights(vec3 posW, vec3 n)
+{
+    vec3 sum = vec3(0.0);
+    for (uint word = 0u; word < 2u; ++word) {
+        uint mask = GP.lightMask[word];
+        while (mask != 0u) {
+            uint i = word * 32u + uint(findLSB(mask));
+            mask &= mask - 1u;
+            Light l = FL.lights[i];
+            uint type = uint(l.position.w);
+            if (type == 3u)
+                continue;                        // the sun, already applied
+            vec3 d = l.position.xyz - posW;
+            float dist = length(d);
+            if (dist > l.direction.w)
+                continue;
+            vec3 L = d / max(dist, 1e-6);
+            float denom = l.atten.x + l.atten.y * dist + l.atten.z * dist * dist;
+            float att = denom > 0.0 ? 1.0 / denom : 1.0;
+            float r = dist / max(l.direction.w, 1e-6);
+            float w = clamp(1.0 - r * r * r * r, 0.0, 1.0);
+            att *= w * w;
+            if (type == 2u) {                    // spot: the cone
+                float rho = dot(-L, normalize(l.direction.xyz));
+                if (rho <= l.spot.y)
+                    att = 0.0;
+                else if (rho < l.spot.x)
+                    att *= pow(clamp((rho - l.spot.y) / max(l.spot.x - l.spot.y, 1e-6), 0.0, 1.0), l.atten.w);
+            }
+            sum += att * (max(dot(n, L), 0.0) * l.diffuse.rgb + l.ambient.rgb);
+        }
+    }
+    return sum;
 }
 
 void main()
@@ -55,13 +94,13 @@ void main()
     vec3 n = normalize(vNormal);
     float d = max(dot(n, -normalize(FL.sunDir.xyz)), 0.0);
     float shadow = mix(1.0, SunShadow(vPosW, n), FL.shadowParams.y);
-    // The ground's own colour, brighter than it (the blade catches the light more than the flat ground does), dark at
+    // The ground's own colour, brighter than it (a blade catches the light more than the flat ground does), dark at
     // the root and bright at the tip.
     vec3 base = vTint * 1.9 * blade.rgb * mix(vec3(0.6), vec3(1.45), clamp(vShade, 0.0, 1.0));
-    // The ambient follows the sun, so the grass goes dark at night with the rest of the scene (a fixed ambient would
-    // leave it glowing green in the dark).
+    // The ambient follows the sun, so the grass goes dark at night with the rest of the scene.
     float sunLum = clamp(dot(FL.sunColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
-    outScene = vec4(base * (FL.sunColor.rgb * d * shadow + vec3(0.10 + 0.5 * sunLum)), 1.0);
+    vec3 lit = FL.sunColor.rgb * d * shadow + LocalLights(vPosW, n) + vec3(0.10 + 0.5 * sunLum);
+    outScene = vec4(base * lit, 1.0);
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * GF.viewport.xy * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
 }
