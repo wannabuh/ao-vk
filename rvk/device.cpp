@@ -1320,6 +1320,9 @@ void Device::BeginFrame()
         Log("opaque static fast path: %llu draws (last 600 frames)", (unsigned long long)m_opaqueDraws);
         Log("foliage: %llu draws, %llu of them far (LOD) (last 600 frames)", (unsigned long long)m_foliageDraws,
             (unsigned long long)m_foliageLodDraws);
+        Log("foliage survey: %.0f draws a frame (%.0f static, %.0f changing), %.0f vertices; box height %.2f .. %.2f",
+            double(m_foliageDraws) / 600.0, double(m_foliageStatic) / 600.0, double(m_foliageDynamic) / 600.0,
+            double(m_foliageVerts) / 600.0, m_foliageMinH, m_foliageMaxH);
         Log("no-discard pipeline (early-Z): %llu draws (last 600 frames)", (unsigned long long)m_noCutDraws);
         if (m_grassOn)
             Log("ground grass: %llu frames drawn, %.0f blades a frame (last 600 frames)",
@@ -1330,6 +1333,8 @@ void Device::BeginFrame()
         m_midFrameFlushes = 0;
         m_opaqueDraws = 0;
         m_foliageDraws = m_foliageLodDraws = 0;
+        m_foliageStatic = m_foliageDynamic = m_foliageVerts = 0;
+        m_foliageMinH = m_foliageMaxH = 0.0f;
         m_noCutDraws = 0;
     }
     ++m_ringGeneration;                          // a different slot's ring: cached offsets are invalid

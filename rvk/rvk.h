@@ -520,6 +520,8 @@ private:
     uint64_t m_opaqueDraws = 0;                  // the opaque fast path's draws (logged every 600 frames)
     // Foliage counters (logged every 600 frames): draws flagged foliage, and how many of those took the far LOD.
     uint64_t m_foliageDraws = 0, m_foliageLodDraws = 0;
+    uint64_t m_foliageStatic = 0, m_foliageDynamic = 0, m_foliageVerts = 0;   // survey (RVK_GrassOn off is fine too)
+    float m_foliageMinH = 0.0f, m_foliageMaxH = 0.0f;
     uint32_t m_drawFoliage = 0;                  // the current constants' foliage class: 0 none, 1 near, 2 far (LOD)
     VkSampler m_bumpSampler = VK_NULL_HANDLE;
     static uint64_t TerrainChunkKey(const void* vertices, uint32_t vertexCount, uint32_t stride, uint32_t indexCount);

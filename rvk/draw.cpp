@@ -2345,6 +2345,20 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_drawFoliage) {
         ++m_foliageDraws;
         if (m_drawFoliage == 2u) ++m_foliageLodDraws;
+        // A survey of the game's own foliage, for deciding what to replace: whether its meshes are world-fixed (a
+        // swaying plant) or change every frame (a camera-facing billboard or a skinned thing), and their size.
+        if (m_drawMeshStatic)
+            ++m_foliageStatic;
+        else
+            ++m_foliageDynamic;
+        m_foliageVerts += vertexCount;
+        float c[3], e[3];
+        DrawWorldBox(c, e);
+        const float h = e[1] * 2.0f;
+        if (m_foliageMinH == 0.0f || h < m_foliageMinH)
+            m_foliageMinH = h;
+        if (h > m_foliageMaxH)
+            m_foliageMaxH = h;
     }
 
     ProfileDrawSection("draw: constants", since);
