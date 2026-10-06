@@ -821,6 +821,25 @@ DWORD ToArgb(C4 c)
     return (q(c.a) << 24) | (q(c.r) << 16) | (q(c.g) << 8) | q(c.b);
 }
 
+// ProcessVertices' enabled light, with what doesn't change per vertex worked out.
+struct PvLight {
+    bool directional, spot;
+    V3 toLight, spotDir, pos, ambient, diffuse, specular;
+    float range, a0, a1, a2, cosTheta, cosPhi, falloff;
+};
+
+// The specular highlight's falloff, nh^power: a whole power (the usual material) by repeated squaring - std::pow per
+// vertex and light was a tenth of ProcessVertices.
+float SpecularPower(float nh, float power, int powerInt)
+{
+    if (powerInt < 0)
+        return std::pow(nh, power);
+    float r = 1.0f, b = nh;
+    for (int e = powerInt; e; e >>= 1, b *= b)
+        if (e & 1) r *= b;
+    return r;
+}
+
 }  // namespace
 
 HRESULT RDevice::ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, DWORD count, RVertexBuffer* src,
@@ -841,6 +860,54 @@ HRESULT RDevice::ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, D
     eyePos.x = -(v[3][0] * v[0][0] + v[3][1] * v[0][1] + v[3][2] * v[0][2]);
     eyePos.y = -(v[3][0] * v[1][0] + v[3][1] * v[1][1] + v[3][2] * v[1][2]);
     eyePos.z = -(v[3][0] * v[2][0] + v[3][1] * v[2][1] + v[3][2] * v[2][2]);
+
+    // What the lighting needs that doesn't change from vertex to vertex, worked out once.
+    const float(*w)[4] = reinterpret_cast<const float(*)[4]>(&world);
+    const bool normalize = m_rs[D3DRENDERSTATE_NORMALIZENORMALS] != 0;
+    const bool specular = m_rs[D3DRENDERSTATE_SPECULARENABLE] != 0;
+    const bool localViewer = m_rs[D3DRENDERSTATE_LOCALVIEWER] != 0;
+    const V3 eyeAway = eyeDir * -1.0f;
+    // Where each material colour comes from: 0 the material, 1 the vertex's diffuse colour, 2 its specular colour.
+    auto sourceOf = [&](DWORD which) {
+        if (m_rs[D3DRENDERSTATE_COLORVERTEX]) {
+            if (which == D3DMCS_COLOR1 && sf.diffuse >= 0) return 1;
+            if (which == D3DMCS_COLOR2 && sf.specular >= 0) return 2;
+        }
+        return 0;
+    };
+    const int srcDiffuse = sourceOf(m_rs[D3DRENDERSTATE_DIFFUSEMATERIALSOURCE]);
+    const int srcAmbient = sourceOf(m_rs[D3DRENDERSTATE_AMBIENTMATERIALSOURCE]);
+    const int srcSpecular = sourceOf(m_rs[D3DRENDERSTATE_SPECULARMATERIALSOURCE]);
+    const int srcEmissive = sourceOf(m_rs[D3DRENDERSTATE_EMISSIVEMATERIALSOURCE]);
+    const C4 matDiffuse = FromValue(m_material.diffuse), matAmbient = FromValue(m_material.ambient);
+    const C4 matSpecular = FromValue(m_material.specular), matEmissive = FromValue(m_material.emissive);
+    const C4 ambientColor = FromArgb(m_rs[D3DRENDERSTATE_AMBIENT]);
+    const V3 ambient{ambientColor.r, ambientColor.g, ambientColor.b};
+    const float power = m_material.power;
+    const int powerInt = power >= 0.0f && power <= 128.0f && float(int(power)) == power ? int(power) : -1;
+    static std::vector<PvLight> lights;          // (the game thread's; kept: no allocation per call)
+    lights.clear();
+    if (light)
+        for (const auto& [l, enabled] : m_lights) {
+            if (!enabled) continue;
+            PvLight o;
+            o.directional = l.dltType == D3DLIGHT_DIRECTIONAL;
+            o.spot = l.dltType == D3DLIGHT_SPOT;
+            o.toLight = Normalize(V3{l.dvDirection.x, l.dvDirection.y, l.dvDirection.z} * -1.0f);
+            o.spotDir = Normalize(V3{l.dvDirection.x, l.dvDirection.y, l.dvDirection.z});
+            o.pos = V3{l.dvPosition.x, l.dvPosition.y, l.dvPosition.z};
+            o.range = l.dvRange;
+            o.a0 = l.dvAttenuation0;
+            o.a1 = l.dvAttenuation1;
+            o.a2 = l.dvAttenuation2;
+            o.cosTheta = std::cos(l.dvTheta * 0.5f);
+            o.cosPhi = std::cos(l.dvPhi * 0.5f);
+            o.falloff = l.dvFalloff;
+            o.ambient = V3{l.dcvAmbient.r, l.dcvAmbient.g, l.dcvAmbient.b};
+            o.diffuse = V3{l.dcvDiffuse.r, l.dcvDiffuse.g, l.dcvDiffuse.b};
+            o.specular = V3{l.dcvSpecular.r, l.dcvSpecular.g, l.dcvSpecular.b};
+            lights.push_back(o);
+        }
 
     dst->Written();                              // its shared copy (StaticSnapshot) is out of date
     for (DWORD i = 0; i < count; ++i) {
@@ -868,58 +935,48 @@ HRESULT RDevice::ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, D
             if (sf.normal >= 0) {
                 float nn[3];
                 std::memcpy(nn, in + sf.normal, 12);
-                const float(*w)[4] = reinterpret_cast<const float(*)[4]>(&world);
                 n = {nn[0] * w[0][0] + nn[1] * w[1][0] + nn[2] * w[2][0], nn[0] * w[0][1] + nn[1] * w[1][1] + nn[2] * w[2][1],
                      nn[0] * w[0][2] + nn[1] * w[1][2] + nn[2] * w[2][2]};
-                if (m_rs[D3DRENDERSTATE_NORMALIZENORMALS]) n = Normalize(n);
+                if (normalize) n = Normalize(n);
             }
-            auto source = [&](DWORD which, const D3DCOLORVALUE& material) {
-                if (m_rs[D3DRENDERSTATE_COLORVERTEX]) {
-                    if (which == D3DMCS_COLOR1 && sf.diffuse >= 0) return FromArgb(inDiffuse);
-                    if (which == D3DMCS_COLOR2 && sf.specular >= 0) return FromArgb(inSpecular);
-                }
-                return FromValue(material);
+            const C4 vDiffuse = FromArgb(inDiffuse), vSpecular = FromArgb(inSpecular);
+            auto source = [&](int which, const C4& material) {
+                return which == 1 ? vDiffuse : which == 2 ? vSpecular : material;
             };
-            C4 mDiffuse = source(m_rs[D3DRENDERSTATE_DIFFUSEMATERIALSOURCE], m_material.diffuse);
-            C4 mAmbient = source(m_rs[D3DRENDERSTATE_AMBIENTMATERIALSOURCE], m_material.ambient);
-            C4 mSpecular = source(m_rs[D3DRENDERSTATE_SPECULARMATERIALSOURCE], m_material.specular);
-            C4 mEmissive = source(m_rs[D3DRENDERSTATE_EMISSIVEMATERIALSOURCE], m_material.emissive);
-            C4 ambient = FromArgb(m_rs[D3DRENDERSTATE_AMBIENT]);
-            V3 amb{ambient.r, ambient.g, ambient.b}, diff{0, 0, 0}, spec{0, 0, 0};
-            V3 toEye = m_rs[D3DRENDERSTATE_LOCALVIEWER] ? Normalize(eyePos - posW) : eyeDir * -1.0f;
-            for (auto& [l, enabled] : m_lights) {
-                if (!enabled) continue;
-                V3 L;
+            C4 mDiffuse = source(srcDiffuse, matDiffuse), mAmbient = source(srcAmbient, matAmbient);
+            C4 mSpecular = source(srcSpecular, matSpecular), mEmissive = source(srcEmissive, matEmissive);
+            V3 amb = ambient, diff{0, 0, 0}, spec{0, 0, 0};
+            V3 toEye = localViewer ? Normalize(eyePos - posW) : eyeAway;
+            for (const PvLight& l : lights) {
+                V3 L = l.toLight;
                 float att = 1.0f;
-                if (l.dltType == D3DLIGHT_DIRECTIONAL) {
-                    L = Normalize(V3{l.dvDirection.x, l.dvDirection.y, l.dvDirection.z} * -1.0f);
-                } else {
-                    V3 d = V3{l.dvPosition.x, l.dvPosition.y, l.dvPosition.z} - posW;
+                if (!l.directional) {
+                    V3 d = l.pos - posW;
                     float dist = std::sqrt(Dot(d, d));
-                    if (dist > l.dvRange) continue;
+                    if (dist > l.range) continue;
                     L = dist > 0 ? d * (1.0f / dist) : d;
-                    float denom = l.dvAttenuation0 + l.dvAttenuation1 * dist + l.dvAttenuation2 * dist * dist;
+                    float denom = l.a0 + l.a1 * dist + l.a2 * dist * dist;
                     att = denom > 0 ? 1.0f / denom : 1.0f;
-                    if (l.dltType == D3DLIGHT_SPOT) {
-                        float rho = Dot(L * -1.0f, Normalize(V3{l.dvDirection.x, l.dvDirection.y, l.dvDirection.z}));
-                        float cosTheta = std::cos(l.dvTheta * 0.5f), cosPhi = std::cos(l.dvPhi * 0.5f);
-                        if (rho <= cosPhi) att = 0;
-                        else if (rho < cosTheta)
-                            att *= std::pow(std::fmax((rho - cosPhi) / std::fmax(cosTheta - cosPhi, 1e-6f), 0.0f), l.dvFalloff);
+                    if (l.spot) {
+                        float rho = Dot(L * -1.0f, l.spotDir);
+                        if (rho <= l.cosPhi) att = 0;
+                        else if (rho < l.cosTheta)
+                            att *= std::pow(std::fmax((rho - l.cosPhi) / std::fmax(l.cosTheta - l.cosPhi, 1e-6f), 0.0f),
+                                            l.falloff);
                     }
                 }
-                amb = amb + V3{l.dcvAmbient.r, l.dcvAmbient.g, l.dcvAmbient.b} * att;
+                amb = amb + l.ambient * att;
                 float nl = std::fmax(Dot(n, L), 0.0f);
-                diff = diff + V3{l.dcvDiffuse.r, l.dcvDiffuse.g, l.dcvDiffuse.b} * (att * nl);
-                if (m_rs[D3DRENDERSTATE_SPECULARENABLE] && nl > 0) {
+                diff = diff + l.diffuse * (att * nl);
+                if (specular && nl > 0) {
                     float nh = std::fmax(Dot(n, Normalize(L + toEye)), 0.0f);
-                    spec = spec + V3{l.dcvSpecular.r, l.dcvSpecular.g, l.dcvSpecular.b} * (att * std::pow(nh, m_material.power));
+                    spec = spec + l.specular * (att * SpecularPower(nh, power, powerInt));
                 }
             }
             outDiffuse = ToArgb({mEmissive.r + mAmbient.r * amb.x + mDiffuse.r * diff.x,
                                  mEmissive.g + mAmbient.g * amb.y + mDiffuse.g * diff.y,
                                  mEmissive.b + mAmbient.b * amb.z + mDiffuse.b * diff.z, mDiffuse.a});
-            outSpecular = ToArgb({mSpecular.r * spec.x, mSpecular.g * spec.y, mSpecular.b * spec.z, FromArgb(inSpecular).a});
+            outSpecular = ToArgb({mSpecular.r * spec.x, mSpecular.g * spec.y, mSpecular.b * spec.z, vSpecular.a});
         }
         if (df.diffuse >= 0 && (light || copyData)) std::memcpy(out + df.diffuse, &outDiffuse, 4);
         if (df.specular >= 0 && (light || copyData)) std::memcpy(out + df.specular, &outSpecular, 4);
