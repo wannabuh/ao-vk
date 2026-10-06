@@ -109,7 +109,7 @@ vec3 LocalLights(vec3 posW, vec3 n)
             }
             // A blade's normal is mostly horizontal, so it catches a light overhead far less than the flat ground
             // does; the local lights use an up-biased normal, so the grass lights as much as the ground they light.
-            vec3 ln = normalize(vec3(n.x, 2.0, n.z));
+            vec3 ln = normalize(vec3(n.x, 3.0, n.z));
             float nl = abs(dot(ln, L));
             sum += att * l.ambient.rgb;                          // the light's ambient isn't shadowed
             if (l.spot.z > 0.0 && nl > 0.0 && att > 0.0)
@@ -117,7 +117,7 @@ vec3 LocalLights(vec3 posW, vec3 n)
             sum += att * nl * l.diffuse.rgb;
         }
     }
-    return sum;
+    return sum * 1.5;            // the grass catches the local lights more than the geometry does, to sit with it
 }
 
 void main()
@@ -130,11 +130,11 @@ void main()
     float shadow = mix(1.0, SunShadow(vPosW), FL.shadowParams.y);
     // Mostly one grass green, with only a little of the ground's own colour (and the atlas' vein); a gentle root-to-tip
     // gradient, kept bright at the base too (a dark base read as neglected roots).
-    vec3 tint = mix(vec3(0.40, 0.58, 0.28), vTint, 0.3);
+    vec3 tint = mix(vec3(0.50, 0.70, 0.34), vTint, 0.3);
     vec3 base = tint * blade.rgb * mix(vec3(0.92), vec3(1.08), clamp(vShade, 0.0, 1.0));
     // The ambient follows the sun, so the grass goes dark at night with the rest of the scene.
     float sunLum = clamp(dot(FL.sunColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
-    vec3 lit = FL.sunColor.rgb * d * shadow + LocalLights(vPosW, n) + vec3(0.15 + 0.5 * sunLum);
+    vec3 lit = FL.sunColor.rgb * d * shadow + LocalLights(vPosW, n) + vec3(0.22 + 0.6 * sunLum);
     outScene = vec4(base * lit, 1.0);
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * GF.viewport.xy * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
