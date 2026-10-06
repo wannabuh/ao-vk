@@ -148,11 +148,17 @@ bool Texture::GrassTexel(float u, float v) const
 void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const void* vertices, uint32_t vertexCount,
                             const uint16_t* indices, uint32_t indexCount)
 {
-    if (!m_grassOn || !vertices || !m_frameEyeValid || layout.offset[0] < 0 || layout.offset[4] < 0)
+    if (!m_grassOn || !vertices || !m_frameEyeValid || layout.offset[0] < 0)
         return;
-    if (m_rs[d3d::RS_LIGHTING] || m_rs[d3d::RS_ALPHABLENDENABLE])
-        return;                                  // the ground's base pass
+    const bool lightPass = m_rs[d3d::RS_LIGHTING] && IsMultiplyPass();
+    if (!lightPass && (m_rs[d3d::RS_LIGHTING] || m_rs[d3d::RS_ALPHABLENDENABLE]))
+        return;                                  // neither the ground's base pass nor its light pass
     if (primitive < d3d::TriangleList || primitive > d3d::TriangleFan)
+        return;
+    // The base pass' texture is the ground's own (stage 0, coordinate set 0); the light pass' is the lightmap, on
+    // coordinate set 1 - the baked light that makes the ground bright, which the grass lights from too.
+    const int uvSet = lightPass ? 5 : 4;
+    if (layout.offset[uvSet] < 0)
         return;
     // The grid only ever grows (cells near the camera are added every frame, none are removed), so a player roaming a
     // zone accumulates it until the guard below clears - hundreds of MB. It is only useful within reach of the camera
@@ -166,7 +172,7 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
     const Texture* tex = m_textures[0];
     const bool filter = m_grassTex && tex;
     const uint8_t* src = static_cast<const uint8_t*>(vertices);
-    const size_t stride = layout.stride, posOff = size_t(layout.offset[0]), uvOff = size_t(layout.offset[4]);
+    const size_t stride = layout.stride, posOff = size_t(layout.offset[0]), uvOff = size_t(layout.offset[uvSet]);
     auto vertexIn = [&](uint32_t i, float p[3], float uv[2]) {
         const uint8_t* v = src + size_t(i) * stride;
         std::memcpy(p, v + posOff, 12);
@@ -204,14 +210,19 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
                 if (l0 < -0.001f || l1 < -0.001f || l2 < -0.001f)
                     continue;
                 GroundCell& cell = m_groundHeights[(uint64_t(uint32_t(cx)) << 32) | uint32_t(cz)];
+                const float u = l0 * ua[0] + l1 * ub[0] + l2 * uc[0];
+                const float v = l0 * ua[1] + l1 * ub[1] + l2 * uc[1];
+                if (lightPass) {
+                    uint8_t l[3];
+                    if (tex && tex->TexelRgbAt(u, v, l))
+                        cell.light = uint32_t(l[0]) << 16 | uint32_t(l[1]) << 8 | l[2];
+                    continue;                        // the light pass only writes the light; the base pass set the rest
+                }
                 cell.y = l0 * pa[1] + l1 * pb[1] + l2 * pc[1];
                 uint8_t rgb[3] = {0x3C, 0x6A, 0x2A};      // a default grass green (no filter, or no texel read)
                 bool have = false;
-                if (filter) {
-                    const float u = l0 * ua[0] + l1 * ub[0] + l2 * uc[0];
-                    const float v = l0 * ua[1] + l1 * ub[1] + l2 * uc[1];
+                if (filter)
                     have = tex->TexelRgbAt(u, v, rgb);
-                }
                 cell.grass = !filter || (have && rgb[1] > 24 && int(rgb[1]) * 100 > int(rgb[0]) * 112 &&
                                          int(rgb[1]) * 100 > int(rgb[2]) * 112);
                 cell.colour = uint32_t(rgb[0]) << 16 | uint32_t(rgb[1]) << 8 | rgb[2];
@@ -232,7 +243,7 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
 
 // The ground height under a world x, z, if grass grows there. Searches the neighbouring cells too (a stray gap at the
 // captured region's edge); the nearest ground found decides (a non-grass ground there means no grass).
-bool Device::GroundHeight(float x, float z, float* y, uint32_t* colour) const
+bool Device::GroundHeight(float x, float z, float* y, uint32_t* colour, uint32_t* light) const
 {
     int32_t cx = int32_t(std::floor(x / kGroundCell));
     int32_t cz = int32_t(std::floor(z / kGroundCell));
@@ -250,6 +261,8 @@ bool Device::GroundHeight(float x, float z, float* y, uint32_t* colour) const
                 *y = it->second.y;
                 if (colour)
                     *colour = it->second.colour;
+                if (light)
+                    *light = it->second.light;
                 return true;
             }
     }
@@ -452,12 +465,13 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     const int32_t total = int32_t(perM2 * kGrassTileSize * kGrassTileSize * 1.7f);   // candidates; ~half pass the clump
     std::vector<GrassVertex> sparseV, denseV;   // the sparse subset is drawn alone for a distant tile (its LOD)
     auto vertex = [](GrassVertex& v, float x, float y, float z, const float n[3], float u, float vv, float shade,
-                     float phase, float height, float baseY, uint32_t colour, float across) {
+                     float phase, float height, float baseY, uint32_t colour, float across, uint32_t light) {
         v.pos[0] = x; v.pos[1] = y; v.pos[2] = z;
         v.normal[0] = n[0]; v.normal[1] = n[1]; v.normal[2] = n[2];
         v.uv[0] = u; v.uv[1] = vv;
         v.shade = shade; v.phase = phase; v.height = height; v.baseY = baseY; v.colour = colour;
         v.across = across;
+        v.light = light;
     };
     const int32_t tileSeed = int32_t(uint32_t(tx) * 73856093u ^ uint32_t(tz) * 19349663u);
     for (int32_t k = 0; k < total; ++k) {
@@ -475,8 +489,8 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         if (v3 > 0.5f + 0.5f * clump)
             continue;
         float py;
-        uint32_t pcol = 0x3C6A2Au;
-        if (!GroundHeight(px, pz, &py, &pcol))
+        uint32_t pcol = 0x3C6A2Au, plight = 0;
+        if (!GroundHeight(px, pz, &py, &pcol, &plight))
             continue;                            // no grass ground here
         const float height = m_grassHeight * (0.45f + 1.2f * v0);
         const float yaw = v1 * 6.2831853f;       // the blade's plane (independent of the position: no band rotates alike)
@@ -524,8 +538,8 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
             const float vv = cv + (0.04f + t * 0.92f) * kAtlasH;
             // The two edges of the cross section: the axis point and the signed width. The shader expands the width
             // towards the camera (a billboard), so a blade is never edge-on and invisible from above.
-            vertex(row[0][s], cx, cy, cz, normal, cu + 0.04f * kAtlasW, vv, t, phase, height, py, colour, -w);
-            vertex(row[1][s], cx, cy, cz, normal, cu + 0.96f * kAtlasW, vv, t, phase, height, py, colour, w);
+            vertex(row[0][s], cx, cy, cz, normal, cu + 0.04f * kAtlasW, vv, t, phase, height, py, colour, -w, plight);
+            vertex(row[1][s], cx, cy, cz, normal, cu + 0.96f * kAtlasW, vv, t, phase, height, py, colour, w, plight);
         }
         for (int s = 0; s < kSeg; ++s) {
             out.push_back(row[0][s]); out.push_back(row[1][s]); out.push_back(row[0][s + 1]);
@@ -700,7 +714,7 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     binding.stride = sizeof(GrassVertex);
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
     binding.divisor = 1;
-    VkVertexInputAttributeDescription2EXT attrs[9] = {};
+    VkVertexInputAttributeDescription2EXT attrs[10] = {};
     for (auto& a : attrs)
         a.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT;
     const VkFormat f3 = VK_FORMAT_R32G32B32_SFLOAT, f2 = VK_FORMAT_R32G32_SFLOAT, f1 = VK_FORMAT_R32_SFLOAT;
@@ -713,7 +727,8 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     attrs[6].location = 6; attrs[6].format = f1; attrs[6].offset = 44;
     attrs[7].location = 7; attrs[7].format = VK_FORMAT_B8G8R8A8_UNORM; attrs[7].offset = 48;
     attrs[8].location = 8; attrs[8].format = f1; attrs[8].offset = 52;
-    vkCmdSetVertexInputEXT(cmd, 1, &binding, 9, attrs);
+    attrs[9].location = 9; attrs[9].format = VK_FORMAT_B8G8R8A8_UNORM; attrs[9].offset = 56;
+    vkCmdSetVertexInputEXT(cmd, 1, &binding, 10, attrs);
     // Draw the nearest tiles first: with the depth write on, early-Z then rejects the blades they hide (the far ones'
     // fragments), which is where most of the overdraw of a thick field is.
     auto tileDist2 = [&](uint64_t key) {
