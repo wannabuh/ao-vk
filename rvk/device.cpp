@@ -1264,9 +1264,13 @@ void Device::BeginFrame()
         Log("ring buffer: peak %.1f of %llu MB a frame, %u mid-frame flushes (last 600 frames)",
             double(m_ringPeak) / 1048576.0, (unsigned long long)(f.ringSize >> 20), m_midFrameFlushes);
         Log("opaque static fast path: %llu draws (last 600 frames)", (unsigned long long)m_opaqueDraws);
+        Log("foliage class: %llu draws, %llu with opaque textures; of those LOD far: %llu, %llu opaque (last 600 frames)",
+            (unsigned long long)m_foliageDraws, (unsigned long long)m_foliageOpaqueDraws,
+            (unsigned long long)m_foliageLodDraws, (unsigned long long)m_foliageLodOpaqueDraws);
         m_ringPeak = 0;
         m_midFrameFlushes = 0;
         m_opaqueDraws = 0;
+        m_foliageDraws = m_foliageOpaqueDraws = m_foliageLodDraws = m_foliageLodOpaqueDraws = 0;
     }
     ++m_ringGeneration;                          // a different slot's ring: cached offsets are invalid
     BeginSkinFrame();

@@ -464,6 +464,9 @@ private:
     bool m_drawTerrainBase = false;              // the current draw is the ground's unlit base pass (Draw)
     bool m_drawTerrainLight = false;             // ... or its multiplying lightmap pass
     uint64_t m_opaqueDraws = 0;                  // the opaque fast path's draws (logged every 600 frames)
+    // Foliage classification counters (logged every 600 frames): how many draws are flagged foliage, and how many
+    // of those have fully opaque textures (so are not foliage at all).
+    uint64_t m_foliageDraws = 0, m_foliageOpaqueDraws = 0, m_foliageLodDraws = 0, m_foliageLodOpaqueDraws = 0;
     VkSampler m_bumpSampler = VK_NULL_HANDLE;
     static uint64_t TerrainChunkKey(const void* vertices, uint32_t vertexCount, uint32_t stride, uint32_t indexCount);
     uint32_t m_dumpVertexCount = 0;
