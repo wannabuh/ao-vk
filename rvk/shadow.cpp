@@ -1097,6 +1097,11 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         m_shadowOrderBox.clear();
         return;
     }
+    // The caster records and indirect commands live in this ring generation's arena, reserved by Draw - but the ring
+    // can have restarted since the frame's last draw (a flush for particles or skinning), or a frame may have no
+    // draws: reserve it now, or the passes would write into a slice the ring hands out again.
+    if (m_arenaGeneration != m_ringGeneration)
+        PrepareDrawArenas();
     double collectStart = ProfileCpu();
     CollectShadowItems();
     m_shadowCollectMs = ProfileCpu() - collectStart;
