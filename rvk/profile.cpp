@@ -21,7 +21,8 @@ const char* const kSceneClassNames[] = {"", "scene statics", "scene terrain base
 // The shading count's classes: the same, with the statics split by the depth pre-pass.
 const char* const kShadeClassNames[] = {"", "statics pre-passed", "terrain base", "terrain light", "foliage",
                                         "characters", "effects", "sky", "water", "rooms", "other",
-                                        "statics out (no depth test/write)", "statics out (other)"};
+                                        "statics out (no depth test/write)", "statics out (other)",
+                                        "foliage alpha-tested"};
 double CpuNow()
 {
     using namespace std::chrono;

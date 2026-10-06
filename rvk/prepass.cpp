@@ -161,8 +161,8 @@ uint32_t Device::PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) co
         return kPreNoZWrite;
     if (zFunc != d3d::CMP_LESS && zFunc != d3d::CMP_LESSEQUAL)
         return kPreZFunc;
-    if (m_drawMayDiscard)
-        return kPreDiscard;
+    if (m_drawMayDiscard)                        // alpha tested and not blended (a pre-pass candidate), or cut out
+        return m_rs[d3d::RS_ALPHATESTENABLE] && !m_rs[d3d::RS_ALPHABLENDENABLE] ? kPreAlphaTest : kPreDiscard;
     if (WaterWritesDepth(fvf))
         return kPreWater;
     if (!m_rs[d3d::RS_ALPHABLENDENABLE])
@@ -178,8 +178,9 @@ void Device::PrepassLog()
 {
     static const char* const why[kPreWhyCount] = {
         "in", "before the depth clear", "after the segment", "characters", "swaying", "label/particle/other",
-        "no depth test", "no depth write", "depth compare", "cut-out/alpha test", "water", "blend mode", "alpha: vertex colour", "alpha: material",
-        "alpha: texture", "alpha: argument", "alpha: texture factor"};
+        "no depth test", "no depth write", "depth compare", "cut-out (blended)", "water", "blend mode",
+        "alpha test (not blended)", "alpha: vertex colour", "alpha: material", "alpha: texture", "alpha: argument",
+        "alpha: texture factor"};
     static const char* const end[kEndCount] = {"other", "scene end", "target switch", "copy", "read-back", "flush",
                                                "depth clear"};
     std::string out, ends;

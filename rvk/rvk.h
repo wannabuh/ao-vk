@@ -795,7 +795,7 @@ private:
     // Why a scene draw isn't in the pre-pass (PrepassCheck; counted for the log), and why segments end.
     enum PrepassWhy : uint32_t {
         kPreIn, kPreBefore, kPreAfter, kPreCharacter, kPreSway, kPreKind, kPreNoZTest, kPreNoZWrite, kPreZFunc,
-        kPreDiscard, kPreWater, kPreBlend,
+        kPreDiscard, kPreWater, kPreBlend, kPreAlphaTest,
         kPreAlphaDiffuse, kPreAlphaMaterial, kPreAlphaTexture, kPreAlphaArg, kPreAlphaTfactor, kPreWhyCount
     };
     enum RenderEnd : uint32_t { kEndOther, kEndScene, kEndTarget, kEndCopy, kEndReadback, kEndFlush, kEndClear, kEndCount };
@@ -1305,12 +1305,15 @@ private:
     VkCommandPool m_pool = VK_NULL_HANDLE;
     std::array<Frame, kFramesInFlight> m_frames;
     // Profiling (profile.cpp): GPU timestamps per frame slot, CPU times of the frame's recording.
-    static constexpr uint32_t kProfileMarks = 48;
-    static constexpr uint32_t kSceneClassMarks = 30;   // of them for the scene's class split (16 others a frame)
+    static constexpr uint32_t kProfileMarks = 128;
+    // Of them for the scene's class split (16 others a frame). Busy spots switch class (foliage / statics) often: with
+    // too few, the rest of the scene went into the unattributed "scene" interval.
+    static constexpr uint32_t kSceneClassMarks = 108;
     // The scene's shading (fragment shader invocations, a pipeline statistics query) per scene class: one query per
     // stretch of a class within a rendering, summed by class.
     static constexpr uint32_t kShadeQueries = 1024;
-    static constexpr int kSceneClasses = 13;      // ShadeClass's names (0 = none; 11, 12: statics not pre-passed)
+    static constexpr int kSceneClasses = 14;      // ShadeClass's names (0 = none; 11, 12: statics not pre-passed;
+                                                  // 13: foliage alpha tested, not blended)
     struct ProfileFrame {
         VkQueryPool pool = VK_NULL_HANDLE;
         uint32_t count = 0;

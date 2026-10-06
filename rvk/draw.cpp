@@ -2292,6 +2292,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         int shade = m_drawSceneClass;
         if (shade == 1 && !m_drawPrepassed)
             shade = prepassWhy == kPreNoZTest || prepassWhy == kPreNoZWrite ? 11 : 12;
+        else if (shade == 4 && prepassWhy == kPreAlphaTest)
+            shade = 13;                          // foliage a cut-out pre-pass could take (vs blended cut-outs)
         ShadeClass(shade);
     }
     uint64_t groupKey = 0;
