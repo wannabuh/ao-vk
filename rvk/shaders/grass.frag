@@ -91,7 +91,12 @@ void main()
     // The atlas is sampled for its vein only: the blade is a solid, tapered strip (no alpha cut), so the field is not
     // see-through the way cut-out cards are.
     vec4 blade = texture(bladeTex, vUv);
+    // A blade is a flat, double-sided strip (nothing is culled), so light both of its faces: flip the normal towards
+    // the eye. Otherwise a blade whose normal points away from a light goes black although its lit side is what is
+    // seen - dark spears across an otherwise lit field, worst with a point light off to one side.
     vec3 n = normalize(vNormal);
+    if (dot(n, GF.camera.xyz - vPosW) < 0.0)
+        n = -n;
     float d = max(dot(n, -normalize(FL.sunDir.xyz)), 0.0);
     float shadow = mix(1.0, SunShadow(vPosW, n), FL.shadowParams.y);
     // The ground's own colour, a little brighter than it (a blade catches the sun more than the flat ground does),
