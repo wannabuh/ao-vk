@@ -331,7 +331,8 @@ void main()
     // below (texture stages; the lit diffuse keeps the vertex alpha).
     vec4 p0 = Sample(0u), p1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
     float pa = Cascade(p0, p1, 1.0).a;
-    if ((C.flags.x & F_CUTOUT) != 0u ? pa < 1.0 : !AlphaPass(pa))
+    // Alpha tested: where the test passes; blended (a cut-out, or alpha tested and blended): only where alpha is 1.
+    if (((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(pa)) || ((C.flags.x & (F_CUTOUT | F_BLENDED)) != 0u && pa < 1.0))
         discard;
 }
 #else

@@ -67,6 +67,11 @@ bool Device::CreatePrepassPipeline(VkShaderModule vert)
     }
     // The cut-out pre-pass: the same, with prepass_cutout.frag (depth only where the pixel ends up fully opaque).
     char off[8] = "";
+    if (GetEnvironmentVariableA("RANDYVK_PREPASS_SWAY", off, sizeof(off)) && off[0] == '0') {
+        m_prepassSway = false;
+        Log("depth pre-pass: swaying plants kept out (RANDYVK_PREPASS_SWAY=0)");
+    }
+    off[0] = 0;
     if (GetEnvironmentVariableA("RANDYVK_PREPASS_CUTOUT", off, sizeof(off)) && off[0] == '0') {
         Log("depth pre-pass: cut-outs kept out (RANDYVK_PREPASS_CUTOUT=0)");
         return true;
@@ -174,8 +179,8 @@ uint32_t Device::PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) co
         return m_prepassEndedThisFrame ? kPreAfter : kPreBefore;
     if (m_drawTess || m_drawGpu || m_drawIsCharacter)
         return kPreCharacter;
-    if (swaying)
-        return kPreSway;
+    if (swaying && !(m_prepassSway && m_prepassCutoutPipeline))
+        return kPreSway;                         // (the same vertex shader moves it in both passes: same depth)
     if (m_target != m_scene || m_external || m_drawIsLabel || (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW ||
         TopologyClassOf(primitive) != 2 || (m_particlePending && fvf == kParticleFvf))
         return kPreKind;
@@ -186,14 +191,13 @@ uint32_t Device::PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) co
         return kPreNoZWrite;
     if (zFunc != d3d::CMP_LESS && zFunc != d3d::CMP_LESSEQUAL)
         return kPreZFunc;
-    // Cut-outs - alpha tested and not blended, or blended cut-outs (F_CUTOUT) - go in with the cut-out pre-pass, which
-    // writes their depth only where their pixel ends up fully opaque (prepass_cutout.frag). Their main draw keeps its
-    // discard; what lies behind those pixels, hidden in the end anyway, is rejected early.
-    if (m_drawMayDiscard) {
-        bool alphaTested = m_rs[d3d::RS_ALPHATESTENABLE] && !m_rs[d3d::RS_ALPHABLENDENABLE];
-        if (!m_prepassCutoutPipeline || !(alphaTested || m_drawBlendCutout))
-            return alphaTested ? kPreAlphaTest : kPreDiscard;
-    }
+    // Cut-outs - alpha tested, blended cut-outs (F_CUTOUT), or both alpha tested and blended (the game's foliage) - go
+    // in with the cut-out pre-pass, which writes their depth only where their pixel ends up fully opaque
+    // (prepass_cutout.frag: the alpha test passes and, if blended, alpha is 1). Their main draw keeps its discard;
+    // what lies behind those pixels, hidden in the end anyway, is rejected early. Blended other than SRCALPHA /
+    // INVSRCALPHA: kept out below.
+    if (m_drawMayDiscard && !m_prepassCutoutPipeline)
+        return m_rs[d3d::RS_ALPHATESTENABLE] && !m_rs[d3d::RS_ALPHABLENDENABLE] ? kPreAlphaTest : kPreDiscard;
     if (WaterWritesDepth(fvf))
         return kPreWater;
     if (!m_rs[d3d::RS_ALPHABLENDENABLE])
@@ -201,7 +205,7 @@ uint32_t Device::PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) co
     if (m_rs[d3d::RS_SRCBLEND] != d3d::BLEND_SRCALPHA || m_rs[d3d::RS_DESTBLEND] != d3d::BLEND_INVSRCALPHA)
         return kPreBlend;
     if (m_drawMayDiscard)
-        return kPreIn;                           // a blended cut-out: its partly transparent pixels write no depth
+        return kPreIn;                           // blended and cut out: its partly transparent pixels write no depth
     return AlphaOneCheck(fvf);
 }
 

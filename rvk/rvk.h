@@ -760,7 +760,6 @@ private:
     float m_bloomStrength = 1.5f, m_bloomThreshold = 1.0f;
     float m_sunSoftness = 1.0f, m_leafLight = 1.0f, m_nightGlow = 1.5f, m_contact = 0.6f;
     bool m_drawMayDiscard = true;                // the current draw can cut out (alpha test / F_CUTOUT): pick the variant
-    bool m_drawBlendCutout = false;              // ... a blended cut-out (F_CUTOUT)
     bool m_drawPrepassCutout = false;            // pre-passed with the cut-out pre-pass (prepass_cutout.frag)
     uint64_t m_noCutDraws = 0;                   // draws that took the no-discard pipeline (early-Z; logged)
     // Depth pre-pass (prepass.cpp). Armed at the scene's depth clear (the frame's main commands split there: Frame);
@@ -785,6 +784,7 @@ private:
     // ... and for cut-outs: depth only where the pixel ends up fully opaque (prepass_cutout.frag). Null: cut-outs stay
     // out of the pre-pass (RANDYVK_PREPASS_CUTOUT=0, or the pipeline failed).
     VkPipeline m_prepassCutoutPipeline = VK_NULL_HANDLE;
+    bool m_prepassSway = true;                   // swaying plants in the pre-pass too (RANDYVK_PREPASS_SWAY=0: not)
     struct PrepassCache {
         bool bound = false;                      // pipeline, front face, depth state, arrays, set 1
         int pipeline = -1;                       // bound: 0 the plain pipeline, 1 the cut-out one
@@ -1311,10 +1311,10 @@ private:
     VkCommandPool m_pool = VK_NULL_HANDLE;
     std::array<Frame, kFramesInFlight> m_frames;
     // Profiling (profile.cpp): GPU timestamps per frame slot, CPU times of the frame's recording.
-    static constexpr uint32_t kProfileMarks = 128;
-    // Of them for the scene's class split (16 others a frame). Busy spots switch class (foliage / statics) often: with
-    // too few, the rest of the scene went into the unattributed "scene" interval.
-    static constexpr uint32_t kSceneClassMarks = 108;
+    static constexpr uint32_t kProfileMarks = 512;
+    // Of them for the scene's class split (16 others a frame). Busy spots switch class (foliage / statics) hundreds of
+    // times a frame: with too few, the rest of the scene went into the unattributed "scene" interval.
+    static constexpr uint32_t kSceneClassMarks = 490;
     // The scene's shading (fragment shader invocations, a pipeline statistics query) per scene class: one query per
     // stretch of a class within a rendering, summed by class.
     static constexpr uint32_t kShadeQueries = 1024;

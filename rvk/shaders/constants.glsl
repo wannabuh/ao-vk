@@ -86,4 +86,5 @@ const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8
            F_VERTEXSUN = 134217728u,  // far plants lit per vertex: vMatAmbient = the sun's part, shadowed per pixel
            F_NORMALMAP = 268435456u, // the stage 0 texture's own normal map (binding 11; C.misc.w = strength)
            F_CHARACTER = 536870912u, // a character's body or part: lights characters carry don't shadow it
-           F_NOALBEDO = 1073741824u; // the albedo attachment isn't written (a multiplying pass keeps it)
+           F_NOALBEDO = 1073741824u, // the albedo attachment isn't written (a multiplying pass keeps it)
+           F_BLENDED = 2147483648u;  // blended SRCALPHA / INVSRCALPHA: hides what is behind only where alpha is 1

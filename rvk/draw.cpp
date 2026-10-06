@@ -2136,8 +2136,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (solid3d && !cutoutTexture && m_rs[d3d::RS_ALPHABLENDENABLE] && !m_rs[d3d::RS_ALPHATESTENABLE] &&
         m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA)
         flags |= F_CUTOUT;
+    if (m_rs[d3d::RS_ALPHABLENDENABLE] && m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA &&
+        m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA)
+        flags |= F_BLENDED;                      // (the cut-out pre-pass: such a pixel hides what is behind at alpha 1)
     m_drawMayDiscard = (flags & (F_ALPHATEST | F_CUTOUT)) != 0u;   // else the no-discard pipeline keeps early-Z
-    m_drawBlendCutout = (flags & F_CUTOUT) != 0u;
     // Night glow candidates: opaque 3D surfaces drawn unlit (self-lit, like windows and signs) or with an emissive
     // material - not effects, the sky, the ground or lighting passes.
     bool additive = m_rs[d3d::RS_ALPHABLENDENABLE] && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_ONE;
