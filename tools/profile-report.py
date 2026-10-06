@@ -4,8 +4,12 @@
 
 Function names: randy31_orig from a Ghidra function list (build/profile/orig-functions.txt, made with
 `tools/ghidra-run.sh randy31.dll ListFunctions.java <file>` if missing), ours from build/linux-release/randy31.map.
+Other modules (GUI.dll, DisplaySystem.dll, ...): a Ghidra list build/profile/<module>-functions.txt if there is one
+(`tools/ghidra-run.sh GUI.dll ListFunctions.java build/profile/GUI.dll-functions.txt`), else the module's exports -
+then a sample is named after the nearest export before it, shown as "~Name" (an internal function after it can be
+counted there).
 
-Usage: tools/profile-report.py samples.txt maps.txt [--thread TID | --rank N] [--top N]
+Usage: tools/profile-report.py samples.txt maps.txt [--thread TID | --rank N] [--top N] [--module NAME]
 """
 import bisect
 import collections
@@ -39,7 +43,7 @@ def modules(maps_path):
             size = struct.unpack_from("<I", data, pe + 24 + 56)[0]       # OptionalHeader.SizeOfImage
         except (OSError, struct.error):
             continue
-        out.append((start, start + size, pathlib.Path(path).name))
+        out.append((start, start + size, pathlib.Path(path).name, path))
     return sorted(out)
 
 
@@ -62,6 +66,59 @@ def own_functions():
         if m:
             funcs.append((int(m.group(3), 16) - 0x10000000, m.group(2)))
     return sorted(funcs)
+
+
+def export_functions(path):
+    """[(rva, name)] of a PE image's exported functions (C++ names shortened to Class::Method)."""
+    try:
+        data = open(path, "rb").read()
+        pe = struct.unpack_from("<I", data, 0x3C)[0]
+        sections = struct.unpack_from("<H", data, pe + 6)[0]
+        opt = pe + 24
+        magic = struct.unpack_from("<H", data, opt)[0]
+        dirs = opt + (96 if magic == 0x10B else 112)
+        exp_rva, exp_size = struct.unpack_from("<II", data, dirs)
+        sec_table = opt + struct.unpack_from("<H", data, pe + 20)[0]
+        secs = [struct.unpack_from("<IIII", data, sec_table + 40 * i + 8) for i in range(sections)]
+
+        def off(rva):
+            for vsize, vaddr, rsize, raddr in secs:
+                if vaddr <= rva < vaddr + max(vsize, rsize):
+                    return rva - vaddr + raddr
+            raise ValueError(rva)
+
+        if not exp_rva:
+            return []
+        e = off(exp_rva)
+        nfuncs, nnames, afuncs, anames, aords = struct.unpack_from("<IIIII", data, e + 20)
+        funcs = [struct.unpack_from("<I", data, off(afuncs) + 4 * i)[0] for i in range(nfuncs)]
+        out = []
+        for i in range(nnames):
+            name_rva = struct.unpack_from("<I", data, off(anames) + 4 * i)[0]
+            ordinal = struct.unpack_from("<H", data, off(aords) + 2 * i)[0]
+            rva = funcs[ordinal]
+            if exp_rva <= rva < exp_rva + exp_size:      # a forwarder
+                continue
+            n = off(name_rva)
+            name = data[n:data.index(b"\0", n)].decode("latin-1")
+            m = re.match(r"\?(\??\w+)@(\w+)@@", name)   # ?Method@Class@@... -> Class::Method
+            if m:
+                name = f"{m.group(2)}::{m.group(1)}"
+            out.append((rva, "~" + name))
+        return sorted(out)
+    except (OSError, struct.error, ValueError):
+        return []
+
+
+def module_functions(name, path):
+    listed = ROOT / f"build/profile/{name}-functions.txt"
+    if listed.exists():
+        funcs = []
+        for line in open(listed):
+            rva, size, fname = line.split(" ", 2)
+            funcs.append((int(rva, 16), fname.strip()))
+        return sorted(funcs)
+    return export_functions(path)
 
 
 def lookup(funcs, rva):
@@ -104,8 +161,11 @@ def main():
         if i >= 0 and ip < mods[i][1]:
             name = mods[i][2]
             per_module[name] += 1
-            if name.lower() in tables:
-                per_func[f"{name}!{lookup(tables[name.lower()], ip - mods[i][0])}"] += 1
+            key = name.lower()
+            if key not in tables:                        # other modules: their function list or exports, once
+                tables[key] = module_functions(name, mods[i][3])
+            if tables[key]:
+                per_func[f"{name}!{lookup(tables[key], ip - mods[i][0])}"] += 1
         else:
             per_module["(other: unix / wine / kernel)"] += 1
     total = max(len(ips), 1)
@@ -129,6 +189,12 @@ def main():
     print("functions:")
     for name, n in per_func.most_common(top):
         print(f"  {100.0 * n / total:5.1f}%  {name}")
+    if "--module" in args:                               # one module's functions alone (e.g. --module GUI.dll)
+        want = args[args.index("--module") + 1].lower()
+        print(f"{want} functions:")
+        for name, n in per_func.most_common():
+            if name.lower().startswith(want + "!"):
+                print(f"  {100.0 * n / total:5.1f}%  {name}")
 
 
 main()

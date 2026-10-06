@@ -68,4 +68,9 @@ private:
     int64_t m_start = 0;                    // 0: not the outermost (or no backend)
 };
 
+// The same between two points that aren't one scope: GameClock() at the start (0 without the backend), then
+// GameSectionSince(name, start) at the end.
+int64_t GameClock();
+void GameSectionSince(const char* name, int64_t start);
+
 }  // namespace rnative::device

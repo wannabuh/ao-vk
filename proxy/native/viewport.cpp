@@ -232,8 +232,17 @@ bool __fastcall Open(uint8_t* vp, void*, bool* restored)
     return true;
 }
 
+// The interface's time (profiling): GUI.dll draws the whole UI after the scene's last render list and before the
+// viewport's Close (docs/frame.md), so the game thread's time from the end of the last RenderLists to Close is the
+// interface's - GUI.dll's own work and the draws it makes.
+int64_t g_listsEnd;
+
 void __fastcall Close(uint8_t*)
 {
+    if (g_listsEnd) {
+        device::GameSectionSince("game: interface (after the lists, to EndScene)", g_listsEnd);
+        g_listsEnd = 0;
+    }
     if (void* device = Device()) Com(device, 0x18);   // EndScene
 }
 
@@ -454,6 +463,7 @@ void __fastcall RenderLists(uint8_t* vp, void*, int32_t listFrom, int32_t listTo
         RealizeRenderStates(vp);
     }
     scene::LeaveRender(previous);
+    g_listsEnd = device::GameClock();
 }
 
 void __fastcall RenderRefraction(uint8_t* vp, void*, int32_t listFrom, int32_t listTo, uint32_t type, uint32_t from,

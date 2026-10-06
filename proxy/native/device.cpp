@@ -633,7 +633,22 @@ GameTimer::GameTimer(const char* name) : m_name(name)
 GameTimer::~GameTimer()
 {
     --g_timerDepth;
-    if (!m_start || !g_direct || !g_direct->gameSection)
+    if (m_start)
+        GameSectionSince(m_name, m_start);
+}
+
+int64_t GameClock()
+{
+    if (!g_direct || !g_direct->gameSection)
+        return 0;
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    return t.QuadPart;
+}
+
+void GameSectionSince(const char* name, int64_t start)
+{
+    if (!start || !g_direct || !g_direct->gameSection)
         return;
     LARGE_INTEGER t;
     QueryPerformanceCounter(&t);
@@ -642,7 +657,7 @@ GameTimer::~GameTimer()
         QueryPerformanceFrequency(&f);
         g_qpcMs = 1000.0 / double(f.QuadPart);
     }
-    g_direct->gameSection(m_name, double(t.QuadPart - m_start) * g_qpcMs);
+    g_direct->gameSection(name, double(t.QuadPart - start) * g_qpcMs);
 }
 
 uint32_t FormatSize(uint32_t fvf)                   // FUN_100116c7
