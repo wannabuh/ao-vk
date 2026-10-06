@@ -1215,6 +1215,8 @@ private:
     bool m_groupIndirect = false;                // drawIndirectFirstInstance enabled
     struct DrawGroup { bool active = false; uint64_t key = 0; uint32_t first = 0, count = 0; } m_group;
     uint32_t m_groupCalls = 0, m_groupDraws = 0, m_singleDraws = 0;   // M3 stats (per frame)
+    uint32_t m_constantsReused = 0;              // rewrites that matched the last block (per frame)
+    std::vector<uint8_t> m_lastConstants;        // the last constant block written (its used bytes)
     void FlushGroup();
     void NoteGroup(uint32_t count);
     void RecordIndirect(uint32_t indexCount, VkDeviceSize ibOffset, VkDeviceSize vbOffset, uint32_t stride,
@@ -1338,6 +1340,8 @@ public:
         m_profileCallerRepeats += repeats;
     }
     uint64_t m_profileCallerRecords = 0, m_profileCallerBytes = 0, m_profileCallerRepeats = 0;
+    uint64_t m_profileDraws = 0, m_profileGroupCalls = 0, m_profileGroupDraws = 0, m_profileConstBlocks = 0,
+             m_profileConstReused = 0;   // the draws' batching (summed per frame for the log)
     std::atomic<uint64_t> m_profileGameWaitUs{0};
     double m_profileIdleMs = 0.0;
     double m_timerCost = 0.0;                    // ms per clock read (subtracted from the draw sections)

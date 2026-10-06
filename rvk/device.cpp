@@ -1343,7 +1343,12 @@ void Device::BeginFrame()
     m_casters.clear();
     m_frameDraw = 0;
     m_prepassEndedThisFrame = false;
-    m_groupCalls = m_groupDraws = m_singleDraws = 0;
+    m_profileDraws += m_frameDraw;               // last frame's batching (the profile's log)
+    m_profileGroupCalls += m_groupCalls;
+    m_profileGroupDraws += m_groupDraws;
+    m_profileConstBlocks += m_constCount;
+    m_profileConstReused += m_constantsReused;
+    m_groupCalls = m_groupDraws = m_singleDraws = m_constantsReused = 0;
     m_shadowGroupCalls = m_shadowGroupDraws = 0;
     m_casterViews.clear();
     m_frameLightsDirty = true;

@@ -206,6 +206,7 @@ void Device::ProfileWindow(bool start, const char* label)
         m_profileCpu.clear();
         m_profileFrames = 0;
         m_profileCallerRecords = m_profileCallerBytes = m_profileCallerRepeats = 0;
+        m_profileDraws = m_profileGroupCalls = m_profileGroupDraws = m_profileConstBlocks = m_profileConstReused = 0;
         std::memset(m_shadeSum, 0, sizeof(m_shadeSum));
         m_shadePixels = 0;
         m_shadeOverflowFrames = 0;
@@ -251,6 +252,15 @@ void Device::ProfileLog(const char* label)
         double(m_profileCallerBytes) / 1024.0 / double(m_profileFrames),
         double(m_profileCallerRepeats) / double(m_profileFrames), m_profileFrames);
     m_profileCallerRecords = m_profileCallerBytes = m_profileCallerRepeats = 0;
+    {
+        double n = double(m_profileFrames);
+        Log("%sdraw batching: %.0f draws a frame; %.0f in %.0f indirect calls, %.0f direct; %.0f constant blocks"
+            " written, %.0f state changes kept the last block (avg of %u frames)",
+            label, double(m_profileDraws) / n, double(m_profileGroupDraws) / n, double(m_profileGroupCalls) / n,
+            double(m_profileDraws - std::min(m_profileDraws, m_profileGroupDraws)) / n, double(m_profileConstBlocks) / n,
+            double(m_profileConstReused) / n, m_profileFrames);
+        m_profileDraws = m_profileGroupCalls = m_profileGroupDraws = m_profileConstBlocks = m_profileConstReused = 0;
+    }
     if (m_shadePixels) {                          // fragment shader invocations per scene pixel, by class
         std::string out;
         char buf[64];

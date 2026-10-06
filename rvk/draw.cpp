@@ -169,8 +169,14 @@ void Device::SetLight(uint32_t index, const d3d::Light& light)
     if (index >= m_lights.size())
         m_lights.resize(index + 1);
     LightSlot& slot = m_lights[index];
-    if (std::memcmp(&slot.light, &light, sizeof(light)) != 0)
-        ++slot.version;
+    // The game sets its lights again for every object; the same light again changes nothing (no constant block
+    // rewrite, which would also end the draw's indirect batch).
+    if (std::memcmp(&slot.light, &light, sizeof(light)) == 0) {
+        if (slot.enabled)
+            CaptureLight(slot);                  // this frame's light set still needs it (once per frame)
+        return;
+    }
+    ++slot.version;
     slot.light = light;
     slot.cosHalfTheta = std::cos(light.theta * 0.5f);
     slot.cosHalfPhi = std::cos(light.phi * 0.5f);
@@ -1992,6 +1998,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                    m_constantsCharacter != m_drawIsCharacter || m_constantsOpaque != cutoutTexture ||
                    m_constantsHoles != textureHoles;
     uint32_t constIndex = m_constIndex;
+    bool sameArena = m_constantsGeneration == m_ringGeneration && m_constIndex < m_constCount;   // m_constIndex valid
     if (rewrite) {
     m_constantsGeneration = m_ringGeneration;
     m_constantsDirty = false;
@@ -2163,8 +2170,16 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c.lightInfo[1] = localLights;
     c.lightInfo[2] = override ? carrier : 0;   // frame light (index + 1) this draw carries: it doesn't light it
     c.lightInfo[3] = 0;
-    constIndex = AppendConstant(c, offsetof(DrawConstants, lights) + size_t(lightCount) * sizeof(GpuLight));
-                                               // shared with the next draws that keep this state
+    // Shared with the next draws that keep this state. A state change that ends up writing the same block (a
+    // state set and set back, a light set again) keeps the last one: fewer blocks, and the draw can still join the
+    // pending indirect batch (its key includes the block's index).
+    size_t constBytes = offsetof(DrawConstants, lights) + size_t(lightCount) * sizeof(GpuLight);
+    if (sameArena && m_lastConstants.size() == constBytes && std::memcmp(m_lastConstants.data(), &c, constBytes) == 0) {
+        ++m_constantsReused;
+    } else {
+        constIndex = AppendConstant(c, constBytes);
+        m_lastConstants.assign(reinterpret_cast<const uint8_t*>(&c), reinterpret_cast<const uint8_t*>(&c) + constBytes);
+    }
     m_constIndex = constIndex;
     }
     if (!m_drawMayDiscard) ++m_noCutDraws;       // per draw (the block above runs only when the constants change)
