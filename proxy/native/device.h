@@ -32,8 +32,14 @@ struct Direct {
     // `indexGeneration` (meshdata::IndexGeneration): the backend may keep them instead of copying them each draw.
     bool (*drawIndexedVB)(void* d3dDevice, uint32_t type, void* d3dVertexBuffer, uint32_t start, uint32_t vertexCount,
                           const uint16_t* indices, uint32_t indexCount, uint64_t indexGeneration);
+    // The renderer drops blob shadow draws (its sun shadows replace them).
+    bool (*blobShadowsReplaced)();
 };
 void SetDirect(const Direct* direct);       // null: none (the backend's device is gone)
+
+// True when the renderer draws its own shadows instead of the game's blob shadows (direct channel on): the blob
+// shadows' per-frame work (cat_skin.cpp: its callback over skinned positions) can be skipped.
+bool BlobShadowsReplaced();
 
 // Around a native mesh's draw (mesh.cpp): its indices are a native triangle list's, unchanged while `generation`
 // (meshdata::IndexGeneration, non-zero) is. [Native] Retain = on.

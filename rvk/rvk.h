@@ -617,6 +617,9 @@ private:
     std::vector<ShadowCaster> m_casters;
     float m_sunDir[3] = {}, m_sunLuminance = 0.0f;   // this frame's brightest directional light
     bool m_shadowValid = false;                  // the map holds last frame's shadows
+    // Blob shadow draws are dropped (sun shadows on and valid; IsBlobShadow) - for the game thread, which can then
+    // skip the blob shadows' own work (ThreadedDevice::BlobShadowsReplaced). Set at each frame's start.
+    std::atomic<bool> m_blobShadowsReplaced{false};
     d3d::Matrix m_cascadeViewProj[kShadowCascades] = {};   // world -> each cascade's map
     float m_cascadeTexel[kShadowCascades] = {};  // world size of a texel of each
     float m_cascadeDepth[kShadowCascades] = {};  // world units per unit of each one's depth

@@ -1,6 +1,7 @@
 // Character skinning on the game's thread (cpu) or deferred to the renderer (on); see cat_skin.h. The SSE loop itself
 // is rvk/skin.cpp.
 #include "native/cat_skin.h"
+#include "native/device.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -190,6 +191,7 @@ bool SkinDeferred(void* render)
     }
     float boxMin[3], boxMax[3];
     Job::BoundsOf(sources.data(), sources.size(), *palette, rest, boxMin, boxMax);
+    const bool blobReplaced = cbBegin != cbEnd && device::BlobShadowsReplaced();
     uint32_t vertexBase = 0, triBase = 0;
     size_t next = 0;
     for (int32_t g = 0; g < groupCount; ++g) {
@@ -214,7 +216,9 @@ bool SkinDeferred(void* render)
                 SkinVertices(in, count, out, *palette, rest, nullptr, nullptr);
                 g_unlock(buffer, nullptr);
             }
-            if (cbBegin != cbEnd && count) {
+            // The blob shadow's callback (the only kind here) shapes a shadow the renderer drops while its own sun
+            // shadows are on: then neither the sparse skinning nor the callback is needed.
+            if (cbBegin != cbEnd && count && !blobReplaced) {
                 if (sparse.size() < count) sparse.resize(count);
                 rvk::skin::SkinPositions(in, count, 4, sparse.data(), *palette, rest);
                 for (const Callback* cb = cbBegin; cb != cbEnd; ++cb)

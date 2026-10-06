@@ -538,7 +538,14 @@ bool DirectDrawIndexedVB(void* d3dDevice, uint32_t type, void* d3dVertexBuffer, 
     return true;
 }
 
-const rnative::device::Direct kDirect{&DirectApplyStates, &DirectGameSection, &DirectDrawIndexedVB};
+bool DirectBlobShadowsReplaced()
+{
+    rvk::ThreadedDevice* dev = g_rvk.device;
+    return dev && dev->BlobShadowsReplaced();
+}
+
+const rnative::device::Direct kDirect{&DirectApplyStates, &DirectGameSection, &DirectDrawIndexedVB,
+                                      &DirectBlobShadowsReplaced};
 
 void DirectAttach(RDevice* device)
 {

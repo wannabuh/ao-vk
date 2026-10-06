@@ -1341,6 +1341,7 @@ void Device::BeginFrame()
     m_lightsCur.clear();
     m_sunLuminance = 0.0f;
     m_casters.clear();
+    m_blobShadowsReplaced.store(m_shadows && m_shadowValid, std::memory_order_relaxed);
     m_profileDraws += m_frameDraw;               // last frame's batching (the profile's log)
     m_frameDraw = 0;
     m_prepassEndedThisFrame = false;

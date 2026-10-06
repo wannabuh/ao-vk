@@ -65,6 +65,8 @@ public:
     // Game-thread time in a named part of the frame (native scene code; `name` a string literal): summed per frame
     // and handed to the profile with the frame's start.
     void AddGameSection(const char* name, double ms);
+    // The renderer drops blob shadow draws (sun shadows on and valid), as of a frame or two ago.
+    bool BlobShadowsReplaced() const { return m_device.m_blobShadowsReplaced.load(std::memory_order_relaxed); }
     void SetTransform(uint32_t type, const d3d::Matrix& m);
     void SetMaterial(const d3d::Material& m);
     void SetLight(uint32_t index, const d3d::Light& light);

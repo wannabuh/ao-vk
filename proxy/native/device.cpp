@@ -607,6 +607,8 @@ const char* __fastcall StatsNameName(void*, void*, uint32_t) { return "Unknown";
 
 void SetDirect(const Direct* direct) { g_direct = direct; }
 
+bool BlobShadowsReplaced() { return g_directOn && g_direct && g_direct->blobShadowsReplaced && g_direct->blobShadowsReplaced(); }
+
 RetainedIndices::RetainedIndices(uint64_t generation) : m_previous(g_retainGeneration)
 {
     g_retainGeneration = g_retainOn && g_directOn ? generation : 0;
