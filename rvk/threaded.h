@@ -187,7 +187,7 @@ private:
     void Enqueue(F&& f, const void* data = nullptr, uint32_t dataBytes = 0, void** dataCopy = nullptr);
 
     void Worker();
-    void RunOne(uint32_t& readPos);                    // executes the record at readPos (worker or direct mode)
+    bool RunOne(uint32_t& readPos);                    // executes the record at readPos (worker or direct mode)
     static DWORD WINAPI WorkerMain(void* self);
 
     Device m_device;

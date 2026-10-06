@@ -118,8 +118,11 @@ void ThreadedDevice::Commit()
     if (!m_thread) {                                   // direct mode: the caller is the consumer
         Publish();
         uint32_t r = m_readPos.load(std::memory_order_relaxed);
+        uint64_t ran = 0;
         while (r != end)
-            RunOne(r);
+            ran += RunOne(r);
+        m_readPos.store(r, std::memory_order_release);
+        m_recordsDone.fetch_add(ran, std::memory_order_release);
         return;
     }
     if (m_pending >= kPublishBatch)
@@ -172,9 +175,22 @@ DWORD WINAPI ThreadedDevice::WorkerMain(void* self)
 void ThreadedDevice::Worker()
 {
     uint32_t r = m_readPos.load();
+    // Progress (read position, records done) is published every kProgressBatch records and whenever the worker
+    // catches up - not after every record: two atomic writes per record, ~9000 records a frame.
+    constexpr uint32_t kProgressBatch = 64;
+    uint32_t ran = 0;
+    auto progress = [&] {
+        m_readPos.store(r, std::memory_order_release);
+        m_recordsDone.fetch_add(ran, std::memory_order_release);
+        ran = 0;
+    };
     for (;;) {
         uint32_t w = m_writePos.load(std::memory_order_acquire);
         if (r == w) {
+            if (ran) {                                 // caught up: publish, then look again before idling
+                progress();
+                continue;
+            }
             if (m_stop.load())
                 return;
             auto idleStart = std::chrono::steady_clock::now();   // profiling: the render thread waiting for work
@@ -193,23 +209,26 @@ void ThreadedDevice::Worker()
             m_device.ProfileAddIdle(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - idleStart).count());
             continue;
         }
-        RunOne(r);
+        ran += RunOne(r);
+        if (ran >= kProgressBatch)
+            progress();
     }
 }
 
-void ThreadedDevice::RunOne(uint32_t& r)
+// Runs the record at r and advances r past it; false for a wrap marker (not a record). The caller publishes the
+// progress (m_readPos, m_recordsDone).
+bool ThreadedDevice::RunOne(uint32_t& r)
 {
     auto* h = reinterpret_cast<Header*>(m_ring + r);
     if (h->size == 0) {                                // wrap marker
         r = 0;
-        return;
+        return false;
     }
     h->run(h + 1);
     r += h->size;
     if (r == kQueueBytes)
         r = 0;
-    m_readPos.store(r, std::memory_order_release);
-    m_recordsDone.fetch_add(1, std::memory_order_release);
+    return true;
 }
 
 void ThreadedDevice::Sync()
