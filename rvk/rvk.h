@@ -426,7 +426,11 @@ private:
         float depthBoundsZ = -1.0f;              // ... at [z, z] for this z
         VkViewport viewport{};
         VkRect2D scissor{};
-        bool buffersBound = false;
+        VkBuffer vb = VK_NULL_HANDLE, ib = VK_NULL_HANDLE;   // the bound vertex (slot 0) / index buffers (BindGeometry)
+        // The main pass's per-draw push (bindings 4, 8, 10) as last pushed: an unchanged one isn't pushed again.
+        bool drawSetValid = false;
+        VkDeviceSize frameLights = 0, prevOffset = 0, prevRange = 0, smoothOffset = 0, smoothRange = 0;
+        VkBuffer prevBuffer = VK_NULL_HANDLE, smoothBuffer = VK_NULL_HANDLE;
         bool glowBlendSet = false;               // attachment 1 (glow) blend state, HDR pipelines
         uint32_t fractionEnable = ~0u, fractionSrc = ~0u, fractionDst = ~0u;   // attachment 2 (local-light fraction)
         uint32_t motionKeep = ~0u;               // attachment 3 (motion vectors): 1 = kept (draw doesn't write)
@@ -454,6 +458,9 @@ private:
     void Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount,
               const uint16_t* indices, uint32_t indexCount);
     void ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride);
+    // The draw's vertex buffer (slot 0; slot 1 is the null buffer) and index buffer (null: leave it), each bound only
+    // when it differs from what is (StateCache): every bind is a call into the driver (through Wine's 32/64-bit thunk).
+    void BindGeometry(VkCommandBuffer cmd, VkBuffer vb, VkBuffer ib);
     StateCache m_cache;
     // The big constant block is reused while nothing that feeds it changes (m_constantsDirty) and the ring
     // it lives in hasn't been restarted (m_ringGeneration counts restarts).
@@ -1368,7 +1375,12 @@ public:
     double m_profileIdleMs = 0.0;
     double m_timerCost = 0.0;                    // ms per clock read (subtracted from the draw sections)
     // Per-draw CPU sections, timed on every 16th frame (Draw); scaled to a per-frame average.
-    void ProfileDrawSection(const char* name, double& since);
+    // Every 16th frame only (sampled): the check inline - it runs about nine times a draw.
+    void ProfileDrawSection(const char* name, double& since)
+    {
+        if ((m_frameNumber & 15) == 0) ProfileDrawSectionTimed(name, since);
+    }
+    void ProfileDrawSectionTimed(const char* name, double& since);
 private:
     uint32_t m_frameIndex = 0;
     bool m_inFrame = false;

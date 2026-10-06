@@ -204,7 +204,19 @@ private:
     static constexpr uint32_t kPublishBatch = 32;
 
     template <typename F>
-    void Enqueue(F&& f, const void* data = nullptr, uint32_t dataBytes = 0, void** dataCopy = nullptr);
+    void Enqueue(F&& f, const void* data = nullptr, uint32_t dataBytes = 0, void** dataCopy = nullptr,
+                 const char* who = __builtin_FUNCTION());
+    // Records by the function that made them (profiling: which calls aren't folded into draws), logged every ~600
+    // frames by BeginFrame.
+    struct RecordKind { const char* who; uint64_t count; };
+    std::vector<RecordKind> m_recordKinds;
+    uint64_t m_recordKindFrames = 0;
+    void CountRecord(const char* who)
+    {
+        for (RecordKind& k : m_recordKinds)
+            if (k.who == who) { ++k.count; return; }
+        m_recordKinds.push_back({who, 1});
+    }
 
     // One record per draw (docs/device-on-rvk.md phase 4a): render / texture stage states, textures, the world
     // matrix and the material wait here and go with the next draw, in its record (EnqueueDraw), instead of a record
@@ -231,7 +243,8 @@ private:
     void ApplyStates(const StateItem* items, uint32_t count);   // worker
     // A draw's record: the pending prefix (if any), then `a` and `b` (copied, contiguous); f(data) gets their copy.
     template <typename F>
-    void EnqueueDraw(F&& f, const void* a = nullptr, uint32_t aBytes = 0, const void* b = nullptr, uint32_t bBytes = 0);
+    void EnqueueDraw(F&& f, const void* a = nullptr, uint32_t aBytes = 0, const void* b = nullptr, uint32_t bBytes = 0,
+                     const char* who = __builtin_FUNCTION());
 
     void Worker();
     bool RunOne(uint32_t& readPos);                    // executes the record at readPos (worker or direct mode)

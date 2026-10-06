@@ -146,10 +146,11 @@ void ThreadedDevice::Publish()
 }
 
 template <typename F>
-void ThreadedDevice::Enqueue(F&& f, const void* data, uint32_t dataBytes, void** dataCopy)
+void ThreadedDevice::Enqueue(F&& f, const void* data, uint32_t dataBytes, void** dataCopy, const char* who)
 {
     if (HasPending())
         FlushPending();                                // what waited for a draw goes first
+    CountRecord(who);
     using Fn = std::decay_t<F>;
     constexpr uint32_t kFnBytes = Align16(sizeof(Fn));
     // Sampled: two clock reads per call on the hottest path would cost more than the calls themselves.
@@ -174,8 +175,9 @@ void ThreadedDevice::Enqueue(F&& f, const void* data, uint32_t dataBytes, void**
 }
 
 template <typename F>
-void ThreadedDevice::EnqueueDraw(F&& f, const void* a, uint32_t aBytes, const void* b, uint32_t bBytes)
+void ThreadedDevice::EnqueueDraw(F&& f, const void* a, uint32_t aBytes, const void* b, uint32_t bBytes, const char* who)
 {
+    CountRecord(who);
     using Fn = std::decay_t<F>;
     struct Wrapped {
         Fn fn;
@@ -302,6 +304,20 @@ void ThreadedDevice::BeginFrame()
     for (const auto& g : m_gameSections)
         if (sections.n < 8) sections.s[sections.n++] = g;
     m_gameSections.clear();
+    if (++m_recordKindFrames >= 600) {                 // records a frame by origin, the most first
+        std::sort(m_recordKinds.begin(), m_recordKinds.end(),
+                  [](const RecordKind& a, const RecordKind& b) { return a.count > b.count; });
+        std::string line;
+        char buf[96];
+        for (size_t i = 0; i < m_recordKinds.size() && i < 10; ++i) {
+            std::snprintf(buf, sizeof(buf), "%s%s %.0f", i ? " | " : "", m_recordKinds[i].who,
+                          double(m_recordKinds[i].count) / double(m_recordKindFrames));
+            line += buf;
+        }
+        Log("hand-off records a frame by origin: %s", line.c_str());
+        m_recordKinds.clear();
+        m_recordKindFrames = 0;
+    }
     DrawStats draws = m_drawStats;
     m_drawStats = {};
     Enqueue([this, callerNs, records, bytes, repeats, sections, draws](const uint8_t*) {
@@ -538,7 +554,7 @@ void ThreadedDevice::ApplyPending(const uint8_t* in)
 }
 
 // What is pending as a record of its own: a draw record that draws nothing (EnqueueDraw writes the prefix).
-void ThreadedDevice::FlushPending() { EnqueueDraw([](const uint8_t*) {}); }
+void ThreadedDevice::FlushPending() { EnqueueDraw([](const uint8_t*) {}, nullptr, 0, nullptr, 0, "(states before a non-draw)"); }
 
 void ThreadedDevice::SetTransform(uint32_t type, const d3d::Matrix& m)
 {
@@ -1051,6 +1067,7 @@ void ThreadedDevice::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint3
     constexpr uint32_t kFnBytes = Align16(sizeof(Fn));
     if (HasPending())
         FlushPending();                                // a record of its own: what waited goes first (as Enqueue)
+    CountRecord("UpdateTexture");
     uint8_t* payload = Reserve(kFnBytes + rowBytes * rows);
     for (uint32_t r = 0; r < rows; ++r)
         std::memcpy(payload + kFnBytes + size_t(r) * rowBytes, static_cast<const uint8_t*>(data) + size_t(r) * pitch, rowBytes);

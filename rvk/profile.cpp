@@ -223,10 +223,8 @@ void Device::ProfileWindow(bool start, const char* label)
 
 void Device::ProfileManualEnd() { m_profileManual = false; }
 
-void Device::ProfileDrawSection(const char* name, double& since)
+void Device::ProfileDrawSectionTimed(const char* name, double& since)
 {
-    if ((m_frameNumber & 15) != 0)
-        return;
     double now = CpuNow();
     ProfileAdd(m_profileCpu, name, std::max(0.0, now - since - m_timerCost) * 16.0);
     since = now;

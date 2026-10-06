@@ -1652,13 +1652,20 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
         SetVertexInput(cmd, fvf, stride);
         c.fvf = fvf;
     }
-    if (!c.buffersBound) {
-        Frame& f = m_frames[m_frameIndex];
-        VkBuffer buffers[2] = {f.ring, m_nullBuffer};
+}
+
+void Device::BindGeometry(VkCommandBuffer cmd, VkBuffer vb, VkBuffer ib)
+{
+    StateCache& c = m_cache;
+    if (c.vb != vb) {
+        VkBuffer buffers[2] = {vb, m_nullBuffer};
         VkDeviceSize offsets[2] = {0, 0};
         vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
-        vkCmdBindIndexBuffer(cmd, f.ring, 0, VK_INDEX_TYPE_UINT16);
-        c.buffersBound = true;
+        c.vb = vb;
+    }
+    if (ib && c.ib != ib) {
+        vkCmdBindIndexBuffer(cmd, ib, 0, VK_INDEX_TYPE_UINT16);
+        c.ib = ib;
     }
 }
 
@@ -2345,6 +2352,16 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                     prevPositionsOffset, prevPositionsBytes, smoothBuffer, smoothOffset, smoothBytes, recordIndex);
     if (!extending) {
     ApplyDynamicState(primitive, fvf, layout.stride);
+    // The draw's buffers: the particles' own, a static snapshot's arena chunk (its indices retained there or in the
+    // ring), a skinned piece's arena and mesh, or the ring.
+    if (m_external)
+        BindGeometry(cmd, m_external->vertices, m_external->indices);
+    else if (m_drawStaticBuffer)
+        BindGeometry(cmd, m_drawStaticBuffer, indices ? (staticIb ? staticIb : f.ring) : VK_NULL_HANDLE);
+    else if (m_drawGpu)
+        BindGeometry(cmd, m_frames[m_frameIndex].skinArena, m_drawGpu->mesh->buffer);
+    else
+        BindGeometry(cmd, f.ring, f.ring);
     if (!m_arenaBound) {
         // The frame's pushed set: the two arrays (0 = constants, 12 = records) and the shadow maps (5, 6, 9) are
         // constant for the frame's command buffer, so they are pushed once, not on every non-extending draw.
@@ -2377,6 +2394,22 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     VkDescriptorBufferInfo prevPositions{prevPositionsBuffer, prevPositionsOffset, prevPositionsBytes ? prevPositionsBytes : 16};
     // Binding 10: a tessellated draw's averaged normals, else any small part of the ring (unread).
     VkDescriptorBufferInfo smoothNormals{smoothBuffer, smoothOffset, smoothBytes ? smoothBytes : 16};
+    // Pushed only when one of them differs from the last push in this command buffer (most draws: the frame's
+    // lights and the unread stand-ins, again). A push updates only the bindings it names, so the others stay.
+    StateCache& pc = m_cache;
+    bool pushDraw = !pc.drawSetValid || pc.frameLights != frameLightsOffset || pc.prevBuffer != prevPositions.buffer ||
+                    pc.prevOffset != prevPositions.offset || pc.prevRange != prevPositions.range ||
+                    pc.smoothBuffer != smoothNormals.buffer || pc.smoothOffset != smoothNormals.offset ||
+                    pc.smoothRange != smoothNormals.range;
+    if (pushDraw) {
+    pc.drawSetValid = true;
+    pc.frameLights = frameLightsOffset;
+    pc.prevBuffer = prevPositions.buffer;
+    pc.prevOffset = prevPositions.offset;
+    pc.prevRange = prevPositions.range;
+    pc.smoothBuffer = smoothNormals.buffer;
+    pc.smoothOffset = smoothNormals.offset;
+    pc.smoothRange = smoothNormals.range;
     // The per-draw bindings: the frame lights (rebuilt when the lights change) and the two buffers that vary by draw.
     VkWriteDescriptorSet writes[3] = {};
     auto write = [&](int i, uint32_t binding, VkDescriptorType type) {
@@ -2389,6 +2422,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     write(1, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);          writes[1].pBufferInfo = &prevPositions;
     write(2, 10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);         writes[2].pBufferInfo = &smoothNormals;
     vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 3, writes);
+    }
     if (!m_bindlessBound) {                       // set 1, once per frame's command buffer
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 1, 1, &m_bindlessSet, 0, nullptr);
         m_bindlessBound = true;
@@ -2411,23 +2445,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     NoteBatch(batchKey);
 
     if (m_external) {
-        VkBuffer buffers[2] = {m_external->vertices, m_nullBuffer};
-        VkDeviceSize offsets[2] = {0, 0};
-        vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
-        vkCmdBindIndexBuffer(cmd, m_external->indices, 0, VK_INDEX_TYPE_UINT16);
         vkCmdDrawIndexed(cmd, indexCount, 1, 0, m_external->baseVertex, recordIndex);
-        m_cache.buffersBound = false;            // the next draw binds the ring again
         ProfileDrawSection("draw: state + descriptors + draw", since);
         return;
     }
     if (m_drawStaticBuffer) {
-        if (!extending) {
-            VkBuffer buffers[2] = {m_drawStaticBuffer, m_nullBuffer};
-            VkDeviceSize offsets[2] = {0, 0};
-            vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
-            if (indices)
-                vkCmdBindIndexBuffer(cmd, staticIb ? staticIb : f.ring, 0, VK_INDEX_TYPE_UINT16);
-        }
         if (groupKey) {
             RecordIndirect(indexCount, ibOffset, vbOffset, layout.stride, recordIndex, groupKey);
         } else if (indices) {
@@ -2435,22 +2457,14 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         } else {
             vkCmdDraw(cmd, vertexCount, 1, uint32_t(vbOffset / layout.stride), recordIndex);
         }
-        m_cache.buffersBound = false;            // the next draw binds the ring again
         ProfileDrawSection("draw: state + descriptors + draw", since);
         return;
     }
     if (m_drawGpu) {
-        if (!extending) {
-            VkBuffer buffers[2] = {m_frames[m_frameIndex].skinArena, m_nullBuffer};
-            VkDeviceSize offsets[2] = {0, 0};
-            vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
-            vkCmdBindIndexBuffer(cmd, m_drawGpu->mesh->buffer, 0, VK_INDEX_TYPE_UINT16);
-        }
         if (groupKey)
             RecordIndirect(indexCount, ibOffset, vbOffset, layout.stride, recordIndex, groupKey);
         else
             vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), recordIndex);
-        m_cache.buffersBound = false;            // the next draw binds the ring again
         ProfileDrawSection("draw: state + descriptors + draw", since);
         return;
     }
