@@ -8,7 +8,9 @@
 layout(set = 0, binding = 0) uniform GrassFrame {
     mat4 viewProj;
     mat4 prevViewProj;
-    vec4 viewport;
+    vec4 viewport;      // xy: target size; z: the field radius
+    vec4 wind;
+    vec4 camera;
 } GF;
 layout(set = 0, binding = 5) uniform sampler2DArrayShadow shadowMap;   // the sun's cascades
 

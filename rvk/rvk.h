@@ -1041,7 +1041,7 @@ private:
     static constexpr float kGroundCell = 0.25f;  // the ground grid's cell size (world units)
     bool m_grassOn = false;                      // RVK_GrassOn (off: nothing drawn, nothing captured)
     float m_grassDistance = 25.0f;               // RVK_GrassDist (radius around the camera, world units)
-    float m_grassDensity = 3.0f;                 // RVK_GrassBlades (blades per patch)
+    float m_grassDensity = 5.0f;                 // RVK_GrassBlades (blades a patch)
     float m_grassHeight = 0.5f;                  // RVK_GrassHeight (world units)
     bool m_grassTex = true;                      // RVK_GrassTex: grass only where the ground's texel is green
     struct GroundCell { float y; bool grass; };
@@ -1049,6 +1049,30 @@ private:
     void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
                         const uint16_t* indices, uint32_t indexCount);
     bool GroundHeight(float x, float z, float* y) const;
+    // One grass vertex: world position, normal, and how far up the blade (0 root, 1 tip), the wind phase, the blade's
+    // height and its root's world y (the tip shrinks towards it at the field's edge).
+    struct GrassVertex {
+        float pos[3];
+        float normal[3];
+        float shade;
+        float phase;
+        float height;
+        float baseY;
+    };
+    // A grid tile's baked grass, on the GPU (grass.cpp BuildGrassTile). Tiles are world-aligned and static: built the
+    // first time they come into range and kept until evicted, so a frame costs only the visible tiles' draws (no
+    // per-frame generation - the wind moves in the vertex shader).
+    struct GrassTile {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VmaAllocation_T* allocation = nullptr;
+        uint32_t vertexCount = 0;
+        bool built = false;
+        uint64_t lastUsed = 0;
+    };
+    std::unordered_map<uint64_t, GrassTile> m_grassTiles;
+    static constexpr float kGrassTileSize = 8.0f;   // world units a tile covers
+    void BuildGrassTile(int32_t tx, int32_t tz);
+    void DestroyGrassTiles();
     void RenderGrassField(VkCommandBuffer cmd);
     bool CreateGrassResources(std::string* error);
     void DestroyGrassResources();

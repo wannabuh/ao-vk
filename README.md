@@ -165,7 +165,7 @@ Some useful ones:
 | `RVK_FoliageLod` | 35 | distance from which foliage is shaded cheaply |
 | `RVK_GrassOn` | 0 | our own ground grass: procedural blades over the terrain (off = the game's foliage only) |
 | `RVK_GrassTex` | 1 | grass only where the ground's own texture is green (not on sand, brick, roads) |
-| `RVK_GrassDist` / `RVK_GrassBlades` / `RVK_GrassHeight` | 25 / 3 / 0.5 | how far the grass reaches (world units), blades per patch, blade height |
+| `RVK_GrassDist` / `RVK_GrassBlades` / `RVK_GrassHeight` | 25 / 5 / 0.5 | how far the grass reaches (world units), blades a patch, blade height |
 
 ### Hotkeys (Ctrl+Shift + key)
 

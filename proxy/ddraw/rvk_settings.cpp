@@ -70,7 +70,7 @@ Setting g_settings[] = {
     {"RVK_GrassOn",    "Ground grass (procedural blades over the terrain)",         "Plants",           Bool,  0, 1, 1, 0, nullptr, 0},
     {"RVK_GrassTex",   "Only on grassy ground (by the ground texture's colour)",    "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_GrassOn"},
     {"RVK_GrassDist",  "Grass up to this distance (world units)",                   "Plants",           Int,   8, 80, 1, 25, nullptr, 0, "RVK_GrassOn"},
-    {"RVK_GrassBlades","Blades per patch",                                          "Plants",           Float, 1, 6, 0.5f, 3, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassBlades","Blades a patch (denser with a lower height)",               "Plants",           Float, 1, 12, 0.5f, 5, nullptr, 0, "RVK_GrassOn"},
     {"RVK_GrassHeight","Blade height (world units)",                                "Plants",           Float, 0.15f, 2, 0.05f, 0.5f, nullptr, 0, "RVK_GrassOn"},
 
     {"RVK_SunShadow",  "Sun shadows",                                              "Shadows",          Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
