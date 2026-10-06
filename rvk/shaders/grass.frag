@@ -94,12 +94,12 @@ void main()
     vec3 n = normalize(vNormal);
     float d = max(dot(n, -normalize(FL.sunDir.xyz)), 0.0);
     float shadow = mix(1.0, SunShadow(vPosW, n), FL.shadowParams.y);
-    // The ground's own colour, brighter than it (a blade catches the light more than the flat ground does), dark at
-    // the root and bright at the tip.
-    vec3 base = vTint * 1.9 * blade.rgb * mix(vec3(0.6), vec3(1.45), clamp(vShade, 0.0, 1.0));
+    // The ground's own colour, a little brighter than it (a blade catches the sun more than the flat ground does),
+    // dark at the root and bright at the tip - kept close to the ground's own lit colour so the field doesn't glow.
+    vec3 base = vTint * blade.rgb * mix(vec3(0.7), vec3(1.1), clamp(vShade, 0.0, 1.0));
     // The ambient follows the sun, so the grass goes dark at night with the rest of the scene.
     float sunLum = clamp(dot(FL.sunColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
-    vec3 lit = FL.sunColor.rgb * d * shadow + LocalLights(vPosW, n) + vec3(0.10 + 0.5 * sunLum);
+    vec3 lit = FL.sunColor.rgb * d * shadow * 0.8 + LocalLights(vPosW, n) + vec3(0.08 + 0.3 * sunLum);
     outScene = vec4(base * lit, 1.0);
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * GF.viewport.xy * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
