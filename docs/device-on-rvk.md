@@ -75,6 +75,19 @@ casters). The call log line is the COM call's. Check: `tools/calllog-ab.sh Retai
 line (retained count up, KB of indices copied down) and the game thread frame.
 
 
+**Measured before 3b / 4b** (a busy city spot, ~150 fps, the game thread the limit at 6.53 ms; the render thread idle
+1.2 ms): 1,382 draws a frame copy their vertices (957 KB); 1,255 of them (582 KB) draw exactly what a draw drew the frame
+before, from vertex buffers outside any native visual, written once per draw - the dynamic vertex rings (DynamicVB_c:
+the interface, effects), each draw's vertices written into the next part of a shared buffer. Native state: 3,329
+changes a frame, none repeats (DeviceState sends only changes) - about one a draw, ~16 bytes: little for a retained
+material block to save.
+
+Tried and reverted: comparing a vertex buffer's contents after each write, to keep one rewritten unchanged static.
+The rings change with every write (another draw's vertices), so almost none qualified (39 a frame), while hashing and
+copying the few big buffers that did cost the game thread ~2 ms (5.4 MB a frame): 153 -> 98 fps. A rewrite would have
+to be recognised per draw (the range drawn), which costs the game thread about what the copy it replaces does - and the
+game thread is the limit. The copies' other cost is on the render thread, which has time to spare.
+
 - `rvk::Mesh`: a static mesh's vertices **and indices** in a GPU buffer, uploaded once (on first draw, or when its
   `RTriMeshData_t` is loaded), with what `Device::Draw` now recomputes per draw computed once: bounds, index hash,
   vertex alpha, the caster identity.
