@@ -64,6 +64,8 @@
   alpha-blended and additive interface draws; an unblended one keeps its texture's alpha as coverage, one multiplying
   the frame is approximated. Hooks are only made with a rate set; the two entries' code is checked (MSVC's exception
   prologue calling GUI.dll's `_EH_prolog`), so another GUI.dll build is left alone (logged).
+  Measured (a 245 fps spot, 60): the interface's game-thread time 1.5 -> 0.34 ms, its GPU time 0.3 -> 0.07 ms;
+  cursor, interface look and input unchanged in play. 60 is the recommended value.
 - **Vertex buffers** keep their contents in CPU memory; every draw copies the range it uses into the ring
   buffer, so rewriting a buffer between draws is safe (the game's CPU skinning reuses one buffer).
 - Memory through VMA (from the Vulkan SDK); Vulkan entry points loaded at run time from `vulkan-1.dll`.
