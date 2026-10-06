@@ -380,8 +380,11 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     tile.lastUsed = m_frameNumber;
     const float x0 = float(tx) * kGrassTileSize, z0 = float(tz) * kGrassTileSize;
     const float spacing = std::max(0.3f, m_grassHeight * 0.75f);
-    const int32_t ix0 = int32_t(std::floor(x0 / spacing)), ix1 = int32_t(std::ceil((x0 + kGrassTileSize) / spacing));
-    const int32_t iz0 = int32_t(std::floor(z0 / spacing)), iz1 = int32_t(std::ceil((z0 + kGrassTileSize) / spacing));
+    // A pure random scatter, not a patch grid: a jittered lattice shows as rows at grazing angles (a moire). The
+    // expected count sets the density; a low-frequency noise clumps the blades and leaves bare gaps, and each blade is
+    // placed anywhere in the tile.
+    const float perM2 = m_grassDensity / (spacing * spacing);
+    const int32_t total = int32_t(perM2 * kGrassTileSize * kGrassTileSize * 1.7f);   // candidates; ~half pass the clump
     std::vector<GrassVertex> sparseV, denseV;   // the sparse subset is drawn alone for a distant tile (its LOD)
     auto vertex = [](GrassVertex& v, float x, float y, float z, const float n[3], float u, float vv, float shade,
                      float phase, float height, float baseY, uint32_t colour) {
@@ -390,76 +393,61 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         v.uv[0] = u; v.uv[1] = vv;
         v.shade = shade; v.phase = phase; v.height = height; v.baseY = baseY; v.colour = colour;
     };
-    for (int32_t iz = iz0; iz <= iz1; ++iz)
-        for (int32_t ix = ix0; ix <= ix1; ++ix) {
-            const float bx = (float(ix) + 0.5f) * spacing, bz = (float(iz) + 0.5f) * spacing;
-            if (bx < x0 || bx >= x0 + kGrassTileSize || bz < z0 || bz >= z0 + kGrassTileSize)
-                continue;                        // belongs to another tile
-            float gy;
-            uint32_t gcol = 0x3C6A2Au;
-            if (!GroundHeight(bx, bz, &gy, &gcol))
-                continue;                        // no grass ground here
-            const uint32_t cellHash = HashCell(ix, iz);
-            // Clumps: a low-frequency noise thins the patches and drops whole ones, leaving bare gaps.
-            const float clump = ValueNoise(bx * 0.09f, bz * 0.09f);
-            if (Unit(cellHash) > 0.2f + 0.8f * clump)
-                continue;                        // a bare patch
-            const float want = m_grassDensity * (0.35f + 1.3f * clump);
-            int n = int(want);
-            if (Unit(cellHash * 2246822519u) < want - float(n))
-                ++n;
-            std::vector<GrassVertex>& out = (cellHash % 3u == 0u) ? sparseV : denseV;
-            for (int b = 0; b < n; ++b) {
-                const uint32_t h = HashCell(ix * 73856093 ^ iz * 19349663 ^ (b * 83492791), b * 2654435761u + ix);
-                const float u1 = Unit(h), u2 = Unit(h * 2246822519u), u3 = Unit(h * 3266489917u);
-                const float px = bx + (u1 - 0.5f) * spacing, pz = bz + (u2 - 0.5f) * spacing;
-                float py;
-                uint32_t pcol = gcol;
-                if (!GroundHeight(px, pz, &py, &pcol))
-                    py = gy;
-                const float height = m_grassHeight * (0.45f + 1.2f * u3);
-                const float yaw = u1 * 6.2831853f;
-                const float lean = (u2 - 0.5f) * 0.6f;   // the blade leans, so a clump isn't a rank of uprights
-                const float rx = std::cos(yaw), rz = std::sin(yaw);
-                float up[3] = {lean * rx, 1.0f, lean * rz};
-                const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
-                up[0] /= ul; up[1] /= ul; up[2] /= ul;
-                const float half = 0.5f * (0.05f + 0.05f * u2) * (0.5f + height);
-                const float phase = px * 0.3f + pz * 0.25f + u3 * 6.2831853f;
-                float normal[3] = {rz, 0.5f, -rx};
-                const float nl = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
-                normal[0] /= nl; normal[1] /= nl; normal[2] /= nl;
-                // The blade texture's atlas cell (a shape and shade) and the ground's own colour, varied a little
-                // per blade, so neighbours aren't identical.
-                const uint32_t cell = (h >> 8) % (kAtlasCols * kAtlasRows);
-                const float cu = float(cell % kAtlasCols) * kAtlasW, cv = float(cell / kAtlasCols) * kAtlasH;
-                const float tint = 0.82f + 0.36f * u1;
-                const uint32_t r = std::min(255u, uint32_t(float((pcol >> 16) & 0xFF) * tint));
-                const uint32_t g = std::min(255u, uint32_t(float((pcol >> 8) & 0xFF) * tint));
-                const uint32_t bl = std::min(255u, uint32_t(float(pcol & 0xFF) * tint));
-                const uint32_t colour = 0xFF000000u | (r << 16) | (g << 8) | bl;
-                // A tapered strip: a few cross sections from the root to the tip. The width only narrows a little -
-                // the texture's silhouette tapers the rest.
-                constexpr int kSeg = 2;
-                GrassVertex row[2][kSeg + 1];
-                for (int s = 0; s <= kSeg; ++s) {
-                    const float t = float(s) / float(kSeg);
-                    const float cx = px + up[0] * height * t;
-                    const float cy = py + up[1] * height * t;
-                    const float cz = pz + up[2] * height * t;
-                    const float w = half * (1.0f - t);
-                    const float vv = cv + (0.04f + t * 0.92f) * kAtlasH;
-                    vertex(row[0][s], cx - rx * w, cy, cz - rz * w, normal, cu + 0.04f * kAtlasW, vv, t, phase, height,
-                           py, colour);
-                    vertex(row[1][s], cx + rx * w, cy, cz + rz * w, normal, cu + 0.96f * kAtlasW, vv, t, phase, height,
-                           py, colour);
-                }
-                for (int s = 0; s < kSeg; ++s) {
-                    out.push_back(row[0][s]); out.push_back(row[1][s]); out.push_back(row[0][s + 1]);
-                    out.push_back(row[1][s]); out.push_back(row[1][s + 1]); out.push_back(row[0][s + 1]);
-                }
-            }
+    for (int32_t k = 0; k < total; ++k) {
+        const uint32_t h = HashCell(int32_t(uint32_t(tx) * 73856093u ^ uint32_t(tz) * 19349663u),
+                                    int32_t(uint32_t(k) * 2654435761u));
+        const float u1 = Unit(h), u2 = Unit(h * 2246822519u), u3 = Unit(h * 3266489917u), u4 = Unit(h * 40503u);
+        const float px = x0 + u1 * kGrassTileSize, pz = z0 + u2 * kGrassTileSize;
+        // Clumps: a low-frequency noise drops blades and leaves bare gaps.
+        const float clump = ValueNoise(px * 0.09f, pz * 0.09f);
+        if (u4 > 0.25f + 0.75f * clump)
+            continue;
+        float py;
+        uint32_t pcol = 0x3C6A2Au;
+        if (!GroundHeight(px, pz, &py, &pcol))
+            continue;                            // no grass ground here
+        const float height = m_grassHeight * (0.45f + 1.2f * u3);
+        const float yaw = u1 * 6.2831853f;
+        const float lean = (u2 - 0.5f) * 0.6f;   // the blade leans, so a clump isn't a rank of uprights
+        const float rx = std::cos(yaw), rz = std::sin(yaw);
+        float up[3] = {lean * rx, 1.0f, lean * rz};
+        const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
+        up[0] /= ul; up[1] /= ul; up[2] /= ul;
+        const float half = 0.5f * (0.05f + 0.05f * u2) * (0.5f + height);
+        const float phase = px * 0.3f + pz * 0.25f + u3 * 6.2831853f;
+        float normal[3] = {rz, 0.5f, -rx};
+        const float nl = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+        normal[0] /= nl; normal[1] /= nl; normal[2] /= nl;
+        // The blade texture's atlas cell (a shape and shade) and the ground's own colour, varied a little per blade,
+        // so neighbours aren't identical.
+        const uint32_t cell = (h >> 8) % (kAtlasCols * kAtlasRows);
+        const float cu = float(cell % kAtlasCols) * kAtlasW, cv = float(cell / kAtlasCols) * kAtlasH;
+        const float tint = 0.82f + 0.36f * u1;
+        const uint32_t r = std::min(255u, uint32_t(float((pcol >> 16) & 0xFF) * tint));
+        const uint32_t g = std::min(255u, uint32_t(float((pcol >> 8) & 0xFF) * tint));
+        const uint32_t bl = std::min(255u, uint32_t(float(pcol & 0xFF) * tint));
+        const uint32_t colour = 0xFF000000u | (r << 16) | (g << 8) | bl;
+        std::vector<GrassVertex>& out = (h % 4u == 0u) ? sparseV : denseV;
+        // A tapered strip: a few cross sections from the root to the tip, narrowing to a point.
+        constexpr int kSeg = 2;
+        GrassVertex row[2][kSeg + 1];
+        for (int s = 0; s <= kSeg; ++s) {
+            const float t = float(s) / float(kSeg);
+            const float cx = px + up[0] * height * t;
+            const float cy = py + up[1] * height * t;
+            const float cz = pz + up[2] * height * t;
+            const float w = half * (1.0f - t);
+            const float vv = cv + (0.04f + t * 0.92f) * kAtlasH;
+            vertex(row[0][s], cx - rx * w, cy, cz - rz * w, normal, cu + 0.04f * kAtlasW, vv, t, phase, height, py,
+                   colour);
+            vertex(row[1][s], cx + rx * w, cy, cz + rz * w, normal, cu + 0.96f * kAtlasW, vv, t, phase, height, py,
+                   colour);
         }
+        for (int s = 0; s < kSeg; ++s) {
+            out.push_back(row[0][s]); out.push_back(row[1][s]); out.push_back(row[0][s + 1]);
+            out.push_back(row[1][s]); out.push_back(row[1][s + 1]); out.push_back(row[0][s + 1]);
+        }
+    }
     // The sparse subset first, so a distant tile is drawn with vkCmdDraw(sparseCount) alone.
     std::vector<GrassVertex> verts;
     verts.reserve(sparseV.size() + denseV.size());

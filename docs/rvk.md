@@ -76,9 +76,11 @@
   (`kGrassTileSize`) with patches every `RVK_GrassHeight`-scaled spacing out to `RVK_GrassDist`, `RVK_GrassBlades`
   blades each, and uploads them to a GPU buffer the first time the tile comes into range; a tile is kept until evicted
   and drawn from its buffer (nothing is generated per frame). Each blade samples a procedural atlas (`GrassBladeAtlas`,
-  built once at init: a grid of tapered leaf silhouettes with a vein, alpha-tested), is tinted by the ground's own
-  texel colour (with a little per-blade variation), varies in height, width, lean, tilt and wind phase; a
-  low-frequency value noise clumps them and leaves bare patches. `RenderGrassField` draws the visible tiles (in
+  built once at init: a grid of tapered leaf silhouettes with a vein; the blade is solid - the alpha is not cut, so the
+  field is not see-through), is tinted by the ground's own texel colour (with a little per-blade variation), varies in
+  height, width, lean, tilt and wind phase. The blades are placed by a random scatter, not a patch grid (a jittered
+  lattice shows as rows at grazing angles); a low-frequency value noise clumps them and leaves bare patches.
+  `RenderGrassField` draws the visible tiles (in
   range and roughly in front) into the scene rendering at its end (`EndScene`, before the post passes) through a
   standalone pipeline: no descriptor sets of the scene's, the camera, the field radius and the wind arrive as one
   uniform buffer, the sun and its shadow map as the frame light block. The blades are tapered strips, faded to nothing
