@@ -221,20 +221,33 @@ private:
     // One record per draw (docs/device-on-rvk.md phase 4a): render / texture stage states, textures, the world
     // matrix and the material wait here and go with the next draw, in its record (EnqueueDraw), instead of a record
     // each. Any other record, Sync and the frame's end send them first (FlushPending), so the device sees the same
-    // sequence. Device applies states, the world matrix and the material independently of each other, so only the
-    // states' own order matters.
+    // sequence. Device applies states, lights, the world matrix, the material and the drawn visual independently of
+    // each other, so only the states' own order and the lights' own order matter.
     // RANDYVK_COALESCE=0: off (a record each, as before).
-    struct PendingHead {                               // a draw record's prefix: this, then `states` StateItems
-        uint32_t states, hasWorld, hasMaterial, pad;
+    struct LightOp {                                   // SetLight (enable unused) or LightEnable (light unused)
+        uint32_t enableOnly, index, enable, pad;
+        d3d::Light light;
+    };
+    struct PendingHead {                               // a draw record's prefix: this, `states` StateItems, `lights` LightOps
+        uint32_t states, lights, hasWorld, hasMaterial, hasVisual, visualKind, visualOwner;
+        const char* visualName;
         d3d::Matrix world;
         d3d::Material material;
     };
+    std::vector<LightOp> m_pendingLights;
+    bool m_hasPendingVisual = false;
+    uint32_t m_pendingVisualKind = 0, m_pendingVisualOwner = 0;
+    const char* m_pendingVisualName = nullptr;
     bool m_coalesce = true;
     bool m_hasPendingWorld = false, m_hasPendingMaterial = false;
     d3d::Matrix m_pendingWorld{};
     d3d::Material m_pendingMaterial{};
     std::vector<StateItem> m_pendingStates;
-    bool HasPending() const { return m_hasPendingWorld || m_hasPendingMaterial || !m_pendingStates.empty(); }
+    bool HasPending() const
+    {
+        return m_hasPendingWorld || m_hasPendingMaterial || m_hasPendingVisual || !m_pendingStates.empty() ||
+               !m_pendingLights.empty();
+    }
     void AddPendingState(const StateItem& item);
     uint32_t PendingBytes() const;
     void WritePending(uint8_t* out);                   // PendingBytes() bytes; clears what is pending

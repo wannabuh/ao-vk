@@ -524,7 +524,8 @@ void ThreadedDevice::AddPendingState(const StateItem& item)
 
 uint32_t ThreadedDevice::PendingBytes() const
 {
-    return Align16(uint32_t(sizeof(PendingHead) + m_pendingStates.size() * sizeof(StateItem)));
+    return Align16(uint32_t(sizeof(PendingHead) + m_pendingStates.size() * sizeof(StateItem) +
+                            m_pendingLights.size() * sizeof(LightOp)));
 }
 
 void ThreadedDevice::WritePending(uint8_t* out)
@@ -535,11 +536,21 @@ void ThreadedDevice::WritePending(uint8_t* out)
     head.world = m_pendingWorld;
     head.hasMaterial = m_hasPendingMaterial ? 1u : 0u;
     head.material = m_pendingMaterial;
+    head.lights = uint32_t(m_pendingLights.size());
+    head.hasVisual = m_hasPendingVisual ? 1u : 0u;
+    head.visualKind = m_pendingVisualKind;
+    head.visualOwner = m_pendingVisualOwner;
+    head.visualName = m_pendingVisualName;
     std::memcpy(out, &head, sizeof(head));
+    out += sizeof(head);
     if (head.states)
-        std::memcpy(out + sizeof(head), m_pendingStates.data(), m_pendingStates.size() * sizeof(StateItem));
+        std::memcpy(out, m_pendingStates.data(), m_pendingStates.size() * sizeof(StateItem));
+    out += m_pendingStates.size() * sizeof(StateItem);
+    if (head.lights)
+        std::memcpy(out, m_pendingLights.data(), m_pendingLights.size() * sizeof(LightOp));
     m_pendingStates.clear();
-    m_hasPendingWorld = m_hasPendingMaterial = false;
+    m_pendingLights.clear();
+    m_hasPendingWorld = m_hasPendingMaterial = m_hasPendingVisual = false;
 }
 
 void ThreadedDevice::ApplyPending(const uint8_t* in)
@@ -547,6 +558,17 @@ void ThreadedDevice::ApplyPending(const uint8_t* in)
     PendingHead head;
     std::memcpy(&head, in, sizeof(head));
     ApplyStates(reinterpret_cast<const StateItem*>(in + sizeof(head)), head.states);
+    const uint8_t* lights = in + sizeof(head) + size_t(head.states) * sizeof(StateItem);
+    for (uint32_t i = 0; i < head.lights; ++i) {
+        LightOp op;
+        std::memcpy(&op, lights + size_t(i) * sizeof(LightOp), sizeof(op));
+        if (op.enableOnly)
+            m_device.LightEnable(op.index, op.enable != 0);
+        else
+            m_device.SetLight(op.index, op.light);
+    }
+    if (head.hasVisual)
+        m_device.SetDrawVisual(head.visualKind, head.visualName, head.visualOwner);
     if (head.hasWorld)
         m_device.SetTransform(d3d::World, head.world);
     if (head.hasMaterial)
@@ -603,6 +625,13 @@ void ThreadedDevice::SetLight(uint32_t index, const d3d::Light& light)
         s.light[index] = light;
         s.lightValid[index] = true;
     }
+    if (m_coalesce) {                                  // with the next draw (in order with LightEnable)
+        LightOp op{0, index, 0, 0, light};
+        m_pendingLights.push_back(op);
+        if (m_pendingLights.size() >= 1024)           // (no draw for long: don't grow without end)
+            FlushPending();
+        return;
+    }
     Enqueue([this, index, light](const uint8_t*) { m_device.SetLight(index, light); });
 }
 
@@ -616,6 +645,13 @@ void ThreadedDevice::LightEnable(uint32_t index, bool enable)
         }
         s.enabled[index] = enable;
         s.enabledValid[index] = true;
+    }
+    if (m_coalesce) {                                  // with the next draw (in order with SetLight)
+        LightOp op{1, index, enable ? 1u : 0u, 0, {}};
+        m_pendingLights.push_back(op);
+        if (m_pendingLights.size() >= 1024)           // (no draw for long: don't grow without end)
+            FlushPending();
+        return;
     }
     Enqueue([this, index, enable](const uint8_t*) { m_device.LightEnable(index, enable); });
 }
@@ -962,6 +998,13 @@ void ThreadedDevice::DrawIndexedPrimitiveSharedRetained(uint32_t primitive, uint
 
 void ThreadedDevice::SetDrawVisual(uint32_t kind, const char* className, uint32_t owner)
 {
+    if (m_coalesce) {                                  // with the next draw: only the latest matters (Device keeps one)
+        m_hasPendingVisual = true;
+        m_pendingVisualKind = kind;
+        m_pendingVisualName = className;
+        m_pendingVisualOwner = owner;
+        return;
+    }
     Enqueue([this, kind, className, owner](const uint8_t*) { m_device.SetDrawVisual(kind, className, owner); });
 }
 

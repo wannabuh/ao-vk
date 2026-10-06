@@ -99,6 +99,11 @@ worker just before the draw. Any other record (`Enqueue`, `UpdateTexture`), `Syn
 world matrix and the material independently of each other, and the states keep their order. Check: the 'game thread
 hand-off' records a frame (about 6,700 before) and 'game thread in rvk (submit)'.
 
+Results (demanding area): 6,700 -> 4,950 records a frame with states / world / material folded; then the by-origin
+count showed the rest were mostly LightEnable (776: per-visual light culling turns lights on and off), SetDrawVisual
+(535) and the flushes they caused (519) - folded too (lights in their own order, the latest visual). Together with
+skipping unchanged binds / descriptor pushes on the render thread: 149 -> 178 fps, render thread the limit.
+
 **4b. Retained material blocks** (next):
 
 - A mesh's state (render states, stages, textures, material) is the same every frame: `RMaterial_t` /
