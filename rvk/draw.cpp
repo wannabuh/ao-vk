@@ -1842,18 +1842,27 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                          m_rs[d3d::RS_ALPHABLENDENABLE] && !m_rs[d3d::RS_ALPHATESTENABLE] &&
                          m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA;
     if (cutoutTexture) ++m_opaqueDraws;
-    // The blend is a no-op when the final alpha is 1 - and it provably is when every alpha input is 1: the textures
-    // (above), the vertex colours (MeshInfo::alphaOpaque), the material and the texture factor. The stage alpha ops
-    // must also keep 1 (every op except SUBTRACT does for all-1 inputs; a complemented arg would turn 1 into 0).
-    bool alphaOpsKeepOne = true;
-    for (int s = 0; s < 2 && alphaOpsKeepOne; ++s) {
+    // The blend is a no-op when the final alpha is 1. Prove it from what the stage alpha ops actually read: the
+    // textures (opaque, above), the vertex colours (MeshInfo::alphaOpaque), the texture factor and the material.
+    bool alphaProvable = true, needVertexAlpha = false, needTfactor = false;
+    for (int s = 0; s < 2 && alphaProvable; ++s) {
         if (m_tss[s][d3d::TSS_COLOROP] == d3d::TOP_DISABLE) break;
-        if (m_tss[s][d3d::TSS_ALPHAOP] == d3d::TOP_SUBTRACT ||
-            (m_tss[s][d3d::TSS_ALPHAARG1] & 0x10u) || (m_tss[s][d3d::TSS_ALPHAARG2] & 0x10u))
-            alphaOpsKeepOne = false;
+        uint32_t op = m_tss[s][d3d::TSS_ALPHAOP];
+        if (op == d3d::TOP_DISABLE) continue;                       // keeps the running alpha (1)
+        if (op == d3d::TOP_SUBTRACT) { alphaProvable = false; break; }
+        for (uint32_t arg : {m_tss[s][d3d::TSS_ALPHAARG1], m_tss[s][d3d::TSS_ALPHAARG2]}) {
+            if (arg & 0x10u) { alphaProvable = false; break; }      // a complemented arg turns 1 into 0
+            switch (arg & 0xFu) {
+            case d3d::TA_DIFFUSE: case d3d::TA_SPECULAR: needVertexAlpha = true; break;
+            case d3d::TA_TFACTOR: needTfactor = true; break;
+            case d3d::TA_CURRENT: case d3d::TA_TEXTURE: break;      // 1 by induction / the opaque texture
+            default: needVertexAlpha = true; break;                 // Arg's default is the specular colour
+            }
+        }
     }
-    bool forceOpaque = cutoutTexture && alphaOpsKeepOne && m_material.diffuse.a >= 1.0f && m_material.specular.a >= 1.0f &&
-                       ((m_rs[d3d::RS_TEXTUREFACTOR] >> 24) == 0xFF) && m_drawMesh && m_drawMesh->alphaOpaque;
+    bool forceOpaque = cutoutTexture && alphaProvable && m_material.diffuse.a >= 1.0f && m_material.specular.a >= 1.0f &&
+                       (!needVertexAlpha || (m_drawMesh && m_drawMesh->alphaOpaque)) &&
+                       (!needTfactor || ((m_rs[d3d::RS_TEXTUREFACTOR] >> 24) == 0xFF));
     m_drawForceOpaque = forceOpaque;
     if (forceOpaque) ++m_forceOpaqueDraws;
     // The ground's base pass (unlit, the texture the lighting pass multiplies): its local-light fraction and motion
