@@ -227,12 +227,12 @@ void ThreadedDevice::BeginFrame()
 {
     m_inFrame = true;
     // The previous frame's time spent on this (the game) thread inside the renderer's call path.
-    uint64_t callerNs = m_callerNs, records = m_frameRecords, bytes = m_frameBytes;
+    uint64_t callerNs = m_callerNs, records = m_frameRecords, bytes = m_frameBytes, repeats = m_frameRepeats;
     m_callerNs = 0;
-    m_frameRecords = m_frameBytes = 0;
-    Enqueue([this, callerNs, records, bytes](const uint8_t*) {
+    m_frameRecords = m_frameBytes = m_frameRepeats = 0;
+    Enqueue([this, callerNs, records, bytes, repeats](const uint8_t*) {
         m_device.ProfileAddCaller(double(callerNs) * 1e-6);
-        m_device.ProfileAddCallerQueue(records, bytes);
+        m_device.ProfileAddCallerQueue(records, bytes, repeats);
         m_device.BeginFrame();
     });
 }
@@ -273,6 +273,7 @@ bool ThreadedDevice::Resize(uint32_t width, uint32_t height)
     m_width = width;
     m_height = height;
     m_viewport = {0, 0, width, height, 0.0f, 1.0f};
+    m_sent->viewportValid = false;                     // the device resets its viewport
     m_target = nullptr;
     return true;
 }
@@ -308,29 +309,75 @@ void ThreadedDevice::Clear(uint32_t count, const Device::Rect* rects, uint32_t f
     }, rects, count ? count * uint32_t(sizeof(Device::Rect)) : 0);
 }
 
+// The state setters drop a call that repeats what the device was last sent (SentState).
 void ThreadedDevice::SetViewport(const d3d::Viewport& vp)
 {
     m_viewport = vp;
+    SentState& s = *m_sent;
+    if (s.viewportValid && std::memcmp(&s.viewport, &vp, sizeof(vp)) == 0) {
+        ++m_frameRepeats;
+        return;
+    }
+    s.viewport = vp;
+    s.viewportValid = true;
     Enqueue([this, vp](const uint8_t*) { m_device.SetViewport(vp); });
 }
 
 void ThreadedDevice::SetRenderState(uint32_t state, uint32_t value)
 {
+    if (state < 256) {
+        SentState& s = *m_sent;
+        if (s.rsValid[state] && s.rs[state] == value) {
+            ++m_frameRepeats;
+            return;
+        }
+        s.rs[state] = value;
+        s.rsValid[state] = true;
+    }
     Enqueue([this, state, value](const uint8_t*) { m_device.SetRenderState(state, value); });
 }
 
 void ThreadedDevice::SetTextureStageState(uint32_t stage, uint32_t type, uint32_t value)
 {
+    if (stage < 8 && type < 32) {
+        SentState& s = *m_sent;
+        if (type == d3d::TSS_ADDRESS) {
+            // Sets U and V too (Device always applies it): they now hold the value.
+            s.tss[stage][d3d::TSS_ADDRESSU] = s.tss[stage][d3d::TSS_ADDRESSV] = value;
+            s.tssValid[stage][d3d::TSS_ADDRESSU] = s.tssValid[stage][d3d::TSS_ADDRESSV] = true;
+        } else if (s.tssValid[stage][type] && s.tss[stage][type] == value) {
+            ++m_frameRepeats;
+            return;
+        }
+        s.tss[stage][type] = value;
+        s.tssValid[stage][type] = true;
+    }
     Enqueue([this, stage, type, value](const uint8_t*) { m_device.SetTextureStageState(stage, type, value); });
 }
 
 void ThreadedDevice::SetTransform(uint32_t type, const d3d::Matrix& m)
 {
+    if (type < 32) {
+        SentState& s = *m_sent;
+        if (s.transformValid[type] && std::memcmp(&s.transform[type], &m, sizeof(m)) == 0) {
+            ++m_frameRepeats;
+            return;
+        }
+        s.transform[type] = m;
+        s.transformValid[type] = true;
+    }
     Enqueue([this, type, m](const uint8_t*) { m_device.SetTransform(type, m); });
 }
 
 void ThreadedDevice::SetMaterial(const d3d::Material& m)
 {
+    SentState& s = *m_sent;
+    if (s.materialValid && std::memcmp(&s.material, &m, sizeof(m)) == 0) {
+        ++m_frameRepeats;
+        return;
+    }
+    s.material = m;
+    s.materialValid = true;
     Enqueue([this, m](const uint8_t*) { m_device.SetMaterial(m); });
 }
 
@@ -597,6 +644,7 @@ void ThreadedDevice::SetRenderTarget(Texture* target)
         return;
     m_target = target;
     m_viewport = {0, 0, target ? target->Width() : m_width, target ? target->Height() : m_height, 0.0f, 1.0f};
+    m_sent->viewportValid = false;                     // the device resets its viewport
     Enqueue([this, target](const uint8_t*) { m_device.SetRenderTarget(target); });
 }
 

@@ -1316,8 +1316,13 @@ public:
     void ProfileAddCaller(double ms) { m_profileCallerMs += ms; }
     double m_profileCallerMs = 0.0;
     // ... and what it queued (records, bytes) - the hand-off's size.
-    void ProfileAddCallerQueue(uint64_t records, uint64_t bytes) { m_profileCallerRecords += records; m_profileCallerBytes += bytes; }
-    uint64_t m_profileCallerRecords = 0, m_profileCallerBytes = 0;
+    void ProfileAddCallerQueue(uint64_t records, uint64_t bytes, uint64_t repeats)
+    {
+        m_profileCallerRecords += records;
+        m_profileCallerBytes += bytes;
+        m_profileCallerRepeats += repeats;
+    }
+    uint64_t m_profileCallerRecords = 0, m_profileCallerBytes = 0, m_profileCallerRepeats = 0;
     std::atomic<uint64_t> m_profileGameWaitUs{0};
     double m_profileIdleMs = 0.0;
     double m_timerCost = 0.0;                    // ms per clock read (subtracted from the draw sections)

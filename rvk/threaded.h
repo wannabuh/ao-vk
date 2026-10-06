@@ -201,6 +201,26 @@ private:
     uint32_t m_pending = 0;                            // producer: committed records not published yet
     uint32_t m_cachedRead = 0;                         // producer: m_readPos as last read (Reserve)
     uint64_t m_frameRecords = 0, m_frameBytes = 0;     // producer: this frame's records and bytes (profiling)
+    uint64_t m_frameRepeats = 0;                       // producer: this frame's state calls dropped as repeats
+    // What the device was last sent, per state: a call repeating it is dropped before it becomes a record (the game
+    // re-sets most of its state around every draw; Device would ignore the repeat, but only after the record was
+    // built, queued and run). Only values this producer sent count (valid flags), so the device's own defaults never
+    // match by accident. Not for lights (Device collects the frame's lights from every SetLight / LightEnable) or
+    // textures (a destroyed texture's address can come back as a new one). The viewport is forgotten whenever the
+    // device resets it (SetRenderTarget, Resize).
+    struct SentState {
+        uint32_t rs[256];
+        bool rsValid[256];
+        uint32_t tss[8][32];
+        bool tssValid[8][32];
+        d3d::Matrix transform[32];
+        bool transformValid[32];
+        d3d::Material material;
+        bool materialValid;
+        d3d::Viewport viewport;
+        bool viewportValid;
+    };
+    std::unique_ptr<SentState> m_sent = std::make_unique<SentState>();   // value-initialised: nothing valid
     alignas(64) std::atomic<uint32_t> m_readPos{0};    // consumer: next record
     alignas(64) std::atomic<uint32_t> m_workerSleeping{0};
     std::atomic<uint64_t> m_framesQueued{0}, m_framesDone{0};

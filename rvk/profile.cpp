@@ -205,7 +205,7 @@ void Device::ProfileWindow(bool start, const char* label)
         m_profileGpu.clear();
         m_profileCpu.clear();
         m_profileFrames = 0;
-        m_profileCallerRecords = m_profileCallerBytes = 0;
+        m_profileCallerRecords = m_profileCallerBytes = m_profileCallerRepeats = 0;
         std::memset(m_shadeSum, 0, sizeof(m_shadeSum));
         m_shadePixels = 0;
         m_shadeOverflowFrames = 0;
@@ -246,10 +246,11 @@ void Device::ProfileLog(const char* label)
     m_profileIdleMs = 0.0;
     m_profileCallerMs = 0.0;
     line("cpu ms (frame recording):", m_profileCpu);
-    Log("%sgame thread hand-off: %.0f records, %.0f KB a frame (avg of %u frames)", label,
-        double(m_profileCallerRecords) / double(m_profileFrames),
-        double(m_profileCallerBytes) / 1024.0 / double(m_profileFrames), m_profileFrames);
-    m_profileCallerRecords = m_profileCallerBytes = 0;
+    Log("%sgame thread hand-off: %.0f records, %.0f KB a frame; %.0f repeated state calls dropped (avg of %u frames)",
+        label, double(m_profileCallerRecords) / double(m_profileFrames),
+        double(m_profileCallerBytes) / 1024.0 / double(m_profileFrames),
+        double(m_profileCallerRepeats) / double(m_profileFrames), m_profileFrames);
+    m_profileCallerRecords = m_profileCallerBytes = m_profileCallerRepeats = 0;
     if (m_shadePixels) {                          // fragment shader invocations per scene pixel, by class
         std::string out;
         char buf[64];
