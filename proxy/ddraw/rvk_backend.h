@@ -105,6 +105,7 @@ class RPalette;
 // Process-wide state shared by all objects.
 struct RvkState {
     rvk::ThreadedDevice* device = nullptr;      // rvk on its own thread (RANDYVK_THREADED=0: on the caller's)
+    uint64_t deviceSerial = 0;                  // one more each device made (what was registered with the last is gone)
     HWND window = nullptr;            // from SetCooperativeLevel or a clipper
     RSurface* mainSurface = nullptr;  // the back buffer the 3D device renders to (rvk main target)
     DWORD displayWidth = 0, displayHeight = 0;   // SetDisplayMode (0 = desktop)
@@ -383,6 +384,25 @@ private:
     };
     std::unordered_map<uint64_t, KeptIndices> m_keptIndices;
     uint64_t m_keptSweep = 0;
+    // Mesh handles (docs/device-on-rvk.md phase 3b): one per drawn range of a vertex buffer with a native triangle
+    // list's indices, registered with the renderer under an id while the buffer's snapshot and the kept indices stay
+    // the same; its draws send the id alone. RANDYVK_MESH_HANDLES=0: the retained draw as before.
+    struct MeshHandle {
+        const WORD* idx = nullptr;
+        RVertexBuffer* vb = nullptr;
+        DWORD icount = 0, start = 0, vcount = 0, type = 0;
+        uint32_t id = 0;                           // 0: not registered
+        const void* vertices = nullptr;            // the snapshots it was registered with
+        const void* indices = nullptr;
+        KeptIndices kept;
+    };
+    std::unordered_map<uint64_t, MeshHandle> m_meshHandles;
+    std::vector<uint32_t> m_freeMeshIds;
+    uint32_t m_nextMeshId = 1;
+    uint64_t m_meshHandleDevice = 0;           // the renderer the ids were registered with (RvkState::deviceSerial)
+    uint64_t m_meshSweep = 0;
+    // The kept copy of a draw's indices (DrawIndexedVBRetained): k's, updated - its data the snapshot to draw.
+    void KeepIndices(KeptIndices& k, const WORD* idx, DWORD icount, uint64_t indexGeneration);
 };
 
 }  // namespace rvkproxy

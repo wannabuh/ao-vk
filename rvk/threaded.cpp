@@ -335,7 +335,7 @@ void ThreadedDevice::BeginFrame()
         m_device.ProfileAddCaller(double(callerNs) * 1e-6);
         m_device.ProfileAddCallerQueue(records, bytes, repeats);
         m_device.ProfileAddCallerDraws(draws.copied, draws.vertexBytes, draws.shared, draws.skinned, draws.indexBytes,
-                                       draws.retained);
+                                       draws.retained, draws.handles);
         m_device.BeginFrame();
         for (uint32_t i = 0; i < sections.n; ++i)   // after BeginFrame: its log (if due) has gone out
             m_device.ProfileCpuAddMs(sections.s[i].first, sections.s[i].second);
@@ -1125,6 +1125,28 @@ void ThreadedDevice::DrawPrimitiveSkinned(uint32_t primitive, uint32_t fvf, cons
     EnqueueDraw([this, primitive, fvf, job, startVertex, vertexCount](const uint8_t*) {
         m_device.DrawSkinned(primitive, fvf, *job, startVertex, vertexCount, nullptr, 0);
     });
+}
+
+void ThreadedDevice::RegisterMesh(uint32_t id, uint32_t primitive, uint32_t fvf, const SharedVertices& vertices,
+                                  size_t byteOffset, uint32_t vertexCount, const SharedVertices& indices,
+                                  uint32_t indexCount)
+{
+    Enqueue([this, id, primitive, fvf, vertices, byteOffset, vertexCount, indices, indexCount](const uint8_t*) {
+        m_device.RegisterMesh(id, primitive, fvf, vertices, byteOffset, vertexCount, indices, indexCount);
+    });
+}
+
+void ThreadedDevice::ReleaseMesh(uint32_t id)
+{
+    Enqueue([this, id](const uint8_t*) { m_device.ReleaseMesh(id); });
+}
+
+void ThreadedDevice::DrawMesh(uint32_t id)
+{
+    m_drawStats.shared++;
+    m_drawStats.retained++;
+    m_drawStats.handles++;
+    EnqueueDraw([this, id](const uint8_t*) { m_device.DrawMesh(id); });
 }
 
 void ThreadedDevice::DrawIndexedPrimitiveSkinned(uint32_t primitive, uint32_t fvf, const SkinJob& job,

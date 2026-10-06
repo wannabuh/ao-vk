@@ -81,6 +81,7 @@ bool RvkState::EnsureDevice(uint32_t width, uint32_t height)
     }
     rvk::SetLogSink([](const char* line) { RvkLog("rvk: %s", line); });
     device = new rvk::ThreadedDevice;
+    ++deviceSerial;
     std::string error;
     char threaded[8] = "1";
     GetEnvironmentVariableA("RANDYVK_THREADED", threaded, sizeof(threaded));

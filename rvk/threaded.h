@@ -167,6 +167,12 @@ public:
     void DrawIndexedPrimitiveSharedRetained(uint32_t primitive, uint32_t fvf, const SharedVertices& data,
                                             size_t byteOffset, uint32_t vertexCount, const SharedVertices& indexData,
                                             uint32_t indexCount);
+    // Retained meshes (Device::RegisterMesh / DrawMesh): registered once (a record with the snapshots), then each draw
+    // a record with the id alone - no reference counts touched per draw on either thread.
+    void RegisterMesh(uint32_t id, uint32_t primitive, uint32_t fvf, const SharedVertices& vertices, size_t byteOffset,
+                      uint32_t vertexCount, const SharedVertices& indices, uint32_t indexCount);
+    void ReleaseMesh(uint32_t id);
+    void DrawMesh(uint32_t id);
     void DrawIndexedPrimitiveVB(uint32_t primitive, VertexBuffer* vb, uint32_t startVertex, uint32_t vertexCount,
                                 const uint16_t* indices, uint32_t indexCount);
     // Draws a character piece the worker skins first (once per job, however often it is drawn): no vertices copied.
@@ -306,7 +312,7 @@ private:
     std::vector<StateItem> m_stateScratch;             // SetStates: the items kept
     std::vector<std::pair<const char*, double>> m_gameSections;   // this frame's AddGameSection sums
     // This frame's draws by how their data crossed the hand-off (the profile's 'hand-off draws' line).
-    struct DrawStats { uint64_t copied = 0, vertexBytes = 0, shared = 0, skinned = 0, indexBytes = 0, retained = 0; } m_drawStats;
+    struct DrawStats { uint64_t copied = 0, vertexBytes = 0, shared = 0, skinned = 0, indexBytes = 0, retained = 0, handles = 0; } m_drawStats;
     std::chrono::steady_clock::time_point m_lastEndFrame{};       // the game thread's frame (EndFrame to EndFrame)
     struct SentState {
         uint32_t rs[256];

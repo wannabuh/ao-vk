@@ -1118,6 +1118,16 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
         m_drawMesh = &it->second;
         return;
     }
+    // A registered mesh (DrawMesh) whose mesh info was found before: kept with it (used every draw, so not dropped).
+    if (m_drawSlot && m_drawSlot->mesh && m_drawStaticBuffer) {
+        ++m_meshStaticDraws;
+        MeshInfo* info = m_drawSlot->mesh;
+        info->lastFrame = m_frameNumber;
+        m_drawMeshKey = m_drawSlot->meshKey;
+        m_drawMeshStatic = info->firstFrame < m_frameNumber;
+        m_drawMesh = info;
+        return;
+    }
     uint64_t key;
     if (m_drawStaticBuffer) {
         // A static snapshot's vertices never change, so identify the sub-mesh by its snapshot and where it sits in
@@ -1164,6 +1174,7 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
         m_drawMeshStatic = it->second.firstFrame < m_frameNumber;
         it->second.lastFrame = m_frameNumber;
         m_drawMesh = &it->second;
+        if (m_drawSlot && m_drawStaticBuffer) { m_drawSlot->mesh = &it->second; m_drawSlot->meshKey = key; }
         return;
     }
     MeshInfo info{};
@@ -1185,7 +1196,9 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
     }
     info.indexHash = indices && indexCount ? HashBytes(indices, size_t(indexCount) * 2, indexCount) : 0;
     info.firstFrame = info.lastFrame = m_frameNumber;
-    m_drawMesh = &m_meshInfo.emplace(key, info).first->second;
+    MeshInfo* placed = &m_meshInfo.emplace(key, info).first->second;
+    m_drawMesh = placed;
+    if (m_drawSlot && m_drawStaticBuffer) { m_drawSlot->mesh = placed; m_drawSlot->meshKey = key; }
 }
 
 bool Device::IsWater(uint32_t fvf)

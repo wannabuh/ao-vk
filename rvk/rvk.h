@@ -352,6 +352,14 @@ public:
     void DrawSharedIndexed(uint32_t primitive, uint32_t fvf, const std::shared_ptr<const std::vector<uint8_t>>& data,
                            size_t byteOffset, uint32_t vertexCount,
                            const std::shared_ptr<const std::vector<uint8_t>>& indexData, uint32_t indexCount);
+    // Retained meshes (docs/device-on-rvk.md phase 3b): a static mesh - vertex and index snapshots that don't change -
+    // registered once under a small id (the caller's: dense, reused after ReleaseMesh), then drawn by it. What every
+    // DrawSharedIndexed looks up again (the snapshots' arena slots, the mesh info) is kept with the id.
+    void RegisterMesh(uint32_t id, uint32_t primitive, uint32_t fvf, const std::shared_ptr<const std::vector<uint8_t>>& vertices,
+                      size_t byteOffset, uint32_t vertexCount, const std::shared_ptr<const std::vector<uint8_t>>& indices,
+                      uint32_t indexCount);
+    void ReleaseMesh(uint32_t id);
+    void DrawMesh(uint32_t id);
     // A character piece skinned by `job` (skinned here if no one did yet): exactly a character, its box known.
     void DrawSkinned(uint32_t primitive, uint32_t fvf, skin::Job& job, uint32_t startVertex, uint32_t vertexCount,
                      const uint16_t* indices, uint32_t indexCount);
@@ -939,6 +947,28 @@ private:
         uint64_t serial = 0;                     // unique per placed snapshot (an address can be reused once freed)
     };
     std::unordered_map<const std::vector<uint8_t>*, StaticGeometry> m_staticGeometry;
+    uint64_t m_staticGeneration = 0;             // DestroyStaticGeometry: every StaticGeometry pointer kept is stale
+    // A registered mesh (RegisterMesh), with what its draws found the last time it was resolved: its snapshots'
+    // arena entries and slots, and its mesh info. Valid while it was resolved in the last kSlotFresh frames (the
+    // static arena and the mesh info only drop entries unused for longer - its draws keep theirs used) of the same
+    // static generation; else DrawMesh resolves it again.
+    struct MeshSlot {
+        std::shared_ptr<const std::vector<uint8_t>> vertices, indices;
+        size_t byteOffset = 0;
+        uint32_t primitive = 0, fvf = 0, vertexCount = 0, indexCount = 0;
+        uint64_t resolvedFrame = 0, generation = 0;
+        StaticGeometry* vertexEntry = nullptr;
+        StaticGeometry* indexEntry = nullptr;    // null: resolved, but not in the arena (drawn through the ring)
+        VkBuffer vb = VK_NULL_HANDLE, ib = VK_NULL_HANDLE;
+        VkDeviceSize vbOffset = 0, ibOffset = 0;
+        uint64_t serial = 0;
+        MeshInfo* mesh = nullptr;                // DrawMeshInfo's, once found
+        uint64_t meshKey = 0;
+    };
+    static constexpr uint64_t kSlotFresh = 20;
+    std::vector<MeshSlot> m_meshSlots;
+    MeshSlot* m_drawSlot = nullptr;              // the current draw's (DrawMesh): DrawMeshInfo takes or keeps its mesh info
+    uint32_t m_slotDraws = 0, m_slotResolves = 0;   // since the last hand-off log line
     std::vector<std::unique_ptr<ArenaChunk>> m_staticArena;
     std::vector<std::unique_ptr<ArenaChunk>> m_casterArena;   // remembered shadow casters (host memory, mapped)
     bool m_staticResident = true;                // RANDYVK_STATIC_GPU=0: copied into the ring per draw as before
@@ -1416,8 +1446,9 @@ public:
     // ... and its draws: vertices copied (count, bytes), shared vertex buffers, skinned pieces, indices copied (bytes),
     // shared draws whose indices were retained (no copy).
     void ProfileAddCallerDraws(uint64_t copied, uint64_t vertexBytes, uint64_t shared, uint64_t skinned,
-                               uint64_t indexBytes, uint64_t retained)
+                               uint64_t indexBytes, uint64_t retained, uint64_t handles = 0)
     {
+        m_profileHandoff[6] += handles;
         m_profileHandoff[5] += retained;
         m_profileHandoff[0] += copied;
         m_profileHandoff[1] += vertexBytes;
@@ -1425,7 +1456,7 @@ public:
         m_profileHandoff[3] += skinned;
         m_profileHandoff[4] += indexBytes;
     }
-    uint64_t m_profileHandoff[6] = {};
+    uint64_t m_profileHandoff[7] = {};
     uint64_t m_profileDraws = 0, m_profileGroupCalls = 0, m_profileGroupDraws = 0, m_profileConstBlocks = 0,
              m_profileConstReused = 0;   // the draws' batching (summed per frame for the log)
     std::atomic<uint64_t> m_profileGameWaitUs{0};

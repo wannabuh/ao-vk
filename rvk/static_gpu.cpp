@@ -168,6 +168,7 @@ void Device::DestroyStaticGeometry()
     m_casterArena.clear();
     m_deadArenaSlots.clear();
     m_staticGeometry.clear();
+    ++m_staticGeneration;                        // (mesh slots resolve again)
     m_staticBytes = 0;
 }
 
@@ -211,6 +212,97 @@ void Device::DrawSharedIndexed(uint32_t primitive, uint32_t fvf, const std::shar
     }
     Draw(primitive, fvf, data->data() + byteOffset, vertexCount, reinterpret_cast<const uint16_t*>(indexData->data()),
          indexCount);
+    m_drawStaticBuffer = VK_NULL_HANDLE;
+    m_drawStaticIndexBuffer = VK_NULL_HANDLE;
+}
+
+void Device::RegisterMesh(uint32_t id, uint32_t primitive, uint32_t fvf,
+                          const std::shared_ptr<const std::vector<uint8_t>>& vertices, size_t byteOffset,
+                          uint32_t vertexCount, const std::shared_ptr<const std::vector<uint8_t>>& indices,
+                          uint32_t indexCount)
+{
+    if (id >= m_meshSlots.size())
+        m_meshSlots.resize(size_t(id) + 1);
+    MeshSlot& s = m_meshSlots[id];
+    s = MeshSlot{};
+    if (!vertices || !indices || indices->size() < size_t(indexCount) * 2 ||
+        vertices->size() < byteOffset + size_t(vertexCount) * FvfStride(fvf))
+        return;                                  // (DrawMesh draws nothing for it)
+    s.vertices = vertices;
+    s.indices = indices;
+    s.byteOffset = byteOffset;
+    s.primitive = primitive;
+    s.fvf = fvf;
+    s.vertexCount = vertexCount;
+    s.indexCount = indexCount;
+}
+
+void Device::ReleaseMesh(uint32_t id)
+{
+    if (id < m_meshSlots.size())
+        m_meshSlots[id] = MeshSlot{};
+}
+
+// DrawSharedIndexed for a registered mesh: its arena slots as last found while they can't have gone (the entries kept
+// used), else found again (and kept).
+void Device::DrawMesh(uint32_t id)
+{
+    if (id >= m_meshSlots.size() || !m_meshSlots[id].vertices || !m_inFrame)
+        return;
+    MeshSlot& s = m_meshSlots[id];
+    const auto* indices = reinterpret_cast<const uint16_t*>(s.indices->data());
+    const uint8_t* vertices = s.vertices->data() + s.byteOffset;
+    ++m_slotDraws;
+    if (s.vb && s.resolvedFrame + kSlotFresh >= m_frameNumber && s.generation == m_staticGeneration) {
+        s.resolvedFrame = m_frameNumber;
+        s.vertexEntry->lastFrame = m_frameNumber;
+        s.indexEntry->lastFrame = m_frameNumber;
+        m_drawStaticBuffer = s.vb;
+        m_drawStaticOffset = s.vbOffset;
+        m_drawStaticSerial = s.serial;
+        m_drawStaticIndexBuffer = s.ib;
+        m_drawStaticIndexOffset = s.ibOffset;
+        m_drawSlot = &s;
+        Draw(s.primitive, s.fvf, vertices, s.vertexCount, indices, s.indexCount);
+        m_drawSlot = nullptr;
+        m_drawStaticBuffer = VK_NULL_HANDLE;
+        m_drawStaticIndexBuffer = VK_NULL_HANDLE;
+        return;
+    }
+    // Resolve: as DrawSharedIndexed.
+    s.vb = s.ib = VK_NULL_HANDLE;
+    s.vertexEntry = s.indexEntry = nullptr;
+    s.mesh = nullptr;
+    const uint32_t stride = FvfStride(s.fvf);
+    if (stride && s.byteOffset % stride == 0 && (s.fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ) {
+        ++m_slotResolves;
+        VkDeviceSize base = 0;
+        m_drawStaticBuffer = StaticBufferFor(s.vertices, &base, stride, &m_drawStaticSerial);
+        m_drawStaticOffset = base + s.byteOffset;
+        if (m_drawStaticBuffer) {
+            uint64_t serial = 0;
+            VkDeviceSize indexBase = 0;
+            m_drawStaticIndexBuffer = StaticBufferFor(s.indices, &indexBase, 16, &serial);
+            m_drawStaticIndexOffset = indexBase;
+        }
+    }
+    if (m_drawStaticBuffer && m_drawStaticIndexBuffer) {
+        auto v = m_staticGeometry.find(s.vertices.get()), i = m_staticGeometry.find(s.indices.get());
+        if (v != m_staticGeometry.end() && i != m_staticGeometry.end()) {
+            s.vertexEntry = &v->second;
+            s.indexEntry = &i->second;
+            s.vb = m_drawStaticBuffer;
+            s.vbOffset = m_drawStaticOffset;
+            s.serial = m_drawStaticSerial;
+            s.ib = m_drawStaticIndexBuffer;
+            s.ibOffset = m_drawStaticIndexOffset;
+            s.resolvedFrame = m_frameNumber;
+            s.generation = m_staticGeneration;
+        }
+    }
+    m_drawSlot = s.vb ? &s : nullptr;            // (DrawMeshInfo keeps the mesh info it finds)
+    Draw(s.primitive, s.fvf, vertices, s.vertexCount, indices, s.indexCount);
+    m_drawSlot = nullptr;
     m_drawStaticBuffer = VK_NULL_HANDLE;
     m_drawStaticIndexBuffer = VK_NULL_HANDLE;
 }

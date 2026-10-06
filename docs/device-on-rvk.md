@@ -63,7 +63,7 @@ idle 1.43 ms). Of it, the native scene code: scene update 1.48 ms, scene render 
 those two); the game's own logic the rest (~3.1 ms). The hand-off: 1,306 draws copy their vertices (697 KB), 1,401 draw
 from shared vertex buffers, 101 skinned; 421 KB of indices copied a frame.
 
-**3a. Retained indices** (`[Native] Retain = on`, with `Device`, `Scene` and `Direct` on; off by default until played):
+**3a. Retained indices** (`[Native] Retain = on`, with `Device`, `Scene` and `Direct` on; default on since played):
 a native mesh's draw (mesh.cpp `DrawIndexed`, inside `RetainedIndices`) goes through `Direct::drawIndexedVB`. Its
 indices are a native `TriList`'s, which only native code writes (load, AddTriangle, copy, flip, delete - each bumps
 `meshdata::IndexGeneration`), so the backend (`RDevice::DrawIndexedVBRetained`) keeps one copy per array and reuses
@@ -87,6 +87,19 @@ The rings change with every write (another draw's vertices), so almost none qual
 copying the few big buffers that did cost the game thread ~2 ms (5.4 MB a frame): 153 -> 98 fps. A rewrite would have
 to be recognised per draw (the range drawn), which costs the game thread about what the copy it replaces does - and the
 game thread is the limit. The copies' other cost is on the render thread, which has time to spare.
+
+**3b. Mesh handles** (with Retain; `RANDYVK_MESH_HANDLES=0` turns them off): the backend
+(`RDevice::DrawIndexedVBRetained`) gives each drawn range of a vertex buffer with a native triangle list's indices an
+id, registers it with the renderer (`ThreadedDevice::RegisterMesh`: one record with the vertex and index snapshots)
+whenever the snapshots it would draw change, and sends each draw as a record with the id alone (`DrawMesh`): no
+reference counts touched per draw on either thread (they were written by both, every draw), and one map lookup on the
+game thread instead of the kept-indices one. The renderer keeps per id (`Device::MeshSlot`) what every
+`DrawSharedIndexed` looked up again: the snapshots' static-arena entries and slots and the mesh info - valid while
+the id was drawn in the last 20 frames (the arena and the mesh info drop only entries unused for longer; its draws
+keep theirs used) of the same static generation, else looked up again. Ranges not drawn for ~600 frames are released
+and their ids reused. Check: the 'hand-off draws' line (by mesh handle, resolved again) and the render thread frame.
+The rest of what a draw derives (light mask, motion vectors, constants, the casters) depends on where it is drawn and
+with what state, not on the mesh, and is unchanged.
 
 - `rvk::Mesh`: a static mesh's vertices **and indices** in a GPU buffer, uploaded once (on first draw, or when its
   `RTriMeshData_t` is loaded), with what `Device::Draw` now recomputes per draw computed once: bounds, index hash,

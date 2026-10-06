@@ -475,12 +475,81 @@ HRESULT RDevice::DrawIndexedVBRetained(D3DPRIMITIVETYPE type, RVertexBuffer* vb,
                                   true);
         return D3D_OK;
     }
-    // The kept copy of these indices: reused while no triangle list was written (the generation), with the first and
-    // last index checked every draw and the whole array every 64 frames - a write the generation missed (a writer
-    // that isn't native) is caught; a different array gets a new copy.
+    // Mesh handles: the range and indices drawn as one registered mesh, its draws a record with its id.
+    static const bool handles = [] { const char* v = std::getenv("RANDYVK_MESH_HANDLES"); return !(v && *v == '0'); }();
+    const uint64_t frame = g_rvk.presentCount;
+    if (handles) {
+        if (m_meshHandleDevice != g_rvk.deviceSerial) {   // a new renderer: none of the ids are registered with it
+            m_meshHandles.clear();
+            m_freeMeshIds.clear();
+            m_nextMeshId = 1;
+            m_meshHandleDevice = g_rvk.deviceSerial;
+        }
+        uint64_t key = uint64_t(reinterpret_cast<uintptr_t>(idx)) * 0x9E3779B97F4A7C15ull ^ icount;
+        key = (key ^ uint64_t(reinterpret_cast<uintptr_t>(vb))) * 0xC2B2AE3D27D4EB4Full;
+        key = (key ^ (uint64_t(start) << 32 | vcount)) * 0x165667B19E3779F9ull ^ uint64_t(type);
+        MeshHandle& h = m_meshHandles[key];
+        if (h.idx != idx || h.vb != vb || h.icount != icount || h.start != start || h.vcount != vcount ||
+            h.type != DWORD(type)) {              // new, or another range under the same key: this one from now on
+            h.idx = idx;
+            h.vb = vb;
+            h.icount = icount;
+            h.start = start;
+            h.vcount = vcount;
+            h.type = DWORD(type);
+            h.vertices = h.indices = nullptr;
+            h.kept = {};
+        }
+        KeepIndices(h.kept, idx, icount, indexGeneration);
+        if (!h.id) {
+            if (!m_freeMeshIds.empty()) {
+                h.id = m_freeMeshIds.back();
+                m_freeMeshIds.pop_back();
+            } else {
+                h.id = m_nextMeshId++;
+            }
+        }
+        if (h.vertices != shared->get() || h.indices != h.kept.data.get()) {   // (re)registered with what it draws
+            dev->RegisterMesh(h.id, type, vb->desc.dwFVF, *shared, size_t(start) * vb->stride, vcount, h.kept.data,
+                              icount);
+            h.vertices = shared->get();
+            h.indices = h.kept.data.get();
+        }
+        dev->DrawMesh(h.id);
+        if (frame >= m_meshSweep + 600) {          // every ~600 frames: forget ranges not drawn lately
+            m_meshSweep = frame;
+            for (auto it = m_meshHandles.begin(); it != m_meshHandles.end();) {
+                if (it->second.kept.used + 600 < frame) {
+                    if (it->second.id) {
+                        dev->ReleaseMesh(it->second.id);
+                        m_freeMeshIds.push_back(it->second.id);
+                    }
+                    it = m_meshHandles.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+        return D3D_OK;
+    }
+    KeptIndices& k = m_keptIndices[uint64_t(reinterpret_cast<uintptr_t>(idx)) * 0x9E3779B97F4A7C15ull ^ icount];
+    KeepIndices(k, idx, icount, indexGeneration);
+    if (frame >= m_keptSweep + 600) {               // every ~600 frames: forget arrays not drawn lately
+        m_keptSweep = frame;
+        for (auto it = m_keptIndices.begin(); it != m_keptIndices.end();)
+            it = it->second.used + 600 < frame ? m_keptIndices.erase(it) : std::next(it);
+    }
+    dev->DrawIndexedPrimitiveSharedRetained(type, vb->desc.dwFVF, *shared, size_t(start) * vb->stride, vcount, k.data,
+                                            icount);
+    return D3D_OK;
+}
+
+// The kept copy of these indices: reused while no triangle list was written (the generation), with the first and last
+// index checked every draw and the whole array every 64 frames - a write the generation missed (a writer that isn't
+// native) is caught; a different array gets a new copy.
+void RDevice::KeepIndices(KeptIndices& k, const WORD* idx, DWORD icount, uint64_t indexGeneration)
+{
     const size_t bytes = size_t(icount) * 2;
-    const uint64_t key = uint64_t(reinterpret_cast<uintptr_t>(idx)) * 0x9E3779B97F4A7C15ull ^ icount;
-    KeptIndices& k = m_keptIndices[key];
     const uint64_t frame = g_rvk.presentCount;
     const uint16_t* kept = k.data ? reinterpret_cast<const uint16_t*>(k.data->data()) : nullptr;
     bool same = kept && k.data->size() == bytes && kept[0] == idx[0] && kept[icount - 1] == idx[icount - 1];
@@ -496,14 +565,6 @@ HRESULT RDevice::DrawIndexedVBRetained(D3DPRIMITIVETYPE type, RVertexBuffer* vb,
         k.checked = frame;
     }
     k.used = frame;
-    if (frame >= m_keptSweep + 600) {               // every ~600 frames: forget arrays not drawn lately
-        m_keptSweep = frame;
-        for (auto it = m_keptIndices.begin(); it != m_keptIndices.end();)
-            it = it->second.used + 600 < frame ? m_keptIndices.erase(it) : std::next(it);
-    }
-    dev->DrawIndexedPrimitiveSharedRetained(type, vb->desc.dwFVF, *shared, size_t(start) * vb->stride, vcount, k.data,
-                                            icount);
-    return D3D_OK;
 }
 
 namespace {
