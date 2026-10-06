@@ -242,6 +242,25 @@ bool Device::GroundHeight(float x, float z, float* y, uint32_t* colour) const
     return false;
 }
 
+// Whether the terrain has been captured near a world x, z at all (grass or not). A tile whose ground is not captured
+// yet (the game has not drawn it there - right after loading, or a zone not streamed in) must not be built empty: it
+// would stay bare. Same search as GroundHeight, ignoring whether the ground is grass.
+bool Device::GroundSeen(float x, float z) const
+{
+    const int32_t cx = int32_t(std::floor(x / kGroundCell));
+    const int32_t cz = int32_t(std::floor(z / kGroundCell));
+    for (int r = 0; r <= 2; ++r)
+        for (int dz = -r; dz <= r; ++dz)
+            for (int dx = -r; dx <= r; ++dx) {
+                if (r > 0 && std::abs(dx) != r && std::abs(dz) != r)
+                    continue;
+                if (m_groundHeights.find((uint64_t(uint32_t(cx + dx)) << 32) | uint32_t(cz + dz)) !=
+                    m_groundHeights.end())
+                    return true;
+            }
+    return false;
+}
+
 bool Device::CreateGrassResources(std::string* error)
 {
     DestroyGrassResources();
@@ -387,9 +406,14 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     GrassTile& tile = m_grassTiles[key];
     if (tile.built)
         return;
-    tile.built = true;
+    ++tile.tries;
     tile.lastUsed = m_frameNumber;
     const float x0 = float(tx) * kGrassTileSize, z0 = float(tz) * kGrassTileSize;
+    // The ground under the tile may not be captured yet (the game has not drawn the terrain there - right after
+    // loading, or a zone not streamed in). Built now it would be bare for good; leave it unbuilt and try again, giving
+    // up after a few seconds in case there is simply no grass there.
+    if (!GroundSeen(x0 + 0.5f * kGrassTileSize, z0 + 0.5f * kGrassTileSize) && tile.tries < 240)
+        return;
     const float spacing = std::max(0.3f, m_grassHeight * 0.75f);
     // A pure random scatter, not a patch grid: a jittered lattice shows as rows at grazing angles (a moire). The
     // expected count sets the density; a low-frequency noise clumps the blades and leaves bare gaps, and each blade is
@@ -438,7 +462,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         // so neighbours aren't identical.
         const uint32_t cell = (hv >> 8) % (kAtlasCols * kAtlasRows);
         const float cu = float(cell % kAtlasCols) * kAtlasW, cv = float(cell / kAtlasCols) * kAtlasH;
-        const float tint = 0.82f + 0.36f * v0;
+        const float tint = 0.93f + 0.14f * v0;   // a little per-blade variation, not a patchwork of greens
         const uint32_t r = std::min(255u, uint32_t(float((pcol >> 16) & 0xFF) * tint));
         const uint32_t g = std::min(255u, uint32_t(float((pcol >> 8) & 0xFF) * tint));
         const uint32_t bl = std::min(255u, uint32_t(float(pcol & 0xFF) * tint));
@@ -470,8 +494,10 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     verts.insert(verts.end(), sparseV.begin(), sparseV.end());
     verts.insert(verts.end(), denseV.begin(), denseV.end());
     tile.sparseCount = uint32_t(sparseV.size());
-    if (verts.empty())
-        return;                                  // no grass here (remembered as built: nothing to draw)
+    if (verts.empty()) {
+        tile.built = true;                       // no grass here (the ground is captured): nothing to draw
+        return;
+    }
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     // Padded to a page: VMA maps the whole allocation for a host-visible buffer, and an unaligned size trips
     // minPlacedMemoryMapAlignment on the mapping (VUID-VkMemoryMapInfo-flags-09651).
@@ -490,6 +516,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     std::memcpy(info.pMappedData, verts.data(), size_t(verts.size()) * sizeof(GrassVertex));   // the real bytes only
     vmaFlushAllocation(m_allocator, tile.allocation, 0, VK_WHOLE_SIZE);   // the GPU reads it: make the write visible
     tile.vertexCount = uint32_t(verts.size());
+    tile.built = true;
 }
 
 // Draws the visible grass tiles into the scene rendering already active: the tiles in range and roughly in front,

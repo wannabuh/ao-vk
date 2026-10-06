@@ -1059,6 +1059,7 @@ private:
     void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
                         const uint16_t* indices, uint32_t indexCount);
     bool GroundHeight(float x, float z, float* y, uint32_t* colour = nullptr) const;
+    bool GroundSeen(float x, float z) const;     // the terrain has been captured near here (grass or not)
     // One grass vertex: world position, normal, and how far up the blade (0 root, 1 tip), the wind phase, the blade's
     // height and its root's world y (the tip shrinks towards it at the field's edge).
     struct GrassVertex {
@@ -1080,6 +1081,7 @@ private:
         uint32_t vertexCount = 0;
         uint32_t sparseCount = 0;   // the first N vertices are a decimated subset: a distant tile draws only these
         bool built = false;
+        uint32_t tries = 0;         // times building was attempted before the ground under it was captured
         uint64_t lastUsed = 0;
     };
     std::unordered_map<uint64_t, GrassTile> m_grassTiles;
