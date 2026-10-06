@@ -437,11 +437,12 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     const int32_t total = int32_t(perM2 * kGrassTileSize * kGrassTileSize * 1.7f);   // candidates; ~half pass the clump
     std::vector<GrassVertex> sparseV, denseV;   // the sparse subset is drawn alone for a distant tile (its LOD)
     auto vertex = [](GrassVertex& v, float x, float y, float z, const float n[3], float u, float vv, float shade,
-                     float phase, float height, float baseY, uint32_t colour) {
+                     float phase, float height, float baseY, uint32_t colour, float across) {
         v.pos[0] = x; v.pos[1] = y; v.pos[2] = z;
         v.normal[0] = n[0]; v.normal[1] = n[1]; v.normal[2] = n[2];
         v.uv[0] = u; v.uv[1] = vv;
         v.shade = shade; v.phase = phase; v.height = height; v.baseY = baseY; v.colour = colour;
+        v.across = across;
     };
     const int32_t tileSeed = int32_t(uint32_t(tx) * 73856093u ^ uint32_t(tz) * 19349663u);
     for (int32_t k = 0; k < total; ++k) {
@@ -504,10 +505,10 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
             const float cz = pz + up[2] * height * t + rz * bend;
             const float w = half * (1.0f - t);
             const float vv = cv + (0.04f + t * 0.92f) * kAtlasH;
-            vertex(row[0][s], cx - rx * w, cy, cz - rz * w, normal, cu + 0.04f * kAtlasW, vv, t, phase, height, py,
-                   colour);
-            vertex(row[1][s], cx + rx * w, cy, cz + rz * w, normal, cu + 0.96f * kAtlasW, vv, t, phase, height, py,
-                   colour);
+            // The two edges of the cross section: the axis point and the signed width. The shader expands the width
+            // towards the camera (a billboard), so a blade is never edge-on and invisible from above.
+            vertex(row[0][s], cx, cy, cz, normal, cu + 0.04f * kAtlasW, vv, t, phase, height, py, colour, -w);
+            vertex(row[1][s], cx, cy, cz, normal, cu + 0.96f * kAtlasW, vv, t, phase, height, py, colour, w);
         }
         for (int s = 0; s < kSeg; ++s) {
             out.push_back(row[0][s]); out.push_back(row[1][s]); out.push_back(row[0][s + 1]);
@@ -682,7 +683,7 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     binding.stride = sizeof(GrassVertex);
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
     binding.divisor = 1;
-    VkVertexInputAttributeDescription2EXT attrs[8] = {};
+    VkVertexInputAttributeDescription2EXT attrs[9] = {};
     for (auto& a : attrs)
         a.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT;
     const VkFormat f3 = VK_FORMAT_R32G32B32_SFLOAT, f2 = VK_FORMAT_R32G32_SFLOAT, f1 = VK_FORMAT_R32_SFLOAT;
@@ -694,7 +695,8 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     attrs[5].location = 5; attrs[5].format = f1; attrs[5].offset = 40;
     attrs[6].location = 6; attrs[6].format = f1; attrs[6].offset = 44;
     attrs[7].location = 7; attrs[7].format = VK_FORMAT_B8G8R8A8_UNORM; attrs[7].offset = 48;
-    vkCmdSetVertexInputEXT(cmd, 1, &binding, 8, attrs);
+    attrs[8].location = 8; attrs[8].format = f1; attrs[8].offset = 52;
+    vkCmdSetVertexInputEXT(cmd, 1, &binding, 9, attrs);
     // Draw the nearest tiles first: with the depth write on, early-Z then rejects the blades they hide (the far ones'
     // fragments), which is where most of the overdraw of a thick field is.
     auto tileDist2 = [&](uint64_t key) {

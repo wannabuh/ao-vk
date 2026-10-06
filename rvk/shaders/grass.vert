@@ -21,6 +21,7 @@ layout(location = 4) in float inPhase;      // the blade's wind phase
 layout(location = 5) in float inHeight;     // the blade's height
 layout(location = 6) in float inBaseY;      // its root's world y
 layout(location = 7) in vec4 inColour;      // the ground texel's colour (the blade's tint)
+layout(location = 8) in float inAcross;     // how far this edge is from the axis: expanded towards the camera
 
 layout(location = 0) out vec3 vPosW;
 layout(location = 1) out vec3 vNormal;
@@ -97,11 +98,20 @@ void main()
     vec3 bendNow = wdir * (amp * now);
     vec3 bendBefore = wdir * (amp * before);
     vec3 push = PusherOffset(root, inShade, inHeight);
-    vClip = GF.viewProj * vec4(root + bendNow + push, 1.0);
-    vPrevClip = GF.prevViewProj * vec4(root + bendBefore + push, 1.0);
+    vec3 axis = root + bendNow + push;          // the blade's spine at this cross section
+    // Billboard the blade about the vertical: expand its width along the direction across the view, so it always faces
+    // the camera. A vertical blade seen from above is otherwise edge-on and vanishes.
+    vec3 toCam = GF.camera.xyz - axis;
+    vec2 vh = toCam.xz;
+    float vl = length(vh);
+    vec2 right = vl > 1e-3 ? vec2(-vh.y, vh.x) / vl : vec2(1.0, 0.0);
+    vec3 across = vec3(right.x, 0.0, right.y) * (inAcross * fade);
+    vec3 p = axis + across;
+    vClip = GF.viewProj * vec4(p, 1.0);
+    vPrevClip = GF.prevViewProj * vec4(axis - bendNow + bendBefore + across, 1.0);
     gl_Position = vClip;
     vPosW = inPos;                              // lighting and the shadow lookup: the blade's own spot
-    vNormal = inNormal;
+    vNormal = normalize(vec3(-vh.x, 0.6 * max(vl, 1e-3), -vh.y));   // faces the camera, tilted a little up
     vUv = inUv;
     vShade = inShade;
     vTint = inColour.rgb;

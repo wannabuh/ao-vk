@@ -1064,7 +1064,7 @@ private:
     // One grass vertex: world position, normal, and how far up the blade (0 root, 1 tip), the wind phase, the blade's
     // height and its root's world y (the tip shrinks towards it at the field's edge).
     struct GrassVertex {
-        float pos[3];
+        float pos[3];      // the cross section's centre, on the blade's axis (the width is expanded in the shader)
         float normal[3];
         float uv[2];       // the blade texture's atlas coordinate
         float shade;
@@ -1072,6 +1072,7 @@ private:
         float height;
         float baseY;
         uint32_t colour;   // RGB tint (the ground's texel), 0xAARRGGBB
+        float across;      // how far this edge is from the axis, along the width: the shader billboards it
     };
     // A grid tile's baked grass, on the GPU (grass.cpp BuildGrassTile). Tiles are world-aligned and static: built the
     // first time they come into range and kept until evicted, so a frame costs only the visible tiles' draws (no

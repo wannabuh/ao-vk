@@ -127,11 +127,11 @@ void main()
     float shadow = mix(1.0, SunShadow(vPosW), FL.shadowParams.y);
     // Mostly one grass green, with only a little of the ground's own colour (and the atlas' vein); a gentle root-to-tip
     // gradient, kept bright at the base too (a dark base read as neglected roots).
-    vec3 tint = mix(vec3(0.34, 0.52, 0.24), vTint, 0.3);
+    vec3 tint = mix(vec3(0.30, 0.46, 0.21), vTint, 0.3);
     vec3 base = tint * blade.rgb * mix(vec3(0.92), vec3(1.08), clamp(vShade, 0.0, 1.0));
     // The ambient follows the sun, so the grass goes dark at night with the rest of the scene.
     float sunLum = clamp(dot(FL.sunColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
-    vec3 lit = FL.sunColor.rgb * d * shadow + LocalLights(vPosW, n) + vec3(0.12 + 0.4 * sunLum);
+    vec3 lit = FL.sunColor.rgb * d * shadow + LocalLights(vPosW, n) + vec3(0.10 + 0.35 * sunLum);
     outScene = vec4(base * lit, 1.0);
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * GF.viewport.xy * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
