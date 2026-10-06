@@ -22,7 +22,6 @@ layout(location = 5) in float inHeight;     // the blade's height
 layout(location = 6) in float inBaseY;      // its root's world y
 layout(location = 7) in vec4 inColour;      // the ground texel's colour (the blade's tint)
 layout(location = 8) in float inAcross;     // how far this edge is from the axis: expanded towards the camera
-layout(location = 9) in vec4 inLight;       // the terrain's baked light there (its light pass texel; 0 = none)
 
 layout(location = 0) out vec3 vPosW;
 layout(location = 1) out vec3 vNormal;
@@ -31,7 +30,6 @@ layout(location = 3) out float vShade;
 layout(location = 4) out vec3 vTint;
 layout(location = 5) out vec4 vClip;
 layout(location = 6) out vec4 vPrevClip;
-layout(location = 7) out vec3 vLight;
 
 // The well-damped spring behind a walking character: a plant springs back a little past upright and settles.
 float PushSpring(float age)
@@ -119,5 +117,4 @@ void main()
     vUv = inUv;
     vShade = inShade;
     vTint = inColour.rgb;
-    vLight = inLight.rgb;
 }

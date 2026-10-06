@@ -1054,16 +1054,14 @@ private:
     float m_grassHeight = 0.5f;                  // RVK_GrassHeight (world units)
     bool m_grassTex = true;                      // RVK_GrassTex: grass only where the ground's texel is green
     float m_grassPrevTime = 0.0f;                // the wind clock last frame, so a blade's motion vector is exact
-    // colour: the ground texel's RGB (the grass tint); light: the terrain light pass' texel (its baked light, what
-    // makes the ground bright). Both 0xAARRGGBB, 0 = not captured.
-    struct GroundCell { float y; bool grass; uint32_t colour; uint32_t light; };
+    struct GroundCell { float y; bool grass; uint32_t colour; };   // colour: the ground texel's RGB (the grass tint)
     std::unordered_map<uint64_t, GroundCell> m_groundHeights;   // the ground by world x, z cell (grass or not)
     float m_groundEyeX = 0.0f, m_groundEyeZ = 0.0f;             // where the grid was last cleared (it only grows)
     void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
                         const uint16_t* indices, uint32_t indexCount);
-    bool GroundHeight(float x, float z, float* y, uint32_t* colour = nullptr, uint32_t* light = nullptr) const;
+    bool GroundHeight(float x, float z, float* y, uint32_t* colour = nullptr) const;
     bool GroundSeen(float x, float z) const;     // the terrain has been captured near here (grass or not)
-    bool GroundLightSeen(float x, float z) const; // ... and its baked light (the terrain light pass) too
+
     void GroundNormal(float x, float z, float out[3]) const;   // the ground's upward normal (the slope) at x, z
     // One grass vertex: world position, normal, and how far up the blade (0 root, 1 tip), the wind phase, the blade's
     // height and its root's world y (the tip shrinks towards it at the field's edge).
@@ -1077,7 +1075,6 @@ private:
         float baseY;
         uint32_t colour;   // RGB tint (the ground's texel), 0xAARRGGBB
         float across;      // how far this edge is from the axis, along the width: the shader billboards it
-        uint32_t light;    // the terrain's baked light there (its light pass texel), 0xAARRGGBB; 0 = none
     };
     // A grid tile's baked grass, on the GPU (grass.cpp BuildGrassTile). Tiles are world-aligned and static: built the
     // first time they come into range and kept until evicted, so a frame costs only the visible tiles' draws (no

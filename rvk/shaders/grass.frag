@@ -27,7 +27,6 @@ layout(location = 3) in float vShade;
 layout(location = 4) in vec3 vTint;
 layout(location = 5) in vec4 vClip;
 layout(location = 6) in vec4 vPrevClip;
-layout(location = 7) in vec3 vLight;        // the terrain's baked light there (its light pass texel; 0 = none)
 
 layout(location = 0) out vec4 outScene;
 layout(location = 3) out vec4 outMotion;
@@ -65,16 +64,10 @@ float PointShadow(Light l, vec3 posW, vec3 n, float nl)
     float w = max(a.x, max(a.y, a.z));
     float f = l.direction.w, nr = kPointShadowNear;
     float ref = f / (f - nr) - f * nr / ((f - nr) * w);
-    vec3 dirN = d / length(d);
-    vec3 t1 = normalize(cross(dirN, abs(dirN.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
-    vec3 t2 = cross(dirN, t1);
-    float r = 0.75 * texel;
-    float layer = l.spot.z - 1.0, s = 0.0;
-    s += texture(pointShadowMaps, vec4(d + (t1 + t2) * r, layer), ref);
-    s += texture(pointShadowMaps, vec4(d + (t1 - t2) * r, layer), ref);
-    s += texture(pointShadowMaps, vec4(d - (t1 + t2) * r, layer), ref);
-    s += texture(pointShadowMaps, vec4(d - (t1 - t2) * r, layer), ref);
-    return 1.0 - (1.0 - 0.25 * s) * FL.shadowParams.w * l.spot.w;
+    // One tap: the scene filters with four around the direction, but a blade is tiny and the field is thick with
+    // overdraw, where a quarter of the taps is a real saving (the edge is a little harder on the blades).
+    float layer = l.spot.z - 1.0;
+    return 1.0 - (1.0 - texture(pointShadowMaps, vec4(d, layer), ref)) * FL.shadowParams.w * l.spot.w;
 }
 
 // The frame's nearby point / spot lights that reach this tile, D3D7's attenuation, its range cut faded rather than a
