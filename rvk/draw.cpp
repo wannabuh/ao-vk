@@ -390,6 +390,11 @@ bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uin
         !(m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) || vertexCount < 3 || vertexCount > 4096 ||
         !m_drawMesh)
         return false;
+    // A texture with no transparent texel never moves: the shaders scale sway and push by its holes (ffp.vert
+    // smoothstep(0.92, 0.7, mean alpha) = 0). Most blended statics of plant size are such props - not split, kept on
+    // the GPU and in the depth pre-pass.
+    if (m_textures[0]->m_opaque)
+        return false;
     // Static: the same vertices for the last two frames at least (the mesh cache's fingerprint).
     if (!m_drawMeshStatic || m_drawMesh->firstFrame + 2 > m_frameNumber)
         return false;
