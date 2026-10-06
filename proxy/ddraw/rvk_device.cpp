@@ -696,9 +696,6 @@ void RVertexBuffer::Materialize()
     size_t n = std::min<size_t>(job->source->vertices.size(), desc.dwNumVertices);
     std::memcpy(Bytes(), job->Skinned(), n * sizeof(rvk::skin::Vertex));
     skin = std::move(job);
-    writing = false;                             // skinned: changes with the pose (not compared)
-    before.reset();
-    hashValid = false;
 }
 
 bool AttachSkin(void* d3dVertexBuffer, std::shared_ptr<rvk::skin::Job> job)
@@ -711,7 +708,6 @@ bool AttachSkin(void* d3dVertexBuffer, std::shared_ptr<rvk::skin::Job> job)
         job->prevBones = vb->skin->bones;        // what it was last time: motion vectors
     vb->skin = std::move(job);
     vb->shared.reset();
-    vb->hashValid = false;
     vb->lastWriteFrame = g_rvk.presentCount;
     return true;
 }
@@ -719,90 +715,10 @@ bool AttachSkin(void* d3dVertexBuffer, std::shared_ptr<rvk::skin::Job> job)
 void RVertexBuffer::Written()
 {
     skin.reset();
-    // Kept until WriteDone, which may find the write changed nothing and go back to it (with its snapshot, which
-    // queued draws and the renderer's GPU copy refer to).
-    if (!writing) {                              // (a second Lock before the Unlock: the first's state stands)
-        before = shared ? buf : nullptr;
-        beforeWriteFrame = lastWriteFrame;
-        writing = true;
-    }
     shared.reset();
     if (buf.use_count() > 1)
         buf = std::make_shared<std::vector<uint8_t>>(*buf);
     lastWriteFrame = g_rvk.presentCount;
-}
-
-namespace {
-
-struct VbRewrites { uint64_t same = 0, changed = 0, unchecked = 0, sameBytes = 0; } g_vbRewrites;
-
-uint64_t HashVertices(const std::vector<uint8_t>& v)
-{
-    uint64_t h = 0xCBF29CE484222325ull ^ v.size();
-    const uint8_t* b = v.data();
-    size_t i = 0, n = v.size();
-    for (; i + 8 <= n; i += 8) {
-        uint64_t w;
-        std::memcpy(&w, b + i, 8);
-        h = (h ^ w) * 0x100000001B3ull;
-        h ^= h >> 29;
-    }
-    for (; i < n; ++i) h = (h ^ b[i]) * 0x100000001B3ull;
-    return h;
-}
-
-}  // namespace
-
-void RVertexBuffer::WriteDone()
-{
-    if (!writing)
-        return;
-    writing = false;
-    std::shared_ptr<std::vector<uint8_t>> old = std::move(before);
-    if (skipChecks) {                            // changed lately: not checked for a while
-        --skipChecks;
-        hashValid = false;
-        ++g_vbRewrites.unchecked;
-        return;
-    }
-    uint64_t h = HashVertices(*buf);
-    if (hashValid && h == contentHash) {
-        // The same contents: it keeps its age (static after two frames unchanged, as before) and, if it had a
-        // snapshot, that snapshot - this write's copy is dropped.
-        lastWriteFrame = beforeWriteFrame;
-        if (old && old->size() == buf->size()) {
-            buf = std::move(old);
-            shared = buf;
-        }
-        backoff = 0;
-        ++g_vbRewrites.same;
-        g_vbRewrites.sameBytes += buf->size();
-        return;
-    }
-    if (hashValid) {                             // changed: check less often while it keeps changing
-        backoff = backoff ? std::min(backoff * 2, 64u) : 1;
-        skipChecks = backoff;
-        ++g_vbRewrites.changed;
-    }
-    contentHash = h;
-    hashValid = !skipChecks;
-}
-
-HRESULT RVertexBuffer::DoUnlock()
-{
-    WriteDone();
-    return DD_OK;
-}
-
-void VertexBufferFrame(uint64_t presented)
-{
-    if (presented % 600)
-        return;
-    VbRewrites& r = g_vbRewrites;
-    RvkLog("vertex buffer rewrites a frame: %.0f found unchanged (%.0f KB, kept static), %.0f changed, %.0f not "
-           "checked (changing lately)", double(r.same) / 600.0, double(r.sameBytes) / 600.0 / 1024.0,
-           double(r.changed) / 600.0, double(r.unchecked) / 600.0);
-    r = {};
 }
 
 // The vertices to reference for a buffer unchanged for two frames, or null for one written lately - those
@@ -1006,7 +922,6 @@ HRESULT RDevice::ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, D
                 std::memcpy(out + df.tex[t], tc, df.texSize[t] * 4);
             }
     }
-    dst->WriteDone();
     return D3D_OK;
 }
 

@@ -75,19 +75,6 @@ casters). The call log line is the COM call's. Check: `tools/calllog-ab.sh Retai
 line (retained count up, KB of indices copied down) and the game thread frame.
 
 
-**Measured before 3b / 4b** (the copied-draws and state lines, a busy city spot at ~150 fps, the game thread the
-limit: 6.53 ms, render thread idle 1.2 ms): of 1,382 draws copying their vertices a frame (957 KB), 1,336 (760 KB)
-drew exactly what a draw drew the frame before - 1,255 of them (582 KB) from vertex buffers the game rewrites every
-frame with the same contents, outside any native visual. Native state: 3,329 changes a frame, none repeats (DeviceState
-already sends only changes) - about one per draw, so a retained material block would replace ~16 bytes a draw: 4b
-waits until the rest is done.
-
-**3a'. Unchanged rewrites** (rvkproxy `RVertexBuffer::WriteDone`, always on): after a write (Unlock, ProcessVertices
-into it) the buffer's contents are hashed and compared with the last write's; the same contents keep it static (its
-age, and its snapshot - the renderer's GPU copy - kept), so its draws take the shared path instead of copying. A
-buffer whose contents did change is checked again only after 1, 2, 4 ... 64 writes. Check: the 'vertex buffer
-rewrites' line (found unchanged a frame) and the 'hand-off draws' line (copied draws and KB down, shared up).
-
 - `rvk::Mesh`: a static mesh's vertices **and indices** in a GPU buffer, uploaded once (on first draw, or when its
   `RTriMeshData_t` is loaded), with what `Device::Draw` now recomputes per draw computed once: bounds, index hash,
   vertex alpha, the caster identity.
