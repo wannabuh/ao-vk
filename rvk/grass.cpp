@@ -462,13 +462,20 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         if (!GroundHeight(px, pz, &py, &pcol))
             continue;                            // no grass ground here
         const float height = m_grassHeight * (0.45f + 1.2f * v0);
-        const float yaw = v1 * 6.2831853f;       // independent of the position: no band shares a rotation
-        const float lean = 0.15f + 0.55f * v2;   // every blade leans out (never a rank of uprights)
-        const float droop = 0.18f + 0.35f * v4;  // ... and its cross sections bend further towards the tip
+        const float yaw = v1 * 6.2831853f;       // the blade's plane (independent of the position: no band rotates alike)
         const float rx = std::cos(yaw), rz = std::sin(yaw);
-        float up[3] = {lean * rx, 1.0f, lean * rz};
+        // The lean comes from a low-frequency field: a patch of grass leans one way together, its direction and
+        // strength varying over the world, with only a little per-blade scatter. A tilt of its own per blade reads
+        // uniform; a field reads natural.
+        const float f1 = ValueNoise(px * 0.05f + 31.1f, pz * 0.05f - 7.3f) - 0.5f;
+        const float f2 = ValueNoise(px * 0.05f - 12.7f, pz * 0.05f + 19.3f) - 0.5f;
+        const float fl = std::sqrt(f1 * f1 + f2 * f2) + 1e-6f;
+        const float mag = 0.05f + 0.22f * ValueNoise(px * 0.028f + 4.7f, pz * 0.028f - 2.2f);
+        const float scatter = (v2 - 0.5f) * 0.18f;
+        float up[3] = {(f1 / fl) * mag + rx * scatter, 1.0f, (f2 / fl) * mag + rz * scatter};
         const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
         up[0] /= ul; up[1] /= ul; up[2] /= ul;
+        const float droop = 0.06f + 0.18f * v4;  // a little arc over towards the tip
         const float half = 0.5f * (0.03f + 0.03f * v2) * (0.5f + height);   // narrower blades
         const float phase = (px * 0.3f + pz * 0.25f) + v1 * 6.2831853f;
         float normal[3] = {rz, 0.5f, -rx};
