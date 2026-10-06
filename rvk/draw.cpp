@@ -1643,12 +1643,29 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // GPU profiling: which class of scene draw this is (splits the "scene" block; see ProfileSceneClass).
     if (m_scenePhase && m_target == m_scene && !m_external &&
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) {
-        int cls = 1;
+        // Classes: ProfileSceneClass's names. Terrain and foliage by how they are drawn, the rest by the game's
+        // visual kind (SetDrawVisual).
+        int cls;
+        VisualKind kind = VisualKind(m_drawVisualKind);
         if (IsTerrain(fvf))
             cls = IsMultiplyPass() ? 3 : 2;
         else if (m_rs[d3d::RS_LIGHTING] && (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) &&
                  m_textures[0] && !m_textures[0]->m_opaque && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
             cls = 4;                                 // as the foliage flag (Draw): a texture with holes
+        else if (kind == VisualKind::Character || kind == VisualKind::CharacterPart)
+            cls = 5;
+        else if (kind == VisualKind::Effect || kind == VisualKind::BlobShadow)
+            cls = 6;
+        else if (kind == VisualKind::Sky)
+            cls = 7;
+        else if (kind == VisualKind::Water)
+            cls = 8;
+        else if (kind == VisualKind::Room)
+            cls = 9;
+        else if (kind == VisualKind::Static)
+            cls = 1;
+        else
+            cls = 10;                                // Unknown / Other
         ProfileSceneClass(cls);
     }
     // Particles whose effect the game no longer draws: at the end of the 3D scene - the first interface draw after 3D,

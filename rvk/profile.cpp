@@ -87,13 +87,16 @@ void Device::ProfileMark(const char* name)
     p.names[p.count++] = name;
 }
 
-// The scene's draws split by class (opaque, terrain base, terrain light, foliage) for the GPU profile: the interval
-// ending at a mark is named after the class it closes. Bounded so the pool isn't exhausted mid-frame.
+// The scene's draws split by class (statics, terrain base / light, foliage, characters, effects, sky, water, rooms,
+// other) for the GPU profile: the interval ending at a mark is named after the class it closes. Bounded so the pool
+// isn't exhausted mid-frame; what comes after the last mark stays in "scene".
 void Device::ProfileSceneClass(int cls)
 {
-    if (cls == m_sceneClass || m_sceneClassMarks >= 20)
+    if (cls == m_sceneClass || m_sceneClassMarks >= kSceneClassMarks)
         return;
-    static const char* names[] = {"", "scene opaque", "scene terrain base", "scene terrain light", "scene foliage"};
+    static const char* names[] = {"", "scene statics", "scene terrain base", "scene terrain light", "scene foliage",
+                                  "scene characters", "scene effects", "scene sky", "scene water", "scene rooms",
+                                  "scene other"};
     if (m_sceneClass > 0 && m_sceneClass < int(sizeof(names) / sizeof(names[0]))) {
         // The closing class's batched draws (M3) are still pending: issue them first, or the timestamp lands before
         // them and their time is counted in the next class. Only while profiling (it can split a group).

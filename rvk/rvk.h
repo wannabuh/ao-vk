@@ -1183,6 +1183,7 @@ private:
     std::array<Frame, kFramesInFlight> m_frames;
     // Profiling (profile.cpp): GPU timestamps per frame slot, CPU times of the frame's recording.
     static constexpr uint32_t kProfileMarks = 48;
+    static constexpr uint32_t kSceneClassMarks = 30;   // of them for the scene's class split (16 others a frame)
     struct ProfileFrame { VkQueryPool pool = VK_NULL_HANDLE; uint32_t count = 0; const char* names[kProfileMarks] = {}; };
     std::array<ProfileFrame, kFramesInFlight> m_profile;
     float m_timestampPeriod = 1.0f;
