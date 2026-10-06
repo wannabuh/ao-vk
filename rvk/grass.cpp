@@ -481,6 +481,27 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         v.uv[0] = un(u); v.uv[1] = un(vv);
         v.colour = (colour & 0x00FFFFFFu) | (uint32_t(std::clamp(std::lround(shade * 255.0f), 0L, 255L)) << 24);
     };
+    // The ground's slope, on a coarse grid over the tile: the normal varies slowly and computing it per blade (each
+    // GroundNormal is several ground lookups) was most of the build's cost - and a build that lands several tiles in
+    // one frame is what a camera move or turn shows as a stutter. Bilinear-sampled per blade.
+    constexpr int kNG = 9;
+    const float ngCell = kGrassTileSize / float(kNG);
+    float normals[kNG][kNG][3];
+    for (int j = 0; j < kNG; ++j)
+        for (int i = 0; i < kNG; ++i)
+            GroundNormal(x0 + (float(i) + 0.5f) * ngCell, z0 + (float(j) + 0.5f) * ngCell, normals[j][i]);
+    auto sampleNormal = [&](float px, float pz, float out[3]) {
+        const float fi = std::clamp((px - x0) / ngCell - 0.5f, 0.0f, float(kNG - 1));
+        const float fj = std::clamp((pz - z0) / ngCell - 0.5f, 0.0f, float(kNG - 1));
+        const int i0 = int(fi), j0 = int(fj);
+        const int i1 = std::min(i0 + 1, kNG - 1), j1 = std::min(j0 + 1, kNG - 1);
+        const float ti = fi - float(i0), tj = fj - float(j0);
+        for (int c = 0; c < 3; ++c) {
+            const float a = normals[j0][i0][c] * (1.0f - ti) + normals[j0][i1][c] * ti;
+            const float b = normals[j1][i0][c] * (1.0f - ti) + normals[j1][i1][c] * ti;
+            out[c] = a * (1.0f - tj) + b * tj;
+        }
+    };
     const int32_t tileSeed = int32_t(uint32_t(tx) * 73856093u ^ uint32_t(tz) * 19349663u);
     for (int32_t k = 0; k < total; ++k) {
         // The position and every other property come from separate hashes. From one, a blade's x and its rotation are
@@ -512,7 +533,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         const float mag = 0.05f + 0.22f * ValueNoise(px * 0.028f + 4.7f, pz * 0.028f - 2.2f);
         const float scatter = (v2 - 0.5f) * 0.18f;
         float tn[3];
-        GroundNormal(px, pz, tn);                // the blade grows along the ground's slope, not straight up
+        sampleNormal(px, pz, tn);                // the blade grows along the ground's slope, not straight up
         float up[3] = {tn[0] + (f1 / fl) * mag + rx * scatter, tn[1], tn[2] + (f2 / fl) * mag + rz * scatter};
         const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
         up[0] /= ul; up[1] /= ul; up[2] /= ul;
