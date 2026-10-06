@@ -177,6 +177,11 @@ private:
     // Reserves `bytes` of payload, waiting for the worker if the ring is full. Returns the payload pointer.
     uint8_t* Reserve(uint32_t bytes);
     void Commit();
+    // Committed records reach the worker in batches: publishing one (the counter, the fenced store of m_writePos, the
+    // cache line the worker polls) cost more than building a small record, and a frame queues tens of thousands.
+    // Published every kPublishBatch records and before anything that waits for the worker.
+    void Publish();
+    static constexpr uint32_t kPublishBatch = 32;
 
     template <typename F>
     void Enqueue(F&& f, const void* data = nullptr, uint32_t dataBytes = 0, void** dataCopy = nullptr);
@@ -192,6 +197,9 @@ private:
     uint8_t* m_ring = nullptr;
     alignas(64) std::atomic<uint32_t> m_writePos{0};   // producer: committed end
     uint32_t m_reserveStart = 0, m_reserveSize = 0;    // producer: record being built
+    uint32_t m_localWrite = 0;                         // producer: end of the committed records, published or not
+    uint32_t m_pending = 0;                            // producer: committed records not published yet
+    uint64_t m_frameRecords = 0, m_frameBytes = 0;     // producer: this frame's records and bytes (profiling)
     alignas(64) std::atomic<uint32_t> m_readPos{0};    // consumer: next record
     alignas(64) std::atomic<uint32_t> m_workerSleeping{0};
     std::atomic<uint64_t> m_framesQueued{0}, m_framesDone{0};

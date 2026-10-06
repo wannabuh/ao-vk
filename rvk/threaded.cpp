@@ -67,7 +67,7 @@ uint8_t* ThreadedDevice::Reserve(uint32_t bytes)
         Log("record of %u bytes is too large for the queue", bytes);
         total = kQueueBytes / 2 - 16;                  // the caller's data is truncated; better than a hang
     }
-    uint32_t w = m_writePos.load(std::memory_order_relaxed);
+    uint32_t w = m_localWrite;                         // after the unpublished records too
     for (int spins = 0;; ++spins) {
         uint32_t r = m_readPos.load(std::memory_order_acquire);
         if (w >= r) {
@@ -85,7 +85,9 @@ uint8_t* ThreadedDevice::Reserve(uint32_t bytes)
             m_reserveStart = w;
             break;
         }
-        // Full: wait for the worker to consume.
+        // Full: wait for the worker to consume (it can only consume what is published).
+        if (spins == 0)
+            Publish();
         if (spins < 64)
             YieldProcessor();
         else
@@ -102,15 +104,29 @@ void ThreadedDevice::Commit()
     uint32_t end = m_reserveStart + m_reserveSize;
     if (end == kQueueBytes)
         end = 0;
-    m_recordsQueued.fetch_add(1, std::memory_order_relaxed);
-    m_writePos.store(end, std::memory_order_seq_cst);
+    m_localWrite = end;
+    ++m_pending;
+    ++m_frameRecords;
+    m_frameBytes += m_reserveSize;
     if (!m_thread) {                                   // direct mode: the caller is the consumer
+        Publish();
         uint32_t r = m_readPos.load(std::memory_order_relaxed);
         while (r != end)
             RunOne(r);
         return;
     }
-    if (m_workerSleeping.load(std::memory_order_seq_cst))
+    if (m_pending >= kPublishBatch)
+        Publish();
+}
+
+void ThreadedDevice::Publish()
+{
+    if (!m_pending)
+        return;
+    m_recordsQueued.fetch_add(m_pending, std::memory_order_relaxed);
+    m_pending = 0;
+    m_writePos.store(m_localWrite, std::memory_order_seq_cst);
+    if (m_thread && m_workerSleeping.load(std::memory_order_seq_cst))
         WakeByAddressSingle(&m_writePos);
 }
 
@@ -191,6 +207,7 @@ void ThreadedDevice::RunOne(uint32_t& r)
 
 void ThreadedDevice::Sync()
 {
+    Publish();
     uint64_t target = m_recordsQueued.load();
     while (m_recordsDone.load(std::memory_order_acquire) < target) {
         uint64_t done = m_recordsDone.load();
@@ -205,10 +222,12 @@ void ThreadedDevice::BeginFrame()
 {
     m_inFrame = true;
     // The previous frame's time spent on this (the game) thread inside the renderer's call path.
-    uint64_t callerNs = m_callerNs;
+    uint64_t callerNs = m_callerNs, records = m_frameRecords, bytes = m_frameBytes;
     m_callerNs = 0;
-    Enqueue([this, callerNs](const uint8_t*) {
+    m_frameRecords = m_frameBytes = 0;
+    Enqueue([this, callerNs, records, bytes](const uint8_t*) {
         m_device.ProfileAddCaller(double(callerNs) * 1e-6);
+        m_device.ProfileAddCallerQueue(records, bytes);
         m_device.BeginFrame();
     });
 }
@@ -221,6 +240,7 @@ void ThreadedDevice::EndFrame()
         m_framesDone.fetch_add(1, std::memory_order_release);
         WakeByAddressAll(&m_framesDone);
     });
+    Publish();                                         // the frame's last records: the worker may finish it
     // Run at most kMaxFramesAhead frames ahead of the GPU-facing thread.
     uint64_t queued = m_framesQueued.fetch_add(1) + 1;
     auto waitStart = std::chrono::steady_clock::now();     // profiling: the game waiting for the render thread
