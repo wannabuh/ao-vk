@@ -1069,6 +1069,7 @@ private:
         VkBuffer buffer = VK_NULL_HANDLE;
         VmaAllocation_T* allocation = nullptr;
         uint32_t vertexCount = 0;
+        uint32_t sparseCount = 0;   // the first N vertices are a decimated subset: a distant tile draws only these
         bool built = false;
         uint64_t lastUsed = 0;
     };

@@ -376,7 +376,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     const float spacing = std::max(0.3f, m_grassHeight * 0.75f);
     const int32_t ix0 = int32_t(std::floor(x0 / spacing)), ix1 = int32_t(std::ceil((x0 + kGrassTileSize) / spacing));
     const int32_t iz0 = int32_t(std::floor(z0 / spacing)), iz1 = int32_t(std::ceil((z0 + kGrassTileSize) / spacing));
-    std::vector<GrassVertex> verts;
+    std::vector<GrassVertex> sparseV, denseV;   // the sparse subset is drawn alone for a distant tile (its LOD)
     auto vertex = [](GrassVertex& v, float x, float y, float z, const float n[3], float u, float vv, float shade,
                      float phase, float height, float baseY, uint32_t colour) {
         v.pos[0] = x; v.pos[1] = y; v.pos[2] = z;
@@ -402,6 +402,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
             int n = int(want);
             if (Unit(cellHash * 2246822519u) < want - float(n))
                 ++n;
+            std::vector<GrassVertex>& out = (cellHash % 3u == 0u) ? sparseV : denseV;
             for (int b = 0; b < n; ++b) {
                 const uint32_t h = HashCell(ix * 73856093 ^ iz * 19349663 ^ (b * 83492791), b * 2654435761u + ix);
                 const float u1 = Unit(h), u2 = Unit(h * 2246822519u), u3 = Unit(h * 3266489917u);
@@ -448,11 +449,17 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
                            py, colour);
                 }
                 for (int s = 0; s < kSeg; ++s) {
-                    verts.push_back(row[0][s]); verts.push_back(row[1][s]); verts.push_back(row[0][s + 1]);
-                    verts.push_back(row[1][s]); verts.push_back(row[1][s + 1]); verts.push_back(row[0][s + 1]);
+                    out.push_back(row[0][s]); out.push_back(row[1][s]); out.push_back(row[0][s + 1]);
+                    out.push_back(row[1][s]); out.push_back(row[1][s + 1]); out.push_back(row[0][s + 1]);
                 }
             }
         }
+    // The sparse subset first, so a distant tile is drawn with vkCmdDraw(sparseCount) alone.
+    std::vector<GrassVertex> verts;
+    verts.reserve(sparseV.size() + denseV.size());
+    verts.insert(verts.end(), sparseV.begin(), sparseV.end());
+    verts.insert(verts.end(), denseV.begin(), denseV.end());
+    tile.sparseCount = uint32_t(sparseV.size());
     if (verts.empty())
         return;                                  // no grass here (remembered as built: nothing to draw)
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -490,7 +497,8 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     const int32_t tz0 = int32_t(std::floor((m_frameEye[2] - tileRadius) / kGrassTileSize));
     const int32_t tz1 = int32_t(std::floor((m_frameEye[2] + tileRadius) / kGrassTileSize));
     const uint64_t frame = m_frameNumber;
-    std::vector<uint64_t> visible;
+    const float lod = m_grassDistance * 0.55f, lod2 = lod * lod;   // beyond this a tile draws its sparse subset only
+    std::vector<std::pair<uint64_t, uint32_t>> visible;
     int build = 0;
     for (int32_t tz = tz0; tz <= tz1; ++tz)
         for (int32_t tx = tx0; tx <= tx1; ++tx) {
@@ -510,8 +518,11 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
                     continue;
             }
             it->second.lastUsed = frame;
-            if (it->second.vertexCount)
-                visible.push_back(key);
+            uint32_t count = it->second.vertexCount;
+            if (count && dx * dx + dz * dz > lod2 && it->second.sparseCount)
+                count = it->second.sparseCount;   // distant: the sparse subset alone (the LOD)
+            if (count)
+                visible.emplace_back(key, count);
         }
     // Evict the tiles not used for a while (a buffer used two frames ago is done with: two frames in flight).
     if ((frame & 63) == 0)
@@ -597,12 +608,12 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     attrs[7].location = 7; attrs[7].format = VK_FORMAT_B8G8R8A8_UNORM; attrs[7].offset = 48;
     vkCmdSetVertexInputEXT(cmd, 1, &binding, 8, attrs);
     uint64_t drawn = 0;
-    for (uint64_t key : visible) {
+    for (const auto& [key, count] : visible) {
         const GrassTile& tile = m_grassTiles[key];
         VkDeviceSize vbOffset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &tile.buffer, &vbOffset);
-        vkCmdDraw(cmd, tile.vertexCount, 1, 0, 0);
-        drawn += tile.vertexCount;
+        vkCmdDraw(cmd, count, 1, 0, 0);
+        drawn += count;
     }
     EndRendering();
     m_cache = StateCache{};                      // this pipeline and its vertex input are not the scene's
