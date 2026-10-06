@@ -616,7 +616,7 @@ void Install(HMODULE orig)
     if (GetMode("Device", Mode::Off) != Mode::On)
         return;
     g_orig = orig;
-    g_directOn = GetMode("Direct", Mode::Off) == Mode::On;   // docs/device-on-rvk.md
+    g_directOn = GetMode("Direct", Mode::On) == Mode::On;    // docs/device-on-rvk.md (call log identical: default on)
     g_debuggerMode = reinterpret_cast<const uint32_t*>(GetProcAddress(orig, "?m_nDebuggerMode@Debugger_t@@2IA"));
     g_render = reinterpret_cast<void* const*>(GetProcAddress(orig, "?m_pcInstance@render_t@@0PAV1@A"));
     if (!g_debuggerMode || !g_render || !KnownBuild(orig)) {

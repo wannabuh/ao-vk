@@ -81,9 +81,10 @@ CatQuery=on   ; attach points (weapons, effects), bones and materials by name
 Device=on     ; the device layer: render state, drawing, vertex buffers, state blocks, presenting, surfaces, textures,
               ; materials
 Scene=on      ; the scene layer (so far: viewports - the frame: camera, scene update, lights, the render lists)
+Direct=on     ; with Device=on: render state reaches the renderer directly, one hand-off per update (default on)
 ```
 
-All of them default to `off` (the original code). They have been played with in game; if something misbehaves,
+All of them but `Direct` default to `off` (the original code). They have been played with in game; if something misbehaves,
 turning the one key back off brings the original back for that part.
 
 Every part is checked against the original before it is switched on: computations side by side on random input
