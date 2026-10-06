@@ -2,6 +2,8 @@
 #include "internal.h"
 
 #include <algorithm>
+#include <bit>
+#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
@@ -927,36 +929,54 @@ void Device::Wind(float out[4]) const
     out[3] = m_sway;
 }
 
-namespace {
-uint64_t LightCellKey(int32_t cx, int32_t cz)
-{
-    return (uint64_t(uint32_t(cx)) << 32) | uint64_t(uint32_t(cz));
-}
-}  // namespace
-
-// The frame lights into a coarse x/z grid: each light's slot into every cell its sphere covers. FrameLightMask then
-// tests a draw's few cells instead of all kFrameLights (a busy scene captures up to 40). A light covering more than
-// 256 cells (a very large range) is tested by every draw instead (m_lightGridAlways).
+// The frame lights into a coarse x/z grid of light masks: each light's bit in every cell its sphere covers.
+// FrameLightMask then ORs a draw's few cells and tests only those lights, not all kFrameLights (a busy scene captures
+// up to 40). A light covering more than 256 cells (a very large range) is tested by every draw (m_lightGridAlways).
 void Device::BuildLightGrid()
 {
-    m_lightGrid.clear();
-    m_lightGridAlways.clear();
-    for (uint32_t slot = 0; slot < m_frameLightSpheres.size(); ++slot) {
+    m_lightGridAlways = 0;
+    m_lightGridW = m_lightGridH = 0;
+    struct Cells { int32_t x0, x1, z0, z1; };
+    Cells cells[64];
+    int32_t gx0 = INT32_MAX, gx1 = INT32_MIN, gz0 = INT32_MAX, gz1 = INT32_MIN;
+    uint32_t n = std::min<uint32_t>(uint32_t(m_frameLightSpheres.size()), 64);
+    for (uint32_t slot = 0; slot < n; ++slot) {
         const LightSphere& s = m_frameLightSpheres[slot];
         float r = std::sqrt(std::max(0.0f, s.r2));
-        int32_t cx0 = int32_t(std::floor((s.x - r) / kLightGridCell));
-        int32_t cx1 = int32_t(std::floor((s.x + r) / kLightGridCell));
-        int32_t cz0 = int32_t(std::floor((s.z - r) / kLightGridCell));
-        int32_t cz1 = int32_t(std::floor((s.z + r) / kLightGridCell));
-        if (int64_t(cx1 - cx0 + 1) * int64_t(cz1 - cz0 + 1) > 256) {
-            m_lightGridAlways.push_back(slot);
+        Cells& c = cells[slot];
+        c.x0 = int32_t(std::floor((s.x - r) / kLightGridCell));
+        c.x1 = int32_t(std::floor((s.x + r) / kLightGridCell));
+        c.z0 = int32_t(std::floor((s.z - r) / kLightGridCell));
+        c.z1 = int32_t(std::floor((s.z + r) / kLightGridCell));
+        if (int64_t(c.x1 - c.x0 + 1) * int64_t(c.z1 - c.z0 + 1) > 256) {
+            m_lightGridAlways |= uint64_t(1) << slot;
             continue;
         }
-        for (int32_t cz = cz0; cz <= cz1; ++cz)
-            for (int32_t cx = cx0; cx <= cx1; ++cx)
-                m_lightGrid.push_back({LightCellKey(cx, cz), slot});
+        gx0 = std::min(gx0, c.x0); gx1 = std::max(gx1, c.x1);
+        gz0 = std::min(gz0, c.z0); gz1 = std::max(gz1, c.z1);
     }
-    std::sort(m_lightGrid.begin(), m_lightGrid.end());
+    if (gx0 > gx1)
+        return;                                  // no light in the grid
+    int64_t w = int64_t(gx1) - gx0 + 1, h = int64_t(gz1) - gz0 + 1;
+    if (w * h > kLightGridMaxCells) {            // lights spread too far apart: every draw tests them all
+        for (uint32_t slot = 0; slot < n; ++slot) m_lightGridAlways |= uint64_t(1) << slot;
+        return;
+    }
+    m_lightGridX0 = gx0;
+    m_lightGridZ0 = gz0;
+    m_lightGridW = uint32_t(w);
+    m_lightGridH = uint32_t(h);
+    m_lightGrid.assign(size_t(w * h), 0);
+    for (uint32_t slot = 0; slot < n; ++slot) {
+        if (m_lightGridAlways >> slot & 1)
+            continue;
+        const Cells& c = cells[slot];
+        for (int32_t cz = c.z0; cz <= c.z1; ++cz) {
+            uint64_t* row = m_lightGrid.data() + size_t(cz - gz0) * m_lightGridW;
+            for (int32_t cx = c.x0; cx <= c.x1; ++cx)
+                row[cx - gx0] |= uint64_t(1) << slot;
+        }
+    }
 }
 
 // The frame lights (light override) whose sphere reaches the draw's world bounding box, as a 64-bit mask for the
@@ -1010,20 +1030,34 @@ void Device::FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices,
         if (dx * dx + dy * dy + dz * dz <= l.r2)
             hits |= uint64_t(1) << k;
     };
-    int32_t cx0 = int32_t(std::floor(wmn[0] / kLightGridCell)), cx1 = int32_t(std::floor(wmx[0] / kLightGridCell));
-    int32_t cz0 = int32_t(std::floor(wmn[2] / kLightGridCell)), cz1 = int32_t(std::floor(wmx[2] / kLightGridCell));
-    if (int64_t(cx1 - cx0 + 1) * int64_t(cz1 - cz0 + 1) > 256) {
-        for (uint32_t k = 0; k < count; ++k) Test(k);        // a box wider than the grid's cells: all of them
-    } else {
-        for (uint32_t k : m_lightGridAlways)
-            if (k < count) Test(k);
-        for (int32_t cz = cz0; cz <= cz1; ++cz)
-            for (int32_t cx = cx0; cx <= cx1; ++cx) {
-                uint64_t key = LightCellKey(cx, cz);
-                auto it = std::lower_bound(m_lightGrid.begin(), m_lightGrid.end(), std::make_pair(key, 0u));
-                for (; it != m_lightGrid.end() && it->first == key; ++it)
-                    if (it->second < count) Test(it->second);
+    // The candidates: the lights of the grid cells the box covers (clipped to the grid), plus the ones too large for
+    // it; each is then tested exactly.
+    uint64_t all = count >= 64 ? ~uint64_t(0) : (uint64_t(1) << count) - 1;
+    uint64_t candidates = m_lightGridAlways;
+    if (m_lightGridW) {
+        float fx0 = std::floor(wmn[0] / kLightGridCell), fx1 = std::floor(wmx[0] / kLightGridCell);
+        float fz0 = std::floor(wmn[2] / kLightGridCell), fz1 = std::floor(wmx[2] / kLightGridCell);
+        // In grid coordinates, clipped (in float first: a huge or broken box must not overflow the conversion).
+        float gw = float(m_lightGridW) - 1.0f, gh = float(m_lightGridH) - 1.0f;
+        float x0 = std::max(fx0 - float(m_lightGridX0), 0.0f), x1 = std::min(fx1 - float(m_lightGridX0), gw);
+        float z0 = std::max(fz0 - float(m_lightGridZ0), 0.0f), z1 = std::min(fz1 - float(m_lightGridZ0), gh);
+        if (x0 <= x1 && z0 <= z1) {
+            if ((x1 - x0 + 1.0f) * (z1 - z0 + 1.0f) > 1024.0f) {
+                candidates = all;                // a box covering much of the lights' area: test them all
+            } else {
+                for (uint32_t z = uint32_t(z0); z <= uint32_t(z1); ++z) {
+                    const uint64_t* row = m_lightGrid.data() + size_t(z) * m_lightGridW;
+                    for (uint32_t x = uint32_t(x0); x <= uint32_t(x1); ++x)
+                        candidates |= row[x];
+                }
             }
+        }
+    }
+    candidates &= all;
+    while (candidates) {
+        uint32_t k = uint32_t(std::countr_zero(candidates));
+        candidates &= candidates - 1;
+        Test(k);
     }
     if (m_lightMaskVerify < 0) {
         const char* v = std::getenv("RANDYVK_LIGHTMASK_VERIFY");

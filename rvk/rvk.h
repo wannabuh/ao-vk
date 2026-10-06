@@ -938,11 +938,14 @@ private:
     struct LightSphere { float x, y, z, r2; };
     std::vector<LightSphere> m_frameLightSpheres;  // the frame lights' spheres in FrameLights order (light masks)
     // A coarse x/z grid over those lights, so a draw's mask tests only the lights near it, not all of them (a busy
-    // scene captures up to kFrameLights). Rebuilt by BuildLightGrid when the frame lights change; allocation-free
-    // after the first frames (the vector's capacity is reused).
+    // scene captures up to kFrameLights): per cell the mask of the lights whose sphere reaches into it, over the
+    // lights' extent. Rebuilt by BuildLightGrid when the frame lights change; allocation-free after the first frames.
     static constexpr float kLightGridCell = 16.0f;
-    std::vector<std::pair<uint64_t, uint32_t>> m_lightGrid;   // (cell key, light slot), sorted by key
-    std::vector<uint32_t> m_lightGridAlways;                  // lights too large for the grid: tested every draw
+    static constexpr uint32_t kLightGridMaxCells = 1u << 16;   // beyond: the lights go to m_lightGridAlways
+    std::vector<uint64_t> m_lightGrid;           // W x H cells from (m_lightGridX0, m_lightGridZ0), row-major by z
+    int32_t m_lightGridX0 = 0, m_lightGridZ0 = 0;
+    uint32_t m_lightGridW = 0, m_lightGridH = 0;
+    uint64_t m_lightGridAlways = 0;              // lights too large for the grid: tested by every draw
     void BuildLightGrid();
     int m_lightMaskVerify = -1;                  // RANDYVK_LIGHTMASK_VERIFY: check the grid against every light
     uint32_t m_lightMaskDiff = 0;
