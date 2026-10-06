@@ -32,7 +32,7 @@ void main()
 {
     // Fade the blade down to nothing near the field's edge, so its rim isn't a hard circle.
     float dist = length(inPos.xz - GF.camera.xz);
-    float fade = clamp((GF.viewport.z - dist) / (GF.viewport.z * 0.35), 0.0, 1.0);
+    float fade = clamp((GF.viewport.z - dist) / (GF.viewport.z * 0.5), 0.0, 1.0);
     fade = fade * fade * (3.0 - 2.0 * fade);
     vec3 root = inPos;
     root.y = inBaseY + (inPos.y - inBaseY) * fade;

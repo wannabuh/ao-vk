@@ -525,7 +525,6 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     const int32_t tz0 = int32_t(std::floor((m_frameEye[2] - tileRadius) / kGrassTileSize));
     const int32_t tz1 = int32_t(std::floor((m_frameEye[2] + tileRadius) / kGrassTileSize));
     const uint64_t frame = m_frameNumber;
-    const float lod = m_grassDistance * 0.55f, lod2 = lod * lod;   // beyond this a tile draws its sparse subset only
     std::vector<std::pair<uint64_t, uint32_t>> visible;
     int build = 0;
     for (int32_t tz = tz0; tz <= tz1; ++tz)
@@ -546,11 +545,11 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
                     continue;
             }
             it->second.lastUsed = frame;
-            uint32_t count = it->second.vertexCount;
-            if (count && dx * dx + dz * dz > lod2 && it->second.sparseCount)
-                count = it->second.sparseCount;   // distant: the sparse subset alone (the LOD)
-            if (count)
-                visible.emplace_back(key, count);
+            // A distant tile drawn with its sparse subset alone looked like a band of rows: the switch is per tile
+            // (8 m), camera-relative, so it moved with the camera and the tile edges showed. Every tile is drawn in
+            // full; the field's edge fades the blades out instead.
+            if (it->second.vertexCount)
+                visible.emplace_back(key, it->second.vertexCount);
         }
     // Evict the tiles not used for a while (a buffer used two frames ago is done with: two frames in flight).
     if ((frame & 63) == 0)
