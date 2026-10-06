@@ -451,7 +451,8 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         const uint32_t hv = HashCell(tileSeed ^ 0x5BF03635, int32_t(uint32_t(k) * 40503u));
         const float u1 = Unit(hp), u2 = Unit(hp * 2246822519u);
         const float px = x0 + u1 * kGrassTileSize, pz = z0 + u2 * kGrassTileSize;
-        const float v0 = Unit(hv), v1 = Unit(hv * 2246822519u), v2 = Unit(hv * 3266489917u), v3 = Unit(hv * 668265263u);
+        const float v0 = Unit(hv), v1 = Unit(hv * 2246822519u), v2 = Unit(hv * 3266489917u),
+                    v3 = Unit(hv * 668265263u), v4 = Unit(hv * 40503u);
         // Clumps: a low-frequency noise drops blades and leaves bare gaps (rotated, so no axis-aligned rows).
         const float clump = ClumpNoise(px, pz);
         if (v3 > 0.5f + 0.5f * clump)
@@ -462,7 +463,8 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
             continue;                            // no grass ground here
         const float height = m_grassHeight * (0.45f + 1.2f * v0);
         const float yaw = v1 * 6.2831853f;       // independent of the position: no band shares a rotation
-        const float lean = (v2 - 0.5f) * 0.6f;   // the blade leans, so a clump isn't a rank of uprights
+        const float lean = 0.15f + 0.55f * v2;   // every blade leans out (never a rank of uprights)
+        const float droop = 0.18f + 0.35f * v4;  // ... and its cross sections bend further towards the tip
         const float rx = std::cos(yaw), rz = std::sin(yaw);
         float up[3] = {lean * rx, 1.0f, lean * rz};
         const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
@@ -488,9 +490,10 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         GrassVertex row[2][kSeg + 1];
         for (int s = 0; s <= kSeg; ++s) {
             const float t = float(s) / float(kSeg);
-            const float cx = px + up[0] * height * t;
+            const float bend = droop * height * t * t;   // the blade arcs over rather than standing straight
+            const float cx = px + up[0] * height * t + rx * bend;
             const float cy = py + up[1] * height * t;
-            const float cz = pz + up[2] * height * t;
+            const float cz = pz + up[2] * height * t + rz * bend;
             const float w = half * (1.0f - t);
             const float vv = cv + (0.04f + t * 0.92f) * kAtlasH;
             vertex(row[0][s], cx - rx * w, cy, cz - rz * w, normal, cu + 0.04f * kAtlasW, vv, t, phase, height, py,
