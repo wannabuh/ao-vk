@@ -18,6 +18,10 @@ constexpr uint32_t kProfileFrames = 600;
 const char* const kSceneClassNames[] = {"", "scene statics", "scene terrain base", "scene terrain light",
                                         "scene foliage", "scene characters", "scene effects", "scene sky",
                                         "scene water", "scene rooms", "scene other"};
+// The shading count's classes: the same, with the statics split by the depth pre-pass.
+const char* const kShadeClassNames[] = {"", "statics pre-passed", "terrain base", "terrain light", "foliage",
+                                        "characters", "effects", "sky", "water", "rooms", "other",
+                                        "statics out (no depth test/write)", "statics out (other)"};
 double CpuNow()
 {
     using namespace std::chrono;
@@ -129,16 +133,26 @@ void Device::ProfileSceneClass(int cls)
 {
     if (cls == m_sceneClass)
         return;
-    // The closing class's batched draws (M3) are still pending: issue them first, or the timestamp and the shading
-    // count land before them and they are counted in the next class. Only while profiling (it can split a group).
+    // The closing class's batched draws (M3) are still pending: issue them first, or the timestamp lands before them
+    // and they are counted in the next class. Only while profiling (it can split a group).
     if (m_profile[m_frameIndex].pool)
         FlushGroup();
-    ShadeQueryEnd();
-    if (m_sceneClass > 0 && m_sceneClass < kSceneClasses && m_sceneClassMarks < kSceneClassMarks) {
+    if (m_sceneClass > 0 && m_sceneClass <= 10 && m_sceneClassMarks < kSceneClassMarks) {
         ProfileMark(kSceneClassNames[m_sceneClass]);
         ++m_sceneClassMarks;
     }
     m_sceneClass = cls;
+}
+
+// The shading count's class for the draws from here on (Draw, once it knows whether the draw is pre-passed).
+void Device::ShadeClass(int cls)
+{
+    if (cls == m_shadeClass)
+        return;
+    if (m_profile[m_frameIndex].pool)
+        FlushGroup();                            // the closing class's batched draws, counted in it
+    ShadeQueryEnd();
+    m_shadeClass = cls;
     ShadeQueryBegin();
 }
 
@@ -148,15 +162,15 @@ void Device::ProfileSceneClass(int cls)
 void Device::ShadeQueryBegin()
 {
     ProfileFrame& p = m_profile[m_frameIndex];
-    if (!p.shadePool || p.shadeActive || !m_rendering || !m_scenePhase || m_target != m_scene || m_sceneClass <= 0 ||
-        m_sceneClass >= kSceneClasses)
+    if (!p.shadePool || p.shadeActive || !m_rendering || !m_scenePhase || m_target != m_scene || m_shadeClass <= 0 ||
+        m_shadeClass >= kSceneClasses)
         return;
     if (p.shadeCount >= kShadeQueries) {
         p.shadeOverflow = true;
         return;
     }
     vkCmdBeginQuery(m_frames[m_frameIndex].main, p.shadePool, p.shadeCount, 0);
-    p.shadeClass[p.shadeCount] = uint8_t(m_sceneClass);
+    p.shadeClass[p.shadeCount] = uint8_t(m_shadeClass);
     p.shadeActive = true;
     if (!p.shadePixels && m_scene)
         p.shadePixels = uint64_t(m_scene->m_width) * m_scene->m_height;
@@ -238,7 +252,7 @@ void Device::ProfileLog(const char* label)
         for (int c = 1; c < kSceneClasses; ++c) {
             all += m_shadeSum[c];
             if (!m_shadeSum[c]) continue;
-            std::snprintf(buf, sizeof(buf), " %s %.2f |", kSceneClassNames[c] + 6, double(m_shadeSum[c]) / double(m_shadePixels));
+            std::snprintf(buf, sizeof(buf), " %s %.2f |", kShadeClassNames[c], double(m_shadeSum[c]) / double(m_shadePixels));
             out += buf;
         }
         std::snprintf(buf, sizeof(buf), " all %.2f", double(all) / double(m_shadePixels));

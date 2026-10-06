@@ -326,6 +326,7 @@ void Device::BeginScene()
     m_sceneSaw3D = false;
     m_aoProjValid = false;
     m_sceneClass = 0;
+    m_shadeClass = 0;
     m_sceneClassMarks = 0;
     m_motionPrev.swap(m_motionCur);              // last frame's objects, for matching this frame's
     m_motionCur.clear();
@@ -352,6 +353,7 @@ void Device::EndScene()
     m_renderEndCause = kEndScene;
     EndRendering();
     ProfileSceneClass(0);                        // close the last scene class for the GPU profile
+    m_shadeClass = 0;                            // (its shading query ended with the rendering)
     ProfileMark("scene");
     double cpu = ProfileCpu();
     Transition(cmd, m_scene, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);

@@ -752,7 +752,8 @@ private:
     uint64_t m_prepassDraws = 0, m_prepassSegments = 0;   // logged every 600 frames (PrepassLog)
     // Why a scene draw isn't in the pre-pass (PrepassCheck; counted for the log), and why segments end.
     enum PrepassWhy : uint32_t {
-        kPreIn, kPreBefore, kPreAfter, kPreCharacter, kPreSway, kPreKind, kPreDepth, kPreDiscard, kPreWater, kPreBlend,
+        kPreIn, kPreBefore, kPreAfter, kPreCharacter, kPreSway, kPreKind, kPreNoZTest, kPreNoZWrite, kPreZFunc,
+        kPreDiscard, kPreWater, kPreBlend,
         kPreAlphaDiffuse, kPreAlphaMaterial, kPreAlphaTexture, kPreAlphaArg, kPreAlphaTfactor, kPreWhyCount
     };
     enum RenderEnd : uint32_t { kEndOther, kEndScene, kEndTarget, kEndCopy, kEndReadback, kEndFlush, kEndClear, kEndCount };
@@ -1029,6 +1030,10 @@ private:
     int m_sceneClass = 0;
     uint32_t m_sceneClassMarks = 0;
     void ProfileSceneClass(int cls);
+    // The scene shading count's class (finer than the timestamps': statics split by whether they are pre-passed).
+    int m_shadeClass = 0;
+    int m_drawSceneClass = 0;                    // the current draw's ProfileSceneClass class (0: not a scene draw)
+    void ShadeClass(int cls);
 
     // Particles (particles.cpp): one block of kParticlesPerBlock particles per effect; particle p belongs to sprite slot
     // p / kParticleChildren. State and the generated quads (FVF 0x142, 4 vertices a particle) live in GPU buffers; the
@@ -1239,8 +1244,8 @@ private:
     static constexpr uint32_t kSceneClassMarks = 30;   // of them for the scene's class split (16 others a frame)
     // The scene's shading (fragment shader invocations, a pipeline statistics query) per scene class: one query per
     // stretch of a class within a rendering, summed by class.
-    static constexpr uint32_t kShadeQueries = 256;
-    static constexpr int kSceneClasses = 11;      // ProfileSceneClass's names (0 = none)
+    static constexpr uint32_t kShadeQueries = 1024;
+    static constexpr int kSceneClasses = 13;      // ShadeClass's names (0 = none; 11, 12: statics not pre-passed)
     struct ProfileFrame {
         VkQueryPool pool = VK_NULL_HANDLE;
         uint32_t count = 0;
@@ -1256,7 +1261,7 @@ private:
     uint64_t m_shadeSum[kSceneClasses] = {};      // fragment shader invocations by class since the last log
     uint64_t m_shadePixels = 0;                   // the frames' scene pixels, summed alike
     uint32_t m_shadeOverflowFrames = 0;           // of those frames, how many ran out of queries (undercounted)
-    void ShadeQueryBegin();                       // in a scene rendering: start counting for m_sceneClass
+    void ShadeQueryBegin();                       // in a scene rendering: start counting for m_shadeClass
     void ShadeQueryEnd();
     std::array<ProfileFrame, kFramesInFlight> m_profile;
     float m_timestampPeriod = 1.0f;

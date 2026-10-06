@@ -1672,6 +1672,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         return;
     ++m_frameDraw;
     // GPU profiling: which class of scene draw this is (splits the "scene" block; see ProfileSceneClass).
+    m_drawSceneClass = 0;
     if (m_scenePhase && m_target == m_scene && !m_external &&
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) {
         // Classes: ProfileSceneClass's names. Terrain and foliage by how they are drawn, the rest by the game's
@@ -1698,6 +1699,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         else
             cls = 10;                                // Unknown / Other
         ProfileSceneClass(cls);
+        m_drawSceneClass = cls;
     }
     // Particles whose effect the game no longer draws: at the end of the 3D scene - the first interface draw after 3D,
     // both into the main target (other targets - refraction, offscreen copies - have their own pre-transformed draws).
@@ -2185,6 +2187,12 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_drawPrepassed = prepassWhy == kPreIn;
     if (m_scenePhase && m_target == m_scene && !m_external && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW)
         ++m_prepassWhy[prepassWhy];              // the scene's 3D draws, by why they are (not) pre-passed (log)
+    if (m_drawSceneClass) {                      // the shading count: statics split by the pre-pass
+        int shade = m_drawSceneClass;
+        if (shade == 1 && !m_drawPrepassed)
+            shade = prepassWhy == kPreNoZTest || prepassWhy == kPreNoZWrite ? 11 : 12;
+        ShadeClass(shade);
+    }
     uint64_t groupKey = 0;
     if (m_groupIndirect && indices && !m_external && !(m_particlePending && fvf == kParticleFvf)) {
         bool hdr = m_target->m_format == Format::RGBA16F;

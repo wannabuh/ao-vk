@@ -139,8 +139,12 @@ uint32_t Device::PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) co
         TopologyClassOf(primitive) != 2 || (m_particlePending && fvf == kParticleFvf))
         return kPreKind;
     uint32_t zFunc = m_rs[d3d::RS_ZFUNC];
-    if (!m_rs[d3d::RS_ZENABLE] || !m_rs[d3d::RS_ZWRITEENABLE] || (zFunc != d3d::CMP_LESS && zFunc != d3d::CMP_LESSEQUAL))
-        return kPreDepth;
+    if (!m_rs[d3d::RS_ZENABLE])
+        return kPreNoZTest;
+    if (!m_rs[d3d::RS_ZWRITEENABLE])
+        return kPreNoZWrite;
+    if (zFunc != d3d::CMP_LESS && zFunc != d3d::CMP_LESSEQUAL)
+        return kPreZFunc;
     if (m_drawMayDiscard)
         return kPreDiscard;
     if (WaterWritesDepth(fvf))
@@ -158,7 +162,7 @@ void Device::PrepassLog()
 {
     static const char* const why[kPreWhyCount] = {
         "in", "before the depth clear", "after the segment", "characters", "swaying", "label/particle/other",
-        "depth state", "cut-out/alpha test", "water", "blend mode", "alpha: vertex colour", "alpha: material",
+        "no depth test", "no depth write", "depth compare", "cut-out/alpha test", "water", "blend mode", "alpha: vertex colour", "alpha: material",
         "alpha: texture", "alpha: argument", "alpha: texture factor"};
     static const char* const end[kEndCount] = {"other", "scene end", "target switch", "copy", "read-back", "flush",
                                                "depth clear"};
