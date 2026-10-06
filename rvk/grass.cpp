@@ -154,6 +154,15 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
         return;                                  // the ground's base pass
     if (primitive < d3d::TriangleList || primitive > d3d::TriangleFan)
         return;
+    // The grid only ever grows (cells near the camera are added every frame, none are removed), so a player roaming a
+    // zone accumulates it until the guard below clears - hundreds of MB. It is only useful within reach of the camera
+    // (the tiles being built there); the tiles already baked do not need it, so clear it once the camera has moved
+    // well away from where it was last cleared. It refills near the camera within this frame.
+    if (std::fabs(m_frameEye[0] - m_groundEyeX) + std::fabs(m_frameEye[2] - m_groundEyeZ) > 48.0f) {
+        m_groundHeights.clear();
+        m_groundEyeX = m_frameEye[0];
+        m_groundEyeZ = m_frameEye[2];
+    }
     const Texture* tex = m_textures[0];
     const bool filter = m_grassTex && tex;
     const uint8_t* src = static_cast<const uint8_t*>(vertices);
@@ -217,8 +226,8 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
     else
         for (uint32_t i = 1; i + 1 < count; ++i)
             triangle(at(0), at(i), at(i + 1));
-    if (m_groundHeights.size() > 8000000)
-        m_groundHeights.clear();                 // a guard only; the reach test above keeps it near the camera
+    if (m_groundHeights.size() > 1500000)
+        m_groundHeights.clear();                 // a guard only; the clear-on-move above keeps it near the camera
 }
 
 // The ground height under a world x, z, if grass grows there. Searches the neighbouring cells too (a stray gap at the

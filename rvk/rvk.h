@@ -1056,6 +1056,7 @@ private:
     float m_grassPrevTime = 0.0f;                // the wind clock last frame, so a blade's motion vector is exact
     struct GroundCell { float y; bool grass; uint32_t colour; };   // colour: the ground texel's RGB (the grass tint)
     std::unordered_map<uint64_t, GroundCell> m_groundHeights;   // the ground by world x, z cell (grass or not)
+    float m_groundEyeX = 0.0f, m_groundEyeZ = 0.0f;             // where the grid was last cleared (it only grows)
     void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
                         const uint16_t* indices, uint32_t indexCount);
     bool GroundHeight(float x, float z, float* y, uint32_t* colour = nullptr) const;
