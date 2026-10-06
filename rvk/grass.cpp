@@ -79,6 +79,11 @@ float ClumpNoise(float x, float z)
 constexpr uint32_t kAtlasCols = 4, kAtlasRows = 2;
 constexpr float kAtlasW = 1.0f / float(kAtlasCols), kAtlasH = 1.0f / float(kAtlasRows);
 
+// A blade's strip: this many segments from the root to the tip, six vertices (two triangles) a segment. More segments
+// make the wind's curve smoother, at that much more geometry.
+constexpr int kGrassSegments = 3;
+constexpr int kGrassVertsPerBlade = kGrassSegments * 6;
+
 std::vector<uint32_t> GrassBladeAtlas(uint32_t size)
 {
     std::vector<uint32_t> px(size_t(size) * size, 0);
@@ -453,7 +458,7 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         float up[3] = {lean * rx, 1.0f, lean * rz};
         const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
         up[0] /= ul; up[1] /= ul; up[2] /= ul;
-        const float half = 0.5f * (0.05f + 0.05f * v2) * (0.5f + height);
+        const float half = 0.5f * (0.03f + 0.03f * v2) * (0.5f + height);   // narrower blades
         const float phase = (px * 0.3f + pz * 0.25f) + v1 * 6.2831853f;
         float normal[3] = {rz, 0.5f, -rx};
         const float nl = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
@@ -468,8 +473,9 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         const uint32_t bl = std::min(255u, uint32_t(float(pcol & 0xFF) * tint));
         const uint32_t colour = 0xFF000000u | (r << 16) | (g << 8) | bl;
         std::vector<GrassVertex>& out = (hv % 4u == 0u) ? sparseV : denseV;
-        // A tapered strip: a few cross sections from the root to the tip, narrowing to a point.
-        constexpr int kSeg = 2;
+        // A tapered strip: a few cross sections from the root to the tip, narrowing to a point. Three segments (six
+        // triangles) so the wind's bend (the square of the height, in the vertex shader) curves, not facets.
+        constexpr int kSeg = kGrassSegments;
         GrassVertex row[2][kSeg + 1];
         for (int s = 0; s <= kSeg; ++s) {
             const float t = float(s) / float(kSeg);
@@ -714,7 +720,7 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     }
     m_cache = StateCache{};                      // this pipeline and its vertex input are not the scene's
     m_arenaBound = m_bindlessBound = false;      // ... and its pushed set 0 replaced the scene's: rebind those too
-    m_grassBlades += drawn / 12;                 // 12 vertices a blade (2 segments)
+    m_grassBlades += drawn / kGrassVertsPerBlade;
     ++m_grassDraws;
     m_grassDrawnThisFrame = true;
 }
