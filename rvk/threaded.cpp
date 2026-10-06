@@ -68,8 +68,10 @@ uint8_t* ThreadedDevice::Reserve(uint32_t bytes)
         total = kQueueBytes / 2 - 16;                  // the caller's data is truncated; better than a hang
     }
     uint32_t w = m_localWrite;                         // after the unpublished records too
+    // The worker's read position as last seen: free space only grows as it reads, so an old copy is safe, and the
+    // worker rewrites m_readPos after every record - reading it each time cost a cache miss per record.
+    uint32_t r = m_cachedRead;
     for (int spins = 0;; ++spins) {
-        uint32_t r = m_readPos.load(std::memory_order_acquire);
         if (w >= r) {
             // Free: [w, end) and [0, r). Never let w catch up with r (that would look empty).
             if (total < kQueueBytes - w || (total == kQueueBytes - w && r != 0)) {
@@ -85,13 +87,16 @@ uint8_t* ThreadedDevice::Reserve(uint32_t bytes)
             m_reserveStart = w;
             break;
         }
-        // Full: wait for the worker to consume (it can only consume what is published).
-        if (spins == 0)
-            Publish();
-        if (spins < 64)
-            YieldProcessor();
-        else
-            WaitWhileEqual(m_readPos, r, 1);
+        if (spins > 0) {
+            // Full: wait for the worker to consume (it can only consume what is published).
+            if (spins == 1)
+                Publish();
+            if (spins < 64)
+                YieldProcessor();
+            else
+                WaitWhileEqual(m_readPos, r, 1);
+        }
+        r = m_cachedRead = m_readPos.load(std::memory_order_acquire);   // (the first time: the copy was too old)
     }
     m_reserveSize = total;
     auto* h = reinterpret_cast<Header*>(m_ring + m_reserveStart);

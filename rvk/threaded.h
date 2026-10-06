@@ -199,6 +199,7 @@ private:
     uint32_t m_reserveStart = 0, m_reserveSize = 0;    // producer: record being built
     uint32_t m_localWrite = 0;                         // producer: end of the committed records, published or not
     uint32_t m_pending = 0;                            // producer: committed records not published yet
+    uint32_t m_cachedRead = 0;                         // producer: m_readPos as last read (Reserve)
     uint64_t m_frameRecords = 0, m_frameBytes = 0;     // producer: this frame's records and bytes (profiling)
     alignas(64) std::atomic<uint32_t> m_readPos{0};    // consumer: next record
     alignas(64) std::atomic<uint32_t> m_workerSleeping{0};
