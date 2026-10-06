@@ -14,6 +14,7 @@ namespace {
 using RenderFn = void(__fastcall*)(void* viewport, void*, int listFrom, int listTo, int type, uint32_t from, uint32_t to);
 RenderFn g_render, g_renderRefraction;
 void* g_viewport;                                  // the viewport inside Render / RenderRefraction
+void* const* g_renderInstance;                     // render_t::m_pcInstance (its +0x288: the render list being drawn)
 uint32_t g_renders;                                // Render calls so far (cache refresh clock)
 constexpr uint32_t kCurrentVisual = 0x164;         // RViewPort_t: the visual being rendered
 constexpr uint32_t kParent = 0x14;                 // RRefFrame_t: its parent frame
@@ -220,6 +221,11 @@ const void* CurrentVisual()
     return g_viewport ? At<const void*>(g_viewport, kCurrentVisual) : nullptr;
 }
 
+int32_t CurrentList()
+{
+    return g_viewport && g_renderInstance && *g_renderInstance ? At<int32_t>(*g_renderInstance, 0x288) : -1;
+}
+
 VisualInfo Describe(const void* visual)
 {
     ForgetPages();
@@ -267,6 +273,7 @@ void Install(HMODULE orig)
 {
     if (GetMode("Visuals", Mode::Off) != Mode::On)
         return;
+    g_renderInstance = reinterpret_cast<void* const*>(GetProcAddress(orig, "?m_pcInstance@render_t@@0PAV1@A"));
     g_lightsBegin = reinterpret_cast<const void* const*>(reinterpret_cast<uint8_t*>(orig) + kLightListRva);
     if (GetMode("Scene", Mode::Off) == Mode::On) {  // viewport.cpp's native Render / Process call in
         g_active = true;

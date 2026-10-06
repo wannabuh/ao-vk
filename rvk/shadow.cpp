@@ -374,7 +374,7 @@ bool Device::IsLabel(uint32_t primitive, uint32_t fvf, uint32_t vertexCount) con
 
 bool Device::IsShadowCaster(uint32_t primitive, uint32_t fvf) const
 {
-    if (m_drawIsLabel)
+    if (m_drawIsLabel || VisualKind(m_drawVisualKind) == VisualKind::Sky)   // (placed around the camera)
         return false;
     if (!(m_shadows || m_pointShadows) || m_target != m_main || TopologyClassOf(primitive) != 2 ||
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || !m_rs[d3d::RS_ZENABLE] || !m_rs[d3d::RS_ZWRITEENABLE])
@@ -635,7 +635,7 @@ bool Device::WorldCamera() const
 bool Device::ShadowReceiver(uint32_t fvf) const
 {
     if (m_drawIsLabel || !WorldCamera() || !m_shadows || !m_shadowValid || m_target != m_main || (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ ||
-        !m_rs[d3d::RS_ZENABLE])
+        !m_rs[d3d::RS_ZENABLE] || VisualKind(m_drawVisualKind) == VisualKind::Sky)   // the sky: no shadows on it
         return false;
     if (!m_rs[d3d::RS_ALPHABLENDENABLE])
         // The ground's base pass, where a lightmap + lights pass follows (it did last frame): that pass takes the
@@ -701,7 +701,8 @@ bool Device::IsBlobShadow(uint32_t primitive, uint32_t fvf, const void* vertices
 bool Device::ShadowCompensated(uint32_t fvf) const
 {
     return !m_drawIsLabel && WorldCamera() && m_shadows && m_shadowValid && m_target == m_main &&
-           (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ && m_rs[d3d::RS_ZENABLE] && IsMultiplyPass();
+           (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ && m_rs[d3d::RS_ZENABLE] && IsMultiplyPass() &&
+           VisualKind(m_drawVisualKind) != VisualKind::Sky;
 }
 
 // The sun for the next frame's shadows: the brightest directional light used during this frame.

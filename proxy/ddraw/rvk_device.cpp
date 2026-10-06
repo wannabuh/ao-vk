@@ -579,11 +579,19 @@ void NoteVisual(rvk::ThreadedDevice* dev)
     if (!rnative::scene::Installed())
         return;
     static const void* last = reinterpret_cast<const void*>(1);
+    static int32_t lastList = -2;
     const void* visual = rnative::scene::CurrentVisual();
-    if (visual == last)
+    const int32_t list = rnative::scene::CurrentList();
+    if (visual == last && list == lastList)
         return;
     last = visual;
+    lastList = list;
     rnative::scene::VisualInfo info = rnative::scene::Describe(visual);
+    // Whatever is drawn in render list 0 is the sky: its layers (clouds) and the far scenery that hangs in it -
+    // placed around the camera, not where it appears, so it neither casts nor receives the sun's shadows.
+    using Kind = rnative::scene::Kind;
+    if (visual && list == 0 && info.kind != Kind::Character && info.kind != Kind::CharacterPart)
+        info.kind = Kind::Sky;
     dev->SetDrawVisual(uint32_t(info.kind), info.className, uint32_t(reinterpret_cast<uintptr_t>(info.owner)));
 }
 
