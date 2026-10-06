@@ -415,6 +415,10 @@ bool Device::CreateLogicalDevice(std::string* error)
     m_groupIndirect = features.features.drawIndirectFirstInstance && features.features.multiDrawIndirect;
     enabled.features.drawIndirectFirstInstance = features.features.drawIndirectFirstInstance;
     enabled.features.multiDrawIndirect = features.features.multiDrawIndirect;
+    // The depth pre-pass's backdrop cull (prepass.cpp): a background drawn before the scene's depth is rejected where
+    // the pre-pass found an opaque surface - the depth bounds test, early, before shading.
+    m_depthBounds = features.features.depthBounds;
+    enabled.features.depthBounds = features.features.depthBounds;
     // Profiling: fragment shader invocations per scene class (profile.cpp, "scene shading" - the overdraw).
     m_shadeQueries = features.features.pipelineStatisticsQuery;
     enabled.features.pipelineStatisticsQuery = features.features.pipelineStatisticsQuery;
@@ -738,6 +742,10 @@ bool Device::CreatePipelines(std::string* error)
         VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT};
     std::vector<VkDynamicState> dynamicStates(dynamic, dynamic + sizeof(dynamic) / sizeof(dynamic[0]));
     if (m_dynamicWriteMask) dynamicStates.push_back(VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT);
+    if (m_depthBounds) {                         // the backdrop cull (prepass.cpp)
+        dynamicStates.push_back(VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE);
+        dynamicStates.push_back(VK_DYNAMIC_STATE_DEPTH_BOUNDS);
+    }
     VkPipelineDynamicStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
     ds.dynamicStateCount = uint32_t(dynamicStates.size());
     ds.pDynamicStates = dynamicStates.data();

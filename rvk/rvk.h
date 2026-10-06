@@ -418,6 +418,8 @@ private:
         bool valid = false;
         uint32_t topologyClass = ~0u, topology = ~0u, fvf = ~0u;
         uint32_t cull = ~0u, depthTest = ~0u, depthWrite = ~0u, depthOp = ~0u, blendEnable = ~0u, src = ~0u, dst = ~0u;
+        uint32_t depthBounds = ~0u;              // the bounds test on (the backdrop cull)
+        float depthBoundsZ = -1.0f;              // ... at [z, z] for this z
         VkViewport viewport{};
         VkRect2D scissor{};
         bool buffersBound = false;
@@ -737,6 +739,17 @@ private:
     bool m_prepassOn = true;                     // RVK_Prepass
     bool m_prepassArmed = false;
     bool m_drawPrepassed = false;                // the current draw is in the pre-pass (its depth test passes equal)
+    // The backdrop cull: a draw that ignores depth (no test or ALWAYS) and doesn't write it, recorded in the segment
+    // before anything has written depth there, is only visible where no opaque surface is drawn after it - which is
+    // where the pre-pass depth still holds the clear value. The depth bounds test [clear, clear] rejects the rest
+    // before shading (the game's backgrounds: lit meshes covering ~2.7 screens a frame, nearly all hidden).
+    bool m_depthBounds = false;                  // the depthBounds feature (dynamic bounds in the scene pipelines)
+    bool m_drawBackdrop = false;                 // the current draw gets the bounds test
+    bool m_prepassDepthTouched = false;          // a draw of the armed segment wrote depth: no backdrops from here
+    bool m_prepassFullClear = false;             // the arming clear covered the whole scene (else no backdrop cull)
+    float m_prepassClearZ = 1.0f;
+    uint64_t m_backdropDraws[5] = {};            // draws ignoring depth: culled, before the clear, after the segment,
+                                                 // after depth was written, other (logged with the pre-pass)
     VkPipeline m_prepassPipeline = VK_NULL_HANDLE;   // ffp.vert only, depth attachment only
     struct PrepassCache {
         bool bound = false;                      // pipeline, front face, depth state, arrays, set 1
@@ -765,6 +778,7 @@ private:
     void PrepassEnd(uint32_t cause);             // end the armed segment (its commands are complete)
     uint32_t PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) const;   // kPreIn: into the pre-pass
     uint32_t AlphaOneCheck(uint32_t fvf) const;  // kPreIn: the output alpha is provably 1; else the input in the way
+    bool BackdropCull(uint32_t fvf) const;       // the current draw gets the backdrop cull (m_drawBackdrop)
     void PrepassLog();                           // every 600 frames
     void PrepassDraw(uint32_t primitive, uint32_t fvf, uint32_t stride, uint32_t vertexCount, uint32_t indexCount,
                      VkDeviceSize vbOffset, VkDeviceSize ibOffset, VkBuffer vb, VkBuffer ib,

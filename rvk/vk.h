@@ -98,6 +98,8 @@
     X(vkCmdSetDepthTestEnable) \
     X(vkCmdSetDepthWriteEnable) \
     X(vkCmdSetDepthCompareOp) \
+    X(vkCmdSetDepthBoundsTestEnable) \
+    X(vkCmdSetDepthBounds) \
     X(vkCmdSetDepthBias) \
     X(vkCmdClearDepthStencilImage) \
     X(vkCmdClearColorImage) \

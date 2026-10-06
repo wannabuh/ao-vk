@@ -124,6 +124,22 @@ uint32_t Device::AlphaOneCheck(uint32_t fvf) const
     return !hasDiffuse || (m_drawMesh && m_drawMesh->diffuseAlphaOne) ? kPreIn : kPreAlphaDiffuse;
 }
 
+// The backdrop cull (m_drawBackdrop): a draw that ignores depth and doesn't write it, while the armed segment's depth
+// is still exactly the pre-pass's (no draw has written depth in the main pass since the clear). Its pixels survive in
+// the final image only where no opaque draw of the segment comes after it, i.e. where the pre-pass left the clear
+// value - which the depth bounds test [clear, clear] keeps, rejecting the rest before shading. Draws it would have
+// painted over don't exist yet (nothing drawn there), and later non-opaque draws are not in the pre-pass depth, so
+// what it shows under them is unchanged.
+bool Device::BackdropCull(uint32_t fvf) const
+{
+    if (!m_depthBounds || !m_prepassArmed || m_prepassDepthTouched || !m_prepassFullClear || m_target != m_scene ||
+        m_external || (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW)
+        return false;
+    if (m_rs[d3d::RS_ZENABLE] && (m_rs[d3d::RS_ZWRITEENABLE] || m_rs[d3d::RS_ZFUNC] != d3d::CMP_ALWAYS))
+        return false;                            // tests (other than ALWAYS) or writes depth: not a backdrop
+    return !WaterWritesDepth(fvf);
+}
+
 // May this draw go into the pre-pass (kPreIn), and if not, why. Opaque scene geometry drawn with the same vertex
 // shader path the pre-pass takes - not characters (tessellated, skinned on the GPU), swaying plants, labels,
 // particles or effects - while a segment is armed.
@@ -182,8 +198,14 @@ void Device::PrepassLog()
     if (!ends.empty()) ends.pop_back();
     Log("depth pre-pass: %.0f draws a frame in %llu segments (last 600 frames)%s", double(m_prepassDraws) / 600.0,
         (unsigned long long)m_prepassSegments, m_prepassPipeline ? "" : " - no pipeline");
+    Log("depth pre-pass: draws ignoring depth, a frame: %.1f culled as backdrops | %.1f before the depth clear | %.1f "
+        "after the segment | %.1f after depth was written | %.1f other%s",
+        double(m_backdropDraws[0]) / 600.0, double(m_backdropDraws[1]) / 600.0, double(m_backdropDraws[2]) / 600.0,
+        double(m_backdropDraws[3]) / 600.0, double(m_backdropDraws[4]) / 600.0,
+        m_depthBounds ? "" : " (no depth bounds test on this GPU)");
     Log("depth pre-pass: scene draws kept out, a frame:%s; segments ended by:%s", out.c_str(), ends.c_str());
     m_prepassDraws = m_prepassSegments = 0;
+    std::memset(m_backdropDraws, 0, sizeof(m_backdropDraws));
     std::memset(m_prepassWhy, 0, sizeof(m_prepassWhy));
     std::memset(m_prepassEndCause, 0, sizeof(m_prepassEndCause));
 }
@@ -233,6 +255,10 @@ bool Device::PrepassArm(const VkClearRect* rects, uint32_t count, float z)
     m_pre = PrepassCache{};
     m_pre.depth = m_depth;
     m_prepassArmed = true;
+    m_prepassDepthTouched = false;
+    m_prepassClearZ = z;
+    m_prepassFullClear = count == 1 && rects[0].rect.offset.x == 0 && rects[0].rect.offset.y == 0 &&
+                         rects[0].rect.extent.width >= m_scene->m_width && rects[0].rect.extent.height >= m_scene->m_height;
     ++m_prepassSegments;
 
     // mainB: the profile's interval ending here holds the pre-pass (it runs right before); the scene goes on.

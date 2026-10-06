@@ -33,7 +33,9 @@
   scene shader runs about once per pixel. "Opaque": no discard, depth written, not blended or blended by an alpha
   that is provably 1 (`AlphaOneCheck`); not characters, swaying plants, labels or particles. A segment ends with the
   scene's rendering (target switch, copy, flush, end of the scene) or at a second depth clear. `ffp.vert` declares
-  `gl_Position` invariant so both passes produce the same depth; a pre-passed draw's `LESS` becomes `LESSEQUAL`.
+  `gl_Position` invariant so both passes produce the same depth; a pre-passed draw's `LESS` becomes `LESSEQUAL`. Backgrounds (draws ignoring depth, not writing it, before anything
+  in the segment wrote depth) get the depth bounds test [clear, clear]: they are shaded only where the pre-pass found
+  no opaque surface, which is the only place they stay visible.
 - **Vertex buffers** keep their contents in CPU memory; every draw copies the range it uses into the ring
   buffer, so rewriting a buffer between draws is safe (the game's CPU skinning reuses one buffer).
 - Memory through VMA (from the Vulkan SDK); Vulkan entry points loaded at run time from `vulkan-1.dll`.

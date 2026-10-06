@@ -1484,6 +1484,14 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     if (c.depthTest != zEnable) { vkCmdSetDepthTestEnable(cmd, zEnable); c.depthTest = zEnable; }
     if (c.depthWrite != zWrite) { vkCmdSetDepthWriteEnable(cmd, zWrite); c.depthWrite = zWrite; }
     if (c.depthOp != zFunc) { vkCmdSetDepthCompareOp(cmd, CompareOp(zFunc)); c.depthOp = zFunc; }
+    if (m_depthBounds) {                         // the backdrop cull (prepass.cpp): only where nothing opaque is drawn
+        uint32_t bounds = m_drawBackdrop ? 1u : 0u;
+        if (c.depthBounds != bounds) { vkCmdSetDepthBoundsTestEnable(cmd, bounds); c.depthBounds = bounds; }
+        if (bounds && c.depthBoundsZ != m_prepassClearZ) {
+            vkCmdSetDepthBounds(cmd, m_prepassClearZ, m_prepassClearZ);
+            c.depthBoundsZ = m_prepassClearZ;
+        }
+    }
 
     if (hdrTarget && !c.glowBlendSet) {
         // The glow attachment always adds: what each additive effect contributes (others write 0).
@@ -2185,6 +2193,15 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // scene's draws; its own depth test then passes on equal.
     uint32_t prepassWhy = PrepassCheck(primitive, fvf, swaying);
     m_drawPrepassed = prepassWhy == kPreIn;
+    m_drawBackdrop = BackdropCull(fvf);
+    if (m_scenePhase && m_target == m_scene && !m_external && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW &&
+        !m_rs[d3d::RS_ZWRITEENABLE] && (!m_rs[d3d::RS_ZENABLE] || m_rs[d3d::RS_ZFUNC] == d3d::CMP_ALWAYS)) {
+        // A draw that ignores depth (log): culled as a backdrop, or why not.
+        ++m_backdropDraws[m_drawBackdrop ? 0 : !m_prepassArmed ? (m_prepassEndedThisFrame ? 2 : 1)
+                                         : m_prepassDepthTouched ? 3 : 4];
+    }
+    if (m_prepassArmed && m_rs[d3d::RS_ZENABLE] && (m_rs[d3d::RS_ZWRITEENABLE] || WaterWritesDepth(fvf)))
+        m_prepassDepthTouched = true;            // this draw writes depth in the main pass: no backdrops after it
     if (m_scenePhase && m_target == m_scene && !m_external && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW)
         ++m_prepassWhy[prepassWhy];              // the scene's 3D draws, by why they are (not) pre-passed (log)
     if (m_drawSceneClass) {                      // the shading count: statics split by the pre-pass
@@ -2218,6 +2235,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         gmix(smoothBytes);
         gmix(frameLightsOffset);
         gmix(m_drawPrepassed ? 1u : 0u);          // its depth compare (ApplyDynamicState)
+        gmix(m_drawBackdrop ? 1u : 0u);           // its depth bounds
         groupKey = k ? k : 1;
     }
     if (m_group.active && (groupKey == 0 || groupKey != m_group.key))
