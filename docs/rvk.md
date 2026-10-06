@@ -66,6 +66,20 @@
   prologue calling GUI.dll's `_EH_prolog`), so another GUI.dll build is left alone (logged).
   Measured (a 245 fps spot, 60): the interface's game-thread time 1.5 -> 0.34 ms, its GPU time 0.3 -> 0.07 ms;
   cursor, interface look and input unchanged in play. 60 is the recommended value.
+- **Ground grass** (setting `RVK_GrassOn`, Plants; **off** by default): our own grass over the game's terrain, an
+  addition on top of its dated foliage cards. The ground heights are sampled from the game's own terrain draws
+  (`Device::CaptureTerrain`, called from `Draw` for `IsTerrain` draws) into a world grid of half-unit cells near the
+  camera, so a blade sits on whatever the terrain is there; a cell the terrain hasn't been seen at (a building, water,
+  the sky) gets no grass. Each frame `RenderGrassField` (grass.cpp) generates a field of blades - a grid of patches
+  around the camera out to `RVK_GrassDist`, `RVK_GrassDensity` blades each, `RVK_GrassHeight` tall - and draws them
+  into the scene rendering at its end (`EndScene`, before the post passes) through a standalone pipeline: no descriptor
+  sets of the scene's, the current and previous camera and the sun arrive as one uniform buffer and one push constant.
+  The blades are tapered, bending strips (the wind bends their upper sections), faded out over the last third of the
+  radius; they write the scene colour and the motion vectors (static in the world, so the camera's motion), leave the
+  glow, light-fraction and albedo attachments as the scene left them (the pipeline's per-attachment write masks, which
+  need the `independentBlend` device feature), depth-test against the scene, and are lit by the sun with a root-to-tip
+  gradient. Blades are placed from a position hash, not the frame number, so they don't crawl. `--grass-field` runs the
+  shadow test's terrain under a field of them in the demo.
 - **Vertex buffers** keep their contents in CPU memory; every draw copies the range it uses into the ring
   buffer, so rewriting a buffer between draws is safe (the game's CPU skinning reuses one buffer).
 - Memory through VMA (from the Vulkan SDK); Vulkan entry points loaded at run time from `vulkan-1.dll`.

@@ -62,6 +62,16 @@ uint32_t HashCell(int32_t x, int32_t z)
 
 float Unit(uint32_t h) { return float(h & 0xFFFFFFu) / float(0x1000000u); }
 
+// Smooth 1 -> 0 over the outer third of the field, so the blades shrink away instead of stopping at a hard circle.
+float EdgeFade(float distance, float radius)
+{
+    if (radius <= 0.0f)
+        return 0.0f;
+    float t = (radius - distance) / (radius * 0.35f);
+    t = std::clamp(t, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
 void SetVertex(GrassVertex& v, float x, float y, float z, const float n[3], float shade)
 {
     v.pos[0] = x; v.pos[1] = y; v.pos[2] = z;
@@ -267,24 +277,36 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
                 float py;
                 if (!GroundHeight(px, pz, &py))
                     py = gy;
-                const float height = m_grassHeight * (0.7f + 0.6f * u3);
+                const float dist = std::sqrt(ddx * ddx + ddz * ddz);
+                float height = m_grassHeight * (0.7f + 0.6f * u3) * EdgeFade(dist, m_grassDistance);
+                if (height < 0.02f)
+                    continue;
                 const float yaw = u1 * 6.2831853f;
                 const float rx = std::cos(yaw), rz = std::sin(yaw);
                 const float half = 0.5f * (0.02f + 0.03f * u2) * (0.5f + height);
                 const float phase = px * 0.3f + pz * 0.25f;
                 const float wind = 0.12f * height *
                                    (std::sin(time * 1.7f + phase) + 0.4f * std::sin(time * 3.3f + phase * 1.7f));
-                const float tipX = px + wind * rx, tipZ = pz + wind * rz;
                 float n[3] = {rz, 0.5f, -rx};
                 const float len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
                 n[0] /= len; n[1] /= len; n[2] /= len;
-                GrassVertex v0, v1, v2;
-                SetVertex(v0, px - rx * half, py, pz - rz * half, n, 0.0f);
-                SetVertex(v1, px + rx * half, py, pz + rz * half, n, 0.0f);
-                SetVertex(v2, tipX, py + height, tipZ, n, 1.0f);
-                verts.push_back(v0);
-                verts.push_back(v1);
-                verts.push_back(v2);
+                // A tapered, bending strip: a few cross sections from the base to the tip, each half as wide as the
+                // one below, the wind bending the upper ones more (so a breeze ripples through the field).
+                constexpr int kSeg = 2;
+                GrassVertex row[2][kSeg + 1];
+                for (int s = 0; s <= kSeg; ++s) {
+                    const float t = float(s) / float(kSeg);
+                    const float bend = wind * t * t;
+                    const float cx = px + bend * rx, cz = pz + bend * rz;
+                    const float cy = py + height * t;
+                    const float w = half * (1.0f - t);
+                    SetVertex(row[0][s], cx - rx * w, cy, cz - rz * w, n, t);
+                    SetVertex(row[1][s], cx + rx * w, cy, cz + rz * w, n, t);
+                }
+                for (int s = 0; s < kSeg; ++s) {
+                    verts.push_back(row[0][s]); verts.push_back(row[1][s]); verts.push_back(row[0][s + 1]);
+                    verts.push_back(row[1][s]); verts.push_back(row[1][s + 1]); verts.push_back(row[0][s + 1]);
+                }
             }
         }
     if (verts.empty())
