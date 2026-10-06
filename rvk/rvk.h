@@ -672,6 +672,11 @@ private:
     double m_shadowCollectMs = 0.0, m_shadowCullMs = 0.0, m_shadowDrawMs = 0.0;   // last pass (frame dumps)
     std::vector<uint32_t> m_cascadeVisible;      // scratch: indices into m_shadowItems for one cascade
     std::vector<uint32_t> m_animatedItems;       // indices of the animated items (characters' bodies)
+    // The items in batch-key order (CollectShadowItems): depth-only drawing doesn't depend on order, so the passes walk
+    // this and casters sharing pipeline, layout, texture and buffers end up next to each other - one indirect call
+    // and one set of bindings for each run instead of a new batch at every change in the game's draw order.
+    std::vector<uint32_t> m_shadowOrder;
+    static uint64_t ShadowItemKey(const ShadowItem& item);
     // Frame dump: how much the main pass could merge into instanced draws - consecutive static draws with the same
     // snapshot, vertex / index range, format, textures and geometry, differing only in their world / per-draw block.
     uint32_t m_batchRuns = 0, m_batchMerged = 0, m_batchMaxRun = 0;

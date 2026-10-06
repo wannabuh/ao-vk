@@ -551,7 +551,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             }
         }
         inRange.clear();
-        for (uint32_t i = 0; i < m_shadowItems.size(); ++i) {
+        for (uint32_t i : m_shadowOrder) {       // batch-key order (CollectShadowItems): longer batches per face
             const ShadowItem& it = m_shadowItems[i];
             float d2 = BoxDistance2(it.boundsMin, it.boundsMax, pos);
             if (d2 > l.range * l.range)

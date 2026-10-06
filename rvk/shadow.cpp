@@ -815,6 +815,14 @@ void Device::CollectShadowItems()
         }
         if (uint32_t(m_shadowItems[i].kind) == uint32_t(VisualKind::Static)) ++m_shadowStaticItems;
     }
+    // Batch-key order for the passes (stable: equal keys keep the game's order).
+    m_shadowOrder.resize(m_shadowItems.size());
+    for (uint32_t i = 0; i < m_shadowItems.size(); ++i) {
+        m_shadowItems[i].key = ShadowItemKey(m_shadowItems[i]);
+        m_shadowOrder[i] = i;
+    }
+    std::stable_sort(m_shadowOrder.begin(), m_shadowOrder.end(),
+                     [this](uint32_t a, uint32_t b) { return m_shadowItems[a].key < m_shadowItems[b].key; });
 }
 
 // The game draws each character's parts (body pieces, head, held weapon) one after another, so a run of casters
@@ -979,6 +987,26 @@ void Device::FlushShadowGroup(VkCommandBuffer cmd)
     m_shadowGroup.count = 0;
 }
 
+// A caster's batch key: what every draw in a batch shares (pipeline, topology, vertex layout, texture, buffers). The
+// per-caster transform, alpha and sway live in its record. Never 0.
+uint64_t Device::ShadowItemKey(const ShadowItem& item)
+{
+    uint64_t key = 0x9E3779B97F4A7C15ull;
+    auto mix = [&key](uint64_t x) { key = (key ^ x) * 0xFF51AFD7ED558CCDull; key ^= key >> 32; };
+    bool cached = item.buffer && !item.ibBuffer;
+    mix(item.texture ? 1u : 0u);
+    mix(item.primitive);
+    mix(item.stride);
+    mix(uint32_t(item.texOffset) + 1u);
+    mix(reinterpret_cast<uintptr_t>(item.texture));
+    mix(uint64_t(item.buffer));
+    mix(uint64_t(item.ibBuffer));
+    mix(item.indexCount != 0 ? 1u : 0u);
+    mix(cached ? 1u : 0u);
+    if (cached) mix(item.ibOffset);
+    return key ? key : 1;
+}
+
 // The light view-projection of the cascade or cube face being drawn (shadow.vert's push constant). Each pass sets it
 // after its previous batch was issued (FlushShadowGroup) and before its first caster.
 void Device::ShadowPassMatrix(VkCommandBuffer cmd, const d3d::Matrix& lightViewProj)
@@ -991,23 +1019,8 @@ void Device::ShadowPassMatrix(VkCommandBuffer cmd, const d3d::Matrix& lightViewP
 // bindings and one indirect command.
 void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, ShadowItem& item)
 {
-    if (!item.key) {
-        // A group's key: what every draw in it shares. The per-caster transform, alpha and sway live in the record.
-        uint64_t key = 0x9E3779B97F4A7C15ull;
-        auto mix = [&key](uint64_t x) { key = (key ^ x) * 0xFF51AFD7ED558CCDull; key ^= key >> 32; };
-        bool cached = item.buffer && !item.ibBuffer;
-        mix(item.texture ? 1u : 0u);
-        mix(item.primitive);
-        mix(item.stride);
-        mix(uint32_t(item.texOffset) + 1u);
-        mix(reinterpret_cast<uintptr_t>(item.texture));
-        mix(uint64_t(item.buffer));
-        mix(uint64_t(item.ibBuffer));
-        mix(item.indexCount != 0 ? 1u : 0u);
-        mix(cached ? 1u : 0u);
-        if (cached) mix(item.ibOffset);
-        item.key = key ? key : 1;
-    }
+    if (!item.key)
+        item.key = ShadowItemKey(item);
     if (item.record == kNoShadowRecord)
         return;                                  // the record arena was full when it was first drawn
     bool indexed = item.indexCount != 0;
@@ -1074,6 +1087,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     }
     if (!m_frameViewProjValid || m_casters.empty()) {
         m_shadowItems.clear();
+        m_shadowOrder.clear();
         return;
     }
     double collectStart = ProfileCpu();
@@ -1148,7 +1162,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         bool last = c == count - 1;
         double cullStart = ProfileCpu();
         m_cascadeVisible.clear();
-        for (uint32_t i = 0; i < m_shadowItems.size(); ++i) {
+        for (uint32_t i : m_shadowOrder) {       // batch-key order (CollectShadowItems)
             const ShadowItem& item = m_shadowItems[i];
             // Only casters reaching into this cascade's square (the widest takes every one the game drew).
             if ((item.cached || !last) && BoxInClip(item.boundsMin, item.boundsMax, lightViewProj, false) == -1) {
@@ -1206,6 +1220,7 @@ void Device::FinishShadowFrame()
     m_casters.clear();
     m_shadowItems.clear();
     m_animatedItems.clear();
+    m_shadowOrder.clear();
     UpdateCasterCache();
     // The mesh cache: forget meshes not drawn for a while (animated ones leave a fingerprint per frame).
     if ((m_frameNumber & 31) == 0 || m_meshInfo.size() > 60000)
