@@ -33,14 +33,21 @@ struct GrassVertex {
 };
 static_assert(sizeof(GrassVertex) == 28, "grass vertex");
 
+// The pass's frame block (grass.vert / grass.frag GrassFrame): the current and previous camera, one uniform buffer.
+struct GrassFrame {
+    d3d::Matrix viewProj;
+    d3d::Matrix prevViewProj;
+    float viewport[4];
+};
+static_assert(sizeof(GrassFrame) == 144, "grass frame block");
+
 // The pass's push constant (grass.vert / grass.frag Grass). Must match the shaders' block.
 struct GrassPush {
-    d3d::Matrix viewProj;
     float sunDir[4];
     float sunColor[4];
     float params[4];
 };
-static_assert(sizeof(GrassPush) == 112, "grass push constant");
+static_assert(sizeof(GrassPush) == 48, "grass push constant");
 
 // A cheap, position-stable hash so a blade stays put frame to frame (needed by the temporal anti-aliasing): a cell's
 // blades depend on the cell, not on the frame number.
@@ -120,7 +127,21 @@ bool Device::CreateGrassResources(std::string* error)
     range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     range.offset = 0;
     range.size = sizeof(GrassPush);
+    VkDescriptorSetLayoutBinding b{};
+    b.binding = 0;
+    b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    b.descriptorCount = 1;
+    b.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+    sl.bindingCount = 1;
+    sl.pBindings = &b;
+    if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_grassSetLayout),
+               "vkCreateDescriptorSetLayout", error))
+        return false;
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pl.setLayoutCount = 1;
+    pl.pSetLayouts = &m_grassSetLayout;
     pl.pushConstantRangeCount = 1;
     pl.pPushConstantRanges = &range;
     if (!Check(vkCreatePipelineLayout(m_device, &pl, nullptr, &m_grassLayout), "vkCreatePipelineLayout", error))
@@ -157,9 +178,9 @@ bool Device::CreateGrassResources(std::string* error)
         dss.depthWriteEnable = VK_TRUE;
         dss.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
         VkPipelineColorBlendAttachmentState att[5] = {};
-        att[0].colorWriteMask = 0xF;             // the scene colour only
-        for (int i = 1; i < 5; ++i)
-            att[i].colorWriteMask = 0;           // glow, light fraction, motion vectors, albedo: untouched
+        att[0].colorWriteMask = 0xF;             // the scene colour
+        att[3].colorWriteMask = 0xF;             // and the motion vectors (the grass is static: the camera's motion)
+        att[1].colorWriteMask = att[2].colorWriteMask = att[4].colorWriteMask = 0;   // glow, fraction, albedo: kept
         VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
         cb.attachmentCount = 5;
         cb.pAttachments = att;
@@ -201,6 +222,10 @@ void Device::DestroyGrassResources()
     if (m_grassLayout) {
         vkDestroyPipelineLayout(m_device, m_grassLayout, nullptr);
         m_grassLayout = VK_NULL_HANDLE;
+    }
+    if (m_grassSetLayout) {
+        vkDestroyDescriptorSetLayout(m_device, m_grassSetLayout, nullptr);
+        m_grassSetLayout = VK_NULL_HANDLE;
     }
 }
 
@@ -265,10 +290,19 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     if (verts.empty())
         return;
     const VkDeviceSize bytes = VkDeviceSize(verts.size()) * sizeof(GrassVertex);
-    EnsureRingSpace(bytes);
+    EnsureRingSpace(bytes + sizeof(GrassFrame));
     void* cpu = nullptr;
     const VkDeviceSize offset = Allocate(bytes, 4, &cpu);
     std::memcpy(cpu, verts.data(), size_t(bytes));
+    GrassFrame gf{};
+    gf.viewProj = MulMatrix(m_view, m_proj);
+    gf.prevViewProj = m_prevViewProjValid ? MulMatrix(m_prevView, m_prevProj) : gf.viewProj;
+    gf.viewport[0] = float(m_scene->m_width);
+    gf.viewport[1] = float(m_scene->m_height);
+    gf.viewport[2] = gf.viewport[3] = 0.0f;
+    void* frameCpu = nullptr;
+    const VkDeviceSize frameOffset = Allocate(sizeof(GrassFrame), 64, &frameCpu);   // minUniformBufferOffsetAlignment
+    std::memcpy(frameCpu, &gf, sizeof(gf));
     Frame& f = m_frames[m_frameIndex];
 
     // The scene's rendering has just closed (EndScene's EndRendering flushed the batched draws): begin it again to add
@@ -282,6 +316,13 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassPipeline);
+    VkDescriptorBufferInfo frameInfo{f.ring, frameOffset, sizeof(GrassFrame)};
+    VkWriteDescriptorSet frameWrite{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    frameWrite.dstBinding = 0;
+    frameWrite.descriptorCount = 1;
+    frameWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    frameWrite.pBufferInfo = &frameInfo;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassLayout, 0, 1, &frameWrite);
     VkVertexInputBindingDescription2EXT binding{VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT};
     binding.binding = 0;
     binding.stride = sizeof(GrassVertex);
@@ -298,7 +339,6 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     VkDeviceSize vbOffset = offset;
     vkCmdBindVertexBuffers(cmd, 0, 1, &vb, &vbOffset);
     GrassPush pc{};
-    pc.viewProj = MulMatrix(m_view, m_proj);
     const float* sd = m_shadowValid ? m_shadowSunDir : m_frameSunDir;
     const float* sc = m_shadowValid ? m_shadowSunColor : m_frameSunColor;
     pc.sunDir[0] = sd[0]; pc.sunDir[1] = sd[1]; pc.sunDir[2] = sd[2]; pc.sunDir[3] = 1.0f;

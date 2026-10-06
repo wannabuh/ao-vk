@@ -1042,6 +1042,7 @@ private:
     bool CreateGrassResources(std::string* error);
     void DestroyGrassResources();
     uint64_t m_grassDraws = 0, m_grassBlades = 0;   // counters, logged with the foliage line
+    VkDescriptorSetLayout m_grassSetLayout = VK_NULL_HANDLE;   // the grass pass's matrices (one uniform buffer)
     VkPipelineLayout m_grassLayout = VK_NULL_HANDLE;
     VkPipeline m_grassPipeline = VK_NULL_HANDLE;
     bool m_independentBlend = false;             // device feature: the grass pipeline's per-attachment write masks
