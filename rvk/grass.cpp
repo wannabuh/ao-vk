@@ -41,13 +41,7 @@ struct GrassFrame {
 };
 static_assert(sizeof(GrassFrame) == 144, "grass frame block");
 
-// The pass's push constant (grass.vert / grass.frag Grass). Must match the shaders' block.
-struct GrassPush {
-    float sunDir[4];
-    float sunColor[4];
-    float params[4];
-};
-static_assert(sizeof(GrassPush) == 48, "grass push constant");
+
 
 // A cheap, position-stable hash so a blade stays put frame to frame (needed by the temporal anti-aliasing): a cell's
 // blades depend on the cell, not on the frame number.
@@ -133,27 +127,27 @@ bool Device::CreateGrassResources(std::string* error)
     DestroyGrassResources();
     if (!m_independentBlend)
         return true;                             // the blade pipeline's per-attachment write masks need it: no grass
-    VkPushConstantRange range{};
-    range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    range.offset = 0;
-    range.size = sizeof(GrassPush);
-    VkDescriptorSetLayoutBinding b{};
-    b.binding = 0;
-    b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    b.descriptorCount = 1;
-    b.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    // One set: 0 the camera (uniform), 4 the frame lights (the sun and its shadow cascades), 5 the sun's shadow map.
+    VkDescriptorSetLayoutBinding b[3] = {};
+    b[0].binding = 0;
+    b[1].binding = 4;
+    b[2].binding = 5;
+    b[0].descriptorType = b[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    b[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    for (auto& e : b)
+        e.descriptorCount = 1;
+    b[0].stageFlags = b[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    b[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 1;
-    sl.pBindings = &b;
+    sl.bindingCount = 3;
+    sl.pBindings = b;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_grassSetLayout),
                "vkCreateDescriptorSetLayout", error))
         return false;
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pl.setLayoutCount = 1;
     pl.pSetLayouts = &m_grassSetLayout;
-    pl.pushConstantRangeCount = 1;
-    pl.pPushConstantRanges = &range;
     if (!Check(vkCreatePipelineLayout(m_device, &pl, nullptr, &m_grassLayout), "vkCreatePipelineLayout", error))
         return false;
     auto module = [&](const uint32_t* code, size_t size, VkShaderModule* out) {
@@ -244,7 +238,7 @@ void Device::DestroyGrassResources()
 // yields the same blades, so nothing crawls.
 void Device::RenderGrassField(VkCommandBuffer cmd)
 {
-    if (!m_grassOn || !m_grassPipeline || !m_scene || !m_frameEyeValid)
+    if (!m_grassOn || !m_grassPipeline || !m_scene || !m_shadowView || !m_frameLightsOffset)
         return;
     UpdateFrameEye();
     if (!m_frameEyeValid)
@@ -339,12 +333,22 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassPipeline);
     VkDescriptorBufferInfo frameInfo{f.ring, frameOffset, sizeof(GrassFrame)};
-    VkWriteDescriptorSet frameWrite{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    frameWrite.dstBinding = 0;
-    frameWrite.descriptorCount = 1;
-    frameWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    frameWrite.pBufferInfo = &frameInfo;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassLayout, 0, 1, &frameWrite);
+    VkDescriptorBufferInfo lightsInfo{f.ring, m_frameLightsOffset, sizeof(FrameLights)};
+    VkDescriptorImageInfo shadowInfo{m_shadowSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet writes[3] = {};
+    writes[0].sType = writes[1].sType = writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].pBufferInfo = &frameInfo;
+    writes[1].dstBinding = 4;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[1].pBufferInfo = &lightsInfo;
+    writes[2].dstBinding = 5;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].pImageInfo = &shadowInfo;
+    for (auto& w : writes)
+        w.descriptorCount = 1;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassLayout, 0, 3, writes);
     VkVertexInputBindingDescription2EXT binding{VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT};
     binding.binding = 0;
     binding.stride = sizeof(GrassVertex);
@@ -360,13 +364,6 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     VkBuffer vb = f.ring;
     VkDeviceSize vbOffset = offset;
     vkCmdBindVertexBuffers(cmd, 0, 1, &vb, &vbOffset);
-    GrassPush pc{};
-    const float* sd = m_shadowValid ? m_shadowSunDir : m_frameSunDir;
-    const float* sc = m_shadowValid ? m_shadowSunColor : m_frameSunColor;
-    pc.sunDir[0] = sd[0]; pc.sunDir[1] = sd[1]; pc.sunDir[2] = sd[2]; pc.sunDir[3] = 1.0f;
-    pc.sunColor[0] = sc[0]; pc.sunColor[1] = sc[1]; pc.sunColor[2] = sc[2]; pc.sunColor[3] = 0.45f;
-    pc.params[0] = m_frameEye[0]; pc.params[1] = m_frameEye[1]; pc.params[2] = m_frameEye[2]; pc.params[3] = time;
-    vkCmdPushConstants(cmd, m_grassLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
     vkCmdDraw(cmd, uint32_t(verts.size()), 1, 0, 0);
     EndRendering();
     m_cache = StateCache{};                      // this pipeline and its vertex input are not the scene's
