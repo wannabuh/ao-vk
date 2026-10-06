@@ -1967,7 +1967,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                    m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE] && m_rs[d3d::RS_ZFUNC] != d3d::CMP_ALWAYS;
     // Foliage candidates: lit, cut out of their texture (alpha test, or blended with depth writes as most of the
     // game's statics are) - the shader keeps those whose texture actually has holes (leaves, not walls).
-    bool foliage = solid3d && (flags & F_LIGHTING) && (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) &&
+    // Disabled for now: the flag matched ~96% of the statics (opaque textures), so the far LOD (cheap shadow, no
+    // relief) was applied to buildings. m_foliage back on restores the leaf light and the far-foliage LOD.
+    bool foliage = m_foliage && solid3d && (flags & F_LIGHTING) && (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) &&
                    (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0;
     if (m_leafLight > 0.0f && foliage)
         flags |= F_FOLIAGE;
