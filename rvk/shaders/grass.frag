@@ -126,18 +126,15 @@ void main()
     // see-through the way cut-out cards are.
     vec4 blade = texture(bladeTex, vUv);
     vec3 n = normalize(vNormal);
-    // A blade's normal is mostly horizontal, so it catches far less of the sun than the flat ground (n.L ~0.45 against
-    // 1.0). An up-biased normal lights the grass as much as the ground it stands in, the sun as well as the lamps.
-    vec3 ln = normalize(vec3(n.x, 2.0, n.z));
-    float d = abs(dot(ln, -normalize(FL.sunDir.xyz)));
+    float d = abs(dot(n, -normalize(FL.sunDir.xyz)));       // a thin blade takes the sun on either face
     float shadow = mix(1.0, SunShadow(vPosW), FL.shadowParams.y);
     // Mostly one grass green, with only a little of the ground's own colour (and the atlas' vein); a gentle root-to-tip
     // gradient, kept bright at the base too (a dark base read as neglected roots).
-    vec3 tint = mix(vec3(0.30, 0.46, 0.21), vTint, 0.3);
+    vec3 tint = mix(vec3(0.40, 0.58, 0.28), vTint, 0.3);
     vec3 base = tint * blade.rgb * mix(vec3(0.92), vec3(1.08), clamp(vShade, 0.0, 1.0));
     // The ambient follows the sun, so the grass goes dark at night with the rest of the scene.
     float sunLum = clamp(dot(FL.sunColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
-    vec3 lit = FL.sunColor.rgb * d * shadow + LocalLights(vPosW, n) + vec3(0.10 + 0.35 * sunLum);
+    vec3 lit = FL.sunColor.rgb * d * shadow + LocalLights(vPosW, n) + vec3(0.15 + 0.5 * sunLum);
     outScene = vec4(base * lit, 1.0);
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * GF.viewport.xy * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
