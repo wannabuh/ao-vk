@@ -194,7 +194,11 @@ void main()
             int i = (gl_VertexIndex - int(D.motion.z)) * 3;
             prevLocal = vec3(PP.prevPos[i], PP.prevPos[i + 1], PP.prevPos[i + 2]);
         }
-        vPrevClip = D.motion.x > 0.5 ? FL.prevViewProj * (D.prevWorld * vec4(prevLocal, 1.0) + vec4(swayPrev, 0.0)) : gl_Position;
+        // Last frame's camera applied like this frame's (view, then projection), so a still object under a still
+        // camera has exactly zero motion. Without object motion: none (vClip - gl_Position has the jitter); the TAA
+        // then reprojects with the camera.
+        vPrevClip = D.motion.x > 0.5 ? FL.prevProj * (FL.prevView * (D.prevWorld * vec4(prevLocal, 1.0) + vec4(swayPrev, 0.0)))
+                                     : vClip;
         posV = pv.xyz;
         vec3 normalW = mat3(D.world) * (hasNormal ? inNormal : vec3(0.0));
         if ((C.flags.x & F_NORMALIZE) != 0u && dot(normalW, normalW) > 0.0)

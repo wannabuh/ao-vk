@@ -42,6 +42,6 @@ void main()
     vClip = gl_Position;                         // motion vectors: without the jitter
     if ((C.flags.x & F_HDR) != 0u)
         gl_Position.xy += FL.taa.xy * gl_Position.w;
-    vPrevClip += FL.prevViewProj * vec4(delta, 0.0);
+    vPrevClip += FL.prevProj * (FL.prevView * vec4(delta, 0.0));
     vFogDist = (C.flags.x & F_RANGEFOG) != 0u ? length(pv.xyz) : abs(pv.z);
 }

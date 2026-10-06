@@ -7,6 +7,7 @@
 #include "internal.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace rvk {
@@ -841,6 +842,65 @@ bool Device::RenderContactShadows(VkCommandBuffer cmd)
     return true;
 }
 
+// This frame's clip -> last frame's clip for a still world (TAA and motion blur reprojection), in double: the view
+// holds the camera's world position (thousands of units), and a float inverse of view x projection is off by a
+// sub-pixel amount that differs with where the camera is - the TAA then resamples its history by it every frame and
+// the still image drifts and blurs. A camera that didn't change reprojects to exactly itself.
+static void CameraReprojection(const d3d::Matrix& view, const d3d::Matrix& proj, const d3d::Matrix& prevView,
+                               const d3d::Matrix& prevProj, d3d::Matrix* out)
+{
+    if (std::memcmp(&view, &prevView, sizeof(view)) == 0 && std::memcmp(&proj, &prevProj, sizeof(proj)) == 0) {
+        *out = Identity();
+        return;
+    }
+    auto mul = [](const double (&a)[4][4], const double (&b)[4][4], double (&r)[4][4]) {
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                r[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j] + a[i][3] * b[3][j];
+    };
+    double v[4][4], p[4][4], pv[4][4], pp[4][4], now[4][4], before[4][4];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j) {
+            v[i][j] = view.m[i][j];
+            p[i][j] = proj.m[i][j];
+            pv[i][j] = prevView.m[i][j];
+            pp[i][j] = prevProj.m[i][j];
+        }
+    mul(v, p, now);
+    mul(pv, pp, before);
+    // Gauss-Jordan with partial pivoting: inverse of now.
+    double a[4][8];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j) {
+            a[i][j] = now[i][j];
+            a[i][j + 4] = i == j ? 1.0 : 0.0;
+        }
+    for (int c = 0; c < 4; ++c) {
+        int pivot = c;
+        for (int r = c + 1; r < 4; ++r)
+            if (std::fabs(a[r][c]) > std::fabs(a[pivot][c])) pivot = r;
+        if (a[pivot][c] == 0.0) {     // singular (never for a camera): no reprojection
+            *out = Identity();
+            return;
+        }
+        if (pivot != c)
+            for (int j = 0; j < 8; ++j) std::swap(a[c][j], a[pivot][j]);
+        double inv = 1.0 / a[c][c];
+        for (int j = 0; j < 8; ++j) a[c][j] *= inv;
+        for (int r = 0; r < 4; ++r)
+            if (r != c && a[r][c] != 0.0) {
+                double f = a[r][c];
+                for (int j = 0; j < 8; ++j) a[r][j] -= f * a[c][j];
+            }
+    }
+    double inverse[4][4], r[4][4];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j) inverse[i][j] = a[i][j + 4];
+    mul(inverse, before, r);
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j) out->m[i][j] = float(r[i][j]);
+}
+
 // Temporal anti-aliasing: this frame's camera against the last one's (reprojection for pixels without object motion,
 // the sky) and whether the history can be used - the last frame resolved, same size, no teleport.
 bool Device::TaaParams(float out[24])
@@ -848,7 +908,7 @@ bool Device::TaaParams(float out[24])
     bool perspective = m_aoProjValid && m_aoProj.m[2][3] == 1.0f && m_aoProj.m[3][3] == 0.0f;
     if (!TaaActive() || !perspective || !m_depth)
         return false;
-    d3d::Matrix viewProj = MulMatrix(m_aoView, m_aoProj), inverse, reproject{};
+    d3d::Matrix reproject{};
     const auto& v = m_aoView.m;
     float jump2 = 0.0f;
     for (int i = 0; i < 3; ++i) {
@@ -856,10 +916,9 @@ bool Device::TaaParams(float out[24])
         jump2 += (eye - m_prevEye[i]) * (eye - m_prevEye[i]);
     }
     bool history = m_prevViewProjValid && m_taaFrame + 1 == m_frameNumber && jump2 < 25.0f && m_taaHistory[0] &&
-                   m_taaHistory[0]->m_width == m_scene->m_width && m_taaHistory[0]->m_height == m_scene->m_height &&
-                   InvertMatrix(viewProj, &inverse);
+                   m_taaHistory[0]->m_width == m_scene->m_width && m_taaHistory[0]->m_height == m_scene->m_height;
     if (history)
-        reproject = MulMatrix(inverse, m_prevViewProj);
+        CameraReprojection(m_aoView, m_aoProj, m_prevView, m_prevProj, &reproject);
     std::memcpy(out, &reproject, 64);
     out[16] = float(m_scene->m_width);
     out[17] = float(m_scene->m_height);
@@ -978,18 +1037,17 @@ bool Device::MotionBlurParams(float out[24])
         m_prevViewProjValid = false;
         return false;
     }
-    d3d::Matrix viewProj = MulMatrix(m_aoView, m_aoProj);
     const auto& v = m_aoView.m;
     float eye[3];
     for (int i = 0; i < 3; ++i) eye[i] = -(v[3][0] * v[i][0] + v[3][1] * v[i][1] + v[3][2] * v[i][2]);
     bool have = m_prevViewProjValid && m_motionBlur > 0.0f && m_depth;
     float jump2 = 0.0f;
     for (int i = 0; i < 3; ++i) jump2 += (eye[i] - m_prevEye[i]) * (eye[i] - m_prevEye[i]);
-    d3d::Matrix inverse, reproject;
-    if (have && (jump2 > 25.0f || !InvertMatrix(viewProj, &inverse)))   // a teleport / zone change: no blur
+    if (have && jump2 > 25.0f)   // a teleport / zone change: no blur
         have = false;
     if (have) {
-        reproject = MulMatrix(inverse, m_prevViewProj);
+        d3d::Matrix reproject;
+        CameraReprojection(m_aoView, m_aoProj, m_prevView, m_prevProj, &reproject);
         std::memcpy(out, &reproject, 64);
         dt = std::clamp(dt, 1.0 / 500.0, 0.25);
         out[16] = float(m_motionBlur / 60.0 / dt);        // per-frame motion -> motion during the exposure
@@ -1001,7 +1059,8 @@ bool Device::MotionBlurParams(float out[24])
         out[22] = float(m_scene->m_width);
         out[23] = float(m_scene->m_height);
     }
-    m_prevViewProj = viewProj;
+    m_prevView = m_aoView;
+    m_prevProj = m_aoProj;
     std::memcpy(m_prevEye, eye, sizeof(eye));
     m_prevViewProjValid = true;
     return have;

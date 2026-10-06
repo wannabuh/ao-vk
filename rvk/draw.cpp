@@ -303,7 +303,8 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->sunDir[3] = m_hdr ? m_hdrHeadroom : m_lightHeadroom;
     for (int i = 0; i < 3; ++i) fl->sunColor[i] = m_shadowValid ? m_shadowSunColor[i] : m_frameSunColor[i];
     fl->sunColor[3] = 0.0f;
-    fl->prevViewProj = m_prevViewProj;           // the world camera last frame (motion vectors)
+    fl->prevView = m_prevView;                   // the world camera last frame (motion vectors)
+    fl->prevProj = m_prevProj;
     m_frameLightIndices.clear();
     m_frameLightSpheres.clear();
     for (uint32_t k = 0; k < used; ++k) {

@@ -1091,7 +1091,7 @@ private:
     uint64_t MotionKey(uint32_t primitive, uint32_t fvf, uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount) const;
     Texture* m_tonemapped = nullptr;             // with motion blur: the tone mapped scene, blurred into m_ldrMain
     VkPipeline m_motionPipeline = VK_NULL_HANDLE;
-    d3d::Matrix m_prevViewProj{};                // the last frame's world camera
+    d3d::Matrix m_prevView{}, m_prevProj{};      // the last frame's world camera
     float m_prevEye[3] = {};
     bool m_prevViewProjValid = false;
     double m_prevSceneTime = 0.0;
