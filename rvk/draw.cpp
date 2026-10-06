@@ -1073,14 +1073,16 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
     }
     uint64_t key;
     if (m_drawStaticBuffer) {
-        // A static snapshot's vertices never change, so identify the sub-mesh by where it sits in the snapshot and
-        // skip the pass over the vertices. (The ring path below must hash the content: a dynamic buffer's pointer
-        // can stay while its data changes.) CachedMeshInfo then makes CasterKey and FrameLightMask cheap too.
+        // A static snapshot's vertices never change, so identify the sub-mesh by its snapshot and where it sits in
+        // it, and skip the pass over the vertices. The snapshot's serial, not its address: a freed snapshot's memory
+        // can hold the next one, which must not inherit its bounds, alpha and caster key. (The ring path below must
+        // hash the content: a dynamic buffer's pointer can stay while its data changes.) CachedMeshInfo then makes
+        // CasterKey and FrameLightMask cheap too.
         ++m_meshStaticDraws;
         key = 0x51ED270F9E3779B9ull;
         auto mixStatic = [&key](uint64_t x) { key = (key ^ x) * 0xFF51AFD7ED558CCDull; key ^= key >> 32; };
-        mixStatic(uint64_t(m_drawStaticBuffer));
-        mixStatic(reinterpret_cast<uintptr_t>(vertices));
+        mixStatic(m_drawStaticSerial);
+        mixStatic(m_drawStaticOffset);
         mixStatic(vertexCount);
         mixStatic(indexCount);
         mixStatic(fvf);
@@ -1242,6 +1244,7 @@ void Device::Clear(uint32_t count, const Rect* rects, uint32_t flags, uint32_t a
 {
     if (!m_inFrame)
         return;
+    FlushGroup();                                // batched draws recorded before the clear must run before it
     VkClearAttachment att[2];
     uint32_t n = 0;
     if (flags & d3d::CLEAR_TARGET) {
@@ -1643,10 +1646,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         int cls = 1;
         if (IsTerrain(fvf))
             cls = IsMultiplyPass() ? 3 : 2;
-        else if (m_leafLight > 0.0f && m_rs[d3d::RS_LIGHTING] &&
-                 (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) && m_textures[0] &&
-                 (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
-            cls = 4;
+        else if (m_rs[d3d::RS_LIGHTING] && (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) &&
+                 m_textures[0] && !m_textures[0]->m_opaque && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
+            cls = 4;                                 // as the foliage flag (Draw): a texture with holes
         ProfileSceneClass(cls);
     }
     // Particles whose effect the game no longer draws: at the end of the 3D scene - the first interface draw after 3D,
@@ -1842,24 +1844,31 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                          m_rs[d3d::RS_ALPHABLENDENABLE] && !m_rs[d3d::RS_ALPHATESTENABLE] &&
                          m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA;
     if (cutoutTexture) ++m_opaqueDraws;
+    bool textureHoles = m_textures[0] && !m_textures[0]->m_opaque;   // foliage (below) needs a texture with holes
     // The blend is a no-op when the final alpha is 1. Prove it from what the stage alpha ops actually read: the
     // textures (opaque, above), the vertex colours (MeshInfo::alphaOpaque), the texture factor and the material.
+    // The running alpha starts as the diffuse colour's (ffp_main.glsl Cascade: current = gDiffuse), so stage 0's
+    // CURRENT, a disabled stage 0 alpha op and a cascade that ends at stage 0 all read the vertex / material alpha.
     bool alphaProvable = true, needVertexAlpha = false, needTfactor = false;
+    bool currentIsDiffuse = true;
     for (int s = 0; s < 2 && alphaProvable; ++s) {
-        if (m_tss[s][d3d::TSS_COLOROP] == d3d::TOP_DISABLE) break;
+        if (m_tss[s][d3d::TSS_COLOROP] == d3d::TOP_DISABLE) break;   // the cascade ends with the running alpha
         uint32_t op = m_tss[s][d3d::TSS_ALPHAOP];
-        if (op == d3d::TOP_DISABLE) continue;                       // keeps the running alpha (1)
+        if (op == d3d::TOP_DISABLE) continue;                       // keeps the running alpha
         if (op == d3d::TOP_SUBTRACT) { alphaProvable = false; break; }
         for (uint32_t arg : {m_tss[s][d3d::TSS_ALPHAARG1], m_tss[s][d3d::TSS_ALPHAARG2]}) {
             if (arg & 0x10u) { alphaProvable = false; break; }      // a complemented arg turns 1 into 0
             switch (arg & 0xFu) {
             case d3d::TA_DIFFUSE: case d3d::TA_SPECULAR: needVertexAlpha = true; break;
             case d3d::TA_TFACTOR: needTfactor = true; break;
-            case d3d::TA_CURRENT: case d3d::TA_TEXTURE: break;      // 1 by induction / the opaque texture
+            case d3d::TA_CURRENT: if (currentIsDiffuse) needVertexAlpha = true; break;
+            case d3d::TA_TEXTURE: break;                            // the opaque texture
             default: needVertexAlpha = true; break;                 // Arg's default is the specular colour
             }
         }
+        currentIsDiffuse = false;                                   // 1 from here on when this stage's args are
     }
+    if (currentIsDiffuse) needVertexAlpha = true;                   // no stage replaced the diffuse alpha
     bool forceOpaque = cutoutTexture && alphaProvable && m_material.diffuse.a >= 1.0f && m_material.specular.a >= 1.0f &&
                        (!needVertexAlpha || (m_drawMesh && m_drawMesh->alphaOpaque)) &&
                        (!needTfactor || ((m_rs[d3d::RS_TEXTUREFACTOR] >> 24) == 0xFF));
@@ -1901,6 +1910,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                    m_constantsCarrier != carrier || m_constantsBumpBase != m_drawBumpBase ||
                    m_constantsFoliageLod != foliageLod || m_constantsNormalMap != normalMap ||
                    m_constantsCharacter != m_drawIsCharacter || m_constantsOpaque != cutoutTexture ||
+                   m_constantsHoles != textureHoles ||
                    m_constantsForceOpaque != forceOpaque;
     uint32_t constIndex = m_constIndex;
     if (rewrite) {
@@ -1915,6 +1925,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     m_constantsFoliageLod = foliageLod;
     m_constantsCharacter = m_drawIsCharacter;
     m_constantsOpaque = cutoutTexture;
+    m_constantsHoles = textureHoles;
     m_constantsForceOpaque = forceOpaque;
     m_constantsNormalMap = normalMap;
     DrawConstants c{};
@@ -2002,11 +2013,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_rs[d3d::RS_ALPHATESTENABLE]) flags |= F_ALPHATEST;
     bool solid3d = (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW && !terrain && !m_drawIsLabel && m_textures[0] &&
                    m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE] && m_rs[d3d::RS_ZFUNC] != d3d::CMP_ALWAYS;
-    // Foliage candidates: lit, cut out of their texture (alpha test, or blended with depth writes as most of the
-    // game's statics are) - the shader keeps those whose texture actually has holes (leaves, not walls).
-    // Disabled for now: the flag matched ~96% of the statics (opaque textures), so the far LOD (cheap shadow, no
-    // relief) was applied to buildings. m_foliage back on restores the leaf light and the far-foliage LOD.
-    bool foliage = m_foliage && solid3d && (flags & F_LIGHTING) && (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) &&
+    // Foliage: lit, cut out of a texture that actually has holes (alpha test, or blended with depth writes as most of
+    // the game's statics are). Without the texture test the class matched ~96% of the statics - opaque-textured
+    // buildings and props drawn blended - and the far LOD (cheap shadow, no relief) reached them.
+    bool foliage = solid3d && textureHoles && (flags & F_LIGHTING) &&
+                   (m_rs[d3d::RS_ALPHATESTENABLE] || m_rs[d3d::RS_ALPHABLENDENABLE]) &&
                    (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0;
     if (m_leafLight > 0.0f && foliage)
         flags |= F_FOLIAGE;
@@ -2018,15 +2029,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         if (foliageLod == 2u && (flags & F_PERPIXEL))
             flags = (flags & ~F_PERPIXEL) | F_VERTEXSUN;
     }
-    if (foliage) {                               // how much of this is real foliage? (logged; see rvk.h counters)
-        bool opaqueTexture = m_textures[0] && m_textures[0]->m_opaque;
-        ++m_foliageDraws;
-        if (opaqueTexture) ++m_foliageOpaqueDraws;
-        if (foliageLod) {
-            ++m_foliageLodDraws;
-            if (opaqueTexture) ++m_foliageLodOpaqueDraws;
-        }
-    }
+    m_drawFoliage = foliage ? (foliageLod ? 2u : 1u) : 0u;   // counted per draw below (this block is per state)
     // Blended (not additive) with depth writes, as the game draws most statics: the see-through parts must not write
     // depth or motion - plants' quads would show in the ambient occlusion and smear in the motion blur. Fragments
     // nearly invisible anyway are dropped; a plant's (ffp.vert vCutout) below half, like its shadow.
@@ -2034,7 +2037,6 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA)
         flags |= F_CUTOUT;
     m_drawMayDiscard = (flags & (F_ALPHATEST | F_CUTOUT)) != 0u;   // else the no-discard pipeline keeps early-Z
-    if (!m_drawMayDiscard) ++m_noCutDraws;
     // Night glow candidates: opaque 3D surfaces drawn unlit (self-lit, like windows and signs) or with an emissive
     // material - not effects, the sky, the ground or lighting passes.
     bool additive = m_rs[d3d::RS_ALPHABLENDENABLE] && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_ONE;
@@ -2085,6 +2087,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c.lightInfo[3] = 0;
     constIndex = AppendConstant(c);            // shared with the next draws that keep this state
     m_constIndex = constIndex;
+    }
+    if (!m_drawMayDiscard) ++m_noCutDraws;       // per draw (the block above runs only when the constants change)
+    if (m_drawFoliage) {
+        ++m_foliageDraws;
+        if (m_drawFoliage == 2u) ++m_foliageLodDraws;
     }
 
     ProfileDrawSection("draw: constants", since);

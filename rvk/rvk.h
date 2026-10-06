@@ -464,9 +464,9 @@ private:
     bool m_drawTerrainBase = false;              // the current draw is the ground's unlit base pass (Draw)
     bool m_drawTerrainLight = false;             // ... or its multiplying lightmap pass
     uint64_t m_opaqueDraws = 0;                  // the opaque fast path's draws (logged every 600 frames)
-    // Foliage classification counters (logged every 600 frames): how many draws are flagged foliage, and how many
-    // of those have fully opaque textures (so are not foliage at all).
-    uint64_t m_foliageDraws = 0, m_foliageOpaqueDraws = 0, m_foliageLodDraws = 0, m_foliageLodOpaqueDraws = 0;
+    // Foliage counters (logged every 600 frames): draws flagged foliage, and how many of those took the far LOD.
+    uint64_t m_foliageDraws = 0, m_foliageLodDraws = 0;
+    uint32_t m_drawFoliage = 0;                  // the current constants' foliage class: 0 none, 1 near, 2 far (LOD)
     VkSampler m_bumpSampler = VK_NULL_HANDLE;
     static uint64_t TerrainChunkKey(const void* vertices, uint32_t vertexCount, uint32_t stride, uint32_t indexCount);
     uint32_t m_dumpVertexCount = 0;
@@ -721,7 +721,6 @@ private:
     VkSampler m_pointSampler = VK_NULL_HANDLE, m_linearSampler = VK_NULL_HANDLE;
     float m_bloomStrength = 1.5f, m_bloomThreshold = 1.0f;
     float m_sunSoftness = 1.0f, m_leafLight = 1.0f, m_nightGlow = 1.5f, m_contact = 0.6f;
-    bool m_foliage = false;                      // the foliage flag/LOD (off: it matched ~96% of statics; see Draw)
     bool m_drawMayDiscard = true;                // the current draw can cut out (alpha test / F_CUTOUT): pick the variant
     bool m_drawForceOpaque = false;              // the draw's alpha is provably 1: skip its blend (Draw forceOpaque)
     uint64_t m_forceOpaqueDraws = 0;             // draws that took the opaque-blend path (logged)
@@ -797,6 +796,7 @@ private:
         ArenaChunk* chunk = nullptr;
         VkDeviceSize offset = 0, size = 0;
         uint64_t lastFrame = 0;
+        uint64_t serial = 0;                     // unique per placed snapshot (an address can be reused once freed)
     };
     std::unordered_map<const std::vector<uint8_t>*, StaticGeometry> m_staticGeometry;
     std::vector<std::unique_ptr<ArenaChunk>> m_staticArena;
@@ -805,9 +805,14 @@ private:
     VkBuffer m_drawStaticBuffer = VK_NULL_HANDLE;   // the current draw's vertices are in this buffer, at this offset
     VkDeviceSize m_drawStaticOffset = 0;
     ArenaChunk* ArenaPlace(VkDeviceSize bytes, VkDeviceSize align, VkDeviceSize* offset);
-    static void ArenaFree(ArenaChunk* chunk, VkDeviceSize offset, VkDeviceSize bytes);
+    void ArenaFree(ArenaChunk* chunk, VkDeviceSize offset, VkDeviceSize bytes);   // reusable once the GPU is done
+    void CollectArenaSlots();                    // CollectGarbage: slots no submission in flight can still read
+    struct DeadArenaSlot { uint64_t tag; ArenaChunk* chunk; VkDeviceSize offset, bytes; };
+    std::vector<DeadArenaSlot> m_deadArenaSlots;
+    uint64_t m_staticSerial = 0;                 // the last StaticGeometry::serial handed out
+    uint64_t m_drawStaticSerial = 0;             // the current draw's snapshot (with m_drawStaticBuffer)
     VkBuffer StaticBufferFor(const std::shared_ptr<const std::vector<uint8_t>>& data, VkDeviceSize* baseOffset,
-                             VkDeviceSize align);
+                             VkDeviceSize align, uint64_t* serial);
     void BeginStaticFrame();
     void DestroyStaticGeometry();
     SkinOutput* m_drawGpu = nullptr;             // the current draw is skinned on the GPU, here
@@ -1119,6 +1124,7 @@ private:
     uint32_t m_constantsFoliageLod = 0;          // FoliageFar: 0 near, 1 far foliage, 2 far plant
     bool m_constantsCharacter = false;
     bool m_constantsOpaque = false;              // the draw's textures are fully opaque (F_CUTOUT omitted; Draw)
+    bool m_constantsHoles = false;               // the stage 0 texture has transparent texels (foliage; Draw)
     bool m_constantsForceOpaque = false;         // ... and its alpha is provably 1: draw it opaque (no blend)
     uint32_t m_constantsCarrier = 0;
     void BeginRenderingOn(Texture* target);

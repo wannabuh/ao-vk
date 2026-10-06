@@ -989,6 +989,7 @@ void Device::CollectGarbage()
         return true;
     });
     m_deadBuffers.erase(buffers, m_deadBuffers.end());
+    CollectArenaSlots();
 }
 
 void Device::EnsureRingSpace(VkDeviceSize bytes)
@@ -1281,15 +1282,14 @@ void Device::BeginFrame()
         Log("ring buffer: peak %.1f of %llu MB a frame, %u mid-frame flushes (last 600 frames)",
             double(m_ringPeak) / 1048576.0, (unsigned long long)(f.ringSize >> 20), m_midFrameFlushes);
         Log("opaque static fast path: %llu draws (last 600 frames)", (unsigned long long)m_opaqueDraws);
-        Log("foliage class: %llu draws, %llu with opaque textures; of those LOD far: %llu, %llu opaque (last 600 frames)",
-            (unsigned long long)m_foliageDraws, (unsigned long long)m_foliageOpaqueDraws,
-            (unsigned long long)m_foliageLodDraws, (unsigned long long)m_foliageLodOpaqueDraws);
+        Log("foliage: %llu draws, %llu of them far (LOD) (last 600 frames)", (unsigned long long)m_foliageDraws,
+            (unsigned long long)m_foliageLodDraws);
         Log("no-discard pipeline (early-Z): %llu draws (last 600 frames)", (unsigned long long)m_noCutDraws);
         Log("opaque-blend fast path: %llu draws (last 600 frames)", (unsigned long long)m_forceOpaqueDraws);
         m_ringPeak = 0;
         m_midFrameFlushes = 0;
         m_opaqueDraws = 0;
-        m_foliageDraws = m_foliageOpaqueDraws = m_foliageLodDraws = m_foliageLodOpaqueDraws = 0;
+        m_foliageDraws = m_foliageLodDraws = 0;
         m_noCutDraws = 0;
         m_forceOpaqueDraws = 0;
     }

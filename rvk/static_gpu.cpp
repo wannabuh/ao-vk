@@ -58,14 +58,27 @@ Device::ArenaChunk* Device::ArenaPlace(VkDeviceSize bytes, VkDeviceSize align, V
     return c;
 }
 
+// A slot is reused only once every submission that may still read it (the frames in flight, and the one being
+// recorded, whose earlier draws may use it) has completed: until then a new snapshot's upload would overwrite vertices
+// the GPU is drawing.
 void Device::ArenaFree(ArenaChunk* chunk, VkDeviceSize offset, VkDeviceSize bytes)
 {
     if (chunk)
-        chunk->free.push_back({offset, bytes});
+        m_deadArenaSlots.push_back({DeathTag(), chunk, offset, bytes});
+}
+
+void Device::CollectArenaSlots()
+{
+    auto done = std::remove_if(m_deadArenaSlots.begin(), m_deadArenaSlots.end(), [&](const DeadArenaSlot& d) {
+        if (d.tag > m_completed) return false;
+        d.chunk->free.push_back({d.offset, d.bytes});
+        return true;
+    });
+    m_deadArenaSlots.erase(done, m_deadArenaSlots.end());
 }
 
 VkBuffer Device::StaticBufferFor(const std::shared_ptr<const std::vector<uint8_t>>& data, VkDeviceSize* baseOffset,
-                                 VkDeviceSize align)
+                                 VkDeviceSize align, uint64_t* serial)
 {
     if (!m_staticResident || !data || data->empty() || !m_inFrame)
         return VK_NULL_HANDLE;
@@ -73,6 +86,7 @@ VkBuffer Device::StaticBufferFor(const std::shared_ptr<const std::vector<uint8_t
     g.lastFrame = m_frameNumber;
     if (g.chunk && g.data == data) {
         *baseOffset = g.offset;
+        *serial = g.serial;
         return g.chunk->buffer;
     }
     if (g.chunk) {                                   // another snapshot at the same address
@@ -91,6 +105,7 @@ VkBuffer Device::StaticBufferFor(const std::shared_ptr<const std::vector<uint8_t
     g.chunk = chunk;
     g.offset = offset;
     g.size = bytes;
+    g.serial = ++m_staticSerial;
     m_staticBytes += bytes;
     EnsureRingSpace(bytes + 64);
     void* cpu;
@@ -106,6 +121,7 @@ VkBuffer Device::StaticBufferFor(const std::shared_ptr<const std::vector<uint8_t
         Log("static geometry kept on the GPU (arena)");
     }
     *baseOffset = offset;
+    *serial = g.serial;
     return chunk->buffer;
 }
 
@@ -137,6 +153,7 @@ void Device::DestroyStaticGeometry()
     for (auto& c : m_staticArena)
         if (c->buffer) vmaDestroyBuffer(m_allocator, c->buffer, c->allocation);
     m_staticArena.clear();
+    m_deadArenaSlots.clear();
     m_staticGeometry.clear();
     m_staticBytes = 0;
 }
@@ -151,7 +168,7 @@ void Device::DrawShared(uint32_t primitive, uint32_t fvf, const std::shared_ptr<
     // shaders treat specially by format (pre-transformed interface quads come through the ring as before).
     if (stride && byteOffset % stride == 0 && (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ) {
         VkDeviceSize base = 0;
-        m_drawStaticBuffer = StaticBufferFor(data, &base, stride);
+        m_drawStaticBuffer = StaticBufferFor(data, &base, stride, &m_drawStaticSerial);
         m_drawStaticOffset = base + byteOffset;
     }
     Draw(primitive, fvf, data->data() + byteOffset, vertexCount, indices, indexCount);

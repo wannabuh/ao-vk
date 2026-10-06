@@ -95,6 +95,10 @@ void Device::ProfileSceneClass(int cls)
         return;
     static const char* names[] = {"", "scene opaque", "scene terrain base", "scene terrain light", "scene foliage"};
     if (m_sceneClass > 0 && m_sceneClass < int(sizeof(names) / sizeof(names[0]))) {
+        // The closing class's batched draws (M3) are still pending: issue them first, or the timestamp lands before
+        // them and their time is counted in the next class. Only while profiling (it can split a group).
+        if (m_profile[m_frameIndex].pool)
+            FlushGroup();
         ProfileMark(names[m_sceneClass]);
         ++m_sceneClassMarks;
     }
