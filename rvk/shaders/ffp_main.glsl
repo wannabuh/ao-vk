@@ -326,6 +326,15 @@ void main()
     gRecord = vRecord;
     gDiffuse = vDiffuse;
     gSpecular = vSpecular;
+#ifdef RVK_PREPASS_CUTOUT
+    // Depth only where the pixel is fully opaque in the end (prepass_cutout.frag): the same alpha as the cut-out test
+    // below (texture stages; the lit diffuse keeps the vertex alpha).
+    vec4 p0 = Sample(0u), p1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
+    float pa = Cascade(p0, p1, 1.0).a;
+    if ((C.flags.x & F_CUTOUT) != 0u ? pa < 1.0 : !AlphaPass(pa))
+        discard;
+}
+#else
     // Cut-out pixels (alpha test, F_CUTOUT) dropped before the lighting and shadows, not after: most of a plant's quad
     // is see-through. The alpha doesn't depend on the lighting (the lit diffuse keeps the vertex alpha). A dropped
     // pixel is demoted (a helper: its neighbours' derivatives still need it); a 2x2 block all dropped stops here.
@@ -555,3 +564,4 @@ void main()
         current.rgb *= 0.5;                               // blended as dst * src * 2
     outColor = current;
 }
+#endif

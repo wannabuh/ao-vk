@@ -65,6 +65,31 @@ bool Device::CreatePrepassPipeline(VkShaderModule vert)
         Log("depth pre-pass: pipeline creation failed; off");
         return false;
     }
+    // The cut-out pre-pass: the same, with prepass_cutout.frag (depth only where the pixel ends up fully opaque).
+    char off[8] = "";
+    if (GetEnvironmentVariableA("RANDYVK_PREPASS_CUTOUT", off, sizeof(off)) && off[0] == '0') {
+        Log("depth pre-pass: cut-outs kept out (RANDYVK_PREPASS_CUTOUT=0)");
+        return true;
+    }
+    static const uint32_t kCutoutSpirv[] = {
+#include "prepass_cutout.frag.inc"
+    };
+    VkShaderModuleCreateInfo mi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    mi.codeSize = sizeof(kCutoutSpirv);
+    mi.pCode = kCutoutSpirv;
+    VkShaderModule frag = VK_NULL_HANDLE;
+    if (vkCreateShaderModule(m_device, &mi, nullptr, &frag) != VK_SUCCESS)
+        return true;
+    VkPipelineShaderStageCreateInfo stages[2] = {
+        stage, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, frag, "main",
+                nullptr}};
+    ci.stageCount = 2;
+    ci.pStages = stages;
+    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, &m_prepassCutoutPipeline) != VK_SUCCESS) {
+        m_prepassCutoutPipeline = VK_NULL_HANDLE;
+        Log("depth pre-pass: cut-out pipeline creation failed; cut-outs kept out");
+    }
+    vkDestroyShaderModule(m_device, frag, nullptr);
     return true;
 }
 
@@ -161,14 +186,22 @@ uint32_t Device::PrepassCheck(uint32_t primitive, uint32_t fvf, bool swaying) co
         return kPreNoZWrite;
     if (zFunc != d3d::CMP_LESS && zFunc != d3d::CMP_LESSEQUAL)
         return kPreZFunc;
-    if (m_drawMayDiscard)                        // alpha tested and not blended (a pre-pass candidate), or cut out
-        return m_rs[d3d::RS_ALPHATESTENABLE] && !m_rs[d3d::RS_ALPHABLENDENABLE] ? kPreAlphaTest : kPreDiscard;
+    // Cut-outs - alpha tested and not blended, or blended cut-outs (F_CUTOUT) - go in with the cut-out pre-pass, which
+    // writes their depth only where their pixel ends up fully opaque (prepass_cutout.frag). Their main draw keeps its
+    // discard; what lies behind those pixels, hidden in the end anyway, is rejected early.
+    if (m_drawMayDiscard) {
+        bool alphaTested = m_rs[d3d::RS_ALPHATESTENABLE] && !m_rs[d3d::RS_ALPHABLENDENABLE];
+        if (!m_prepassCutoutPipeline || !(alphaTested || m_drawBlendCutout))
+            return alphaTested ? kPreAlphaTest : kPreDiscard;
+    }
     if (WaterWritesDepth(fvf))
         return kPreWater;
     if (!m_rs[d3d::RS_ALPHABLENDENABLE])
         return kPreIn;
     if (m_rs[d3d::RS_SRCBLEND] != d3d::BLEND_SRCALPHA || m_rs[d3d::RS_DESTBLEND] != d3d::BLEND_INVSRCALPHA)
         return kPreBlend;
+    if (m_drawMayDiscard)
+        return kPreIn;                           // a blended cut-out: its partly transparent pixels write no depth
     return AlphaOneCheck(fvf);
 }
 
@@ -291,7 +324,7 @@ void Device::PrepassDraw(uint32_t primitive, uint32_t fvf, uint32_t stride, uint
                          VkDeviceSize vbOffset, VkDeviceSize ibOffset, VkBuffer vb, VkBuffer ib,
                          VkDeviceSize frameLightsOffset, VkBuffer prevBuffer, VkDeviceSize prevOffset,
                          VkDeviceSize prevBytes, VkBuffer smoothBuffer, VkDeviceSize smoothOffset, VkDeviceSize smoothBytes,
-                         uint32_t recordIndex)
+                         uint32_t recordIndex, bool cutout)
 {
     Frame& f = m_frames[m_frameIndex];
     VkCommandBuffer cmd = f.prepass;
@@ -318,6 +351,12 @@ void Device::PrepassDraw(uint32_t primitive, uint32_t fvf, uint32_t stride, uint
         vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 2, w);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 1, 1, &m_bindlessSet, 0, nullptr);
         c.bound = true;
+        c.pipeline = 0;
+    }
+    int pipeline = cutout ? 1 : 0;               // (same layout: the dynamic state and the descriptors stay)
+    if (c.pipeline != pipeline) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, cutout ? m_prepassCutoutPipeline : m_prepassPipeline);
+        c.pipeline = pipeline;
     }
     if (c.topology != primitive) {
         vkCmdSetPrimitiveTopology(cmd, TopologyOf(primitive));

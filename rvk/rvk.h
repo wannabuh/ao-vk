@@ -760,6 +760,8 @@ private:
     float m_bloomStrength = 1.5f, m_bloomThreshold = 1.0f;
     float m_sunSoftness = 1.0f, m_leafLight = 1.0f, m_nightGlow = 1.5f, m_contact = 0.6f;
     bool m_drawMayDiscard = true;                // the current draw can cut out (alpha test / F_CUTOUT): pick the variant
+    bool m_drawBlendCutout = false;              // ... a blended cut-out (F_CUTOUT)
+    bool m_drawPrepassCutout = false;            // pre-passed with the cut-out pre-pass (prepass_cutout.frag)
     uint64_t m_noCutDraws = 0;                   // draws that took the no-discard pipeline (early-Z; logged)
     // Depth pre-pass (prepass.cpp). Armed at the scene's depth clear (the frame's main commands split there: Frame);
     // while armed, each opaque scene draw also draws its depth into the pre-pass, which runs before the scene's
@@ -780,8 +782,12 @@ private:
     uint64_t m_backdropDraws[5] = {};            // draws ignoring depth: culled, before the clear, after the segment,
                                                  // after depth was written, other (logged with the pre-pass)
     VkPipeline m_prepassPipeline = VK_NULL_HANDLE;   // ffp.vert only, depth attachment only
+    // ... and for cut-outs: depth only where the pixel ends up fully opaque (prepass_cutout.frag). Null: cut-outs stay
+    // out of the pre-pass (RANDYVK_PREPASS_CUTOUT=0, or the pipeline failed).
+    VkPipeline m_prepassCutoutPipeline = VK_NULL_HANDLE;
     struct PrepassCache {
         bool bound = false;                      // pipeline, front face, depth state, arrays, set 1
+        int pipeline = -1;                       // bound: 0 the plain pipeline, 1 the cut-out one
         uint32_t topology = ~0u, cull = ~0u, fvf = ~0u;
         VkViewport viewport{};
         VkRect2D scissor{};
@@ -812,7 +818,7 @@ private:
     void PrepassDraw(uint32_t primitive, uint32_t fvf, uint32_t stride, uint32_t vertexCount, uint32_t indexCount,
                      VkDeviceSize vbOffset, VkDeviceSize ibOffset, VkBuffer vb, VkBuffer ib,
                      VkDeviceSize frameLightsOffset, VkBuffer prevBuffer, VkDeviceSize prevOffset, VkDeviceSize prevBytes,
-                     VkBuffer smoothBuffer, VkDeviceSize smoothOffset, VkDeviceSize smoothBytes, uint32_t recordIndex);
+                     VkBuffer smoothBuffer, VkDeviceSize smoothOffset, VkDeviceSize smoothBytes, uint32_t recordIndex, bool cutout);
     uint32_t FrameCommands(Frame& f, VkCommandBuffer out[4]);   // what a submission runs (ends the pre-pass)
     void FrameCommandsSubmitted(Frame& f);       // back to one main command buffer
     // Shared with ApplyDynamicState: the D3D viewport as Vulkan's (and its scissor), the FVF's vertex input.

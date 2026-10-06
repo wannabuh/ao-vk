@@ -2137,6 +2137,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA)
         flags |= F_CUTOUT;
     m_drawMayDiscard = (flags & (F_ALPHATEST | F_CUTOUT)) != 0u;   // else the no-discard pipeline keeps early-Z
+    m_drawBlendCutout = (flags & F_CUTOUT) != 0u;
     // Night glow candidates: opaque 3D surfaces drawn unlit (self-lit, like windows and signs) or with an emissive
     // material - not effects, the sky, the ground or lighting passes.
     bool additive = m_rs[d3d::RS_ALPHABLENDENABLE] && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_ONE;
@@ -2277,6 +2278,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // scene's draws; its own depth test then passes on equal.
     uint32_t prepassWhy = PrepassCheck(primitive, fvf, swaying);
     m_drawPrepassed = prepassWhy == kPreIn;
+    m_drawPrepassCutout = m_drawPrepassed && m_drawMayDiscard;   // its depth only where fully opaque
     m_drawBackdrop = BackdropCull(fvf);
     if (m_scenePhase && m_target == m_scene && !m_external && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW &&
         !m_rs[d3d::RS_ZWRITEENABLE] && (!m_rs[d3d::RS_ZENABLE] || m_rs[d3d::RS_ZFUNC] == d3d::CMP_ALWAYS)) {
@@ -2351,7 +2353,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         PrepassDraw(primitive, fvf, layout.stride, vertexCount, indices ? indexCount : 0, vbOffset, ibOffset,
                     m_drawStaticBuffer ? m_drawStaticBuffer : f.ring, staticIb ? staticIb : f.ring, frameLightsOffset,
                     prevPositionsBuffer,
-                    prevPositionsOffset, prevPositionsBytes, smoothBuffer, smoothOffset, smoothBytes, recordIndex);
+                    prevPositionsOffset, prevPositionsBytes, smoothBuffer, smoothOffset, smoothBytes, recordIndex,
+                    m_drawPrepassCutout);
     if (!extending) {
     ApplyDynamicState(primitive, fvf, layout.stride);
     // The draw's buffers: the particles' own, a static snapshot's arena chunk (its indices retained there or in the
