@@ -1333,7 +1333,8 @@ void Device::BeginFrame()
     m_tessCharsPrev.swap(m_tessChars);           // characters drawn last frame (their rigid parts: TessellateDraw)
     m_tessChars.clear();
     m_windTimePrev = m_windTime;
-    m_windTime = std::fmod(SwayClock(), 3600.0);
+    m_frameClock = SwayClock();
+    m_windTime = std::fmod(m_frameClock, 3600.0);
     if (m_windTimePrev > m_windTime || m_windTime - m_windTimePrev > 0.25)
         m_windTimePrev = m_windTime;             // wrapped, or the first frame after a pause
     m_lightsPrev.swap(m_lightsCur);              // last frame's complete light set lights this frame

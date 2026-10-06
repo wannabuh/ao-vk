@@ -2305,10 +2305,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     dt.texIdx[1] = BindlessImage(texStage1);
     dt.texIdx[2] = BindlessImage(bumpBase);
     dt.texIdx[3] = BindlessImage(normalTex);
-    dt.sampIdx[0] = BindlessSampler(SamplerFor(0));
-    dt.sampIdx[1] = BindlessSampler(SamplerFor(1));
-    dt.sampIdx[2] = BindlessSampler(m_bumpSampler);
-    dt.sampIdx[3] = BindlessSampler(m_normalSampler);
+    dt.sampIdx[0] = StageSamplerSlot(0);
+    dt.sampIdx[1] = StageSamplerSlot(1);
+    dt.sampIdx[2] = FixedSamplerSlot(0, m_bumpSampler);
+    dt.sampIdx[3] = FixedSamplerSlot(1, m_normalSampler);
     // GPU-driven M2: this draw's record, and the frame's two arrays (bindings 0 = constants, 12 = records) pushed
     // once per frame's command buffer. The record index travels in firstInstance (gl_InstanceIndex).
     uint32_t recordIndex = AppendRecord(constIndex, dt);

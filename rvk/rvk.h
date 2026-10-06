@@ -951,6 +951,7 @@ private:
     uint32_t m_lightMaskDiff = 0;
     void Wind(float out[4]) const;               // direction x, z, time, strength
     double m_windTime = 0.0, m_windTimePrev = 0.0;   // this frame's and last frame's (set at the frame's start)
+    double m_frameClock = 0.0;                   // SwayClock at the frame's start (per-caster bookkeeping)
     bool m_taa = true;
     float m_sharpen = 0.4f;
     float m_taaJitter[2] = {};                   // this frame's jitter, clip units (FrameLights taa)
@@ -1385,6 +1386,15 @@ private:
     uint32_t RegisterBindlessSampler(VkSampler s);
     uint32_t BindlessImage(Texture* t);          // its slot, registering it on first use (main targets predate the set)
     uint32_t BindlessSampler(VkSampler s);       // its slot, registering it on first use
+    // A draw's sampler slots without the two map lookups (SamplerFor, then the slot) per sampler: each stage's last
+    // sampler state and slot, and the last slot of each fixed sampler (bump, normal map) by handle.
+    uint64_t SamplerKey(uint32_t stage) const;
+    uint32_t StageSamplerSlot(uint32_t stage);
+    uint32_t FixedSamplerSlot(uint32_t which, VkSampler s);
+    uint64_t m_stageSamplerKey[2] = {~0ull, ~0ull};
+    uint32_t m_stageSamplerSlot[2] = {};
+    VkSampler m_fixedSampler[2] = {};
+    uint32_t m_fixedSamplerSlot[2] = {};
     bool m_bindlessBound = false;                // set 1 bound in this frame's command buffer
     std::array<VkPipeline, 3> m_pipelines{};   // per topology class: points, lines, triangles
     VkBuffer m_nullBuffer = VK_NULL_HANDLE;    // zeros, bound at stride 0 for attributes a format lacks

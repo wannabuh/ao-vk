@@ -440,7 +440,7 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     auto cached = m_casterCache.find(key);
     if (cached != m_casterCache.end()) {
         CachedCaster& e = cached->second;
-        double now = SwayClock();
+        double now = m_frameClock;               // per frame: a clock read per caster costs more than it buys
         e.lastSeen = m_frameNumber;
         e.lastSeenTime = now;
         if (std::memcmp(&e.world, &m_world, sizeof(m_world)) != 0) {
@@ -538,7 +538,7 @@ void Device::CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertic
     e.kind = c.kind;
     std::memcpy(e.plantSway, c.sway, sizeof(e.plantSway));
     e.lastSeen = m_frameNumber;
-    e.lastSeenTime = SwayClock();
+    e.lastSeenTime = m_frameClock;
     e.lastSwaySample = -1.0;
     // World-space bounds.
     for (int i = 0; i < 3; ++i) { e.boundsMin[i] = 1e30f; e.boundsMax[i] = -1e30f; }

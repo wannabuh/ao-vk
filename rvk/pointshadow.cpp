@@ -50,6 +50,33 @@ d3d::Matrix FaceViewProj(int face, const float light[3], float nearPlane, float 
     return m;
 }
 
+// Which of a cube's six faces (bit = Vulkan face index) a box can reach, from the light at `p`: a face's frustum is
+// w = d[major] * sign >= near with |d[other]| <= w for both other axes, d = point - light. Each plane is tested
+// against the box's extreme corner - BoxInClip's test with each face's matrix, without the eight corner transforms
+// per face. (The far plane is the light's range, which the caller's sphere test already holds.) A small margin keeps
+// boxes touching a face's edge in it, as the matrix test's rounding might.
+uint32_t CubeFaceMask(const float mn[3], const float mx[3], const float p[3], float nearPlane)
+{
+    constexpr float kMargin = 1e-3f;
+    float lo[3], hi[3];
+    for (int j = 0; j < 3; ++j) {
+        lo[j] = mn[j] - p[j];
+        hi[j] = mx[j] - p[j];
+    }
+    uint32_t mask = 0;
+    for (int axis = 0; axis < 3; ++axis) {
+        int b = axis == 0 ? 1 : 0, c = axis == 2 ? 1 : 2;
+        for (int sign = 0; sign < 2; ++sign) {
+            float w = sign ? -lo[axis] : hi[axis];   // the box's largest distance along the face's axis
+            if (w + kMargin < nearPlane || w + kMargin < lo[b] || w + kMargin < -hi[b] || w + kMargin < lo[c] ||
+                w + kMargin < -hi[c])
+                continue;
+            mask |= 1u << (axis * 2 + sign);
+        }
+    }
+    return mask;
+}
+
 // Squared distance from a point to a box (0 inside).
 float BoxDistance2(const float mn[3], const float mx[3], const float p[3])
 {
@@ -516,6 +543,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
     BindShadowRecords(cmd);                       // M4: the casters' records (binding 1)
 
     std::vector<uint32_t> inRange;               // casters within the current light's range
+    std::vector<uint8_t> inRangeFaces;           // and the cube faces each can reach (CubeFaceMask)
     ShadowBind bind;
     bool stateSet = false;                       // viewport, scissor and depth bias for the cube faces
     for (uint32_t k = 0; k < count; ++k) {
@@ -551,6 +579,7 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             }
         }
         inRange.clear();
+        inRangeFaces.clear();
         // Batch-key order (CollectShadowItems): longer batches per face. The boxes come packed in that order
         // (m_shadowOrderBox): this scan runs per light over every caster.
         const float* box = m_shadowOrderBox.data();
@@ -567,7 +596,11 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             bool housing = d2 == 0.0f && extent < 1.5f;              // smaller than a character
             if (housing)
                 continue;
+            uint32_t faces = CubeFaceMask(box, box + 3, pos, kPointShadowNear);
+            if (!faces)
+                continue;
             inRange.push_back(i);
+            inRangeFaces.push_back(uint8_t(faces));
         }
         pointScanMs += ProfileCpu() - scanStart;
         double drawStart = ProfileCpu();
@@ -593,11 +626,10 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             }
             d3d::Matrix vp = FaceViewProj(face, pos, kPointShadowNear, l.range);
             ShadowPassMatrix(cmd, vp);
-            for (uint32_t i : inRange) {
-                ShadowItem& it = m_shadowItems[i];
-                if (BoxInClip(it.boundsMin, it.boundsMax, vp, true) == -1)
+            for (size_t n = 0; n < inRange.size(); ++n) {
+                if (!(inRangeFaces[n] >> face & 1u))
                     continue;
-                DrawShadowItem(cmd, bind, it);
+                DrawShadowItem(cmd, bind, m_shadowItems[inRange[n]]);
                 ++m_pointShadowDraws;
             }
             FlushShadowGroup(cmd);               // this face's batch (M4)

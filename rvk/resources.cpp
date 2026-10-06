@@ -453,14 +453,52 @@ uint32_t Device::RegisterBindlessSampler(VkSampler s)
     return index;
 }
 
+uint64_t Device::SamplerKey(uint32_t stage) const
+{
+    const auto& t = m_tss[stage];
+    return uint64_t(t[d3d::TSS_MAGFILTER] & 7) | uint64_t(t[d3d::TSS_MINFILTER] & 7) << 3 |
+           uint64_t(t[d3d::TSS_MIPFILTER] & 7) << 6 | uint64_t(t[d3d::TSS_ADDRESSU] & 7) << 9 |
+           uint64_t(t[d3d::TSS_ADDRESSV] & 7) << 12 | uint64_t(t[d3d::TSS_MAXMIPLEVEL] & 15) << 15 |
+           uint64_t(t[d3d::TSS_BORDERCOLOR] >> 24 ? 1 : 0) << 19 |
+           uint64_t(m_anisotropy) << 20;        // samplers made at another level stay valid for work in flight
+}
+
+// Samplers are never destroyed while the device lives (SamplerFor's map owns them), so a stage whose sampler state
+// is unchanged keeps its slot. Only a successful registration is remembered.
+uint32_t Device::StageSamplerSlot(uint32_t stage)
+{
+    if (!m_bindless)
+        return 0;
+    uint64_t key = SamplerKey(stage);
+    if (key == m_stageSamplerKey[stage])
+        return m_stageSamplerSlot[stage];
+    uint32_t index = RegisterBindlessSampler(SamplerFor(stage));
+    if (index == ~0u)
+        return 0;
+    m_stageSamplerKey[stage] = key;
+    m_stageSamplerSlot[stage] = index;
+    return index;
+}
+
+uint32_t Device::FixedSamplerSlot(uint32_t which, VkSampler s)
+{
+    if (!m_bindless)
+        return 0;
+    if (s && s == m_fixedSampler[which])
+        return m_fixedSamplerSlot[which];
+    uint32_t index = RegisterBindlessSampler(s);
+    if (index == ~0u)
+        return 0;
+    m_fixedSampler[which] = s;
+    m_fixedSamplerSlot[which] = index;
+    return index;
+}
+
 VkSampler Device::SamplerFor(uint32_t stage)
 {
     const auto& t = m_tss[stage];
     uint32_t addrU = t[d3d::TSS_ADDRESSU], addrV = t[d3d::TSS_ADDRESSV];
-    uint64_t key = uint64_t(t[d3d::TSS_MAGFILTER] & 7) | uint64_t(t[d3d::TSS_MINFILTER] & 7) << 3 |
-                   uint64_t(t[d3d::TSS_MIPFILTER] & 7) << 6 | uint64_t(addrU & 7) << 9 | uint64_t(addrV & 7) << 12 |
-                   uint64_t(t[d3d::TSS_MAXMIPLEVEL] & 15) << 15 | uint64_t(t[d3d::TSS_BORDERCOLOR] >> 24 ? 1 : 0) << 19 |
-                   uint64_t(m_anisotropy) << 20;        // samplers made at another level stay valid for work in flight
+    uint64_t key = SamplerKey(stage);
     auto it = m_samplers.find(key);
     if (it != m_samplers.end())
         return it->second;
