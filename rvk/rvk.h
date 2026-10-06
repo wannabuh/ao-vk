@@ -691,7 +691,10 @@ private:
     bool m_sceneSaw3D = false;
     uint32_t m_sceneEndDraw = 0, m_sceneEndFvf = 0;   // frame dumps: where the scene phase ended
     VkPipeline m_pipelinesHdr[3] = {};           // m_pipelines for the float target
+    VkPipeline m_pipelinesNoCut[3] = {};         // ... and the no-discard variant (early-Z; no cut-out)
+    VkPipeline m_pipelinesHdrNoCut[3] = {};
     VkPipeline m_tessPipelines[2] = {};          // characters' Phong tessellation: 8-bit target, float target
+    VkPipeline m_tessPipelinesNoCut[2] = {};     // ... no-discard
     bool m_tessSupported = false;
     // Phong tessellation of characters near the camera (draw.cpp TessellateDraw): RVK_Tess*.
     float m_tessShape = 0.0f;                    // 0 = off; how far towards the smooth shape (Phong's alpha)
@@ -719,6 +722,8 @@ private:
     float m_bloomStrength = 1.5f, m_bloomThreshold = 1.0f;
     float m_sunSoftness = 1.0f, m_leafLight = 1.0f, m_nightGlow = 1.5f, m_contact = 0.6f;
     bool m_foliage = false;                      // the foliage flag/LOD (off: it matched ~96% of statics; see Draw)
+    bool m_drawMayDiscard = true;                // the current draw can cut out (alpha test / F_CUTOUT): pick the variant
+    uint64_t m_noCutDraws = 0;                   // draws that took the no-discard pipeline (early-Z; logged)
     Texture* m_contactTex[2] = {};               // half resolution: contact shadow (1 = lit), view depth (ping-pong)
     VkPipeline m_contactPipeline = VK_NULL_HANDLE;
     bool RenderContactShadows(VkCommandBuffer cmd);

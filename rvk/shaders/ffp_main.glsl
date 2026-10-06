@@ -329,6 +329,7 @@ void main()
     // Cut-out pixels (alpha test, F_CUTOUT) dropped before the lighting and shadows, not after: most of a plant's quad
     // is see-through. The alpha doesn't depend on the lighting (the lit diffuse keeps the vertex alpha). A dropped
     // pixel is demoted (a helper: its neighbours' derivatives still need it); a 2x2 block all dropped stops here.
+#ifndef RVK_NO_CUTOUT
     bool drop = false;
     if ((C.flags.x & (F_ALPHATEST | F_CUTOUT)) != 0u) {
         vec4 e0 = Sample(0u), e1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
@@ -341,6 +342,7 @@ void main()
         discard;                                          // demote (Device: shaderDemoteToHelperInvocation)
         if (q0 && q1 && q2 && q3) return;
     }
+#endif
     // Shadow: lit draws scale the sunlight (per-pixel lighting), others darken their final colour.
     float shade = 1.0, localScale = 1.0, texShade = 1.0;
     if ((C.flags.x & (F_SHADOW | F_SHADOWCOMP | F_SHADOWTEX)) != 0u) {
@@ -528,10 +530,12 @@ void main()
                   : vec3(0.1, 1.0, 0.2);
         current.rgb = mix(current.rgb, tint, 0.45);
     }
+#ifndef RVK_NO_CUTOUT
     if ((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(current.a))
         discard;
     if ((C.flags.x & F_CUTOUT) != 0u && current.a < vCutout)
         discard;
+#endif
     // An additive effect adds what it adds to the scene to the glow too, for the bloom.
 #ifdef RVK_GLOW
     vec3 glow = vec3(0.0);

@@ -52,6 +52,12 @@ const uint32_t kFragSpirv[] = {
 const uint32_t kFragGlowSpirv[] = {             // the HDR scene's: also writes the glow attachment
 #include "ffp_glow.frag.inc"
 };
+const uint32_t kFragNoCutSpirv[] = {            // no discard: a draw that never cuts out keeps early-Z
+#include "ffp_nocut.frag.inc"
+};
+const uint32_t kFragGlowNoCutSpirv[] = {
+#include "ffp_glow_nocut.frag.inc"
+};
 
 // Access/stage masks to go with an image layout, for barriers.
 void LayoutUse(VkImageLayout layout, VkPipelineStageFlags2* stage, VkAccessFlags2* access)
@@ -180,7 +186,10 @@ Device::~Device()
     for (auto& [key, sampler] : m_samplers) vkDestroySampler(m_device, sampler, nullptr);
     for (VkPipeline p : m_pipelines) if (p) vkDestroyPipeline(m_device, p, nullptr);
     for (VkPipeline p : m_pipelinesHdr) if (p) vkDestroyPipeline(m_device, p, nullptr);
+    for (VkPipeline p : m_pipelinesNoCut) if (p) vkDestroyPipeline(m_device, p, nullptr);
+    for (VkPipeline p : m_pipelinesHdrNoCut) if (p) vkDestroyPipeline(m_device, p, nullptr);
     for (VkPipeline p : m_tessPipelines) if (p) vkDestroyPipeline(m_device, p, nullptr);
+    for (VkPipeline p : m_tessPipelinesNoCut) if (p) vkDestroyPipeline(m_device, p, nullptr);
     DestroyShadowResources();
     DestroyPointShadowResources();
     DestroyHdrResources();
@@ -707,9 +716,11 @@ bool Device::CreatePipelines(std::string* error)
         ci.pCode = code;
         return Check(vkCreateShaderModule(m_device, &ci, nullptr, out), "vkCreateShaderModule", error);
     };
-    VkShaderModule vert, frag, fragGlow;
+    VkShaderModule vert, frag, fragGlow, fragNoCut, fragGlowNoCut;
     if (!module(kVertSpirv, sizeof(kVertSpirv), &vert) || !module(kFragSpirv, sizeof(kFragSpirv), &frag) ||
-        !module(kFragGlowSpirv, sizeof(kFragGlowSpirv), &fragGlow))
+        !module(kFragGlowSpirv, sizeof(kFragGlowSpirv), &fragGlow) ||
+        !module(kFragNoCutSpirv, sizeof(kFragNoCutSpirv), &fragNoCut) ||
+        !module(kFragGlowNoCutSpirv, sizeof(kFragGlowNoCutSpirv), &fragGlowNoCut))
         return false;
 
     VkPipelineShaderStageCreateInfo stages[2] = {
@@ -752,12 +763,14 @@ bool Device::CreatePipelines(std::string* error)
                                                           VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
                                                           VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
     bool ok = true;
-    // One set for the 8-bit targets, one for the HDR scene (float).
+    // One set for the 8-bit targets, one for the HDR scene (float); each also as a no-discard variant (early-Z for
+    // draws that never cut out).
     for (int set = 0; set < 2 && ok; ++set)
+    for (int nc = 0; nc < 2 && ok; ++nc)
     for (int c = 0; c < 3 && ok; ++c) {
         colorFormats[0] = set ? GetFormatInfo(Format::RGBA16F).vk : kColorFormat;
         rendering.colorAttachmentCount = cb.attachmentCount = set ? 5 : 1;
-        stages[1].module = set ? fragGlow : frag;
+        stages[1].module = nc ? (set ? fragGlowNoCut : fragNoCut) : (set ? fragGlow : frag);
         VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         ia.topology = kClassTopology[c];
         VkGraphicsPipelineCreateInfo ci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -772,7 +785,9 @@ bool Device::CreatePipelines(std::string* error)
         ci.pColorBlendState = &cb;
         ci.pDynamicState = &ds;
         ci.layout = m_pipelineLayout;
-        ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, set ? &m_pipelinesHdr[c] : &m_pipelines[c]),
+        VkPipeline* dst = set ? (nc ? &m_pipelinesHdrNoCut[c] : &m_pipelinesHdr[c])
+                              : (nc ? &m_pipelinesNoCut[c] : &m_pipelines[c]);
+        ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, dst),
                    "vkCreateGraphicsPipelines", error);
     }
     // Characters' Phong tessellation: triangles as 3-point patches, through ffp.tesc / ffp.tese (both targets).
@@ -790,10 +805,11 @@ bool Device::CreatePipelines(std::string* error)
         VkPipelineTessellationStateCreateInfo ts{VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO};
         ts.pNext = &origin;
         ts.patchControlPoints = 3;
-        for (int set = 0; set < 2 && ok; ++set) {
+        for (int set = 0; set < 2 && ok; ++set)
+        for (int nc = 0; nc < 2 && ok; ++nc) {
             colorFormats[0] = set ? GetFormatInfo(Format::RGBA16F).vk : kColorFormat;
             rendering.colorAttachmentCount = cb.attachmentCount = set ? 5 : 1;
-            tstages[3].module = set ? fragGlow : frag;
+            tstages[3].module = nc ? (set ? fragGlowNoCut : fragNoCut) : (set ? fragGlow : frag);
             VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
             ia.topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
             VkGraphicsPipelineCreateInfo ci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -809,7 +825,8 @@ bool Device::CreatePipelines(std::string* error)
             ci.pColorBlendState = &cb;
             ci.pDynamicState = &ds;
             ci.layout = m_pipelineLayout;
-            ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, &m_tessPipelines[set]),
+            VkPipeline* dst = nc ? &m_tessPipelinesNoCut[set] : &m_tessPipelines[set];
+            ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, dst),
                        "tessellation pipeline", error);
         }
     }
@@ -1267,10 +1284,12 @@ void Device::BeginFrame()
         Log("foliage class: %llu draws, %llu with opaque textures; of those LOD far: %llu, %llu opaque (last 600 frames)",
             (unsigned long long)m_foliageDraws, (unsigned long long)m_foliageOpaqueDraws,
             (unsigned long long)m_foliageLodDraws, (unsigned long long)m_foliageLodOpaqueDraws);
+        Log("no-discard pipeline (early-Z): %llu draws (last 600 frames)", (unsigned long long)m_noCutDraws);
         m_ringPeak = 0;
         m_midFrameFlushes = 0;
         m_opaqueDraws = 0;
         m_foliageDraws = m_foliageOpaqueDraws = m_foliageLodDraws = m_foliageLodOpaqueDraws = 0;
+        m_noCutDraws = 0;
     }
     ++m_ringGeneration;                          // a different slot's ring: cached offsets are invalid
     BeginSkinFrame();

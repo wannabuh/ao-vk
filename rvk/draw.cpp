@@ -1359,12 +1359,19 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     StateCache& c = m_cache;
     uint32_t topoClass = TopologyClass(primitive);
     bool hdrTarget = m_target->m_format == Format::RGBA16F;
-    // Pipeline classes: 0-2 points / lines / triangles, 3-5 the same for the float target, 6 / 7 tessellated.
-    uint32_t pipelineClass = m_drawTess ? 6u + (hdrTarget ? 1u : 0u) : topoClass + (hdrTarget ? 3u : 0u);
+    // Pipeline classes: 0-2 points / lines / triangles, 3-5 the same for the float target, 6 / 7 tessellated; +12
+    // for the no-discard variant (a draw that never cuts out keeps early-Z).
+    uint32_t colorClass = m_drawTess ? 6u + (hdrTarget ? 1u : 0u) : topoClass + (hdrTarget ? 3u : 0u);
+    uint32_t pipelineClass = colorClass + (m_drawMayDiscard ? 0u : 12u);
     if (c.topologyClass != pipelineClass) {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          m_drawTess ? m_tessPipelines[hdrTarget ? 1 : 0]
-                          : pipelineClass >= 3 ? m_pipelinesHdr[topoClass] : m_pipelines[topoClass]);
+        VkPipeline pipeline;
+        if (m_drawTess)
+            pipeline = m_drawMayDiscard ? m_tessPipelines[hdrTarget ? 1 : 0] : m_tessPipelinesNoCut[hdrTarget ? 1 : 0];
+        else if (hdrTarget)
+            pipeline = m_drawMayDiscard ? m_pipelinesHdr[topoClass] : m_pipelinesHdrNoCut[topoClass];
+        else
+            pipeline = m_drawMayDiscard ? m_pipelines[topoClass] : m_pipelinesNoCut[topoClass];
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         c.topologyClass = pipelineClass;
     }
     constexpr uint32_t kPatchTopology = 0x100;   // c.topology while a tessellated draw's patch list is set
@@ -1996,6 +2003,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (solid3d && !cutoutTexture && m_rs[d3d::RS_ALPHABLENDENABLE] && !m_rs[d3d::RS_ALPHATESTENABLE] &&
         m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_SRCALPHA && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_INVSRCALPHA)
         flags |= F_CUTOUT;
+    m_drawMayDiscard = (flags & (F_ALPHATEST | F_CUTOUT)) != 0u;   // else the no-discard pipeline keeps early-Z
+    if (!m_drawMayDiscard) ++m_noCutDraws;
     // Night glow candidates: opaque 3D surfaces drawn unlit (self-lit, like windows and signs) or with an emissive
     // material - not effects, the sky, the ground or lighting passes.
     bool additive = m_rs[d3d::RS_ALPHABLENDENABLE] && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_ONE;
