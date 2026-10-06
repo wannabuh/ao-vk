@@ -13,6 +13,7 @@
 // +0xBC D3DVIEWPORT7, +0xD8 two D3DMATERIAL7 (0x44 each, the device's material double-buffered), +0x160 which is
 // current, +0x164 the visual being drawn, +0x170 rectangle changed.
 #include "native/viewport.h"
+#include "native/device.h"
 #include "native/orig_api.gen.h"
 #include "native/scene.h"
 #include "native/vc10.h"
@@ -440,6 +441,7 @@ void DebugTargetTouch(uint8_t* vp)
 void __fastcall RenderLists(uint8_t* vp, void*, int32_t listFrom, int32_t listTo, uint32_t type, uint32_t from,
                             uint32_t to)
 {
+    device::GameTimer timer("game: scene render (render lists)");
     void* previous = scene::EnterRender(vp);
     if (Field<void*>(vp, 0xC)) {
         Update(vp);
@@ -457,6 +459,7 @@ void __fastcall RenderLists(uint8_t* vp, void*, int32_t listFrom, int32_t listTo
 void __fastcall RenderRefraction(uint8_t* vp, void*, int32_t listFrom, int32_t listTo, uint32_t type, uint32_t from,
                                  uint32_t to)
 {
+    device::GameTimer timer("game: scene render (refraction)");
     void* previous = scene::EnterRender(vp);
     if (Field<void*>(vp, 0xC)) {
         Update(vp);                                 // FUN_1004b0c0
@@ -474,6 +477,7 @@ void __fastcall RenderRefraction(uint8_t* vp, void*, int32_t listFrom, int32_t l
 // themselves), each light onto the device.
 void __fastcall Process(uint8_t* vp, void*, void* root)
 {
+    device::GameTimer timer("game: scene update (process)");
     Field<float>(vp, 0x168) = 1000.0f;
     Field<uint32_t>(vp, 0x16C) = 0;
     Field<uint32_t>(Randy(), 0x288) &= 7;

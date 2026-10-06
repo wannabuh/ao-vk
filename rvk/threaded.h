@@ -14,6 +14,7 @@
 #include "skin.h"
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <cstdint>
 #include <cstring>
@@ -61,6 +62,9 @@ public:
         rvk::Texture* texture;
     };
     void SetStates(const StateItem* items, uint32_t count);
+    // Game-thread time in a named part of the frame (native scene code; `name` a string literal): summed per frame
+    // and handed to the profile with the frame's start.
+    void AddGameSection(const char* name, double ms);
     void SetTransform(uint32_t type, const d3d::Matrix& m);
     void SetMaterial(const d3d::Material& m);
     void SetLight(uint32_t index, const d3d::Light& light);
@@ -220,6 +224,10 @@ private:
     bool KeepRenderState(uint32_t state, uint32_t value);              // false: a repeat (counted)
     bool KeepStageState(uint32_t stage, uint32_t type, uint32_t value);
     std::vector<StateItem> m_stateScratch;             // SetStates: the items kept
+    std::vector<std::pair<const char*, double>> m_gameSections;   // this frame's AddGameSection sums
+    // This frame's draws by how their data crossed the hand-off (the profile's 'hand-off draws' line).
+    struct DrawStats { uint64_t copied = 0, vertexBytes = 0, shared = 0, skinned = 0, indexBytes = 0; } m_drawStats;
+    std::chrono::steady_clock::time_point m_lastEndFrame{};       // the game thread's frame (EndFrame to EndFrame)
     struct SentState {
         uint32_t rs[256];
         bool rsValid[256];

@@ -600,6 +600,35 @@ const char* __fastcall StatsNameName(void*, void*, uint32_t) { return "Unknown";
 
 void SetDirect(const Direct* direct) { g_direct = direct; }
 
+namespace {
+int g_timerDepth;                                   // GameTimer nesting (the game thread's)
+double g_qpcMs;                                     // milliseconds per QueryPerformanceCounter tick
+}
+
+GameTimer::GameTimer(const char* name) : m_name(name)
+{
+    if (g_timerDepth++ || !g_direct || !g_direct->gameSection)
+        return;
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    m_start = t.QuadPart;
+}
+
+GameTimer::~GameTimer()
+{
+    --g_timerDepth;
+    if (!m_start || !g_direct || !g_direct->gameSection)
+        return;
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    if (g_qpcMs == 0.0) {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        g_qpcMs = 1000.0 / double(f.QuadPart);
+    }
+    g_direct->gameSection(m_name, double(t.QuadPart - m_start) * g_qpcMs);
+}
+
 uint32_t FormatSize(uint32_t fvf)                   // FUN_100116c7
 {
     uint32_t size = 0;

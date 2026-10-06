@@ -253,16 +253,37 @@ void ThreadedDevice::BeginFrame()
     m_frameRecords = m_frameBytes = m_frameRepeats = 0;
     std::fill(std::begin(m_sent->lightValid), std::end(m_sent->lightValid), false);   // see SentState
     std::fill(std::begin(m_sent->enabledValid), std::end(m_sent->enabledValid), false);
-    Enqueue([this, callerNs, records, bytes, repeats](const uint8_t*) {
+    // The previous frame's game-thread sections (at most a handful), as a fixed array in the record.
+    struct Sections { std::pair<const char*, double> s[8]; uint32_t n = 0; } sections;
+    for (const auto& g : m_gameSections)
+        if (sections.n < 8) sections.s[sections.n++] = g;
+    m_gameSections.clear();
+    DrawStats draws = m_drawStats;
+    m_drawStats = {};
+    Enqueue([this, callerNs, records, bytes, repeats, sections, draws](const uint8_t*) {
         m_device.ProfileAddCaller(double(callerNs) * 1e-6);
         m_device.ProfileAddCallerQueue(records, bytes, repeats);
+        m_device.ProfileAddCallerDraws(draws.copied, draws.vertexBytes, draws.shared, draws.skinned, draws.indexBytes);
         m_device.BeginFrame();
+        for (uint32_t i = 0; i < sections.n; ++i)   // after BeginFrame: its log (if due) has gone out
+            m_device.ProfileCpuAddMs(sections.s[i].first, sections.s[i].second);
     });
+}
+
+void ThreadedDevice::AddGameSection(const char* name, double ms)
+{
+    for (auto& g : m_gameSections)
+        if (g.first == name) { g.second += ms; return; }
+    m_gameSections.push_back({name, ms});
 }
 
 void ThreadedDevice::EndFrame()
 {
     m_inFrame = false;
+    auto now = std::chrono::steady_clock::now();     // profiling: the game thread's whole frame
+    if (m_lastEndFrame.time_since_epoch().count())
+        AddGameSection("game thread frame", std::chrono::duration<double, std::milli>(now - m_lastEndFrame).count());
+    m_lastEndFrame = now;
     Enqueue([this](const uint8_t*) {
         m_device.EndFrame();
         m_framesDone.fetch_add(1, std::memory_order_release);
@@ -754,6 +775,8 @@ void ThreadedDevice::EndParticleEmitter()
 void ThreadedDevice::DrawPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount)
 {
     uint32_t bytes = FvfStride(fvf) * vertexCount;
+    m_drawStats.copied++;
+    m_drawStats.vertexBytes += bytes;
     Enqueue([this, primitive, fvf, vertexCount](const uint8_t* data) {
         m_device.DrawPrimitive(primitive, fvf, data, vertexCount);
     }, vertices, bytes);
@@ -764,6 +787,9 @@ void ThreadedDevice::DrawIndexedPrimitive(uint32_t primitive, uint32_t fvf, cons
 {
     // One record holds both arrays: vertices, then indices.
     uint32_t vbytes = FvfStride(fvf) * vertexCount, ibytes = indexCount * 2;
+    m_drawStats.copied++;
+    m_drawStats.vertexBytes += vbytes;
+    m_drawStats.indexBytes += ibytes;
     auto run = [this, primitive, fvf, vertexCount, indexCount, vbytes](const uint8_t* data) {
         m_device.DrawIndexedPrimitive(primitive, fvf, data, vertexCount, reinterpret_cast<const uint16_t*>(data + vbytes),
                                       indexCount);
@@ -785,6 +811,7 @@ void ThreadedDevice::DrawIndexedPrimitive(uint32_t primitive, uint32_t fvf, cons
 void ThreadedDevice::DrawPrimitiveShared(uint32_t primitive, uint32_t fvf, const SharedVertices& data, size_t byteOffset,
                                          uint32_t vertexCount)
 {
+    m_drawStats.shared++;
     Enqueue([this, primitive, fvf, vertexCount, data, byteOffset](const uint8_t*) {
         m_device.DrawShared(primitive, fvf, data, byteOffset, vertexCount, nullptr, 0);
     });
@@ -794,6 +821,8 @@ void ThreadedDevice::DrawIndexedPrimitiveShared(uint32_t primitive, uint32_t fvf
                                                 size_t byteOffset, uint32_t vertexCount, const uint16_t* indices,
                                                 uint32_t indexCount)
 {
+    m_drawStats.shared++;
+    m_drawStats.indexBytes += indexCount * 2;
     Enqueue([this, primitive, fvf, vertexCount, indexCount, data, byteOffset](const uint8_t* idx) {
         m_device.DrawShared(primitive, fvf, data, byteOffset, vertexCount, reinterpret_cast<const uint16_t*>(idx),
                             indexCount);
@@ -817,6 +846,7 @@ void ThreadedDevice::DrawPrimitiveSkinned(uint32_t primitive, uint32_t fvf, cons
 {
     if (!job || size_t(startVertex) + vertexCount > job->source->vertices.size())
         return;
+    m_drawStats.skinned++;
     Enqueue([this, primitive, fvf, job, startVertex, vertexCount](const uint8_t*) {
         m_device.DrawSkinned(primitive, fvf, *job, startVertex, vertexCount, nullptr, 0);
     });
@@ -828,6 +858,7 @@ void ThreadedDevice::DrawIndexedPrimitiveSkinned(uint32_t primitive, uint32_t fv
 {
     if (!job || size_t(startVertex) + vertexCount > job->source->vertices.size())
         return;
+    m_drawStats.skinned++;
     // The piece's own triangles (as almost always): the job's copy of them, no copy per draw.
     const skin::Source& source = *job->source;
     if (indices == source.gameIndices && indexCount <= source.indices.size()) {
@@ -837,6 +868,7 @@ void ThreadedDevice::DrawIndexedPrimitiveSkinned(uint32_t primitive, uint32_t fv
         });
         return;
     }
+    m_drawStats.indexBytes += indexCount * 2;
     Enqueue([this, primitive, fvf, job, startVertex, vertexCount, indexCount](const uint8_t* idx) {
         m_device.DrawSkinned(primitive, fvf, *job, startVertex, vertexCount, reinterpret_cast<const uint16_t*>(idx),
                              indexCount);

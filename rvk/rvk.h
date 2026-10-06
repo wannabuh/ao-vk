@@ -1340,6 +1340,17 @@ public:
         m_profileCallerRepeats += repeats;
     }
     uint64_t m_profileCallerRecords = 0, m_profileCallerBytes = 0, m_profileCallerRepeats = 0;
+    // ... and its draws: vertices copied (count, bytes), shared vertex buffers, skinned pieces, indices copied (bytes).
+    void ProfileAddCallerDraws(uint64_t copied, uint64_t vertexBytes, uint64_t shared, uint64_t skinned,
+                               uint64_t indexBytes)
+    {
+        m_profileHandoff[0] += copied;
+        m_profileHandoff[1] += vertexBytes;
+        m_profileHandoff[2] += shared;
+        m_profileHandoff[3] += skinned;
+        m_profileHandoff[4] += indexBytes;
+    }
+    uint64_t m_profileHandoff[5] = {};
     uint64_t m_profileDraws = 0, m_profileGroupCalls = 0, m_profileGroupDraws = 0, m_profileConstBlocks = 0,
              m_profileConstReused = 0;   // the draws' batching (summed per frame for the log)
     std::atomic<uint64_t> m_profileGameWaitUs{0};

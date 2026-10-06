@@ -26,7 +26,23 @@ struct Direct {
     // DeviceState::UpdateDevice's changes in the order it would make the calls (SetRenderState, SetTextureStageState,
     // SetTexture), as one.
     bool (*applyStates)(void* d3dDevice, const StateChange* changes, uint32_t count);
+    // Game-thread time in a part of the native scene code (`name` a string literal), for the renderer's profile log.
+    void (*gameSection)(const char* name, double ms);
 };
 void SetDirect(const Direct* direct);       // null: none (the backend's device is gone)
+
+// Times a part of the game thread's frame into the profile ("cpu ms" line) when the rvk backend is there. Nested
+// timers (an offscreen viewport rendered inside a visual's render) count in the outermost only.
+class GameTimer {
+public:
+    explicit GameTimer(const char* name);
+    ~GameTimer();
+    GameTimer(const GameTimer&) = delete;
+    GameTimer& operator=(const GameTimer&) = delete;
+
+private:
+    const char* m_name;
+    int64_t m_start = 0;                    // 0: not the outermost (or no backend)
+};
 
 }  // namespace rnative::device

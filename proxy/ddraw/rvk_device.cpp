@@ -463,7 +463,13 @@ bool DirectApplyStates(void* d3dDevice, const rnative::device::StateChange* chan
     return true;
 }
 
-const rnative::device::Direct kDirect{&DirectApplyStates};
+void DirectGameSection(const char* name, double ms)
+{
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
+        dev->AddGameSection(name, ms);
+}
+
+const rnative::device::Direct kDirect{&DirectApplyStates, &DirectGameSection};
 
 void DirectAttach(RDevice* device)
 {
