@@ -110,7 +110,12 @@ void Device::ProfileBeginFrame(VkCommandBuffer cmd)
         p.shadeOverflow = false;
         vkCmdResetQueryPool(cmd, p.shadePool, 0, kShadeQueries);
     }
-    m_profileCpuStart = CpuNow();
+    // The render thread's whole frame (start to start), so what the named sections don't cover shows: the record
+    // replay outside draws, Vulkan calls between sections.
+    double now = CpuNow();
+    if (m_profileCpuStart > 0.0)
+        ProfileAdd(m_profileCpu, "render thread frame", now - m_profileCpuStart);
+    m_profileCpuStart = now;
     ProfileMark("start");
     if (m_profileFrames >= kProfileFrames && !m_profileManual)
         ProfileLog("");

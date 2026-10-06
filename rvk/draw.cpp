@@ -1386,6 +1386,7 @@ void Device::DrawIndexedPrimitive(uint32_t primitive, uint32_t fvf, const void* 
 void Device::DrawSkinned(uint32_t primitive, uint32_t fvf, skin::Job& job, uint32_t startVertex, uint32_t vertexCount,
                          const uint16_t* indices, uint32_t indexCount)
 {
+    double since = (m_frameNumber & 15) == 0 ? ProfileCpu() : 0.0;   // profiling (as Draw's sections)
     m_drawSkin = &job;
     m_drawGpu = nullptr;
     // On the GPU: the whole piece with its own triangles (the game's draws of a character piece always are).
@@ -1393,10 +1394,12 @@ void Device::DrawSkinned(uint32_t primitive, uint32_t fvf, skin::Job& job, uint3
         indices && indices == job.source->indices.data() && indexCount <= job.source->indices.size() && m_inFrame)
         m_drawGpu = SkinOnGpu(job);
     if (m_drawGpu) {
+        ProfileDrawSection("draw: skinning", since);
         Draw(primitive, fvf, nullptr, vertexCount, indices, indexCount);
     } else {
         const skin::Vertex* vertices = job.Skinned();
         m_drawSkinBase = vertices;
+        ProfileDrawSection("draw: skinning", since);
         Draw(primitive, fvf, vertices + startVertex, vertexCount, indices, indexCount);
     }
     m_drawSkin = nullptr;
@@ -1776,6 +1779,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             EndScene();
         }
     }
+    double since = (m_frameNumber & 15) == 0 ? ProfileCpu() : 0.0;   // per-draw CPU sections (profiling)
     m_drawIsLabel = !m_external && IsLabel(primitive, fvf, vertexCount);
     if (m_dumpFile && !m_external)
         DumpDraw(primitive, fvf, m_drawGpu ? nullptr : vertices, vertexCount, indices, indexCount);
@@ -1786,7 +1790,6 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     Frame& f = m_frames[m_frameIndex];
     VkCommandBuffer cmd = f.main;
     FvfLayout layout = DecodeFvf(fvf);
-    double since = (m_frameNumber & 15) == 0 ? ProfileCpu() : 0.0;   // per-draw CPU sections (profiling)
     DrawMeshInfo(fvf, layout.stride, vertices, vertexCount, indices, indexCount);
     PushCandidateDraw(fvf);
     // A swaying plant: its big quads split into small ones (cached), so they bend rather than tilt as a whole.
@@ -2405,6 +2408,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         vkCmdBindIndexBuffer(cmd, m_external->indices, 0, VK_INDEX_TYPE_UINT16);
         vkCmdDrawIndexed(cmd, indexCount, 1, 0, m_external->baseVertex, recordIndex);
         m_cache.buffersBound = false;            // the next draw binds the ring again
+        ProfileDrawSection("draw: state + descriptors + draw", since);
         return;
     }
     if (m_drawStaticBuffer) {
@@ -2423,6 +2427,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             vkCmdDraw(cmd, vertexCount, 1, uint32_t(vbOffset / layout.stride), recordIndex);
         }
         m_cache.buffersBound = false;            // the next draw binds the ring again
+        ProfileDrawSection("draw: state + descriptors + draw", since);
         return;
     }
     if (m_drawGpu) {
@@ -2437,6 +2442,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         else
             vkCmdDrawIndexed(cmd, indexCount, 1, uint32_t(ibOffset / 2), int32_t(vbOffset / layout.stride), recordIndex);
         m_cache.buffersBound = false;            // the next draw binds the ring again
+        ProfileDrawSection("draw: state + descriptors + draw", since);
         return;
     }
     if (groupKey)
