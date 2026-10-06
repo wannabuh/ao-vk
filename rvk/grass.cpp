@@ -27,6 +27,9 @@ const uint32_t kGrassVertSpirv[] = {
 const uint32_t kGrassFragSpirv[] = {
 #include "grass.frag.inc"
 };
+const uint32_t kGrassDepthFragSpirv[] = {
+#include "grass_depth.frag.inc"
+};
 
 // The pass's frame block (grass.vert / grass.frag GrassFrame): the camera, the wind and the field radius, one UBO.
 struct GrassFrame {
@@ -390,6 +393,17 @@ bool Device::CreateGrassResources(std::string* error)
         ci.layout = m_grassLayout;
         ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, &m_grassPipeline),
                    "vkCreateGraphicsPipelines", error);
+        // The depth pre-pass: the same geometry and pipeline, but an empty fragment shader and no colour written. The
+        // colour pass behind it then shades each pixel of the field once instead of once per blade (its overdraw).
+        VkShaderModule depthFrag = VK_NULL_HANDLE;
+        if (ok && module(kGrassDepthFragSpirv, sizeof(kGrassDepthFragSpirv), &depthFrag)) {
+            stages[1].module = depthFrag;
+            for (auto& a : att)
+                a.colorWriteMask = 0;
+            ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, &m_grassDepthPipeline),
+                       "vkCreateGraphicsPipelines", error);
+            vkDestroyShaderModule(m_device, depthFrag, nullptr);
+        }
     }
     if (vert) vkDestroyShaderModule(m_device, vert, nullptr);
     if (frag) vkDestroyShaderModule(m_device, frag, nullptr);
@@ -406,6 +420,10 @@ void Device::DestroyGrassResources()
     if (m_grassPipeline) {
         vkDestroyPipeline(m_device, m_grassPipeline, nullptr);
         m_grassPipeline = VK_NULL_HANDLE;
+    }
+    if (m_grassDepthPipeline) {
+        vkDestroyPipeline(m_device, m_grassDepthPipeline, nullptr);
+        m_grassDepthPipeline = VK_NULL_HANDLE;
     }
     if (m_grassLayout) {
         vkDestroyPipelineLayout(m_device, m_grassLayout, nullptr);
@@ -787,6 +805,17 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
         }
         return mask;
     };
+    // Depth pre-pass first: the blades write depth with no fragment work, so the colour pass behind it shades each
+    // pixel of the field once rather than once per blade it is covered by (the field's overdraw - most of its cost).
+    if (m_grassDepthPipeline) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassDepthPipeline);
+        for (const auto& [key, count] : visible) {
+            VkDeviceSize vbOffset = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &m_grassTiles[key].buffer, &vbOffset);
+            vkCmdDraw(cmd, count, 1, 0, 0);
+        }
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassPipeline);
+    }
     uint64_t drawn = 0;
     for (const auto& [key, count] : visible) {
         const GrassTile& tile = m_grassTiles[key];

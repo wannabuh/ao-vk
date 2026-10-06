@@ -1104,6 +1104,7 @@ private:
     VkDescriptorSetLayout m_grassSetLayout = VK_NULL_HANDLE;   // camera (UBO), blade atlas, frame lights, shadow map
     VkPipelineLayout m_grassLayout = VK_NULL_HANDLE;
     VkPipeline m_grassPipeline = VK_NULL_HANDLE;
+    VkPipeline m_grassDepthPipeline = VK_NULL_HANDLE;   // the blades' depth pre-pass (no colour, no shading)
     Texture* m_grassBlade = nullptr;             // the procedural blade atlas (owned), generated at init
     bool m_independentBlend = false;             // device feature: the grass pipeline's per-attachment write masks
     float m_pointLightScale = 1.0f, m_charLightScale = 1.0f;   // SetPointLightIntensity
