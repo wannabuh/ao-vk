@@ -404,41 +404,46 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
         v.uv[0] = u; v.uv[1] = vv;
         v.shade = shade; v.phase = phase; v.height = height; v.baseY = baseY; v.colour = colour;
     };
+    const int32_t tileSeed = int32_t(uint32_t(tx) * 73856093u ^ uint32_t(tz) * 19349663u);
     for (int32_t k = 0; k < total; ++k) {
-        const uint32_t h = HashCell(int32_t(uint32_t(tx) * 73856093u ^ uint32_t(tz) * 19349663u),
-                                    int32_t(uint32_t(k) * 2654435761u));
-        const float u1 = Unit(h), u2 = Unit(h * 2246822519u), u3 = Unit(h * 3266489917u), u4 = Unit(h * 40503u);
+        // The position and every other property come from separate hashes. From one, a blade's x and its rotation are
+        // functions of the same value, so a band of x shares a rotation - and the blades being flat, when the camera
+        // turns to where that rotation is edge-on the whole band vanishes at once. That is the "rows".
+        const uint32_t hp = HashCell(tileSeed, int32_t(uint32_t(k) * 2654435761u));
+        const uint32_t hv = HashCell(tileSeed ^ 0x5BF03635, int32_t(uint32_t(k) * 40503u));
+        const float u1 = Unit(hp), u2 = Unit(hp * 2246822519u);
         const float px = x0 + u1 * kGrassTileSize, pz = z0 + u2 * kGrassTileSize;
+        const float v0 = Unit(hv), v1 = Unit(hv * 2246822519u), v2 = Unit(hv * 3266489917u), v3 = Unit(hv * 668265263u);
         // Clumps: a low-frequency noise drops blades and leaves bare gaps (rotated, so no axis-aligned rows).
         const float clump = ClumpNoise(px, pz);
-        if (u4 > 0.5f + 0.5f * clump)
+        if (v3 > 0.5f + 0.5f * clump)
             continue;
         float py;
         uint32_t pcol = 0x3C6A2Au;
         if (!GroundHeight(px, pz, &py, &pcol))
             continue;                            // no grass ground here
-        const float height = m_grassHeight * (0.45f + 1.2f * u3);
-        const float yaw = u1 * 6.2831853f;
-        const float lean = (u2 - 0.5f) * 0.6f;   // the blade leans, so a clump isn't a rank of uprights
+        const float height = m_grassHeight * (0.45f + 1.2f * v0);
+        const float yaw = v1 * 6.2831853f;       // independent of the position: no band shares a rotation
+        const float lean = (v2 - 0.5f) * 0.6f;   // the blade leans, so a clump isn't a rank of uprights
         const float rx = std::cos(yaw), rz = std::sin(yaw);
         float up[3] = {lean * rx, 1.0f, lean * rz};
         const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
         up[0] /= ul; up[1] /= ul; up[2] /= ul;
-        const float half = 0.5f * (0.05f + 0.05f * u2) * (0.5f + height);
-        const float phase = px * 0.3f + pz * 0.25f + u3 * 6.2831853f;
+        const float half = 0.5f * (0.05f + 0.05f * v2) * (0.5f + height);
+        const float phase = (px * 0.3f + pz * 0.25f) + v1 * 6.2831853f;
         float normal[3] = {rz, 0.5f, -rx};
         const float nl = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
         normal[0] /= nl; normal[1] /= nl; normal[2] /= nl;
         // The blade texture's atlas cell (a shape and shade) and the ground's own colour, varied a little per blade,
         // so neighbours aren't identical.
-        const uint32_t cell = (h >> 8) % (kAtlasCols * kAtlasRows);
+        const uint32_t cell = (hv >> 8) % (kAtlasCols * kAtlasRows);
         const float cu = float(cell % kAtlasCols) * kAtlasW, cv = float(cell / kAtlasCols) * kAtlasH;
-        const float tint = 0.82f + 0.36f * u1;
+        const float tint = 0.82f + 0.36f * v0;
         const uint32_t r = std::min(255u, uint32_t(float((pcol >> 16) & 0xFF) * tint));
         const uint32_t g = std::min(255u, uint32_t(float((pcol >> 8) & 0xFF) * tint));
         const uint32_t bl = std::min(255u, uint32_t(float(pcol & 0xFF) * tint));
         const uint32_t colour = 0xFF000000u | (r << 16) | (g << 8) | bl;
-        std::vector<GrassVertex>& out = (h % 4u == 0u) ? sparseV : denseV;
+        std::vector<GrassVertex>& out = (hv % 4u == 0u) ? sparseV : denseV;
         // A tapered strip: a few cross sections from the root to the tip, narrowing to a point.
         constexpr int kSeg = 2;
         GrassVertex row[2][kSeg + 1];
