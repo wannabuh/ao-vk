@@ -551,17 +551,19 @@ void Device::RenderPointShadowMaps(VkCommandBuffer cmd)
             }
         }
         inRange.clear();
-        for (uint32_t i : m_shadowOrder) {       // batch-key order (CollectShadowItems): longer batches per face
-            const ShadowItem& it = m_shadowItems[i];
-            float d2 = BoxDistance2(it.boundsMin, it.boundsMax, pos);
+        // Batch-key order (CollectShadowItems): longer batches per face. The boxes come packed in that order
+        // (m_shadowOrderBox): this scan runs per light over every caster.
+        const float* box = m_shadowOrderBox.data();
+        for (size_t n = 0; n < m_shadowOrder.size(); ++n, box += 6) {
+            float d2 = BoxDistance2(box, box + 3, pos);
             if (d2 > l.range * l.range)
                 continue;
+            uint32_t i = m_shadowOrder[n];
             // A lamp's housing (small, around the light) would shadow everything around it. Characters always
             // cast, the one carrying the light too (telling its pieces apart from others' proved unreliable;
             // FindCarriers now only serves CarriedLight). Big objects (buildings, platforms with their pillars) cast
             // even when their box contains the light; the near plane clips geometry right at the light.
-            float extent = std::max({it.boundsMax[0] - it.boundsMin[0], it.boundsMax[1] - it.boundsMin[1],
-                                     it.boundsMax[2] - it.boundsMin[2]});
+            float extent = std::max({box[3] - box[0], box[4] - box[1], box[5] - box[2]});
             bool housing = d2 == 0.0f && extent < 1.5f;              // smaller than a character
             if (housing)
                 continue;

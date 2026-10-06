@@ -676,6 +676,8 @@ private:
     // this and casters sharing pipeline, layout, texture and buffers end up next to each other - one indirect call
     // and one set of bindings for each run instead of a new batch at every change in the game's draw order.
     std::vector<uint32_t> m_shadowOrder;
+    std::vector<float> m_shadowOrderBox;         // per m_shadowOrder entry, packed: world box min x, y, z, max x, y, z
+                                                 // (the point pass's per-light scan reads these, not the items)
     static uint64_t ShadowItemKey(const ShadowItem& item);
     // Frame dump: how much the main pass could merge into instanced draws - consecutive static draws with the same
     // snapshot, vertex / index range, format, textures and geometry, differing only in their world / per-draw block.

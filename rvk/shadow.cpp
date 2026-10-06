@@ -823,6 +823,12 @@ void Device::CollectShadowItems()
     }
     std::stable_sort(m_shadowOrder.begin(), m_shadowOrder.end(),
                      [this](uint32_t a, uint32_t b) { return m_shadowItems[a].key < m_shadowItems[b].key; });
+    m_shadowOrderBox.resize(m_shadowOrder.size() * 6);
+    for (size_t k = 0; k < m_shadowOrder.size(); ++k) {
+        const ShadowItem& it = m_shadowItems[m_shadowOrder[k]];
+        std::memcpy(&m_shadowOrderBox[k * 6], it.boundsMin, sizeof(it.boundsMin));
+        std::memcpy(&m_shadowOrderBox[k * 6 + 3], it.boundsMax, sizeof(it.boundsMax));
+    }
 }
 
 // The game draws each character's parts (body pieces, head, held weapon) one after another, so a run of casters
@@ -1088,6 +1094,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
     if (!m_frameViewProjValid || m_casters.empty()) {
         m_shadowItems.clear();
         m_shadowOrder.clear();
+        m_shadowOrderBox.clear();
         return;
     }
     double collectStart = ProfileCpu();
@@ -1221,6 +1228,7 @@ void Device::FinishShadowFrame()
     m_shadowItems.clear();
     m_animatedItems.clear();
     m_shadowOrder.clear();
+    m_shadowOrderBox.clear();
     UpdateCasterCache();
     // The mesh cache: forget meshes not drawn for a while (animated ones leave a fingerprint per frame).
     if ((m_frameNumber & 31) == 0 || m_meshInfo.size() > 60000)
