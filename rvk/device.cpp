@@ -1365,6 +1365,7 @@ void Device::BeginFrame()
     m_profileDraws += m_frameDraw;               // last frame's batching (the profile's log)
     m_frameDraw = 0;
     m_prepassEndedThisFrame = false;
+    m_grassDrawnThisFrame = false;
     m_profileGroupCalls += m_groupCalls;
     m_profileGroupDraws += m_groupDraws;
     m_profileConstBlocks += m_constCount;

@@ -474,10 +474,12 @@ void Device::BuildGrassTile(int32_t tx, int32_t tz)
     tile.vertexCount = uint32_t(verts.size());
 }
 
-// Draws the visible grass tiles into the scene rendering that is still open (Device::EndScene calls this right after
-// the 3D scene, before the post passes): the tiles in range and roughly in front, built on demand and drawn from their
-// baked buffers. The wind bends the blades in the vertex shader, so a frame generates nothing.
-void Device::RenderGrassField(VkCommandBuffer cmd)
+// Draws the visible grass tiles into the scene rendering already active: the tiles in range and roughly in front,
+// built on demand and drawn from their baked buffers. Called from Draw at the game's first transparent draw - the
+// blades are opaque and write depth, so they must go in before the game's blended grass/foliage, or (that grass
+// writing no depth) they would draw over it however far away they are. Also from EndScene as a fallback, on its own.
+// The wind bends the blades in the vertex shader, so a frame generates nothing.
+void Device::DrawGrassTiles(VkCommandBuffer cmd)
 {
     if (!m_grassOn || !m_grassPipeline || !m_scene || !m_shadowView || !m_frameLightsOffset)
         return;
@@ -574,9 +576,6 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     const VkDeviceSize frameOffset = Allocate(sizeof(GrassFrame), 64, &frameCpu);   // minUniformBufferOffsetAlignment
     std::memcpy(frameCpu, &gf, sizeof(gf));
 
-    // The scene's rendering has just closed (EndScene's EndRendering flushed the batched draws): begin it again to add
-    // the blades, depth-testing against the opaque scene, and leave the attachments as the post passes expect.
-    BeginRenderingOn(m_scene);
     const float sw = float(m_scene->m_width), sh = float(m_scene->m_height);
     VkViewport viewport{0.5f, sh + 0.5f, sw, -sh, 0.0f, 1.0f};   // the scene draws into a flipped viewport
     VkRect2D scissor{{0, 0}, {m_scene->m_width, m_scene->m_height}};
@@ -670,10 +669,26 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
         vkCmdDraw(cmd, count, 1, 0, 0);
         drawn += count;
     }
-    EndRendering();
     m_cache = StateCache{};                      // this pipeline and its vertex input are not the scene's
+    m_arenaBound = m_bindlessBound = false;      // ... and its pushed set 0 replaced the scene's: rebind those too
     m_grassBlades += drawn / 12;                 // 12 vertices a blade (2 segments)
     ++m_grassDraws;
+    m_grassDrawnThisFrame = true;
+}
+
+// The fallback: if the frame never saw a transparent draw to hook (or the game drew its grass in the opaque pass), the
+// blades go in at the end of the scene, on their own rendering.
+void Device::RenderGrassField(VkCommandBuffer cmd)
+{
+    if (!m_grassOn || !m_grassPipeline || !m_scene || !m_shadowView || !m_frameLightsOffset || m_grassDrawnThisFrame)
+        return;
+    UpdateFrameEye();
+    if (!m_frameEyeValid)
+        return;
+    m_grassDrawnThisFrame = true;
+    BeginRenderingOn(m_scene);
+    DrawGrassTiles(cmd);
+    EndRendering();
 }
 
 }  // namespace rvk

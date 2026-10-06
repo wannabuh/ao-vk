@@ -1917,6 +1917,14 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         m_terrainLitPassCur = true;
     Frame& f = m_frames[m_frameIndex];
     VkCommandBuffer cmd = f.main;
+    // Ground grass (RVK_GrassOn): the blades are opaque and write depth, so they must go in before the game's first
+    // blended draw of the frame. The game's grass and foliage blend without writing depth; drawn after them (as at the
+    // end of the scene), our grass would pass the depth test against the ground behind them and cover them however far
+    // away it is. Before their pass, their fragments depth-test against ours and blend over us only where they are
+    // nearer - the right order.
+    if (m_grassOn && !m_grassDrawnThisFrame && m_scenePhase && m_target == m_scene && !m_external && vertexCount &&
+        (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ && m_rs[d3d::RS_ALPHABLENDENABLE] && !IsTerrain(fvf))
+        DrawGrassTiles(cmd);
     FvfLayout layout = DecodeFvf(fvf);
     // RVK_GrassOn: the terrain's ground heights feed the procedural grass (grass.cpp CaptureTerrain / RenderGrassField).
     if (m_grassOn && !m_external && vertices && IsTerrain(fvf))

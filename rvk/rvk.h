@@ -1089,7 +1089,9 @@ private:
     std::vector<GrassTrash> m_grassTrash;           // retired tile buffers, freed once no frame can use them
     void BuildGrassTile(int32_t tx, int32_t tz);
     void DestroyGrassTiles();
-    void RenderGrassField(VkCommandBuffer cmd);
+    void DrawGrassTiles(VkCommandBuffer cmd);      // the blades into the rendering already active on the scene
+    void RenderGrassField(VkCommandBuffer cmd);    // ... on its own, at the end of the scene (nothing blended was drawn)
+    bool m_grassDrawnThisFrame = false;            // the blades go in before the game's transparent pass (see Draw)
     bool CreateGrassResources(std::string* error);
     void DestroyGrassResources();
     uint64_t m_grassDraws = 0, m_grassBlades = 0;   // counters, logged with the foliage line
