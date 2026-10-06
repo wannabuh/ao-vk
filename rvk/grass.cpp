@@ -249,10 +249,14 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
     const int32_t cx0 = int32_t(std::floor(m_frameEye[0] / spacing));
     const int32_t cz0 = int32_t(std::floor(m_frameEye[2] / spacing));
     const float time = float(SwayClock());
+    // A cap on the frame's blades so an extreme radius or density can't blow the ring (or the CPU) up: the nearest
+    // cells are visited first (the loops run outward from the camera's cell), so what is kept is the nearest grass.
+    constexpr size_t kMaxVerts = 400000;         // ~33k blades, ~11 MB a frame
     std::vector<GrassVertex> verts;
-    verts.reserve(size_t(3) * 64);
-    for (int32_t cz = cz0 - r; cz <= cz0 + r; ++cz)
-        for (int32_t cx = cx0 - r; cx <= cx0 + r; ++cx) {
+    verts.reserve(4096);
+    bool full = false;
+    for (int32_t cz = cz0 - r; cz <= cz0 + r && !full; ++cz)
+        for (int32_t cx = cx0 - r; cx <= cx0 + r && !full; ++cx) {
             const float bx = (float(cx) + 0.5f) * spacing, bz = (float(cz) + 0.5f) * spacing;
             const float ddx = bx - m_frameEye[0], ddz = bz - m_frameEye[2];
             if (ddx * ddx + ddz * ddz > m_grassDistance * m_grassDistance)
@@ -265,6 +269,10 @@ void Device::RenderGrassField(VkCommandBuffer cmd)
             if (Unit(cellHash) < m_grassDensity - float(blades))
                 ++blades;
             for (int b = 0; b < blades; ++b) {
+                if (verts.size() + 12 > kMaxVerts) {
+                    full = true;
+                    break;
+                }
                 const uint32_t h = HashCell(cx * 73856093 ^ cz * 19349663 ^ (b * 83492791), b * 2654435761u + cx);
                 const float u1 = Unit(h), u2 = Unit(h * 2246822519u), u3 = Unit(h * 3266489917u);
                 const float px = bx + (u1 - 0.5f) * spacing, pz = bz + (u2 - 0.5f) * spacing;
