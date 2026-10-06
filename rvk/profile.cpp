@@ -256,6 +256,22 @@ void Device::ProfileLog(const char* label)
         double(m_profileCallerBytes) / 1024.0 / double(m_profileFrames),
         double(m_profileCallerRepeats) / double(m_profileFrames), m_profileFrames);
     m_profileCallerRecords = m_profileCallerBytes = m_profileCallerRepeats = 0;
+    if (vk::CmdCountsOn()) {                      // RANDYVK_VKCOUNT=1: Vulkan commands a frame, the most called first
+        const char* names[14];
+        uint64_t counts[14];
+        int n = vk::TakeCmdCounts(names, counts, 14);
+        std::string out;
+        char buf[96];
+        uint64_t total = 0;
+        for (int i = 0; i < n; ++i) {
+            std::snprintf(buf, sizeof(buf), "%s%s %.0f", i ? " | " : "", names[i] + 2,   // without the "vk"
+                          double(counts[i]) / double(m_profileFrames));
+            out += buf;
+            total += counts[i];
+        }
+        Log("%svulkan commands a frame (top %d, %.0f of them): %s (avg of %u frames)", label, n,
+            double(total) / double(m_profileFrames), out.c_str(), m_profileFrames);
+    }
     {
         double n = double(m_profileFrames);
         const uint64_t* h = m_profileHandoff;

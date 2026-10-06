@@ -132,4 +132,10 @@ bool LoadGlobal();                  // loads vulkan-1.dll and the global functio
 void LoadInstance(VkInstance instance);
 void LoadDevice(VkDevice device);
 
+// RANDYVK_VKCOUNT=1 (profiling): every vkCmd* call is counted, through a wrapper LoadDevice puts in front of it - each
+// is a call across Wine's 32/64-bit thunk into the driver. TakeCmdCounts hands out the counts so far (and resets
+// them): the names and counts of the `max` most called, the most first; returns how many.
+bool CmdCountsOn();
+int TakeCmdCounts(const char** names, uint64_t* counts, int max);
+
 }  // namespace rvk::vk
