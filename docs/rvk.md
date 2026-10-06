@@ -86,7 +86,9 @@
   the wind bends them in the vertex shader (a travelling gust, the upper sections more). They write the scene colour
   and the motion vectors (static in the world, so the camera's motion), leave the glow, light-fraction and albedo
   attachments as the scene left them (the pipeline's per-attachment write masks, which need the `independentBlend`
-  device feature), depth-test against the scene, receive the sun's shadows, and light with a root-to-tip gradient.
+  device feature), depth-test against the scene, receive the sun's shadows, and light with a root-to-tip gradient. The
+  frame's nearby point / spot lights light the blades too (the scene's frame lights, with a push-constant per-tile mask
+  so a blade tests only the few lights that reach its tile, like the scene's per-draw mask).
   Blades are placed from a position hash, not the frame number, so they don't crawl. `--grass-field` runs the shadow
   test's terrain under a field of them in the demo (`--grass-field-tan` leaves the tan ground, which the filter must
   reject; `--grass-field-any` turns the filter off).
