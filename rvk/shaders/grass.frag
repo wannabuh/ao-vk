@@ -107,10 +107,13 @@ vec3 LocalLights(vec3 posW, vec3 n)
                 else if (rho < l.spot.x)
                     att *= pow(clamp((rho - l.spot.y) / max(l.spot.x - l.spot.y, 1e-6), 0.0, 1.0), l.atten.w);
             }
-            float nl = abs(dot(n, L));
+            // A blade's normal is mostly horizontal, so it catches a light overhead far less than the flat ground
+            // does; the local lights use an up-biased normal, so the grass lights as much as the ground they light.
+            vec3 ln = normalize(vec3(n.x, 2.0, n.z));
+            float nl = abs(dot(ln, L));
             sum += att * l.ambient.rgb;                          // the light's ambient isn't shadowed
             if (l.spot.z > 0.0 && nl > 0.0 && att > 0.0)
-                att *= PointShadow(l, posW, n, nl);
+                att *= PointShadow(l, posW, ln, nl);
             sum += att * nl * l.diffuse.rgb;
         }
     }
