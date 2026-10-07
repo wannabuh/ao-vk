@@ -11,35 +11,104 @@ environment variables.)
 It is client-side only: no game files, network traffic or gameplay are changed, and no Funcom files are part of this
 repository. Every enhancement can be switched off (in-game or with one hotkey) to get the game's own look back.
 
-## Screenshots
+## Contents
 
-<!-- HEADLINE VIDEO: drag newland-walk-comparison.mp4 onto this line in GitHub's web editor (replacing it). -->
+- [Videos](#videos)
+  - [Walking through Newland: before and after](#walking-through-newland-before-and-after)
+  - [Grass in the wind](#grass-in-the-wind)
+  - [Newland](#newland)
+  - [Spell particles](#spell-particles)
+- [Screenshots](#screenshots)
+  - [West Bank by day](#west-bank-by-day)
+  - [Newland by day](#newland-by-day)
+  - [Night](#night)
+  - [Depth of field](#depth-of-field)
+  - [GPU particles](#gpu-particles)
+- [What it adds](#what-it-adds)
+- [Replacing the game's renderer](#replacing-the-games-renderer)
+- [Requirements](#requirements)
+- [Installing](#installing)
+  - [Steps (Windows and Wine alike)](#steps-windows-and-wine-alike)
+  - [Wine / Linux notes](#wine--linux-notes)
+  - [After a game patch](#after-a-game-patch)
+  - [Uninstalling](#uninstalling)
+- [Settings](#settings)
+  - [Hotkeys (Ctrl+Shift + key)](#hotkeys-ctrlshift--key)
+  - [Environment variables](#environment-variables)
+- [Known limitations](#known-limitations)
+- [How it works](#how-it-works)
+- [Building](#building)
+  - [Testing](#testing)
+  - [Layout](#layout)
+- [License](#license)
+
+## Videos
+
+Each video is uploaded through GitHub's web editor (GitHub plays only those): drag the file named in a marker onto
+it, replacing it.
+
+### Walking through Newland: before and after
+
+<!-- VIDEO: newland-walk-comparison.mp4 -->
+
+### Grass in the wind
+
+<!-- VIDEO: grass_02.mp4 -->
+
+<!-- VIDEO: grass_01.mp4 -->
+
+### Newland
+
+<!-- VIDEO: newland-walk_01.mp4 -->
+
+<!-- VIDEO: newland-walk_02.mp4 -->
+
+### Spell particles
+
+<!-- VIDEO: particles_01.mp4 -->
+
+<!-- VIDEO: particles_02.mp4 -->
+
+## Screenshots
 
 The game's own renderer on the left, ao-vk on the right - the same moment, switched with Ctrl+Shift+E. Click an
 image for the full size.
 
-**Daylight: sun shadows, HDR, colour grading and ground grass** (West Bank)
+### West Bank by day
+
+Sun shadows, HDR, colour grading and the ground grass.
+
 ![West Bank by day](docs/screenshots/west-bank.jpg)
 
 ![West Bank gate](docs/screenshots/west-bank-gate.jpg)
 
-**Grass and paths by day** (Newland)
+### Newland by day
+
+Grass and paths.
+
 ![Newland by day](docs/screenshots/newland.jpg)
 
-**Night: every lamp lights its surroundings and casts shadows** (Newland, Borealis)
+### Night
+
+Every lamp lights its surroundings and casts shadows.
+
 ![Newland at night](docs/screenshots/newland-night.jpg)
 
 ![Borealis at night](docs/screenshots/borealis-night.jpg)
 
 ![A lamp in the grass at night](docs/screenshots/night-lamp.jpg)
 
-**Depth of field, focused on your character**
+### Depth of field
+
+Focused on your character.
+
 ![Depth of field](docs/screenshots/depth-of-field.jpg)
 
-**GPU particles on spell effects, with depth of field**
-![GPU particles](docs/screenshots/particles.jpg)
+### GPU particles
 
-<!-- More videos (grass, Newland walks, particles) can be dragged in here in GitHub's web editor. -->
+Spell effects with GPU particles, and depth of field.
+
+![GPU particles](docs/screenshots/particles.jpg)
 
 ## What it adds
 
