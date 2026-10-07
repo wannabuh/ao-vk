@@ -44,6 +44,14 @@ repository. Every enhancement can be switched off (in-game or with one hotkey) t
   (`randy-vk-day.cube`, `randy-vk-night.cube` next to `randy-vk.ini`).
 
 **Plants**
+- Real grass on the ground: fields of individual blades grow wherever the ground's texture is grass, as bright as
+  the ground they grow on by day and by night. They grow in tufts with dry and taller patches, with wildflowers, seed
+  heads and broad blades mixed in, and they thin out towards paths and fade out gradually at a distance you choose.
+- Waves of wind run through the grass, with gusts sweeping over it as lighter bands.
+- Sunlight on the blades: backlit tips when you look towards the sun, a sheen, rounded shading.
+- The blades cast sun shadows onto the ground, each other and paths, softened so that fields stay as bright as
+  before.
+- Grass bends around characters walking through it and stays trodden for a few seconds behind them.
 - Grass, bushes and trees sway in the wind.
 - Grass and plants bend out of the way of characters walking through them, then spring back.
 - Big plant quads are split near characters so they bend smoothly instead of tilting as one piece.
