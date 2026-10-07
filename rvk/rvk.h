@@ -1110,6 +1110,8 @@ private:
     int32_t m_grassTileBox[4] = {0, 0, -1, -1};  // the tile range around the camera: x0, z0, x1, z1
     bool m_grassDirty = false;                   // a blade setting changed: rebuild the tiles
     bool m_grassGroundReset = false;             // the ground filter changed: capture the ground again
+    float m_grassLastEye[3] = {};                // the camera at the last grass frame (a jump resets the ground)
+    uint64_t m_grassLastFrame = 0;
     std::vector<const void*> m_lightmapsUploaded;   // terrain lightmaps re-uploaded since the last grass frame
     float m_terrainAmbient[4] = {};              // the terrain light pass's global ambient this frame (w: seen)
     float m_terrainSun[8] = {};                  // ... the directional light it takes: colour, direction

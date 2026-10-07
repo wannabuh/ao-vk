@@ -256,6 +256,11 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
         }
         chunk.boxed = true;
     }
+    if (!std::isfinite(chunk.box[0]) || !std::isfinite(chunk.box[1]) || !std::isfinite(chunk.box[2]) ||
+        !std::isfinite(chunk.box[3]) || chunk.box[2] - chunk.box[0] > 1e5f || chunk.box[3] - chunk.box[1] > 1e5f) {
+        m_grassCaptureMs += ProfileCpu() - since;
+        return;                                  // not a ground we can place grass on
+    }
     // The tiles under the chunk, in a small grid (no map lookups per triangle); only those made or reset since the
     // chunk was last captured take its triangles.
     const int32_t gx0 = std::max(int32_t(std::floor(chunk.box[0] / kGrassTileSize)), m_grassTileBox[0]);
@@ -311,8 +316,11 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
         const float d = (pb[2] - pc[2]) * (pa[0] - pc[0]) + (pc[0] - pb[0]) * (pa[2] - pc[2]);
         if (std::fabs(d) < 1e-6f)
             return;                              // degenerate in x, z (nothing to cover)
-        const int32_t tx0 = int32_t(std::floor(minX / kGrassTileSize)), tx1 = int32_t(std::floor(maxX / kGrassTileSize));
-        const int32_t tz0 = int32_t(std::floor(minZ / kGrassTileSize)), tz1 = int32_t(std::floor(maxZ / kGrassTileSize));
+        // (Clamped to the grid: the bounds test above passed, so this is a valid, small range.)
+        const int32_t tx0 = std::max(gx0, int32_t(std::floor(std::max(minX, gridX0) / kGrassTileSize)));
+        const int32_t tx1 = std::min(gx1, int32_t(std::floor(std::min(maxX, gridX1 - 1e-3f) / kGrassTileSize)));
+        const int32_t tz0 = std::max(gz0, int32_t(std::floor(std::max(minZ, gridZ0) / kGrassTileSize)));
+        const int32_t tz1 = std::min(gz1, int32_t(std::floor(std::min(maxZ, gridZ1 - 1e-3f) / kGrassTileSize)));
         uint8_t rank = 0;
         bool ranked = false;
         float ua[2] = {}, ub[2] = {}, uc[2] = {};
@@ -963,11 +971,20 @@ bool Device::BuildGrassTile(GrassTile& tile)
 // trash, and the settings' and lightmaps' changes.
 void Device::UpdateGrassTiles()
 {
+    // A jump of the camera (a zone change, a teleport) or a gap in the grass's frames (a loading screen, the grass
+    // switched off and on) may mean another playfield at the same coordinates: capture the ground afresh.
+    const float jx = m_frameEye[0] - m_grassLastEye[0], jz = m_frameEye[2] - m_grassLastEye[2];
+    if (jx * jx + jz * jz > 30.0f * 30.0f || m_frameNumber > m_grassLastFrame + 30)
+        m_grassGroundReset = true;
+    m_grassLastEye[0] = m_frameEye[0];
+    m_grassLastEye[2] = m_frameEye[2];
+    m_grassLastFrame = m_frameNumber;
     if (m_grassGroundReset) {                    // the ground filter changed: capture everything again
         m_grassGroundReset = false;
         for (auto& [key, tile] : m_grassTiles)
             FreeGrassBlades(*tile);
         m_grassTiles.clear();
+        m_grassChunks.clear();
     }
     if (m_grassDirty) {                          // a blade setting changed: rebuild every tile (old blades stay meanwhile)
         m_grassDirty = false;
