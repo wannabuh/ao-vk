@@ -253,6 +253,8 @@ public:
             m_grassDirty = true;
         }
     }
+    // The grass's brightness against its ground (1 = as bright as the ground it grows on); per frame, no rebuild.
+    void SetGrassBrightness(float brightness) { m_grassBright = brightness; }
     void SetGrassField(bool on, float distance, float density, float height, bool texOnly)
     {
         // The blades are baked into tiles, so a change to their density, height or the ground filter must rebuild
@@ -1069,6 +1071,7 @@ private:
     float m_grassDensity = 5.0f;                 // RVK_GrassBlades (blades a patch)
     float m_grassHeight = 0.5f;                  // RVK_GrassHeight (world units)
     float m_grassWidth = 1.0f;                   // RVK_GrassWidth: a multiplier on the blades' width
+    float m_grassBright = 1.0f;                  // RVK_GrassBright: the blades' brightness against their ground
     bool m_grassTex = true;                      // RVK_GrassTex: grass only where the ground's texel is green
     float m_grassPrevTime = 0.0f;                // the wind clock last frame, so a blade's motion vector is exact
     // The ground under one tile and its baked blades. A cell is written by the finest terrain triangle seen there

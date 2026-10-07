@@ -895,6 +895,11 @@ void ThreadedDevice::SetGrassWidth(float width)
     Enqueue([this, width](const uint8_t*) { m_device.SetGrassWidth(width); });
 }
 
+void ThreadedDevice::SetGrassBrightness(float brightness)
+{
+    Enqueue([this, brightness](const uint8_t*) { m_device.SetGrassBrightness(brightness); });
+}
+
 void ThreadedDevice::SetShadowResolution(uint32_t sun, uint32_t point)
 {
     Enqueue([this, sun, point](const uint8_t*) { m_device.SetShadowResolution(sun, point); });

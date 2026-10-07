@@ -1184,7 +1184,7 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     gf.camera[2] = m_frameEye[2];
     gf.camera[3] = TaaActive() ? 1.0f : 0.0f;
     std::memcpy(gf.ambient, m_terrainAmbient, sizeof(gf.ambient));
-    gf.look[0] = 1.0f;
+    gf.look[0] = m_grassBright;
     gf.look[1] = 1.0f;
     std::memcpy(gf.sunColour, m_terrainSun, sizeof(gf.sunColour) + sizeof(gf.sunDir));
     // The frame lights (the sun, its cascades, the lights, the pushers) as of now, in this ring: the scene writes them
