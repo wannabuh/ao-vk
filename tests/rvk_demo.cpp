@@ -862,6 +862,7 @@ void RunNormalMapTest(D& dev, int frames, const std::string& shot, float bump)
 //   row 1: red non-metal      row 2: gold metal      row 3: silver metal (last column: occlusion map stripes)
 // The floor has a material too: a checker, smooth-ish non-metal (roughness 0.3), reflecting the spheres with --ssr.
 uint32_t g_pbrDebug = 0;      // --pbr-debug N: RVK_PbrDebug's views
+bool g_pbrOff = false;        // --pbr-off: materials attached but PBR lighting off (RVK_Pbr 0)
 // --pbr-maps DIR: the side-loaded files, through the proxy's loader (rvk/material_maps.h): the floor gets
 // floor_n.png, floor_ao.png / floor_r.png / floor_m.png (separate) and floor_d.png; the bottom row's middle ball
 // ball_n.png and ball_orm.png (packed). Missing files are skipped.
@@ -947,6 +948,7 @@ void RunPbrTest(D& dev, int frames, const std::string& shot)
     }
     dev.SetPixelLighting(true);
     Device::PbrSettings pbr;
+    pbr.enabled = !g_pbrOff;
     pbr.debug = g_pbrDebug;
     dev.SetPbr(pbr);
 
@@ -1055,6 +1057,8 @@ bool g_grassBenchLoadingNull = false;   // --grass-bench-loading-null: ... drawn
 bool g_grassBenchPlatform = false;  // --grass-bench-platform: a flat slab lying on the ground ahead (no grass under it)
 bool g_grassBenchStorm = false;   // --grass-bench-storm: AO's sandstorm tint (a depth-writing ZFUNC ALWAYS sprite)
 bool g_grassBenchStill = false;   // --grass-bench-still: the camera stays where it starts (to watch the wind)
+bool g_terrainPbr = false;        // --terrain-pbr: the bench's ground texture gets a PBR material (a glossy path through
+                                  // rough grass), per-pixel lighting, no grass field: the ground's PBR (MAT_BASE) path
 int g_grassBenchFilm = 0;         // --grass-bench-film N: ~60 frames a second, a screenshot every N (film_NNN.bmp)
 float g_grassBenchPitch = -1.0f;  // --grass-bench-pitch R: the camera looking R radians down, raised to match (top-down)
 bool g_grassFieldTex = true;   // --grass-field-any: over every ground, not only where the ground texture is green
@@ -1130,7 +1134,19 @@ void RunGrassBench(D& dev, int frames, const std::string& shot)
     double sum = 0.0, worst = 0.0;
     int counted = 0, worstFrame = 0;
     std::vector<double> times;
-    dev.SetGrassField(true, g_grassFieldDist, 5.0f, 0.5f, true);   // the game's default density
+    dev.SetGrassField(!g_terrainPbr, g_grassFieldDist, 5.0f, 0.5f, true);   // the game's default density
+    if (g_terrainPbr) {
+        std::vector<uint32_t> orm(64 * 64);
+        for (int y = 0; y < 64; ++y)
+            for (int x = 0; x < 64; ++x)
+                orm[y * 64 + x] = x >= 26 && x < 38 ? 0xFFFF2800u : 0xFFC0D800u;   // path: roughness 0.16; grass 0.85
+        dev.SetMaterialMaps(grassGround, dev.CreateTexture(64, 64, orm.data()), nullptr);
+        dev.SetPixelLighting(true);
+        Device::PbrSettings pbr;
+        pbr.enabled = !g_pbrOff;
+        pbr.debug = g_pbrDebug;
+        dev.SetPbr(pbr);
+    }
     for (int frame = 0; frame < frames; ++frame) {
         if (frame == frames - 1)
             dev.RequestScreenshot(shot);
@@ -2389,6 +2405,7 @@ int main(int argc, char** argv)
         else if (a == "--grass-bench-walker") g_grassBenchWalker = true;
         else if (a == "--grass-bench-night") g_grassBenchNight = true;
         else if (a == "--grass-bench-still") g_grassBenchStill = true;
+        else if (a == "--terrain-pbr") { g_terrainPbr = g_grassBench = g_grassBenchStill = true; hdr = true; }
         else if (a == "--grass-bench-storm") g_grassBenchStorm = true;
         else if (a == "--grass-bench-platform") g_grassBenchPlatform = true;
         else if (a == "--grass-bench-loading" && i + 1 < argc) g_grassBenchLoading = std::atoi(argv[++i]);
@@ -2427,6 +2444,7 @@ int main(int argc, char** argv)
         else if (a == "--normal-map-test") normalMapTest = true;
         else if (a == "--pbr-test") pbrTest = true;
         else if (a == "--pbr-maps" && i + 1 < argc) { g_pbrMaps = argv[++i]; pbrTest = true; }
+        else if (a == "--pbr-off") g_pbrOff = true;
         else if (a == "--pbr-debug" && i + 1 < argc) g_pbrDebug = uint32_t(std::atoi(argv[++i]));
         else if (a == "--ao" && i + 1 < argc) { ao = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--ao-radius" && i + 1 < argc) aoRadius = float(std::atof(argv[++i]));

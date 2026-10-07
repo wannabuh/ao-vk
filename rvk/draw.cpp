@@ -2032,11 +2032,13 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 
     // The frame's light list (binding 4): rebuilt when lights changed; always bound, as layouts require.
     // Only lit draws read it; the others bind any in-range part of the ring.
-    // (PBR materials read their settings from it: every per-pixel lit draw while they are on.)
+    // PBR materials read their settings from it: every per-pixel lit draw while they are on. And every 3D draw into
+    // the HDR scene reads its TAA jitter (ffp.vert; zero without TAA): one drawn before the frame's block was written
+    // read whatever the ring held there and was displaced on screen.
     bool needLights = ((m_lightOverride || m_pbr.enabled) && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
                        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) || ShadowReceiver(fvf) ||
                       ShadowCompensated(fvf) || motion ||
-                      (TaaActive() && m_target == m_scene && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW);
+                      (m_target->m_format == Format::RGBA16F && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW);
     VkDeviceSize frameLightsOffset = m_frameLightsGeneration == m_ringGeneration ? m_frameLightsOffset : 0;
     if (needLights && (m_frameLightsDirty || m_frameLightsGeneration != m_ringGeneration))   // once per frame
         frameLightsOffset = WriteFrameLights();
