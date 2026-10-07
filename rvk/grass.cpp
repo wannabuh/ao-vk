@@ -64,8 +64,7 @@ struct GrassBlade {
     uint32_t light;      // the lightmap's RGB at the root; A nonzero = captured
     uint32_t ground;     // the ground texel's RGB | kind << 24 (GrassKind) | dense << 26 | fade rank (0..31) << 27
     uint32_t head;       // the head's RGB (seed stalks, flowers) | the canopy's density around it (unorm8) << 24
-    uint32_t headSize;   // a flower head's half width (unorm16 x 0.25 units; 0 for the others)
-    uint32_t spare;
+    uint32_t spare[2];
 };
 static_assert(sizeof(GrassBlade) == 48, "grass blade record");
 
@@ -985,7 +984,7 @@ bool Device::BuildGrassTile(GrassTile& tile)
         // What it is: mostly grass blades; a few broad blades, seed stalks and (in patches) flowers.
         const float pick = w3;
         GrassKind kind = kBlade;
-        const float pFlowerBase = 0.016f * flowers;
+        const float pFlowerBase = 0.012f * flowers;
         float pFlower = 0.0f;
         if (pick < pFlowerBase * 2.0f + 0.04f * flowers + 0.06f * std::min(flowers, 1.0f)) {   // (a rare candidate)
             const float patch = ValueNoise(px * 0.07f + 5.5f, pz * 0.07f - 9.1f);
@@ -1035,7 +1034,6 @@ bool Device::BuildGrassTile(GrassTile& tile)
         for (int c = 0; c < 3; ++c)
             tintRgb[c] = hue[c] * scale;
         float headRgb[3] = {0.0f, 0.0f, 0.0f};
-        float headSize = 0.0f;
         switch (kind) {
         case kBroad:                             // shorter, broader, arching over further
             height *= 0.7f + 0.2f * v4;
@@ -1054,10 +1052,7 @@ bool Device::BuildGrassTile(GrassTile& tile)
             break;
         }
         case kFlower: {                          // a stem just above the grass, a head of the patch's colour
-            // The head a hand's width across (it has to read among the blades, and from above), whatever the
-            // blades' width; the stem reaches up past the grass so the head sits on top of it.
-            headSize = (0.045f + 0.03f * v2) * (0.5f + m_grassHeight);
-            height = std::max(height * (1.0f + 0.35f * v4), m_grassHeight * 0.9f) + 1.3f * headSize;
+            height *= 0.95f + 0.35f * v4;
             half *= 1.1f;
             droop = 0.03f;
             const int32_t fx = int32_t(std::floor(px * 0.08f)), fz = int32_t(std::floor(pz * 0.08f));
@@ -1089,8 +1084,7 @@ bool Device::BuildGrassTile(GrassTile& tile)
         b.ground = (pcol & 0xFFFFFFu) | uint32_t(kind) << 24 | (sparse ? 0u : 1u << 26) |
                    (uint32_t(Unit(hw * 0x165667B1u) * 32.0f) & 31u) << 27;
         b.head = pack(headRgb) | unorm(canopy, 1.0f, 255) << 24;
-        b.headSize = unorm(headSize, 0.25f, 65535);
-        b.spare = 0;
+        b.spare[0] = b.spare[1] = 0;
         m_grassLitBlades += plight ? 1 : 0;
         ++m_grassBuiltBlades;
         minY = std::min(minY, py);

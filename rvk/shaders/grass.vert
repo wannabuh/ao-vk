@@ -30,7 +30,6 @@ layout(set = 0, binding = 0) uniform GrassFrame {
 //   b.y: yaw (unorm16 x 2 pi), phase (unorm16 x 20 pi)   b.z: tint RGB      b.w: light RGB + A (nonzero = captured)
 //   c.x: the ground texel's RGB, kind (2 bits) << 24, dense << 26, fade rank (5 bits) << 27
 //   c.y: the head's RGB (seed stalks, flowers), the canopy's density around the blade (unorm8) << 24
-//   c.z: a flower head's half width (unorm16 x 0.25)
 struct Blade { vec4 a; uvec4 b; uvec4 c; };
 layout(set = 0, binding = 2, std430) readonly buffer Blades { Blade blades[]; };
 // The trail grid (grass.cpp UpdateGrassTrail): per cell the push left behind, snorm16 x, z (direction x amount).
@@ -234,10 +233,8 @@ vec3 LocalLights(vec3 posW, vec3 n)
 vec3 Unpack8(uint w) { return vec3(float((w >> 16u) & 0xFFu), float((w >> 8u) & 0xFFu), float(w & 0xFFu)) / 255.0; }
 
 // The cross sections of each kind: how far up the blade (t) and how wide (of the half width). 0 a grass blade (tapering
-// to its tip), 1 a broad blade (rounder), 2 a seed stalk (a thin stem, a spindle-shaped head), 3 a flower (a thin stem;
-// its head - from section 1, widest at 2, a little narrower at the top 3, facing the camera - is placed in main from
-// its size). A
-// head (kinds 2 and 3: sections 2 and 3) takes the head colour.
+// to its tip), 1 a broad blade (rounder), 2 a seed stalk (a thin stem, a spindle-shaped head), 3 a flower (a thin stem,
+// a cup-shaped head on top, flat-topped). A head (kinds 2 and 3: sections 2 and 3) takes the head colour.
 const vec4 kSectionT[4] = vec4[4](vec4(0.0, 0.3333, 0.6667, 1.0), vec4(0.0, 0.3333, 0.6667, 1.0),
                                   vec4(0.0, 0.62, 0.8, 1.0), vec4(0.0, 0.86, 0.91, 1.0));
 const vec4 kSectionW[4] = vec4[4](vec4(1.0, 0.6667, 0.3333, 0.0), vec4(1.0, 0.92, 0.62, 0.0),
@@ -262,33 +259,15 @@ void main()
     float rank = float(bl.c.x >> 27u) / 31.0;
     vec3 headColour = Unpack8(bl.c.y);
     float canopy = float(bl.c.y >> 24u) / 255.0;
-    float headS = float(bl.c.z & 0xFFFFu) * (0.25 / 65535.0);
     // The cross section: 0 root .. 3 tip (the far pattern skips 1).
     uint section = vi >> 1u;
     float t = kSectionT[kind][section], profile = kSectionW[kind][section];
-    // A flower: the stem up to the head's base (section 1), then the head - widest halfway up (2), a little narrower
-    // across its top (3) - placed above that further down. Beyond 0.4 R the stem shrinks into the head (by then it
-    // is thinner than a pixel): past 0.5 R a tile is drawn without section 1, and the head stays whole.
-    float cupH = 0.0, stemGone = 0.0;
-    if (kind == 3u) {
-        cupH = 1.3 * headS;
-        float cupBase = clamp(1.0 - cupH / max(height, 1e-3), 0.3, 0.97);
-        stemGone = smoothstep(0.4, 0.5, length(root.xz - GF.camera.xz) / max(GF.viewport.z, 1e-3));
-        t = section == 0u ? cupBase * stemGone : cupBase;
-    }
     bool head = kind >= 2u && section >= 2u;
     float side = (vi & 1u) != 0u ? 1.0 : -1.0;
     vec2 r = vec2(cos(yaw), sin(yaw));
     vec3 rr = vec3(r.x, 0.0, r.y);
-    // Seen from above, an upright field is mostly the ground between its blades (each is seen end-on): the steeper
-    // the camera looks down on a blade, the further it lies over (each its own way) and the wider it is drawn, so the
-    // field stays as full top-down as from the side.
-    vec3 toCam = GF.camera.xyz - root;
-    float steep = smoothstep(0.4, 0.95, toCam.y / max(length(toCam), 1e-3));
-    float tilt = 0.9 * steep;
-    vec3 upV = normalize(up * cos(tilt) + rr * sin(tilt));
     // The blade arcs over towards the tip rather than standing straight.
-    vec3 axis0 = root + upV * (height * t) + rr * (droop * height * t * t);
+    vec3 axis0 = root + up * (height * t) + rr * (droop * height * t * t);
     // Towards the field's edge it thins out and then shrinks away, so its rim is no hard circle and no ring pops: the
     // dense blades (three in four) go first, each at its own distance (its rank), the sparse ones - widening to cover
     // for them - last, shrinking towards their roots over the outer third (a whole-blade scale: the world stays put).
@@ -304,7 +283,6 @@ void main()
     } else {
         widen = 1.0 + 0.7 * smoothstep(0.5 * R, 0.9 * R, dist);
     }
-    widen *= 1.0 + 0.5 * steep;
     vec3 pos = root + (axis0 - root) * fade;
     // The wind: waves running through the field (the upper blade bending most: the square of the height along it),
     // and the gusts sweeping over it on top - each bending the blade over, not stretching it.
@@ -324,31 +302,19 @@ void main()
     // the motion vectors would smear it.
     vec3 axis = pos + bendNow + PusherOffset(pos, t, height, TrailAt(root.xz));
     vec3 Vd = normalize(axis - GF.camera.xyz);
-    // A flower's cup opens towards the camera: its top above its base along the blade, taken square to the view (so
-    // from above it is seen whole too).
-    if (kind == 3u && section >= 2u) {
-        vec3 a = upV + rr * 0.6;
-        vec3 hv = a - Vd * dot(a, Vd);
-        float hl = length(hv);
-        axis += (hl > 1e-3 ? hv / hl : rr) * (cupH * fade * (section == 2u ? 0.5 : 1.0));
-    }
     // Billboard about the blade's own axis: the width is spread square to it and to the view, so a blade is never
     // edge-on (about the vertical when it is seen straight along its axis).
     vec2 vh = GF.camera.xz - axis.xz;
     float vl = length(vh);
     vec3 horiz = vl > 1e-3 ? vec3(-vh.y, 0.0, vh.x) / vl : vec3(1.0, 0.0, 0.0);
-    vec3 right = normalize(cross(normalize(upV + rr * droop), Vd) + 0.1 * horiz);
+    vec3 right = normalize(cross(normalize(up + rr * droop), Vd) + 0.1 * horiz);
     // A blade thinner than a pixel flickers in and out as it sways (and the TAA can't settle it): drawn at least
     // GF.lod.y pixels wide, its colour going towards the ground's by as much as it was widened (its coverage).
     float rootW = 2.0 * halfW * widen * max(fade, 0.05);
     float depth = max((GF.viewProj * vec4(root, 1.0)).w, 1e-3);
     float pixels = rootW * GF.lod.x / depth;
     float widenAA = GF.lod.y > 0.0 ? max(GF.lod.y / max(pixels, 1e-4), 1.0) : 1.0;
-    float halfHere = halfW * profile;
-    if (kind == 3u)
-        halfHere = section == 0u ? mix(halfHere, 0.3 * headS, stemGone) :
-                   headS * (section == 1u ? 0.3 : (section == 2u ? 1.0 : 0.65));
-    vec3 across = right * (side * halfHere * fade * widen * widenAA);
+    vec3 across = right * (side * halfW * profile * fade * widen * widenAA);
     vec3 p = axis + across;
     vClip = GF.viewProj * vec4(p, 1.0);
     vPrevClip = GF.prevViewProj * vec4(p - bendNow + bendBefore, 1.0);
@@ -399,7 +365,7 @@ void main()
         float behind = max(-dot(face, Ls), 0.0), bk = max(dot(V, Ls), 0.0);
         float through = (0.5 * behind + 0.5 * bk * bk * bk) * pow(t, 1.3);
         extra += albedo * vec3(1.2, 1.25, 0.7) * FL.sunColor.rgb * (0.6 * through * sunlit);
-        vec3 T = normalize(upV + rr * (2.0 * droop * t));
+        vec3 T = normalize(up + rr * (2.0 * droop * t));
         vec3 H = normalize(Ls - V);
         float th = dot(T, H);
         float sheen = pow(max(1.0 - th * th, 0.0), 20.0) * t;

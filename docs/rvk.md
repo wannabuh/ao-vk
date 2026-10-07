@@ -85,15 +85,13 @@
     and shortened towards the edge of the grass ground (a path, a rock) and gone on steep slopes. `RVK_GrassVary` (0-2)
     scales the tufts, dry straw-coloured patches, taller patches and a per-blade hue jitter - every colour still matched
     to the ground texel's brightness. `RVK_GrassFlower` (0-3) scales the share of other kinds: broad blades, seed stalks
-    (a straw head) and flowers (in patches of one colour, a few strays; a head a hand's width across on a stem above
-    the grass, opening towards the camera). Each subset near-to-far from the tile's centre
+    (a straw head) and flowers (in patches of one colour, a few strays). Each subset near-to-far from the tile's centre
     (early-Z); the first quarter is a sparse subset for the edge.
   - *Drawing* (`DrawGrassTiles`, at the game's first blended draw - which comes before the terrain - or at the end of
     the scene): frustum-culled tiles, nearest first, one indexed draw each through a shared index pattern: vertex v of
     blade b is 8 b + v (cross section v >> 1, edge v & 1); near, 6 triangles a blade (a pointed tip's last one has no
     area), from half the radius 4. The vertex shader expands the record into a strip facing the camera about the
-    blade's axis, shaped by its kind (`kSectionT` / `kSectionW`); the steeper the camera looks down on a blade the
-    further it lies over (its own way) and the wider it is, so the field stays full seen from above. It bends it -
+    blade's axis, shaped by its kind (`kSectionT` / `kSectionW`). It bends it -
     keeping its length - with the wind (waves running through the field along it, a cross wave, each blade's flutter),
     the gusts (`RVK_GrassGusts`: bands of stronger wind sweeping along it, the bent blades lighter) and the pushers (the plants' push), and lights it per vertex as the
     terrain's light pass lights the ground: (lightmap + its global ambient + its directional light - none under the
