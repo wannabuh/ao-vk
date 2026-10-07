@@ -1149,6 +1149,7 @@ private:
     double m_trailClock = 0.0;                   // the sway clock at the last update
     uint32_t m_trailActive = 0;                  // cells with any push left (none: nothing uploaded)
     void UpdateGrassTrail();
+    uint64_t GrassTilesWaiting() const;          // tiles with ground seen, not built or built from an older ground
     void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
                         const uint16_t* indices, uint32_t indexCount);
     bool GroundAt(float x, float z, float* y, uint32_t* colour, uint32_t* light) const;
@@ -1167,6 +1168,8 @@ private:
     uint64_t m_grassDraws = 0, m_grassBlades = 0, m_grassBuilds = 0;   // counters, logged with the foliage line
     double m_grassBuildMs = 0.0, m_grassCaptureMs = 0.0;
     uint64_t m_grassLitBlades = 0, m_grassBuiltBlades = 0;   // built blades, and those with the ground's lightmap
+    // Candidates left out in the builds, by why: the clumps/tufts, no grass ground under it, too steep, near its edge.
+    uint64_t m_grassLeftOut[4] = {};
     VkDescriptorSetLayout m_grassSetLayout = VK_NULL_HANDLE;   // camera, blades, frame lights, shadow maps
     VkPipelineLayout m_grassLayout = VK_NULL_HANDLE;
     VkPipeline m_grassPipeline = VK_NULL_HANDLE;

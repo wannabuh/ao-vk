@@ -30,6 +30,7 @@ layout(set = 0, binding = 0) uniform GrassFrame {
 //   b.y: yaw (unorm16 x 2 pi), phase (unorm16 x 20 pi)   b.z: tint RGB      b.w: light RGB + A (nonzero = captured)
 //   c.x: the ground texel's RGB, kind (2 bits) << 24, dense << 26, fade rank (5 bits) << 27
 //   c.y: the head's RGB (seed stalks, flowers), the canopy's density around the blade (unorm8) << 24
+//   c.z: how far inside its grass ground (unorm8: 0 at the edge of a path)
 struct Blade { vec4 a; uvec4 b; uvec4 c; };
 layout(set = 0, binding = 2, std430) readonly buffer Blades { Blade blades[]; };
 // The trail grid (grass.cpp UpdateGrassTrail): per cell the push left behind, snorm16 x, z (direction x amount).
@@ -259,6 +260,7 @@ void main()
     float rank = float(bl.c.x >> 27u) / 31.0;
     vec3 headColour = Unpack8(bl.c.y);
     float canopy = float(bl.c.y >> 24u) / 255.0;
+    float inside = float(bl.c.z & 0xFFu) / 255.0;
     // The cross section: 0 root .. 3 tip (the far pattern skips 1).
     uint section = vi >> 1u;
     float t = kSectionT[kind][section], profile = kSectionW[kind][section];
@@ -266,8 +268,15 @@ void main()
     float side = (vi & 1u) != 0u ? 1.0 : -1.0;
     vec2 r = vec2(cos(yaw), sin(yaw));
     vec3 rr = vec3(r.x, 0.0, r.y);
+    // Seen from above, an upright field is mostly the ground between its blades (each is seen end-on): the steeper
+    // the camera looks down on a blade, the further it leans over (each its own way, at most ~25 degrees) and the
+    // wider it is drawn. Not at the edge of its ground: it would lie over the path beside it.
+    vec3 toCam = GF.camera.xyz - root;
+    float steep = smoothstep(0.4, 0.95, toCam.y / max(length(toCam), 1e-3));
+    float tilt = 0.45 * steep * inside * inside;
+    vec3 upV = normalize(up * cos(tilt) + rr * sin(tilt));
     // The blade arcs over towards the tip rather than standing straight.
-    vec3 axis0 = root + up * (height * t) + rr * (droop * height * t * t);
+    vec3 axis0 = root + upV * (height * t) + rr * (droop * height * t * t);
     // Towards the field's edge it thins out and then shrinks away, so its rim is no hard circle and no ring pops: the
     // dense blades (three in four) go first, each at its own distance (its rank), the sparse ones - widening to cover
     // for them - last, shrinking towards their roots over the outer third (a whole-blade scale: the world stays put).
@@ -283,6 +292,7 @@ void main()
     } else {
         widen = 1.0 + 0.7 * smoothstep(0.5 * R, 0.9 * R, dist);
     }
+    widen *= 1.0 + 0.3 * steep;
     vec3 pos = root + (axis0 - root) * fade;
     // The wind: waves running through the field (the upper blade bending most: the square of the height along it),
     // and the gusts sweeping over it on top - each bending the blade over, not stretching it.
@@ -307,7 +317,7 @@ void main()
     vec2 vh = GF.camera.xz - axis.xz;
     float vl = length(vh);
     vec3 horiz = vl > 1e-3 ? vec3(-vh.y, 0.0, vh.x) / vl : vec3(1.0, 0.0, 0.0);
-    vec3 right = normalize(cross(normalize(up + rr * droop), Vd) + 0.1 * horiz);
+    vec3 right = normalize(cross(normalize(upV + rr * droop), Vd) + 0.1 * horiz);
     // A blade thinner than a pixel flickers in and out as it sways (and the TAA can't settle it): drawn at least
     // GF.lod.y pixels wide, its colour going towards the ground's by as much as it was widened (its coverage).
     float rootW = 2.0 * halfW * widen * max(fade, 0.05);
@@ -365,7 +375,7 @@ void main()
         float behind = max(-dot(face, Ls), 0.0), bk = max(dot(V, Ls), 0.0);
         float through = (0.5 * behind + 0.5 * bk * bk * bk) * pow(t, 1.3);
         extra += albedo * vec3(1.2, 1.25, 0.7) * FL.sunColor.rgb * (0.6 * through * sunlit);
-        vec3 T = normalize(up + rr * (2.0 * droop * t));
+        vec3 T = normalize(upV + rr * (2.0 * droop * t));
         vec3 H = normalize(Ls - V);
         float th = dot(T, H);
         float sheen = pow(max(1.0 - th * th, 0.0), 20.0) * t;

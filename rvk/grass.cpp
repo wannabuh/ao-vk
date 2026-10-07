@@ -64,7 +64,8 @@ struct GrassBlade {
     uint32_t light;      // the lightmap's RGB at the root; A nonzero = captured
     uint32_t ground;     // the ground texel's RGB | kind << 24 (GrassKind) | dense << 26 | fade rank (0..31) << 27
     uint32_t head;       // the head's RGB (seed stalks, flowers) | the canopy's density around it (unorm8) << 24
-    uint32_t spare[2];
+    uint32_t inside;     // how far it is inside its grass ground (unorm8: 0 at a path's edge, 1 well inside)
+    uint32_t spare;
 };
 static_assert(sizeof(GrassBlade) == 48, "grass blade record");
 
@@ -938,8 +939,10 @@ bool Device::BuildGrassTile(GrassTile& tile)
         // Clumps: a low-frequency noise drops blades and leaves bare gaps.
         const FieldAt fa = fieldAt(px, pz);
         const float clumpHere = field(clumpF, fa);
-        if (v3 > 0.5f + 0.5f * clumpHere)
+        if (v3 > 0.5f + 0.5f * clumpHere) {
+            ++m_grassLeftOut[0];
             continue;
+        }
         // The nearest tuft: blades thin out between tufts and lean out from their centre.
         float rim = 1.0f, outX = 0.0f, outZ = 0.0f, vigour = 0.5f;
         {
@@ -964,23 +967,33 @@ bool Device::BuildGrassTile(GrassTile& tile)
                 outZ /= d;
             }
         }
-        if (w0 > 1.0f - 0.45f * std::min(variety, 1.0f) * rim * rim)
+        if (w0 > 1.0f - 0.45f * std::min(variety, 1.0f) * rim * rim) {
+            ++m_grassLeftOut[0];
             continue;
+        }
         float py;
         uint32_t pcol, plight;
-        if (!ground(px, pz, &py, &pcol, &plight) || !(pcol >> 24 & 1u))
-            continue;                            // no grass ground here
+        if (!ground(px, pz, &py, &pcol, &plight) || !(pcol >> 24 & 1u)) {
+            ++m_grassLeftOut[1];                 // no grass ground here
+            continue;
+        }
         float tn[3];
         sampleNormal(px, pz, tn);                // the blade grows along the ground's slope, not straight up
-        // Steep ground stays bare (a cliff, a bank), and the grass thins and shortens towards the edge of its ground
-        // (a path, a rock): the cells around the root that are grass.
-        if (w1 > (tn[1] - 0.6f) / 0.22f)
+        // Only steep ground stays bare (a cliff): from ~50 degrees, none past ~63 - the game's grassy banks and mounds
+        // are steep too. (From 35 degrees it left whole tiles of a mound bare: a tile next to one not yet captured
+        // takes its ground as flat, so the cut ran along the tile edges.) The grass thins and shortens towards the
+        // edge of its ground (a path, a rock): the cells around the root that are grass.
+        if (w1 > (tn[1] - 0.45f) / 0.2f) {
+            ++m_grassLeftOut[2];
             continue;
+        }
         const int ecx = std::clamp(int((px - x0) / kGroundCell), 0, kGroundN - 1);
         const int ecz = std::clamp(int((pz - z0) / kGroundCell), 0, kGroundN - 1);
         const float edge = float(grassyAround[ecz * kGroundN + ecx]) * 0.25f;
-        if (w2 > 0.35f + 0.65f * edge)
+        if (w2 > 0.35f + 0.65f * edge) {
+            ++m_grassLeftOut[3];
             continue;
+        }
         // What it is: mostly grass blades; a few broad blades, seed stalks and (in patches) flowers.
         const float pick = w3;
         GrassKind kind = kBlade;
@@ -1084,7 +1097,8 @@ bool Device::BuildGrassTile(GrassTile& tile)
         b.ground = (pcol & 0xFFFFFFu) | uint32_t(kind) << 24 | (sparse ? 0u : 1u << 26) |
                    (uint32_t(Unit(hw * 0x165667B1u) * 32.0f) & 31u) << 27;
         b.head = pack(headRgb) | unorm(canopy, 1.0f, 255) << 24;
-        b.spare[0] = b.spare[1] = 0;
+        b.inside = unorm(edge, 1.0f, 255);
+        b.spare = 0;
         m_grassLitBlades += plight ? 1 : 0;
         ++m_grassBuiltBlades;
         minY = std::min(minY, py);
@@ -1351,6 +1365,14 @@ void Device::UpdateGrassTrail()
                 cell[1] = wz / wl * amount;
             }
     }
+}
+
+uint64_t Device::GrassTilesWaiting() const
+{
+    uint64_t n = 0;
+    for (const auto& [key, tp] : m_grassTiles)
+        n += tp->seen && (!tp->built || tp->builtVersion != tp->version) ? 1 : 0;
+    return n;
 }
 
 // Draws the visible grass tiles into the scene rendering already active, building the tiles whose ground is ready.
