@@ -81,6 +81,7 @@ private:
     uint32_t m_thumbW = 0, m_thumbH = 0;
     bool m_thumbValid = false;
     bool m_lightmap = false;           // captured as a terrain lightmap (a re-upload recaptures the grass's light)
+    bool m_groundBase = false;         // captured as a terrain base texture (a re-upload recaptures the grass's ground)
     Texture* m_normalMap = nullptr;    // tangent-space normal map drawn with this texture (owned; SetNormalMap)
     uint32_t m_bindless = ~0u;         // its slot in the bindless image array (M1)
     // Layout as of the end of the commands recorded so far (main command buffer for render targets;
@@ -268,6 +269,13 @@ public:
         m_grassGlow = glow;
         m_grassGusts = gusts;
         m_grassTrails = trails;
+    }
+    // RVK_GrassEven: the blades' colour from one green (1) rather than the ground texel under each (0); baked.
+    void SetGrassEven(float even)
+    {
+        if (even != m_grassEven)
+            m_grassDirty = true;
+        m_grassEven = even;
     }
     void SetGrassField(bool on, float distance, float density, float height, bool texOnly)
     {
@@ -1092,6 +1100,7 @@ private:
     float m_grassGlow = 1.0f;                    // RVK_GrassGlow: backlit tips, the sheen, rounded shading
     float m_grassGusts = 1.0f;                   // RVK_GrassGusts: gusts sweeping the field
     bool m_grassTrails = true;                   // RVK_GrassTrail: pushed grass stays down behind a character
+    float m_grassEven = 1.0f;                    // RVK_GrassEven: the blades' colour from one green, not the texel
     // The ground under one tile and its baked blades. A cell is written by the finest terrain triangle seen there
     // (rank: the triangle's size class), so a coarse level of detail never overwrites a finer one; a capture block
     // whose cells are all known at least as finely as a triangle skips that triangle.
@@ -1113,6 +1122,8 @@ private:
         uint64_t lightReset = 0;           // its light last dropped (a lightmap re-uploaded), the same clock
         uint64_t lastUsed = 0;
         const void* lightmaps[4] = {};     // the lightmaps captured into it (a re-upload recaptures their light)
+        const void* bases[8] = {};         // the base textures captured into it (a re-upload recaptures its ground)
+        bool basesOverflow = false;        // ... more than those: any ground texture's re-upload recaptures it
         // The baked blades: in the pool at `first` (in blades), `blades` of them, the first `sparse` a thinned subset.
         uint64_t alloc = 0;                // VmaVirtualAllocation
         uint32_t first = 0, blades = 0, sparse = 0;
@@ -1134,6 +1145,7 @@ private:
     float m_grassLastEye[3] = {};                // the camera at the last grass frame (a jump resets the ground)
     uint64_t m_grassLastFrame = 0;
     std::vector<const void*> m_lightmapsUploaded;   // terrain lightmaps re-uploaded since the last grass frame
+    std::vector<const void*> m_groundTexUploaded;   // terrain base textures re-uploaded (or made unreadable) since then
     float m_terrainAmbient[4] = {};              // the terrain light pass's global ambient this frame (w: seen)
     float m_terrainSun[8] = {};                  // ... the directional light it takes: colour, direction
     struct GrassTrash { uint64_t alloc; VkBuffer buffer; VmaAllocation_T* allocation; uint64_t frame; };
@@ -1149,7 +1161,7 @@ private:
     double m_trailClock = 0.0;                   // the sway clock at the last update
     uint32_t m_trailActive = 0;                  // cells with any push left (none: nothing uploaded)
     void UpdateGrassTrail();
-    uint64_t GrassTilesWaiting() const;          // tiles with ground seen, not built or built from an older ground
+    uint64_t GrassTilesWaiting() const;          // tiles in range with ground seen, not built or from an older ground
     void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
                         const uint16_t* indices, uint32_t indexCount);
     bool GroundAt(float x, float z, float* y, uint32_t* colour, uint32_t* light) const;

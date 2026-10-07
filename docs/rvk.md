@@ -113,6 +113,14 @@
     the way it walks; a cell recovers over ~5 s. Uploaded with the frame (snorm16 pairs, only while something is
     pushed) and read bilinearly at each blade's root: trodden grass lies further over than the live push bends it.
   - The ground is captured afresh after a camera jump or a gap in the grass's frames (zone changes reuse coordinates).
+  - Ground still loading: with `RVK_GrassTex`, a base pass without a readable texture isn't captured (the game draws
+    ground whose texture is still loading untextured or with a stand-in; classified, all of it would be grass of one
+    colour, for good). A captured base texture whose picture changes on re-upload recaptures its tiles' ground. A
+    base-pass cell's rank is the coarser of its triangle's and of the world area a texel covers, so a close draw with a
+    finer picture replaces a distant one's. The demo's `--grass-bench-loading N` (`--grass-bench-loading-null`) draws
+    the ground with a stand-in (untextured) until frame N.
+  - `RVK_GrassEven` (default 1): the blades' colour from one green rather than the ground texel under each (the
+    game's ground textures are patchy); still luminance-matched to that colour, the root still blends to the texel.
   - Demo: `--grass-field` (the shadow test's terrain; `--grass-field-tan` / `--grass-field-any` for the filter),
     `--grass-bench` (a 192 x 192 terrain, the camera walking; prints mean and worst frame times; with
     `--grass-field-dist`, `--grass-bench-yaw 3.14` into the sun, `--grass-bench-walker` a character walking through,

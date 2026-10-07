@@ -255,6 +255,11 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
         if (!tex || !tex->m_thumbValid)
             return;                              // no lightmap to read (an unsupported format): the shader's fallback
         tex->m_lightmap = true;
+    } else if (m_grassTex && (!tex || !tex->m_thumbValid)) {
+        // The base pass without a texture we can read: the game draws ground whose texture is still loading (walking
+        // into an area) untextured or with a stand-in, and classifying that would take all of it as grass, of one
+        // colour - for good, a cell only ever takes a finer triangle. Wait for the texture.
+        return;
     }
     if (m_grassTiles.empty())
         return;
@@ -366,7 +371,22 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
                 if (cx0 > cx1 || cz0 > cz1)
                     continue;
                 if (!ranked) {
-                    rank = TriangleRank(0.5f * std::fabs(d));
+                    const float area = 0.5f * std::fabs(d);
+                    rank = TriangleRank(area);
+                    if (filter) {
+                        // ... and as finely as its texture shows the ground: the game may draw a distant ground with a
+                        // coarser picture over the same triangles, and the close one's must replace it. (The world
+                        // area a texel covers, scaled so a detail texture leaves the triangle's own rank.)
+                        std::memcpy(ua, src + size_t(a) * stride + uvOff, 8);
+                        std::memcpy(ub, src + size_t(b) * stride + uvOff, 8);
+                        std::memcpy(uc, src + size_t(c) * stride + uvOff, 8);
+                        uvs = true;
+                        const float uvArea = 0.5f * std::fabs((ub[0] - ua[0]) * (uc[1] - ua[1]) -
+                                                              (uc[0] - ua[0]) * (ub[1] - ua[1]));
+                        const float texels = uvArea * float(tex->Width()) * float(tex->Height());
+                        if (texels > 1e-6f)
+                            rank = std::max(rank, TriangleRank(area / texels * 64.0f));
+                    }
                     ranked = true;
                 }
                 // Skip the triangle if every block it touches already knows its cells at least this finely.
@@ -446,6 +466,18 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
                 if (changed) {
                     ++tile->version;
                     tile->lastChange = m_frameNumber;
+                }
+                if (!lightPass && filter) {      // which base textures it holds (a re-upload recaptures the ground)
+                    bool known = false;
+                    for (const void* p : tile->bases)
+                        known = known || p == tex;
+                    for (const void*& p : tile->bases)
+                        if (!known && !p) {
+                            p = tex;
+                            known = true;
+                        }
+                    tile->basesOverflow = tile->basesOverflow || !known;
+                    tex->m_groundBase = true;
                 }
                 if (lightPass) {                 // which lightmaps it holds (a re-upload recaptures the light)
                     bool known = false;
@@ -1029,8 +1061,11 @@ bool Device::BuildGrassTile(GrassTile& tile)
         // The colour: the grass hue (mostly one green, a little of the ground's own; straw-coloured in a dry patch,
         // each blade a shade off) at the ground texel's brightness, so a field is as light or dark as the ground it
         // grows on; a tiny per-blade variation.
-        const float gr = float(pcol >> 16 & 0xFF) / 255.0f, gg = float(pcol >> 8 & 0xFF) / 255.0f,
-                    gb = float(pcol & 0xFF) / 255.0f;
+        // (RVK_GrassEven: from one green rather than the texel under it - a game's ground texture is patchy.)
+        const float even = std::clamp(m_grassEven, 0.0f, 1.0f);
+        const float gr = (float(pcol >> 16 & 0xFF) / 255.0f) * (1.0f - even) + (60.0f / 255.0f) * even,
+                    gg = (float(pcol >> 8 & 0xFF) / 255.0f) * (1.0f - even) + (106.0f / 255.0f) * even,
+                    gb = (float(pcol & 0xFF) / 255.0f) * (1.0f - even) + (42.0f / 255.0f) * even;
         float hue[3] = {(0.44f * 0.45f + gr * 0.55f) * 0.88f, (0.62f * 0.45f + gg * 0.55f) * 0.92f,
                         (0.30f * 0.45f + gb * 0.55f) * 0.82f};
         const float dry = std::clamp((field(dryF, fa) - 0.56f) / 0.16f, 0.0f, 1.0f) * std::min(0.55f * variety, 0.9f) *
@@ -1192,6 +1227,26 @@ void Device::UpdateGrassTiles()
         for (auto& [key, tile] : m_grassTiles)
             if (tile->built)
                 tile->builtVersion = tile->version - 1;
+    }
+    if (!m_groundTexUploaded.empty()) {          // a ground texture changed: its tiles take their ground again
+        for (auto& [key, tp] : m_grassTiles) {
+            GrassTile& tile = *tp;
+            bool hit = tile.basesOverflow;
+            for (const void* p : tile.bases)
+                hit = hit || (p && std::find(m_groundTexUploaded.begin(), m_groundTexUploaded.end(), p) !=
+                                       m_groundTexUploaded.end());
+            if (hit) {                           // as a new tile (its blades stay until it is rebuilt)
+                std::memset(tile.rank, 255, sizeof(tile.rank));
+                std::memset(tile.blockRank, 255, sizeof(tile.blockRank));
+                std::memset(tile.bases, 0, sizeof(tile.bases));
+                tile.basesOverflow = false;
+                tile.seen = 0;
+                ++tile.version;
+                tile.lastChange = m_frameNumber;
+                tile.created = m_grassTileEpoch = m_frameNumber + 1;
+            }
+        }
+        m_groundTexUploaded.clear();
     }
     if (!m_lightmapsUploaded.empty()) {          // a lightmap changed: its tiles take their light again
         for (auto& [key, tp] : m_grassTiles) {
@@ -1369,9 +1424,14 @@ void Device::UpdateGrassTrail()
 
 uint64_t Device::GrassTilesWaiting() const
 {
+    // (Within the drawn range: the margin beyond it is only captured, never built.)
+    const float reach = m_grassDistance + kGrassTileSize * 0.5f * 1.4142136f;
     uint64_t n = 0;
-    for (const auto& [key, tp] : m_grassTiles)
-        n += tp->seen && (!tp->built || tp->builtVersion != tp->version) ? 1 : 0;
+    for (const auto& [key, tp] : m_grassTiles) {
+        const float dx = (float(tp->tx) + 0.5f) * kGrassTileSize - m_frameEye[0];
+        const float dz = (float(tp->tz) + 0.5f) * kGrassTileSize - m_frameEye[2];
+        n += tp->seen && (!tp->built || tp->builtVersion != tp->version) && dx * dx + dz * dz <= reach * reach ? 1 : 0;
+    }
     return n;
 }
 

@@ -907,6 +907,11 @@ void ThreadedDevice::SetGrassStyle(float variety, float flowers, float glow, flo
     });
 }
 
+void ThreadedDevice::SetGrassEven(float even)
+{
+    Enqueue([this, even](const uint8_t*) { m_device.SetGrassEven(even); });
+}
+
 void ThreadedDevice::SetShadowResolution(uint32_t sun, uint32_t point)
 {
     Enqueue([this, sun, point](const uint8_t*) { m_device.SetShadowResolution(sun, point); });

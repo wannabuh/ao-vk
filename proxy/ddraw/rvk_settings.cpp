@@ -79,6 +79,7 @@ Setting g_settings[] = {
     {"RVK_GrassGlow",  "Sunlight on the blades: backlit tips, sheen, shading",      "Plants",           Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
     {"RVK_GrassGusts", "Gusts of wind sweeping over the grass (0 = none)",          "Plants",           Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
     {"RVK_GrassTrail", "Trodden grass stays down a few seconds behind characters",  "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassEven",  "Even grass colour (1 = one green, 0 = the ground's colours)", "Plants",          Float, 0, 1, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
 
     {"RVK_SunShadow",  "Sun shadows",                                              "Shadows",          Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
     {"RVK_SunRes",     "Resolution (4096 = 256 MB, 8192 = 1 GB of video memory)",  "Shadows",          Choice, 1024, 8192, 1, 4096, nullptr, 0, "RVK_SunShadow", "1024 2048 4096 8192"},
@@ -308,6 +309,8 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
              is("RVK_GrassTrail"))
         d->SetGrassStyle(V("RVK_GrassVary"), V("RVK_GrassFlower"), V("RVK_GrassGlow"), V("RVK_GrassGusts"),
                          V("RVK_GrassTrail") != 0.0f);
+    else if (is("RVK_GrassEven"))
+        d->SetGrassEven(V("RVK_GrassEven"));
     else if (is("RVK_Taa") || is("RVK_Sharpen")) d->SetTaa(V("RVK_Taa") != 0.0f, V("RVK_Sharpen"));
     else if (is("RVK_Saturation") || is("RVK_Contrast") || is("RVK_Warmth") || is("RVK_NightTint") ||
              is("RVK_Vignette") || is("RVK_LutAmount"))

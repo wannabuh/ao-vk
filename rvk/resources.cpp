@@ -379,6 +379,10 @@ void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, u
             t->m_opaque = false;
         // The colour grid the ground-grass classification reads (grass.cpp): a full level-0 upload only.
         // Small textures (the terrain's 64 x 64 lightmaps) are kept whole, bigger ones on a 16 x 16 grid.
+        // (A ground texture's old grid, to tell a new picture from the same one uploaded again.)
+        std::vector<uint8_t> before;
+        if (t->m_groundBase && t->m_thumbValid)
+            before = t->m_thumb;
         t->m_thumbValid = false;
         if (x == 0 && y == 0 && width >= t->m_width && height >= t->m_height &&
             pitch >= FormatRowBytes(t->m_format, t->m_width)) {
@@ -390,6 +394,10 @@ void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, u
                                               t->m_thumbW, t->m_thumbH);
             if (!t->m_thumbValid)
                 std::vector<uint8_t>().swap(t->m_thumb);
+            // A ground texture with a new picture (a stand-in replaced as the area loads): the grass classified
+            // from it is stale.
+            if (t->m_groundBase && m_grassOn && t->m_thumbValid && before != t->m_thumb)
+                m_groundTexUploaded.push_back(t);
             if (t->m_lightmap && m_grassOn)
                 m_lightmapsUploaded.push_back(t);   // the grass's light baked from it is stale
         }
