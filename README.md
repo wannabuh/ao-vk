@@ -168,6 +168,11 @@ Some useful ones:
 | `RVK_GrassDist` / `RVK_GrassBlades` / `RVK_GrassHeight` | 25 / 5 / 0.5 | how far the grass reaches (world units), blades a patch, blade height |
 | `RVK_GrassWidth` | 1 | blade width (1 = default; 0.25–3) |
 | `RVK_GrassBright` | 1 | grass brightness against the ground it grows on (1 = the same; 0.5–1.5) |
+| `RVK_GrassVary` | 1 | variety: tufts, dry and tall patches, colour jitter (0 = an even lawn; up to 2) |
+| `RVK_GrassFlower` | 1 | wildflowers, seed heads and broad blades among the grass (0 = none; up to 3) |
+| `RVK_GrassGlow` | 1 | sunlight on the blades: backlit tips, a sheen, rounded shading (0 = off; up to 2) |
+| `RVK_GrassGusts` | 1 | gusts of wind sweeping visibly over the grass (0 = none; up to 2) |
+| `RVK_GrassTrail` | 1 | grass trodden by characters stays down a few seconds behind them (needs `RVK_PushOn`) |
 
 ### Hotkeys (Ctrl+Shift + key)
 

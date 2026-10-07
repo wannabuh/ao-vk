@@ -255,6 +255,20 @@ public:
     }
     // The grass's brightness against its ground (1 = as bright as the ground it grows on); per frame, no rebuild.
     void SetGrassBrightness(float brightness) { m_grassBright = brightness; }
+    // The grass's look: variety (clumps, dry and tall patches, colour jitter; baked), flowers (wildflowers, seed heads
+    // and broad blades, a multiplier on how many; baked), glow (sunlight through and along the blades: backlit tips,
+    // the sheen, the blades' rounded shading), gusts (gusts of wind visible as they sweep the field) and trails
+    // (pushed grass stays down a few seconds behind a character). 0 = off each; the last three are per frame.
+    void SetGrassStyle(float variety, float flowers, float glow, float gusts, bool trails)
+    {
+        if (variety != m_grassVariety || flowers != m_grassFlowers)
+            m_grassDirty = true;
+        m_grassVariety = variety;
+        m_grassFlowers = flowers;
+        m_grassGlow = glow;
+        m_grassGusts = gusts;
+        m_grassTrails = trails;
+    }
     void SetGrassField(bool on, float distance, float density, float height, bool texOnly)
     {
         // The blades are baked into tiles, so a change to their density, height or the ground filter must rebuild
@@ -1073,7 +1087,11 @@ private:
     float m_grassWidth = 1.0f;                   // RVK_GrassWidth: a multiplier on the blades' width
     float m_grassBright = 1.0f;                  // RVK_GrassBright: the blades' brightness against their ground
     bool m_grassTex = true;                      // RVK_GrassTex: grass only where the ground's texel is green
-    float m_grassPrevTime = 0.0f;                // the wind clock last frame, so a blade's motion vector is exact
+    float m_grassVariety = 1.0f;                 // RVK_GrassVary: clumps, dry and tall patches, colour jitter
+    float m_grassFlowers = 1.0f;                 // RVK_GrassFlower: wildflowers, seed heads, broad blades (a multiplier)
+    float m_grassGlow = 1.0f;                    // RVK_GrassGlow: backlit tips, the sheen, rounded shading
+    float m_grassGusts = 1.0f;                   // RVK_GrassGusts: gusts sweeping the field
+    bool m_grassTrails = true;                   // RVK_GrassTrail: pushed grass stays down behind a character
     // The ground under one tile and its baked blades. A cell is written by the finest terrain triangle seen there
     // (rank: the triangle's size class), so a coarse level of detail never overwrites a finer one; a capture block
     // whose cells are all known at least as finely as a triangle skips that triangle.
@@ -1120,6 +1138,17 @@ private:
     float m_terrainSun[8] = {};                  // ... the directional light it takes: colour, direction
     struct GrassTrash { uint64_t alloc; VkBuffer buffer; VmaAllocation_T* allocation; uint64_t frame; };
     std::vector<GrassTrash> m_grassTrash;        // pool ranges and buffers freed once no frame in flight reads them
+    // Trails: pushed grass lying down behind the characters (RVK_GrassTrail) - a world-anchored grid around the camera,
+    // wrapping (cell gx lives at gx mod kTrailN): per cell how far its grass is pushed over and which way, stamped
+    // where a character stands and recovering over a few seconds. Uploaded with the frame (grass.vert Trail).
+    static constexpr int kTrailN = 128;          // cells along a side (a power of two)
+    static constexpr float kTrailCell = 0.25f;   // world units a cell
+    std::vector<float> m_trail;                  // kTrailN^2 x (direction x, z scaled by the amount)
+    int32_t m_trailOrigin[2] = {0, 0};           // the window's first cell (world cell coordinates)
+    bool m_trailValid = false;                   // the window holds something
+    double m_trailClock = 0.0;                   // the sway clock at the last update
+    uint32_t m_trailActive = 0;                  // cells with any push left (none: nothing uploaded)
+    void UpdateGrassTrail();
     void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
                         const uint16_t* indices, uint32_t indexCount);
     bool GroundAt(float x, float z, float* y, uint32_t* colour, uint32_t* light) const;
@@ -1141,8 +1170,8 @@ private:
     VkDescriptorSetLayout m_grassSetLayout = VK_NULL_HANDLE;   // camera, blades, frame lights, shadow maps
     VkPipelineLayout m_grassLayout = VK_NULL_HANDLE;
     VkPipeline m_grassPipeline = VK_NULL_HANDLE;
-    // The blade pool (one storage buffer, suballocated per tile) and the shared index pattern (five triangles a
-    // blade near, then three far).
+    // The blade pool (one storage buffer, suballocated per tile, its virtual block counted in blades) and the shared
+    // index pattern (six triangles a blade near, then four far).
     VkBuffer m_grassPool = VK_NULL_HANDLE;
     VmaAllocation_T* m_grassPoolAllocation = nullptr;
     VmaVirtualBlock_T* m_grassPoolBlock = nullptr;

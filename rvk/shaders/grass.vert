@@ -1,11 +1,14 @@
 #version 450
-// Procedural ground grass (RVK_GrassOn, rvk/grass.cpp). Each blade is one 32-byte record in the blade pool; this shader
-// expands it into a tapered strip - vertex v of blade b is gl_VertexIndex = 8 b + v (the draw's vertexOffset places the
-// tile's blades in the pool): cross section v >> 1 from the root (0) to the tip (3), edge v & 1 - bends it with the
-// wind and the characters walking through, fades it out near the field's edge and lights it. The lighting is the
+// Procedural ground grass (RVK_GrassOn, rvk/grass.cpp). Each blade is one 48-byte record in the blade pool; this shader
+// expands it into a strip - vertex v of blade b is gl_VertexIndex = 8 b + v (the draw's vertexOffset places the tile's
+// blades in the pool): cross section v >> 1 from the root (0) to the tip (3), edge v & 1 - shaped by its kind (a grass
+// blade, a broad blade, a seed stalk, a flower), bends it with the wind, the gusts and the characters walking through
+// (and the trails they leave), thins and fades the field out towards its edge and lights it. The lighting is the
 // terrain's own (its light pass: the baked lightmap plus the global ambient, darkened by the sun's shadow, plus the
-// frame's local lights), so a blade is as bright as the ground it stands on by day and by night. Per vertex: a blade
-// is a few pixels wide, and the fragment shader is then nearly free, which is what makes the field's overdraw cheap.
+// frame's local lights), so a field is as bright as the ground it stands on by day and by night; on top of it the sun
+// shades the rounded blade, shines through it when the camera looks towards the sun and glints along it. Per vertex: a
+// blade is a few pixels wide, and the fragment shader is then nearly free, which is what makes the field's overdraw
+// cheap.
 #include "frame_lights.glsl"                    // FL (binding 4): the sun, its cascades, the lights, the pushers
 
 layout(set = 0, binding = 0) uniform GrassFrame {
@@ -15,16 +18,22 @@ layout(set = 0, binding = 0) uniform GrassFrame {
     vec4 wind;          // x: time (s); yz: the wind's direction; w: strength
     vec4 camera;        // xyz: the camera; w: 1 = apply the TAA jitter
     vec4 ambient;       // rgb: the terrain's global ambient this frame; w: 1 = captured
-    vec4 look;          // x: brightness; y: local light scale
+    vec4 look;          // x: brightness; y: local light scale; z: glow (backlight, sheen, rounded shading); w: gusts
     vec4 sunColour;     // rgb: the directional light the terrain's light pass takes (0 under the light override)
     vec4 sunDir;        // xyz: the direction it travels
+    vec4 lod;           // x: pixels per world unit at view depth 1; y: the least width a blade is drawn at (pixels)
+    vec4 trail;         // xy: the trail window's first cell (world cells); z: its cell size; w: cells a side (0 = none)
 } GF;
 
 // The blade records (grass.cpp GrassBlade): root xyz, then packed words.
 //   a.w: up direction x, z (snorm16 x 2)      b.x: height (unorm16 x 4 units), half width (unorm8 x 0.25), droop (unorm8)
 //   b.y: yaw (unorm16 x 2 pi), phase (unorm16 x 20 pi)   b.z: tint RGB      b.w: light RGB + A (nonzero = captured)
-struct Blade { vec4 a; uvec4 b; };
+//   c.x: the ground texel's RGB, kind (2 bits) << 24, dense << 26, fade rank (5 bits) << 27
+//   c.y: the head's RGB (seed stalks, flowers), the canopy's density around the blade (unorm8) << 24
+struct Blade { vec4 a; uvec4 b; uvec4 c; };
 layout(set = 0, binding = 2, std430) readonly buffer Blades { Blade blades[]; };
+// The trail grid (grass.cpp UpdateGrassTrail): per cell the push left behind, snorm16 x, z (direction x amount).
+layout(set = 0, binding = 3, std430) readonly buffer Trails { uint trail[]; };
 layout(set = 0, binding = 5) uniform sampler2DArrayShadow shadowMap;            // the sun's cascades
 layout(set = 0, binding = 6) uniform samplerCubeArrayShadow pointShadowMaps;     // the point lights' cubes
 // Which of the frame's 64 lights reach this tile (grass.cpp: the tile's box against each light's range).
@@ -45,14 +54,15 @@ float PushSpring(float age)
 }
 
 // A blade bending out of the way of the frame's pushers (the characters' feet and the trails behind them, FL.pushers /
-// FL.pusherBorn; built by Device::FillPushers, the same the game's plants use). h: how far up the blade (0 root, 1
-// tip), plantHeight its height in world units - the top bends most and the base stays.
-vec3 PusherOffset(vec3 posW, float h, float plantHeight)
+// FL.pusherBorn; built by Device::FillPushers, the same the game's plants use), and lying over where the trail grid
+// says a character went through a little while ago. h: how far up the blade (0 root, 1 tip), plantHeight its height
+// in world units - the top bends most and the base stays.
+vec3 PusherOffset(vec3 posW, float h, float plantHeight, vec2 trailPush)
 {
     float amount = FL.effects.w;
-    uint count = min(FL.info.y, 16u);
-    if (amount <= 0.0 || count == 0u || h <= 0.0)
+    if (amount <= 0.0 || h <= 0.0)
         return vec3(0.0);
+    uint count = min(FL.info.y, 16u);
     float reach = 0.7 * sqrt(amount);            // the game's plants use 1.4; the grass bends over a smaller radius
     vec2 push = vec2(0.0), rustle = vec2(0.0);
     for (uint i = 0u; i < count; ++i) {
@@ -72,15 +82,54 @@ vec3 PusherOffset(vec3 posW, float h, float plantHeight)
         rustle += vec2(-dir.y, dir.x) * near * moving * sin(GF.wind.x * 11.0 + dot(posW.xz, vec2(3.1, 2.3)) + float(i));
     }
     vec2 v = push + 0.12 * rustle;
-    float len = length(v);
-    if (len <= 1e-4)
+    float len = length(v), trailLen = length(trailPush);
+    if (len <= 1e-4 && trailLen <= 1e-3)
         return vec3(0.0);
-    vec2 dir = v / len;
     float above = h * plantHeight;               // the vertex's height above the base
     float most = min(0.45 * amount, 0.7 * plantHeight);   // the top's furthest lean
-    float lean = most * min(len, 1.0) * h * sqrt(h);      // bends most up top
+    float live = most * min(len, 1.0);
+    // A trail lays the grass further over than a passing foot (it is trodden down), easing back up as it fades.
+    float trodden = min(0.75 * amount, 0.9 * plantHeight) * smoothstep(0.0, 1.0, min(trailLen, 1.0));
+    vec2 dirSum = (len > 1e-4 ? v / len * live : vec2(0.0)) + (trailLen > 1e-3 ? trailPush / trailLen * trodden : vec2(0.0));
+    float dl = length(dirSum);
+    if (dl <= 1e-5)
+        return vec3(0.0);
+    vec2 dir = dirSum / dl;
+    float lean = max(live, trodden) * h * sqrt(h);   // bends most up top
     lean = min(lean, 0.9 * above);
     return vec3(dir.x * lean, -(above - sqrt(max(above * above - lean * lean, 0.0))), dir.y * lean);
+}
+
+// The trail grid's push at a world x, z (bilinear; nothing outside the window).
+vec2 TrailAt(vec2 xz)
+{
+    int n = int(GF.trail.w);
+    if (n == 0)
+        return vec2(0.0);
+    vec2 g = xz / GF.trail.z - 0.5;              // cell centres
+    vec2 base = floor(g), f = g - base;
+    ivec2 b = ivec2(base), o = ivec2(GF.trail.xy);
+    vec2 sum = vec2(0.0);
+    for (int j = 0; j < 2; ++j)
+        for (int i = 0; i < 2; ++i) {
+            ivec2 c = b + ivec2(i, j);
+            if (any(lessThan(c, o)) || any(greaterThanEqual(c, o + n)))
+                continue;
+            float w = (i == 0 ? 1.0 - f.x : f.x) * (j == 0 ? 1.0 - f.y : f.y);
+            sum += w * unpackSnorm2x16(trail[(c.y & (n - 1)) * n + (c.x & (n - 1))]);
+        }
+    return sum;
+}
+
+// A gust of wind: bands of stronger wind sweeping across the field along the wind, their fronts wavering. 0 .. 1.
+float Gust(vec2 xz, vec2 wd, float time)
+{
+    float along = dot(xz, wd), across = dot(xz, vec2(-wd.y, wd.x));
+    // ~20 units between fronts, moving ~5 units a second; the fronts bend and break up across the wind.
+    float s = along * 0.3 - time * 1.5 + 1.8 * sin(across * 0.07 + time * 0.11) + 1.1 * sin(across * 0.19 - along * 0.05);
+    float g = 0.5 + 0.5 * sin(s);
+    float strength = 0.55 + 0.45 * sin(across * 0.043 + along * 0.021 - time * 0.21);   // some gusts weaker
+    return g * g * g * strength;                 // narrow fronts, calm between
 }
 
 // Sun visibility at a point: 1 lit, 0 in shadow - the first cascade that covers it, one filtered tap.
@@ -159,6 +208,14 @@ vec3 LocalLights(vec3 posW, vec3 n)
 
 vec3 Unpack8(uint w) { return vec3(float((w >> 16u) & 0xFFu), float((w >> 8u) & 0xFFu), float(w & 0xFFu)) / 255.0; }
 
+// The cross sections of each kind: how far up the blade (t) and how wide (of the half width). 0 a grass blade (tapering
+// to its tip), 1 a broad blade (rounder), 2 a seed stalk (a thin stem, a spindle-shaped head), 3 a flower (a thin stem,
+// a cup-shaped head on top, flat-topped). A head (kinds 2 and 3: sections 2 and 3) takes the head colour.
+const vec4 kSectionT[4] = vec4[4](vec4(0.0, 0.3333, 0.6667, 1.0), vec4(0.0, 0.3333, 0.6667, 1.0),
+                                  vec4(0.0, 0.62, 0.8, 1.0), vec4(0.0, 0.86, 0.91, 1.0));
+const vec4 kSectionW[4] = vec4[4](vec4(1.0, 0.6667, 0.3333, 0.0), vec4(1.0, 0.92, 0.62, 0.0),
+                                  vec4(0.4, 0.32, 1.0, 0.0), vec4(0.45, 0.4, 1.25, 0.95));
+
 void main()
 {
     const uint bi = uint(gl_VertexIndex) >> 3u, vi = uint(gl_VertexIndex) & 7u;
@@ -172,35 +229,67 @@ void main()
     float yaw = float(bl.b.y & 0xFFFFu) * (6.2831853 / 65536.0);
     float phase = float(bl.b.y >> 16u) * (62.831853 / 65536.0);
     vec3 tint = Unpack8(bl.b.z);
-    // The cross section: 0 root .. 3 tip (the far pattern draws only 0, 1 and 6).
-    float t = float(vi >> 1u) / 3.0;
+    vec3 groundAlbedo = Unpack8(bl.c.x);
+    uint kind = (bl.c.x >> 24u) & 3u;
+    bool dense = (bl.c.x & (1u << 26u)) != 0u;
+    float rank = float(bl.c.x >> 27u) / 31.0;
+    vec3 headColour = Unpack8(bl.c.y);
+    float canopy = float(bl.c.y >> 24u) / 255.0;
+    // The cross section: 0 root .. 3 tip (the far pattern skips 1).
+    uint section = vi >> 1u;
+    float t = kSectionT[kind][section], profile = kSectionW[kind][section];
+    bool head = kind >= 2u && section >= 2u;
     float side = (vi & 1u) != 0u ? 1.0 : -1.0;
     vec2 r = vec2(cos(yaw), sin(yaw));
     // The blade arcs over towards the tip rather than standing straight.
     vec3 axis0 = root + up * (height * t) + vec3(r.x, 0.0, r.y) * (droop * height * t * t);
-    // Fade the blade down to nothing near the field's edge, so its rim isn't a hard circle (a whole-blade scale towards
-    // its root: the world stays static).
+    // Towards the field's edge it thins out and then shrinks away, so its rim is no hard circle and no ring pops: the
+    // dense blades (three in four) go first, each at its own distance (its rank), the sparse ones - widening to cover
+    // for them - last, shrinking towards their roots over the outer third (a whole-blade scale: the world stays put).
+    float R = GF.viewport.z;
     float dist = length(root.xz - GF.camera.xz);
-    float fade = clamp((GF.viewport.z - dist) / (GF.viewport.z * 0.5), 0.0, 1.0);
+    float fade = clamp((R - dist) / (R * 0.35), 0.0, 1.0);
     fade = fade * fade * (3.0 - 2.0 * fade);
+    float widen = 1.0;
+    if (dense) {
+        float gone = R * (0.5 + 0.4 * rank);     // its own distance, by 0.9 R all gone (grass.cpp's sparse-only LOD)
+        float keep = clamp((gone - dist) / (R * 0.08), 0.0, 1.0);
+        fade *= keep * keep * (3.0 - 2.0 * keep);
+    } else {
+        widen = 1.0 + 0.7 * smoothstep(0.5 * R, 0.9 * R, dist);
+    }
     vec3 pos = root + (axis0 - root) * fade;
-    // The wind: a travelling gust, bending the upper part more (the square of the height along the blade).
-    vec3 wdir = vec3(GF.wind.y, 0.0, GF.wind.z);
+    // The wind: a travelling sway, bending the upper part more (the square of the height along the blade), and the
+    // gusts sweeping over the field on top of it.
+    vec2 wd = normalize(GF.wind.yz);
+    vec3 wdir = vec3(wd.x, 0.0, wd.y);
     float amp = 0.12 * height * fade * GF.wind.w * t * t;
     float now = 0.6 * sin(GF.wind.x * 1.9 + phase) + 0.25 * sin(GF.wind.x * 3.7 + phase * 1.7) +
                 0.35 * (0.5 + 0.5 * sin(GF.wind.x * 0.37 + phase * 0.1));
     float before = 0.6 * sin(GF.viewport.w * 1.9 + phase) + 0.25 * sin(GF.viewport.w * 3.7 + phase * 1.7) +
                    0.35 * (0.5 + 0.5 * sin(GF.viewport.w * 0.37 + phase * 0.1));
-    vec3 bendNow = wdir * (amp * now), bendBefore = wdir * (amp * before);
+    float gust = 0.0, gustBefore = 0.0;
+    if (GF.look.w > 0.0) {
+        gust = Gust(root.xz, wd, GF.wind.x) * GF.look.w;
+        gustBefore = Gust(root.xz, wd, GF.viewport.w) * GF.look.w;
+    }
+    float gustAmp = 0.3 * height * fade * GF.wind.w * t * t;
+    vec3 bendNow = wdir * (amp * now + gustAmp * gust), bendBefore = wdir * (amp * before + gustAmp * gustBefore);
     // The pusher offset is the same now and last frame: its own motion is fast and springs back, and putting it in
     // the motion vectors would smear it.
-    vec3 axis = pos + bendNow + PusherOffset(pos, t, height);
+    vec3 axis = pos + bendNow + PusherOffset(pos, t, height, TrailAt(root.xz));
     // Billboard about the vertical: the width is spread across the view, so a blade is never edge-on (a vertical blade
     // seen from above would vanish).
     vec2 vh = GF.camera.xz - axis.xz;
     float vl = length(vh);
     vec2 right = vl > 1e-3 ? vec2(-vh.y, vh.x) / vl : vec2(1.0, 0.0);
-    vec3 across = vec3(right.x, 0.0, right.y) * (side * halfW * (1.0 - t) * fade);
+    // A blade thinner than a pixel flickers in and out as it sways (and the TAA can't settle it): drawn at least
+    // GF.lod.y pixels wide, its colour going towards the ground's by as much as it was widened (its coverage).
+    float rootW = 2.0 * halfW * widen * max(fade, 0.05);
+    float depth = max((GF.viewProj * vec4(root, 1.0)).w, 1e-3);
+    float pixels = rootW * GF.lod.x / depth;
+    float widenAA = GF.lod.y > 0.0 ? max(GF.lod.y / max(pixels, 1e-4), 1.0) : 1.0;
+    vec3 across = vec3(right.x, 0.0, right.y) * (side * halfW * profile * fade * widen * widenAA);
     vec3 p = axis + across;
     vClip = GF.viewProj * vec4(p, 1.0);
     vPrevClip = GF.prevViewProj * vec4(p - bendNow + bendBefore, 1.0);
@@ -221,13 +310,52 @@ void main()
     vec3 sun = GF.sunColour.rgb * max(dot(groundN, -normalize(GF.sunDir.xyz + vec3(0.0, -1e-6, 0.0))), 0.0);
     vec3 base = min(baked + amb + sun, vec3(1.0)) * shade, local = LocalLights(p, groundN) * GF.look.y;
     vec3 light = base + local;
-    // A gentle root-to-tip gradient around the ground's own brightness (a blade's base sits in its neighbours' shade):
-    // its mean over the blade's area (wider at the root) is 1, so the field as a whole is as bright as its ground.
+    // The colour: a gentle root-to-tip gradient around the ground's own brightness, the base darkened by the canopy
+    // around it (in a dense tuft deeper) - over the blade's area (wider at the root) each averages 1, so the field as a
+    // whole is as bright as its ground - and the root going over to the ground's own colour (as bright as the blade's:
+    // the tint is matched to it), so the blades grow out of it rather than stand on it. A head takes its own colour.
     float grad = mix(0.88, 1.24, t);
-    vAlbedo = tint * grad;
-    vColour = vAlbedo * light * GF.look.x;
+    float ao = (1.0 - 0.4 * canopy * (1.0 - t) * (1.0 - t)) / (1.0 - 0.2 * canopy);
+    vec3 albedo = head ? headColour : mix(tint, groundAlbedo, 0.55 * (1.0 - smoothstep(0.0, 0.4, t))) * (grad * ao);
+    // The sun on the blade itself (GF.look.z, RVK_GrassGlow; FL.sunColor: none at night): a rounded blade, lit on the
+    // side towards the sun and darker on the other (around the ground's light: the mean stays); the light shining
+    // through its thin upper part when the camera looks towards the sun; a glint along it (a hair's sheen). In a dense
+    // field a low sun reaches only the upper blades.
+    vec3 extra = vec3(0.0);
+    float lit = 1.0;
+    const vec3 kLuma = vec3(0.3, 0.59, 0.11);
+    if (GF.look.z > 0.0) {
+        vec3 Ls = -normalize(FL.sunDir.xyz + vec3(0.0, -1e-6, 0.0));
+        float sunOn = clamp(dot(FL.sunColor.rgb, kLuma) * 2.5, 0.0, 1.0) * smoothstep(0.0, 0.1, Ls.y);
+        float canopyShade = mix(1.0, smoothstep(0.0, 0.75, t), canopy * 0.7 * (1.0 - Ls.y));
+        float sunlit = shade * sunOn * canopyShade * GF.look.z;
+        // Rounded: the edge towards the sun lighter, the other darker (zero-mean across the blade, so the field stays
+        // as bright as its ground - which already holds the sunlight).
+        vec3 face = vec3(vh.x, 0.0, vh.y) / max(vl, 1e-3);
+        lit = 1.0 + sunlit * 0.3 * side * dot(vec3(right.x, 0.0, right.y), Ls);
+        // Through the blade: diffusely, wherever the sun is on its far side (the face away from the camera), and
+        // strongest looking straight towards the sun; the thin upper blade lets more through than the base.
+        vec3 V = normalize(p - GF.camera.xyz);
+        float behind = max(-dot(face, Ls), 0.0), bk = max(dot(V, Ls), 0.0);
+        float through = (0.5 * behind + 0.5 * bk * bk * bk) * pow(t, 1.3);
+        extra += albedo * vec3(1.2, 1.25, 0.7) * FL.sunColor.rgb * (0.6 * through * sunlit);
+        vec3 T = normalize(up + vec3(r.x, 0.0, r.y) * (2.0 * droop * t));
+        vec3 H = normalize(Ls - V);
+        float th = dot(T, H);
+        float sheen = pow(max(1.0 - th * th, 0.0), 20.0) * t;
+        extra += FL.sunColor.rgb * (0.07 * sheen * sunlit);
+    }
+    // A gust bends the blades over, showing more of their lighter faces: the sweep shows as a brighter band.
+    lit *= 1.0 + 0.2 * (gust - 0.1 * GF.look.w) * t;   // (around the gusts' mean: the field's brightness stays)
+    vAlbedo = albedo;
+    vec3 colour = albedo * light * lit + extra;
+    // Towards the field's edge, and for blades drawn wider than they are, the colour goes over to the lit ground's:
+    // the field's rim melts into the ground instead of ending.
+    vec3 groundLit = groundAlbedo * light;
+    float toGround = 0.7 * smoothstep(0.55 * R, R, dist) + 0.5 * (1.0 - 1.0 / widenAA);
+    colour = mix(colour, groundLit, min(toGround, 0.85));
+    vColour = colour * GF.look.x;
     // For the post passes, as the scene's surfaces write them: how much local lights lit it (ambient occlusion spares
     // that) and the direct sunlight's share (contact shadows take it) - kept small: a thick field would speckle.
-    const vec3 kLuma = vec3(0.3, 0.59, 0.11);
     vShares = vec2(clamp(dot(local, kLuma) / max(dot(light, kLuma), 1e-3), 0.0, 1.0), 0.25 * shade);
 }

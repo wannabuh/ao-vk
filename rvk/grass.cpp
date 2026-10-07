@@ -7,13 +7,14 @@
 // covered it, and a capture block whose cells are all known at least that finely skips the triangle, so once the
 // ground near the camera is known a frame's capture costs a bounding-box test per terrain triangle.
 //
-// The blades: once a tile's ground has settled its blades are baked (BuildGrassTile) as 32-byte records into one GPU
-// pool; a tile is rebuilt only when its ground changes (a finer level of detail, a newly seen part, a re-uploaded
-// lightmap). The vertex shader (grass.vert) expands each record into a tapered strip - five triangles near, three far -
-// bends it with the wind and the characters walking through, and lights it per vertex the way the terrain is lit
+// The blades: once a tile's ground has settled its blades are baked (BuildGrassTile) as 48-byte records into one GPU
+// pool - grass in tufts and patches, a few broad blades, seed stalks and flowers; a tile is rebuilt only when its ground
+// changes (a finer level of detail, a newly seen part, a re-uploaded lightmap). The vertex shader (grass.vert) expands
+// each record into a strip - six triangles near, four far - bends it with the wind, the gusts and the characters
+// walking through (and the trails they leave, UpdateGrassTrail), and lights it per vertex the way the terrain is lit
 // (lightmap + global ambient, the sun's shadow, local lights), so the grass is as bright as its ground by day and by
-// night. Drawn into the scene before the game's blended draws (DrawGrassTiles). Off by default: with RVK_GrassOn off
-// nothing is captured, built or drawn.
+// night; the sun shades, backlights and glints on the blades on top. Drawn into the scene before the game's blended
+// draws (DrawGrassTiles). Off by default: with RVK_GrassOn off nothing is captured, built or drawn.
 #include "internal.h"
 
 #include <algorithm>
@@ -48,8 +49,10 @@ struct GrassFrame {
     float look[4];       // x: brightness; y: local light scale
     float sunColour[4];  // rgb: the directional light the terrain's light pass takes (none with the light override)
     float sunDir[4];     // xyz: the direction it travels
+    float lod[4];        // x: pixels per world unit at view depth 1; y: the least width a blade is drawn at (pixels)
+    float trail[4];      // xy: the trail window's first cell; z: its cell size; w: cells a side (0 = no trails)
 };
-static_assert(sizeof(GrassFrame) == 240, "grass frame block");
+static_assert(sizeof(GrassFrame) == 272, "grass frame block");
 
 // One blade in the pool (grass.vert Blade).
 struct GrassBlade {
@@ -59,15 +62,22 @@ struct GrassBlade {
     uint32_t yawPhase;   // yaw (unorm16 x 2 pi) | wind phase (unorm16 x 20 pi) << 16
     uint32_t tint;       // RGB (0xRRGGBB)
     uint32_t light;      // the lightmap's RGB at the root; A nonzero = captured
+    uint32_t ground;     // the ground texel's RGB | kind << 24 (GrassKind) | dense << 26 | fade rank (0..31) << 27
+    uint32_t head;       // the head's RGB (seed stalks, flowers) | the canopy's density around it (unorm8) << 24
+    uint32_t spare[2];
 };
-static_assert(sizeof(GrassBlade) == 32, "grass blade record");
+static_assert(sizeof(GrassBlade) == 48, "grass blade record");
 
-// The shared index pattern: vertex v of blade b is 8 b + v (cross section v >> 1, edge v & 1; 7 is unused). The far
-// pattern skips the first third's cross section: the same blade, its curve in two pieces.
-constexpr uint32_t kNearIndices = 15;    // three segments: 2 + 2 triangles and the tip
-constexpr uint32_t kFarIndices = 9;      // two segments: root, two thirds up, the tip
-constexpr uint32_t kNearPattern[kNearIndices] = {0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4, 4, 5, 6};
-constexpr uint32_t kFarPattern[kFarIndices] = {0, 1, 4, 1, 5, 4, 4, 5, 6};
+// What a blade is (grass.vert kSectionT / kSectionW: its shape).
+enum GrassKind : uint32_t { kBlade = 0, kBroad = 1, kStalk = 2, kFlower = 3 };
+
+// The shared index pattern: vertex v of blade b is 8 b + v (cross section v >> 1, edge v & 1). The far pattern skips
+// the first cross section above the root: the same blade, its curve in two pieces. A pointed tip's two vertices are
+// the same point (its second triangle has no area); a flower's head is flat-topped.
+constexpr uint32_t kNearIndices = 18;    // three segments of two triangles
+constexpr uint32_t kFarIndices = 12;     // two segments: the root, the second cross section, the tip
+constexpr uint32_t kNearPattern[kNearIndices] = {0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4, 4, 5, 6, 5, 7, 6};
+constexpr uint32_t kFarPattern[kFarIndices] = {0, 1, 4, 1, 5, 4, 4, 5, 6, 5, 7, 6};
 
 // A cheap, position-stable hash so a blade stays put frame to frame (needed by the temporal anti-aliasing).
 uint32_t HashCell(int32_t x, int32_t z)
@@ -118,6 +128,18 @@ bool GreenRgb(const uint8_t c[3])
 int32_t FloorDiv(int32_t a, int32_t b) { return a >= 0 ? a / b : -((-a + b - 1) / b); }
 
 uint64_t TileKey(int32_t tx, int32_t tz) { return (uint64_t(uint32_t(tx)) << 32) | uint32_t(tz); }
+
+// Rounding to an unsigned integer in 0 .. max, and a signed one in -max .. max: std::lround is a library call on the
+// 32-bit build, and a blade's record takes a dozen of these.
+uint32_t RoundU(float v, uint32_t max)
+{
+    return uint32_t(std::min(std::max(v, 0.0f) + 0.5f, float(max)));
+}
+int32_t RoundS(float v, int32_t max)
+{
+    const float c = std::min(std::max(v, -float(max)), float(max));
+    return int32_t(c + (c >= 0.0f ? 0.5f : -0.5f));
+}
 
 // VmaVirtualAllocation is a 64-bit handle (a pointer on 64-bit builds), kept as uint64_t in rvk.h.
 uint64_t FromVa(VmaVirtualAllocation a)
@@ -500,13 +522,14 @@ void Device::GroundNormal(float x, float z, float out[3]) const
 bool Device::CreateGrassResources(std::string* error)
 {
     DestroyGrassResources();
-    // One set: 0 the camera (uniform), 2 the blades, 4 the frame lights, 5 the sun's shadows, 6 the point lights'.
-    VkDescriptorSetLayoutBinding b[5] = {};
-    const uint32_t numbers[5] = {0, 2, 4, 5, 6};
-    const VkDescriptorType types[5] = {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                       VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER};
-    for (int i = 0; i < 5; ++i) {
+    // One set: 0 the camera (uniform), 2 the blades, 3 the trails, 4 the frame lights, 5 the sun's shadows, 6 the point
+    // lights'.
+    VkDescriptorSetLayoutBinding b[6] = {};
+    const uint32_t numbers[6] = {0, 2, 3, 4, 5, 6};
+    const VkDescriptorType types[6] = {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                       VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                       VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER};
+    for (int i = 0; i < 6; ++i) {
         b[i].binding = numbers[i];
         b[i].descriptorType = types[i];
         b[i].descriptorCount = 1;
@@ -514,7 +537,7 @@ bool Device::CreateGrassResources(std::string* error)
     }
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 5;
+    sl.bindingCount = 6;
     sl.pBindings = b;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_grassSetLayout),
                "vkCreateDescriptorSetLayout", error))
@@ -652,7 +675,7 @@ void Device::FreeGrassBlades(GrassTile& tile)
 // freed once no frame in flight reads it).
 bool Device::GrowGrassPool(uint32_t minBlades)
 {
-    uint32_t blades = std::max<uint32_t>(m_grassPoolBlades * 2, 1u << 17);   // 4 MB to start
+    uint32_t blades = std::max<uint32_t>(m_grassPoolBlades * 2, 1u << 17);   // 6 MB to start
     while (blades < minBlades)
         blades *= 2;
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -666,7 +689,7 @@ bool Device::GrowGrassPool(uint32_t minBlades)
     if (!Check(vmaCreateBuffer(m_allocator, &bi, &ac, &buffer, &allocation, nullptr), "grass blade pool", &err))
         return false;
     VmaVirtualBlockCreateInfo vb{};
-    vb.size = bi.size;
+    vb.size = blades;                            // the virtual block counts blades (a record isn't a power of two)
     VmaVirtualBlock block = nullptr;
     if (vmaCreateVirtualBlock(&vb, &block) != VK_SUCCESS) {
         vmaDestroyBuffer(m_allocator, buffer, allocation);
@@ -679,8 +702,7 @@ bool Device::GrowGrassPool(uint32_t minBlades)
         if (!tile.alloc)
             continue;
         VmaVirtualAllocationCreateInfo ai{};
-        ai.size = VkDeviceSize(tile.blades) * sizeof(GrassBlade);
-        ai.alignment = sizeof(GrassBlade);       // offsets are in whole blades
+        ai.size = tile.blades;                   // in blades
         VmaVirtualAllocation a{};
         VkDeviceSize offset = 0;
         if (vmaVirtualAllocate(block, &ai, &a, &offset) != VK_SUCCESS) {   // can't happen: the new pool is bigger
@@ -688,9 +710,10 @@ bool Device::GrowGrassPool(uint32_t minBlades)
             tile.built = false;
             continue;
         }
-        regions.push_back({VkDeviceSize(tile.first) * sizeof(GrassBlade), offset, ai.size});
+        regions.push_back({VkDeviceSize(tile.first) * sizeof(GrassBlade), offset * sizeof(GrassBlade),
+                           VkDeviceSize(tile.blades) * sizeof(GrassBlade)});
         tile.alloc = FromVa(a);
-        tile.first = uint32_t(offset / sizeof(GrassBlade));
+        tile.first = uint32_t(offset);
     }
     if (m_grassPool) {
         VkCommandBuffer cmd = UploadCommands();
@@ -771,10 +794,11 @@ bool Device::BuildGrassTile(GrassTile& tile)
     const double since = ProfileCpu();
     const float x0 = float(tile.tx) * kGrassTileSize, z0 = float(tile.tz) * kGrassTileSize;
     const float spacing = std::max(0.3f, m_grassHeight * 0.75f);
+    const float variety = std::clamp(m_grassVariety, 0.0f, 2.0f), flowers = std::clamp(m_grassFlowers, 0.0f, 3.0f);
     // A pure random scatter, not a patch grid: a jittered lattice shows as rows at grazing angles (a moire). The
-    // expected count sets the density; the clump noise drops about half.
+    // expected count sets the density; the clump noise drops about half (the clumps and the edges a little more).
     const float perM2 = m_grassDensity / (spacing * spacing);
-    const int32_t total = int32_t(perM2 * kGrassTileSize * kGrassTileSize * 1.7f);
+    const int32_t total = int32_t(perM2 * kGrassTileSize * kGrassTileSize * 1.7f * (1.0f + 0.2f * variety));
     // The ground's slope on a coarse grid over the tile (it varies slowly), bilinear per blade.
     constexpr int kNG = 9;
     const float ngCell = kGrassTileSize / float(kNG);
@@ -796,39 +820,43 @@ bool Device::BuildGrassTile(GrassTile& tile)
     };
     // The ground under a blade: its own tile's cell, else the nearest known one around it (GroundAt).
     auto ground = [&](float px, float pz, float* y, uint32_t* colour, uint32_t* light) {
-        const int cx = std::clamp(int((px - x0) / kGroundCell), 0, kGroundN - 1);
-        const int cz = std::clamp(int((pz - z0) / kGroundCell), 0, kGroundN - 1);
-        const int idx = cz * kGroundN + cx;
-        if (tile.rank[idx] != 255) {
-            *y = tile.y[idx];
-            *colour = tile.colour[idx];
-            *light = tile.lightRank[idx] != 255 ? tile.light[idx] : 0u;
-            return true;
+        const int cx = int(std::floor((px - x0) / kGroundCell)), cz = int(std::floor((pz - z0) / kGroundCell));
+        if (cx >= 0 && cx < kGroundN && cz >= 0 && cz < kGroundN) {
+            const int idx = cz * kGroundN + cx;
+            if (tile.rank[idx] != 255) {
+                *y = tile.y[idx];
+                *colour = tile.colour[idx];
+                *light = tile.lightRank[idx] != 255 ? tile.light[idx] : 0u;
+                return true;
+            }
         }
         return GroundAt(px, pz, y, colour, light);
     };
-    auto unorm = [](float v, float scale, uint32_t max) {
-        return uint32_t(std::clamp(std::lround(v / scale * float(max)), 0L, long(max)));
-    };
-    // The slow noise fields - the clumps (density) and the lean (direction, strength) - on a coarse grid over the tile,
-    // bilinear per blade: they vary over metres, and evaluated per candidate they were most of a build.
+    auto unorm = [](float v, float scale, uint32_t max) { return RoundU(v / scale * float(max), max); };
+    // The slow noise fields - the clumps (density), the lean (direction, strength), the dry and the tall patches - on
+    // a coarse grid over the tile, bilinear per blade: they vary over metres, and evaluated per candidate they were most
+    // of a build.
     constexpr int kFG = 17;                      // half-unit samples, edges included
     const float fgCell = kGrassTileSize / float(kFG - 1);
-    float clumpF[kFG][kFG], leanX[kFG][kFG], leanZ[kFG][kFG];
+    float clumpF[kFG][kFG], leanX[kFG][kFG], leanZ[kFG][kFG], dryF[kFG][kFG], tallF[kFG][kFG];
     for (int j = 0; j < kFG; ++j)
         for (int i = 0; i < kFG; ++i) {
             const float x = x0 + float(i) * fgCell, z = z0 + float(j) * fgCell;
             clumpF[j][i] = ClumpNoise(x, z);
-            if ((i & 1) == 0 && (j & 1) == 0) {  // the lean: one-unit samples are plenty
+            if ((i & 1) == 0 && (j & 1) == 0) {  // the lean and the patches: one-unit samples are plenty
                 const float f1 = ValueNoise(x * 0.05f + 31.1f, z * 0.05f - 7.3f) - 0.5f;
                 const float f2 = ValueNoise(x * 0.05f - 12.7f, z * 0.05f + 19.3f) - 0.5f;
                 const float fl = std::sqrt(f1 * f1 + f2 * f2) + 1e-6f;
                 const float mag = 0.05f + 0.22f * ValueNoise(x * 0.028f + 4.7f, z * 0.028f - 2.2f);
                 leanX[j][i] = f1 / fl * mag;
                 leanZ[j][i] = f2 / fl * mag;
+                // Dry patches: a few metres across, a fifth of the ground or so; tall patches overlapping them.
+                dryF[j][i] = 0.65f * ValueNoise(x * 0.09f - 3.3f, z * 0.09f + 8.8f) +
+                             0.35f * ValueNoise(x * 0.31f + 1.7f, z * 0.31f - 5.1f);
+                tallF[j][i] = ValueNoise(x * 0.12f + 17.2f, z * 0.12f + 2.9f);
             }
         }
-    for (int j = 0; j < kFG; ++j)                // the lean's odd samples: between their neighbours
+    for (int j = 0; j < kFG; ++j)                // the odd samples: between their neighbours
         for (int i = 0; i < kFG; ++i)
             if ((i & 1) || (j & 1)) {
                 const int i0 = i & ~1, j0 = j & ~1, i1 = std::min(i0 + 2, kFG - 1), j1 = std::min(j0 + 2, kFG - 1);
@@ -838,13 +866,55 @@ bool Device::BuildGrassTile(GrassTile& tile)
                 };
                 leanX[j][i] = mix(leanX);
                 leanZ[j][i] = mix(leanZ);
+                dryF[j][i] = mix(dryF);
+                tallF[j][i] = mix(tallF);
             }
-    auto field = [&](const float (&f)[kFG][kFG], float px, float pz) {
+    // A point's place on that grid (computed once a blade, then read from each field).
+    struct FieldAt { int i, j; float w00, w10, w01, w11; };
+    auto fieldAt = [&](float px, float pz) {
         const float fi = std::clamp((px - x0) / fgCell, 0.0f, float(kFG - 1) - 1e-3f);
         const float fj = std::clamp((pz - z0) / fgCell, 0.0f, float(kFG - 1) - 1e-3f);
         const int i = int(fi), j = int(fj);
         const float ti = fi - float(i), tj = fj - float(j);
-        return (f[j][i] * (1 - ti) + f[j][i + 1] * ti) * (1 - tj) + (f[j + 1][i] * (1 - ti) + f[j + 1][i + 1] * ti) * tj;
+        return FieldAt{i, j, (1 - ti) * (1 - tj), ti * (1 - tj), (1 - ti) * tj, ti * tj};
+    };
+    auto field = [](const float (&f)[kFG][kFG], const FieldAt& a) {
+        return f[a.j][a.i] * a.w00 + f[a.j][a.i + 1] * a.w10 + f[a.j + 1][a.i] * a.w01 + f[a.j + 1][a.i + 1] * a.w11;
+    };
+    // How much of the ground around each cell is grass (its four neighbours two cells away; beyond the tile, its
+    // edge cell stands in): the grass thins and shortens towards a path or a rock.
+    uint8_t grassyAround[kGroundN * kGroundN];
+    {
+        auto isGrass = [&](int cx, int cz) {
+            cx = std::clamp(cx, 0, kGroundN - 1);
+            cz = std::clamp(cz, 0, kGroundN - 1);
+            const int idx = cz * kGroundN + cx;
+            return tile.rank[idx] != 255 && (tile.colour[idx] >> 24 & 1u);
+        };
+        for (int cz = 0; cz < kGroundN; ++cz)
+            for (int cx = 0; cx < kGroundN; ++cx)
+                grassyAround[cz * kGroundN + cx] = uint8_t(isGrass(cx - 2, cz) + isGrass(cx + 2, cz) +
+                                                           isGrass(cx, cz - 2) + isGrass(cx, cz + 2));
+    }
+    // Clumps: grass grows in tufts, its blades fanning out from each tuft's centre. Centres on a jittered grid (with
+    // the tile's neighbours' around it, so tufts carry across tile edges), each with its own vigour.
+    const float clumpCell = std::max(0.45f, m_grassHeight * 1.1f);
+    const int32_t cgx0 = int32_t(std::floor(x0 / clumpCell)) - 1, cgz0 = int32_t(std::floor(z0 / clumpCell)) - 1;
+    const int cgN = int(std::ceil(kGrassTileSize / clumpCell)) + 3;
+    std::vector<float> clumps(size_t(cgN) * cgN * 3);
+    for (int j = 0; j < cgN; ++j)
+        for (int i = 0; i < cgN; ++i) {
+            const uint32_t h = HashCell((cgx0 + i) * 31 + 7, (cgz0 + j) * 17 - 3);
+            float* c = &clumps[(size_t(j) * cgN + i) * 3];
+            c[0] = (float(cgx0 + i) + 0.15f + 0.7f * Unit(h)) * clumpCell;
+            c[1] = (float(cgz0 + j) + 0.15f + 0.7f * Unit(h * 2246822519u)) * clumpCell;
+            c[2] = Unit(h * 3266489917u);
+        }
+    // A flower's colour: a meadow's flowers come in patches of one colour, a few strays of another.
+    constexpr float kFlowerColours[6][3] = {{0.84f, 0.84f, 0.78f}, {0.86f, 0.74f, 0.24f}, {0.56f, 0.42f, 0.72f},
+                                            {0.44f, 0.52f, 0.80f}, {0.82f, 0.56f, 0.64f}, {0.84f, 0.60f, 0.30f}};
+    auto pack = [](const float c[3]) {
+        return RoundU(c[0] * 255.0f, 255) << 16 | RoundU(c[1] * 255.0f, 255) << 8 | RoundU(c[2] * 255.0f, 255);
     };
     std::vector<GrassBlade> sparseB, denseB;   // the sparse subset is drawn alone for a distant tile (its LOD)
     sparseB.reserve(size_t(total) / 8);
@@ -856,59 +926,170 @@ bool Device::BuildGrassTile(GrassTile& tile)
         // rotation (the "rows").
         const uint32_t hp = HashCell(tileSeed, int32_t(uint32_t(k) * 2654435761u));
         const uint32_t hv = HashCell(tileSeed ^ 0x5BF03635, int32_t(uint32_t(k) * 40503u));
+        uint32_t hw = (hv ^ 0x1B873593u) * 0x85EBCA6Bu;   // a third stream: hv remixed (fmix32), cheaper than a hash
+        hw ^= hw >> 13;
+        hw *= 0xC2B2AE35u;
+        hw ^= hw >> 16;
         const float px = x0 + Unit(hp) * kGrassTileSize, pz = z0 + Unit(hp * 2246822519u) * kGrassTileSize;
         const float v0 = Unit(hv), v1 = Unit(hv * 2246822519u), v2 = Unit(hv * 3266489917u),
                     v3 = Unit(hv * 668265263u), v4 = Unit(hv * 40503u);
+        const float w0 = Unit(hw), w1 = Unit(hw * 2246822519u), w2 = Unit(hw * 3266489917u),
+                    w3 = Unit(hw * 668265263u), w4 = Unit(hw * 40503u);
         // Clumps: a low-frequency noise drops blades and leaves bare gaps.
-        if (v3 > 0.5f + 0.5f * field(clumpF, px, pz))
+        const FieldAt fa = fieldAt(px, pz);
+        const float clumpHere = field(clumpF, fa);
+        if (v3 > 0.5f + 0.5f * clumpHere)
+            continue;
+        // The nearest tuft: blades thin out between tufts and lean out from their centre.
+        float rim = 1.0f, outX = 0.0f, outZ = 0.0f, vigour = 0.5f;
+        {
+            const int ci = int(std::floor(px / clumpCell)) - cgx0, cj = int(std::floor(pz / clumpCell)) - cgz0;
+            float best = 1e30f;
+            for (int dj = -1; dj <= 1; ++dj)
+                for (int di = -1; di <= 1; ++di) {
+                    const int i = std::clamp(ci + di, 0, cgN - 1), j = std::clamp(cj + dj, 0, cgN - 1);
+                    const float* c = &clumps[(size_t(j) * cgN + i) * 3];
+                    const float dx = px - c[0], dz = pz - c[1], d2 = dx * dx + dz * dz;
+                    if (d2 < best) {
+                        best = d2;
+                        outX = dx;
+                        outZ = dz;
+                        vigour = c[2];
+                    }
+                }
+            const float d = std::sqrt(best);
+            rim = std::min(d / (0.75f * clumpCell), 1.0f);   // 0 at the centre, 1 between tufts
+            if (d > 1e-4f) {
+                outX /= d;
+                outZ /= d;
+            }
+        }
+        if (w0 > 1.0f - 0.45f * std::min(variety, 1.0f) * rim * rim)
             continue;
         float py;
         uint32_t pcol, plight;
         if (!ground(px, pz, &py, &pcol, &plight) || !(pcol >> 24 & 1u))
             continue;                            // no grass ground here
-        const float height = m_grassHeight * (0.45f + 1.2f * v0);
-        const float yaw = v1 * 6.2831853f;       // the blade's droop direction
-        const float rx = std::cos(yaw), rz = std::sin(yaw);
-        // The lean: a low-frequency field (a patch leans one way together), a little per-blade scatter.
-        const float scatter = (v2 - 0.5f) * 0.18f;
         float tn[3];
         sampleNormal(px, pz, tn);                // the blade grows along the ground's slope, not straight up
-        float up[3] = {tn[0] + field(leanX, px, pz) + rx * scatter, tn[1], tn[2] + field(leanZ, px, pz) + rz * scatter};
+        // Steep ground stays bare (a cliff, a bank), and the grass thins and shortens towards the edge of its ground
+        // (a path, a rock): the cells around the root that are grass.
+        if (w1 > (tn[1] - 0.6f) / 0.22f)
+            continue;
+        const int ecx = std::clamp(int((px - x0) / kGroundCell), 0, kGroundN - 1);
+        const int ecz = std::clamp(int((pz - z0) / kGroundCell), 0, kGroundN - 1);
+        const float edge = float(grassyAround[ecz * kGroundN + ecx]) * 0.25f;
+        if (w2 > 0.35f + 0.65f * edge)
+            continue;
+        // What it is: mostly grass blades; a few broad blades, seed stalks and (in patches) flowers.
+        const float pick = w3;
+        GrassKind kind = kBlade;
+        const float pFlowerBase = 0.012f * flowers;
+        float pFlower = 0.0f;
+        if (pick < pFlowerBase * 2.0f + 0.04f * flowers + 0.06f * std::min(flowers, 1.0f)) {   // (a rare candidate)
+            const float patch = ValueNoise(px * 0.07f + 5.5f, pz * 0.07f - 9.1f);
+            pFlower = pFlowerBase * 2.0f * std::clamp((patch - 0.45f) / 0.3f, 0.0f, 1.0f);
+            if (pick < pFlower)
+                kind = kFlower;
+            else if (pick < pFlower + 0.04f * flowers)
+                kind = kStalk;
+            else if (pick < pFlower + 0.04f * flowers + 0.06f * std::min(flowers, 1.0f))
+                kind = kBroad;
+        }
+        const float tall = 1.0f + 0.5f * variety * (field(tallF, fa) - 0.5f);
+        float height = m_grassHeight * (0.45f + 1.2f * v0) * tall * (1.0f + 0.2f * variety * (1.0f - rim) * vigour) *
+                       (0.65f + 0.35f * edge);
+        const float yaw = v1 * 6.2831853f;       // the blade's droop direction
+        const float rx = std::cos(yaw), rz = std::sin(yaw);
+        // The lean: a low-frequency field (a patch leans one way together), a little per-blade scatter, and out from
+        // its tuft's centre (more at the tuft's rim).
+        const float scatter = (v2 - 0.5f) * 0.18f;
+        const float fan = 0.3f * std::min(variety, 1.5f) * std::min(rim * 1.5f, 1.0f);
+        float up[3] = {tn[0] + field(leanX, fa) + rx * scatter + outX * fan, tn[1],
+                       tn[2] + field(leanZ, fa) + rz * scatter + outZ * fan};
         const float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
         up[0] /= ul; up[1] /= ul; up[2] /= ul;
-        const float droop = 0.06f + 0.18f * v4;  // a little arc over towards the tip
-        const float half = 0.5f * (0.03f + 0.03f * v2) * (0.5f + height) * m_grassWidth;   // RVK_GrassWidth
-        float phase = std::fmod(px * 0.3f + pz * 0.25f + v1 * 6.2831853f, 62.831853f);
-        if (phase < 0.0f)
-            phase += 62.831853f;
-        // The colour: the grass hue (mostly one green, a little of the ground's own) at the ground texel's brightness,
-        // so a field is as light or dark as the ground it grows on; a tiny per-blade variation.
+        float droop = 0.06f + 0.18f * v4;        // a little arc over towards the tip
+        float half = 0.5f * (0.03f + 0.03f * v2) * (0.5f + m_grassHeight) * m_grassWidth;   // RVK_GrassWidth
+        float phase = px * 0.3f + pz * 0.25f + v1 * 6.2831853f;
+        phase -= std::floor(phase * (1.0f / 62.831853f)) * 62.831853f;
+        // The colour: the grass hue (mostly one green, a little of the ground's own; straw-coloured in a dry patch,
+        // each blade a shade off) at the ground texel's brightness, so a field is as light or dark as the ground it
+        // grows on; a tiny per-blade variation.
         const float gr = float(pcol >> 16 & 0xFF) / 255.0f, gg = float(pcol >> 8 & 0xFF) / 255.0f,
                     gb = float(pcol & 0xFF) / 255.0f;
         float hue[3] = {(0.44f * 0.45f + gr * 0.55f) * 0.88f, (0.62f * 0.45f + gg * 0.55f) * 0.92f,
                         (0.30f * 0.45f + gb * 0.55f) * 0.82f};
+        const float dry = std::clamp((field(dryF, fa) - 0.56f) / 0.16f, 0.0f, 1.0f) * std::min(0.55f * variety, 0.9f) *
+                          (0.6f + 0.4f * w4);
+        constexpr float kStraw[3] = {0.62f, 0.56f, 0.30f};
+        const float jitter[3] = {Unit(hw * 0x85EBCA6Bu), Unit(hw * 0xC2B2AE35u), Unit(hw * 0x27D4EB2Fu)};
+        for (int c = 0; c < 3; ++c)
+            hue[c] = (hue[c] * (1.0f - dry) + kStraw[c] * 0.6f * dry) *
+                     (1.0f + 0.12f * std::min(variety, 1.5f) * (jitter[c] - 0.5f));
         const float groundLum = 0.299f * gr + 0.587f * gg + 0.114f * gb;
         const float hueLum = 0.299f * hue[0] + 0.587f * hue[1] + 0.114f * hue[2];
         const float scale = (hueLum > 1e-4f ? groundLum / hueLum : 1.0f) * (0.94f + 0.12f * v0);
-        uint32_t tint = 0;
+        float tintRgb[3];
         for (int c = 0; c < 3; ++c)
-            tint = tint << 8 | uint32_t(std::clamp(std::lround(hue[c] * scale * 255.0f), 0L, 255L));
+            tintRgb[c] = hue[c] * scale;
+        float headRgb[3] = {0.0f, 0.0f, 0.0f};
+        switch (kind) {
+        case kBroad:                             // shorter, broader, arching over further
+            height *= 0.7f + 0.2f * v4;
+            half *= 1.9f;
+            droop = 0.2f + 0.25f * v4;
+            break;
+        case kStalk: {                           // a tall thin stem with a seed head, nodding
+            height *= 1.45f + 0.4f * v4;
+            half *= 0.75f;
+            droop = 0.12f + 0.2f * v4;
+            // Straw with a little of the blade's green, a third lighter than the ground.
+            const float headLum = groundLum * 1.35f;
+            const float strawLum = 0.299f * kStraw[0] + 0.587f * kStraw[1] + 0.114f * kStraw[2];
+            for (int c = 0; c < 3; ++c)
+                headRgb[c] = (kStraw[c] / strawLum * 0.7f + tintRgb[c] / std::max(groundLum, 1e-3f) * 0.3f) * headLum;
+            break;
+        }
+        case kFlower: {                          // a stem just above the grass, a head of the patch's colour
+            height *= 0.95f + 0.35f * v4;
+            half *= 1.1f;
+            droop = 0.03f;
+            const int32_t fx = int32_t(std::floor(px * 0.08f)), fz = int32_t(std::floor(pz * 0.08f));
+            int colour = int(HashCell(fx + 911, fz - 37) % 6u);
+            if (w4 < 0.15f)
+                colour = int(hw % 6u);           // a stray
+            for (int c = 0; c < 3; ++c)
+                headRgb[c] = kFlowerColours[colour][c] * (0.85f + 0.15f * v2);
+            break;
+        }
+        default:
+            break;
+        }
+        // The canopy around it (the base's darkening): thicker in a tuft and where the clump noise is dense.
+        const float canopy = std::clamp(0.55f * (1.0f - rim) * (0.5f + vigour) * std::min(variety, 1.0f) +
+                                        0.6f * clumpHere - 0.05f, 0.0f, 1.0f);
+        const bool sparse = (hv % 4u) == 0u;
         GrassBlade b;
         b.x = px;
         b.y = py;
         b.z = pz;
-        auto snorm16 = [](float v) { return uint32_t(uint16_t(int16_t(std::clamp(std::lround(v * 32767.0f), -32767L, 32767L)))); };
+        auto snorm16 = [](float v) { return uint32_t(uint16_t(int16_t(RoundS(v * 32767.0f, 32767)))); };
         b.up = snorm16(up[0]) | snorm16(up[2]) << 16;
         b.shape = unorm(height, 4.0f, 65535) | unorm(half, 0.25f, 255) << 16 | unorm(droop, 1.0f, 255) << 24;
         b.yawPhase = (uint32_t(yaw / 6.2831853f * 65536.0f) & 0xFFFFu) |
                      (uint32_t(phase / 62.831853f * 65536.0f) & 0xFFFFu) << 16;
-        b.tint = tint;
+        b.tint = pack(tintRgb);
         b.light = plight;
+        b.ground = (pcol & 0xFFFFFFu) | uint32_t(kind) << 24 | (sparse ? 0u : 1u << 26) |
+                   (uint32_t(Unit(hw * 0x165667B1u) * 32.0f) & 31u) << 27;
+        b.head = pack(headRgb) | unorm(canopy, 1.0f, 255) << 24;
+        b.spare[0] = b.spare[1] = 0;
         m_grassLitBlades += plight ? 1 : 0;
         ++m_grassBuiltBlades;
         minY = std::min(minY, py);
         maxY = std::max(maxY, py);
-        ((hv % 4u == 0u) ? sparseB : denseB).push_back(b);
+        (sparse ? sparseB : denseB).push_back(b);
     }
     // Each subset near-to-far from the tile's centre: the camera is usually within a tile or so of it, so its nearest
     // blades go first and early-Z rejects what they hide.
@@ -943,8 +1124,7 @@ bool Device::BuildGrassTile(GrassTile& tile)
         if (!EnsureGrassIndices(count))
             return false;
         VmaVirtualAllocationCreateInfo ai{};
-        ai.size = VkDeviceSize(count) * sizeof(GrassBlade);
-        ai.alignment = sizeof(GrassBlade);       // offsets are in whole blades
+        ai.size = count;                         // in blades
         VmaVirtualAllocation a{};
         VkDeviceSize offset = 0;
         if (!m_grassPoolBlock || vmaVirtualAllocate(m_grassPoolBlock, &ai, &a, &offset) != VK_SUCCESS) {
@@ -953,17 +1133,18 @@ bool Device::BuildGrassTile(GrassTile& tile)
                 return false;
             }
         }
-        EnsureRingSpace(ai.size + 64);
+        const VkDeviceSize bytes = VkDeviceSize(count) * sizeof(GrassBlade);
+        EnsureRingSpace(bytes + 64);
         void* cpu;
-        const VkDeviceSize staging = Allocate(ai.size, 16, &cpu);
+        const VkDeviceSize staging = Allocate(bytes, 16, &cpu);
         std::memcpy(cpu, sparseB.data(), sparseB.size() * sizeof(GrassBlade));
         std::memcpy(static_cast<uint8_t*>(cpu) + sparseB.size() * sizeof(GrassBlade), denseB.data(),
                     denseB.size() * sizeof(GrassBlade));
-        VkBufferCopy region{staging, offset, ai.size};
+        VkBufferCopy region{staging, offset * sizeof(GrassBlade), bytes};
         vkCmdCopyBuffer(UploadCommands(), m_frames[m_frameIndex].ring, m_grassPool, 1, &region);
         m_skinUploadsPending = true;             // the upload buffer's closing barrier covers it
         tile.alloc = FromVa(a);
-        tile.first = uint32_t(offset / sizeof(GrassBlade));
+        tile.first = uint32_t(offset);
         tile.blades = count;
         tile.sparse = uint32_t(sparseB.size());
     }
@@ -990,6 +1171,7 @@ void Device::UpdateGrassTiles()
             FreeGrassBlades(*tile);
         m_grassTiles.clear();
         m_grassChunks.clear();
+        m_trailValid = false;                    // (another playfield: its trails aren't these)
     }
     if (m_grassDirty) {                          // a blade setting changed: rebuild every tile (old blades stay meanwhile)
         m_grassDirty = false;
@@ -1074,6 +1256,103 @@ void Device::UpdateGrassTiles()
         }
 }
 
+// The trails (RVK_GrassTrail): once a frame, the grid around the camera recovers a little and takes a stamp from each
+// character standing in the grass - its blades pushed out from under its feet, swept the way it walks. The live push
+// (grass.vert PusherOffset) bends the grass as a character passes; this keeps it trodden down for a few seconds after.
+void Device::UpdateGrassTrail()
+{
+    constexpr int N = kTrailN;
+    constexpr float kRecover = 0.2f;             // the push a cell loses a second: flattened grass is up in ~5 s
+    const double now = SwayClock();
+    const float dt = m_trailValid ? float(std::clamp(now - m_trailClock, 0.0, 0.25)) : 0.0f;
+    m_trailClock = now;
+    if (!m_grassTrails || m_grassPush <= 0.0f) {
+        m_trailValid = false;
+        m_trailActive = 0;
+        return;
+    }
+    if (m_trail.empty())
+        m_trail.assign(size_t(N) * N * 2, 0.0f);
+    const int32_t ox = int32_t(std::floor(m_frameEye[0] / kTrailCell)) - N / 2;
+    const int32_t oz = int32_t(std::floor(m_frameEye[2] / kTrailCell)) - N / 2;
+    if (!m_trailValid) {
+        std::fill(m_trail.begin(), m_trail.end(), 0.0f);
+        m_trailActive = 0;
+    } else if (m_trailActive && (ox != m_trailOrigin[0] || oz != m_trailOrigin[1])) {
+        // The window moved: a slot whose world cell left it is cleared for the cell coming in (gx lives at gx mod N).
+        for (int i = 0; i < N; ++i) {
+            const int32_t before = m_trailOrigin[0] + ((i - m_trailOrigin[0]) & (N - 1)), after = ox + ((i - ox) & (N - 1));
+            if (before != after)
+                for (int j = 0; j < N; ++j)
+                    m_trail[(size_t(j) * N + i) * 2] = m_trail[(size_t(j) * N + i) * 2 + 1] = 0.0f;
+        }
+        for (int j = 0; j < N; ++j) {
+            const int32_t before = m_trailOrigin[1] + ((j - m_trailOrigin[1]) & (N - 1)), after = oz + ((j - oz) & (N - 1));
+            if (before != after)
+                std::fill(m_trail.begin() + size_t(j) * N * 2, m_trail.begin() + size_t(j + 1) * N * 2, 0.0f);
+        }
+    }
+    m_trailOrigin[0] = ox;
+    m_trailOrigin[1] = oz;
+    m_trailValid = true;
+    // Recovering: each cell's push shrinks (its direction kept).
+    if (m_trailActive && dt > 0.0f) {
+        uint32_t active = 0;
+        for (size_t c = 0; c < m_trail.size(); c += 2) {
+            const float x = m_trail[c], z = m_trail[c + 1];
+            if (x == 0.0f && z == 0.0f)
+                continue;
+            const float len = std::sqrt(x * x + z * z), left = len - kRecover * dt;
+            if (left <= 0.002f) {
+                m_trail[c] = m_trail[c + 1] = 0.0f;
+                continue;
+            }
+            m_trail[c] = x * (left / len);
+            m_trail[c + 1] = z * (left / len);
+            ++active;
+        }
+        m_trailActive = active;
+    }
+    // The characters standing in the grass now (the push trail's heads seen this frame), on the ground the grass has.
+    const float reach = 0.6f * std::sqrt(m_grassPush);
+    for (const PushPoint& p : m_pushTrail) {
+        if (!p.head || now - p.time > 0.1)
+            continue;
+        float gy;
+        if (!GroundAt(p.x, p.z, &gy, nullptr, nullptr) || std::fabs(p.y - gy) > 1.5f)
+            continue;                            // not on the captured ground (a roof, a bridge, out of range)
+        float mx = p.x - p.dropX, mz = p.z - p.dropZ;   // the way it walks (since its last trail point)
+        const float ml = std::sqrt(mx * mx + mz * mz);
+        if (ml > 0.05f) {
+            mx /= ml;
+            mz /= ml;
+        } else {
+            mx = mz = 0.0f;
+        }
+        const int32_t cx0 = int32_t(std::floor((p.x - reach) / kTrailCell)), cx1 = int32_t(std::floor((p.x + reach) / kTrailCell));
+        const int32_t cz0 = int32_t(std::floor((p.z - reach) / kTrailCell)), cz1 = int32_t(std::floor((p.z + reach) / kTrailCell));
+        for (int32_t cz = std::max(cz0, oz); cz <= std::min(cz1, oz + N - 1); ++cz)
+            for (int32_t cx = std::max(cx0, ox); cx <= std::min(cx1, ox + N - 1); ++cx) {
+                const float dx = (float(cx) + 0.5f) * kTrailCell - p.x, dz = (float(cz) + 0.5f) * kTrailCell - p.z;
+                const float d = std::sqrt(dx * dx + dz * dz);
+                if (d >= reach)
+                    continue;
+                const float q = d / reach, amount = 1.0f - q * q;
+                float wx = (d > 1e-3f ? dx / d : 0.0f) + 0.8f * mx, wz = (d > 1e-3f ? dz / d : 0.0f) + 0.8f * mz;
+                const float wl = std::sqrt(wx * wx + wz * wz);
+                if (wl < 1e-3f)
+                    continue;
+                float* cell = &m_trail[(size_t(cz & (N - 1)) * N + size_t(cx & (N - 1))) * 2];
+                if (amount * amount <= cell[0] * cell[0] + cell[1] * cell[1])
+                    continue;                    // already pushed further
+                if (cell[0] == 0.0f && cell[1] == 0.0f)
+                    ++m_trailActive;
+                cell[0] = wx / wl * amount;
+                cell[1] = wz / wl * amount;
+            }
+    }
+}
+
 // Draws the visible grass tiles into the scene rendering already active, building the tiles whose ground is ready.
 // Called from Draw at the game's first blended draw - the blades are opaque and write depth, so they must go in
 // before the game's blended grass/foliage (which writes no depth). Also from EndScene as a fallback, on its own.
@@ -1086,6 +1365,7 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
         return;
     m_grassDrawnThisFrame = true;
     UpdateGrassTiles();
+    UpdateGrassTrail();
     const uint64_t frame = m_frameNumber;
     const float half = kGrassTileSize * 0.5f, diag = half * 1.4142136f;
     const float drawReach = m_grassDistance + diag;
@@ -1173,9 +1453,10 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     gf.viewport[0] = float(m_scene->m_width);
     gf.viewport[1] = float(m_scene->m_height);
     gf.viewport[2] = m_grassDistance;
-    gf.wind[0] = float(SwayClock());
-    gf.viewport[3] = m_grassPrevTime != 0.0f ? m_grassPrevTime : gf.wind[0];   // the wind clock last frame
-    m_grassPrevTime = gf.wind[0];
+    // The plants' wind clock (wrapped hourly: the seconds since boot as a float would step in 1/32 s), and last
+    // frame's for the motion vectors.
+    gf.wind[0] = float(m_windTime);
+    gf.viewport[3] = float(m_windTimePrev);
     gf.wind[1] = 0.56f;
     gf.wind[2] = 0.35f;                          // a wind direction (normalised in the shader)
     gf.wind[3] = std::max(m_sway, 0.3f);         // the plants' sway strength scales the wind
@@ -1187,14 +1468,35 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     gf.look[0] = m_grassBright;
     gf.look[1] = 1.0f;
     std::memcpy(gf.sunColour, m_terrainSun, sizeof(gf.sunColour) + sizeof(gf.sunDir));
+    gf.look[2] = std::max(m_grassGlow, 0.0f);
+    gf.look[3] = std::max(m_grassGusts, 0.0f);
+    gf.lod[0] = float(m_scene->m_height) * 0.5f * m_proj.m[1][1];   // pixels per world unit at view depth 1
+    gf.lod[1] = 1.0f;                            // blades at least a pixel wide
     // The frame lights (the sun, its cascades, the lights, the pushers) as of now, in this ring: the scene writes them
     // lazily, and an offset from an earlier ring would be another frame's data.
-    EnsureRingSpace(sizeof(GrassFrame) + sizeof(FrameLights) + 512);
+    const bool trails = m_trailValid && m_trailActive > 0;
+    const VkDeviceSize trailBytes = trails ? VkDeviceSize(kTrailN) * kTrailN * 4 : 16;
+    EnsureRingSpace(sizeof(GrassFrame) + sizeof(FrameLights) + trailBytes + 768);
     if (m_frameLightsDirty || m_frameLightsGeneration != m_ringGeneration)
         WriteFrameLights();
     Frame& f = m_frames[m_frameIndex];
     void* frameCpu = nullptr;
     const VkDeviceSize frameOffset = Allocate(sizeof(GrassFrame), 256, &frameCpu);   // minUniformBufferOffsetAlignment
+    // The trail grid as snorm16 pairs (nothing to bend: a stub, and the shader skips it).
+    void* trailCpu = nullptr;
+    const VkDeviceSize trailOffset = Allocate(trailBytes, 256, &trailCpu);
+    if (trails) {
+        uint32_t* out = static_cast<uint32_t*>(trailCpu);
+        auto snorm16 = [](float v) { return uint32_t(uint16_t(int16_t(RoundS(v * 32767.0f, 32767)))); };
+        for (size_t c = 0; c < size_t(kTrailN) * kTrailN; ++c)
+            out[c] = snorm16(m_trail[c * 2]) | snorm16(m_trail[c * 2 + 1]) << 16;
+        gf.trail[0] = float(m_trailOrigin[0]);
+        gf.trail[1] = float(m_trailOrigin[1]);
+        gf.trail[2] = kTrailCell;
+        gf.trail[3] = float(kTrailN);
+    } else {
+        std::memset(trailCpu, 0, size_t(trailBytes));
+    }
     std::memcpy(frameCpu, &gf, sizeof(gf));
 
     const float sw = float(m_scene->m_width), sh = float(m_scene->m_height);
@@ -1205,10 +1507,11 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassPipeline);
     VkDescriptorBufferInfo frameInfo{f.ring, frameOffset, sizeof(GrassFrame)};
     VkDescriptorBufferInfo bladeInfo{m_grassPool, 0, VK_WHOLE_SIZE};
+    VkDescriptorBufferInfo trailInfo{f.ring, trailOffset, trailBytes};
     VkDescriptorBufferInfo lightsInfo{f.ring, m_frameLightsOffset, sizeof(FrameLights)};
     VkDescriptorImageInfo shadowInfo{m_shadowSampler, m_shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     VkDescriptorImageInfo cubeInfo{m_cubeSampler, m_cubeArrayView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet writes[5] = {};
+    VkWriteDescriptorSet writes[6] = {};
     for (auto& w : writes) {
         w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         w.descriptorCount = 1;
@@ -1228,7 +1531,10 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     writes[4].dstBinding = 6;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[4].pImageInfo = &cubeInfo;
-    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassLayout, 0, 5, writes);
+    writes[5].dstBinding = 3;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[5].pBufferInfo = &trailInfo;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassLayout, 0, 6, writes);
     vkCmdBindIndexBuffer(cmd, m_grassIndex, 0, VK_INDEX_TYPE_UINT32);
     // Which of the frame's 64 lights reach a tile, so a blade only tests the few that matter (the frame lights the
     // scene lights by too, so only with the light override on).
