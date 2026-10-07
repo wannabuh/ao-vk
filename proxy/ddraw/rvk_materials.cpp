@@ -22,9 +22,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <deque>
+#include <list>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -155,16 +161,151 @@ std::string FindMap(uint32_t type, uint32_t id, const char* suffix)
 }
 
 // ---------------------------------------------------------------- map loading (rvk/material_maps.h)
-std::string FindParts(uint32_t type, uint32_t id, std::string parts[3])
+// Decoding takes time (a 1024 x 1024 normal map and material about 100 ms), so it runs on a worker thread: a
+// texture asks for its maps (AttachMaterialMaps), the worker decodes them, and PollMaterialMaps (each present, on the
+// game's thread like every device call) uploads them to every surface still waiting for that texture id. Decoded
+// maps stay in a small cache: a texture's other quality levels, and textures made again for the same id (zoning),
+// follow soon after.
+constexpr size_t kCacheBytes = 96u << 20;          // decoded maps kept (the client is a 32-bit process)
+constexpr size_t kUploadBytesPerFrame = 48u << 20; // uploads spread over frames past this
+
+uint64_t KeyOf(uint32_t type, uint32_t id) { return uint64_t(FullQualityType(type)) << 32 | id; }
+
+rvk::maps::MaterialFiles FilesFor(uint32_t type, uint32_t id)
 {
-    const char* suffixes[3] = {"_ao.png", "_r.png", "_m.png"};
-    for (int c = 0; c < 3; ++c) parts[c] = FindMap(type, id, suffixes[c]);
-    return FindMap(type, id, "_orm.png");
+    rvk::maps::MaterialFiles f;
+    f.normal = FindMap(type, id, "_n.png");
+    f.packed = FindMap(type, id, "_orm.png");
+    f.parts[0] = FindMap(type, id, "_ao.png");
+    f.parts[1] = FindMap(type, id, "_r.png");
+    f.parts[2] = FindMap(type, id, "_m.png");
+    f.albedo = FindMap(type, id, "_d.png");
+    return f;
 }
 
-void LogError(const std::string& error) { RvkLog("materials: %s", error.c_str()); }
+using DecodedPtr = std::shared_ptr<const rvk::maps::Decoded>;
 
-unsigned g_registered = 0, g_attached = 0;
+// Worker thread and its queues (never destroyed: the thread may still wait on them while the process exits).
+struct Worker {
+    std::mutex mutex;
+    std::condition_variable wake;
+    std::deque<std::pair<uint64_t, rvk::maps::MaterialFiles>> jobs;
+    std::vector<std::pair<uint64_t, DecodedPtr>> done;
+};
+Worker* g_worker = nullptr;
+
+void WorkerLoop(Worker* w)
+{
+    for (;;) {
+        std::pair<uint64_t, rvk::maps::MaterialFiles> job;
+        {
+            std::unique_lock<std::mutex> lock(w->mutex);
+            w->wake.wait(lock, [w] { return !w->jobs.empty(); });
+            job = std::move(w->jobs.front());
+            w->jobs.pop_front();
+        }
+        auto decoded = std::make_shared<rvk::maps::Decoded>(rvk::maps::Decode(job.second));
+        std::lock_guard<std::mutex> lock(w->mutex);
+        w->done.emplace_back(job.first, std::move(decoded));
+    }
+}
+
+// Game thread only from here.
+struct Waiter {
+    RSurface* top;
+    rvk::Texture* texture;                         // the texture it asked for (a re-created one asks again)
+};
+std::unordered_map<uint64_t, std::vector<Waiter>> g_waiting;   // by texture id, until its maps are decoded
+std::list<std::pair<uint64_t, DecodedPtr>> g_cache;            // most recently used first
+std::unordered_map<uint64_t, std::list<std::pair<uint64_t, DecodedPtr>>::iterator> g_cacheIndex;
+size_t g_cacheBytes = 0;
+std::deque<std::pair<Waiter, DecodedPtr>> g_uploads;           // decoded, not yet uploaded (kUploadBytesPerFrame)
+
+DecodedPtr CacheGet(uint64_t key)
+{
+    auto it = g_cacheIndex.find(key);
+    if (it == g_cacheIndex.end())
+        return nullptr;
+    g_cache.splice(g_cache.begin(), g_cache, it->second);
+    return it->second->second;
+}
+
+void CachePut(uint64_t key, DecodedPtr d)
+{
+    if (g_cacheIndex.count(key) || d->Bytes() > kCacheBytes / 2)
+        return;
+    g_cache.emplace_front(key, d);
+    g_cacheIndex[key] = g_cache.begin();
+    g_cacheBytes += d->Bytes();
+    while (g_cacheBytes > kCacheBytes && !g_cache.empty()) {
+        g_cacheBytes -= g_cache.back().second->Bytes();
+        g_cacheIndex.erase(g_cache.back().first);
+        g_cache.pop_back();
+    }
+}
+
+unsigned g_attached = 0;
+
+void Upload(const Waiter& w, const rvk::maps::Decoded& d)
+{
+    if (w.top->texture != w.texture || !g_rvk.device)
+        return;                                    // made again since: that one asks for itself
+    RSurface* top = w.top;
+    rvk::maps::Attach(*g_rvk.device, w.texture, d);
+    ++g_attached;
+    if (g_attached <= 64 || (g_attached & (g_attached - 1)) == 0)
+        RvkLog("materials: RDB texture %u:%u gets%s%s%s%s%s (%u attached)", top->rdbType, top->rdbId,
+               d.normal.Empty() ? "" : " a normal map", d.orm.Empty() ? "" : " a PBR material from ",
+               d.orm.Empty() ? "" : d.ormFrom.c_str(), d.albedo.Empty() ? "" : " an albedo map",
+               d.Bytes() ? "" : " nothing", g_attached);
+}
+
+}  // namespace
+
+void PollMaterialMaps()
+{
+    if (g_worker) {
+        std::vector<std::pair<uint64_t, DecodedPtr>> done;
+        {
+            std::lock_guard<std::mutex> lock(g_worker->mutex);
+            done.swap(g_worker->done);
+        }
+        for (auto& [key, decoded] : done) {
+            if (!decoded->errors.empty())
+                RvkLog("materials: %s", decoded->errors.c_str());
+            CachePut(key, decoded);
+            auto it = g_waiting.find(key);
+            if (it == g_waiting.end())
+                continue;
+            for (const Waiter& w : it->second)
+                g_uploads.emplace_back(w, decoded);
+            g_waiting.erase(it);
+        }
+    }
+    size_t bytes = 0;
+    while (!g_uploads.empty() && bytes < kUploadBytesPerFrame) {
+        auto [w, d] = std::move(g_uploads.front());
+        g_uploads.pop_front();
+        bytes += d->Bytes();
+        Upload(w, *d);
+    }
+}
+
+void ForgetMaterialMaps(RSurface* top)
+{
+    if (g_waiting.empty() && g_uploads.empty())
+        return;
+    for (auto& [key, list] : g_waiting)
+        list.erase(std::remove_if(list.begin(), list.end(), [top](const Waiter& w) { return w.top == top; }),
+                   list.end());
+    g_uploads.erase(std::remove_if(g_uploads.begin(), g_uploads.end(),
+                                   [top](const auto& u) { return u.first.top == top; }),
+                    g_uploads.end());
+}
+
+namespace {
+
+unsigned g_registered = 0;
 
 unsigned g_ground = 0;
 
@@ -219,43 +360,30 @@ void AttachMaterialMaps(RSurface* top)
     if (!top || !top->rdbId || !top->texture || top->materialsFor == top->texture || !g_rvk.device)
         return;
     top->materialsFor = top->texture;
-    uint32_t type = top->rdbType, id = top->rdbId;
-    rvk::maps::NormalSpread spread;
-    std::string error;
-    std::string path = FindMap(type, id, "_n.png");
-    if (!path.empty()) {
-        rvk::Texture* normal = rvk::maps::LoadNormalMap(*g_rvk.device, path, &spread, &error);
-        if (!normal) LogError(error);
-        if (normal) {
-            g_rvk.device->SetNormalMap(top->texture, normal);
-            ++g_attached;
-            RvkLog("materials: normal map %s (%ux%u) on RDB texture %u:%u (%u attached)", path.c_str(),
-                   normal->Width(), normal->Height(), type, id, g_attached);
-        }
+    uint64_t key = KeyOf(top->rdbType, top->rdbId);
+    Waiter waiter{top, top->texture};
+    if (DecodedPtr cached = CacheGet(key)) {
+        g_uploads.emplace_back(waiter, cached);
+        return;
     }
-    std::string parts[3], ormFrom;
-    std::string packed = FindParts(type, id, parts);
-    rvk::Texture* orm = nullptr;
-    if (!packed.empty() || !parts[0].empty() || !parts[1].empty() || !parts[2].empty()) {
-        orm = rvk::maps::LoadOrmMap(*g_rvk.device, packed, parts, spread, &ormFrom, &error);
-        if (!orm) LogError(error);
+    auto it = g_waiting.find(key);
+    if (it != g_waiting.end()) {                  // being decoded already
+        it->second.push_back(waiter);
+        return;
     }
-    rvk::Texture* albedo = nullptr;
-    std::string albedoPath = FindMap(type, id, "_d.png");
-    if (!albedoPath.empty()) {
-        albedo = rvk::maps::LoadAlbedoMap(*g_rvk.device, albedoPath, &error);
-        if (!albedo) LogError(error);
+    rvk::maps::MaterialFiles files = FilesFor(top->rdbType, top->rdbId);
+    if (!files.Any())
+        return;
+    g_waiting[key].push_back(waiter);
+    if (!g_worker) {
+        g_worker = new Worker;
+        std::thread(WorkerLoop, g_worker).detach();
     }
-    if (orm || albedo) {
-        g_rvk.device->SetMaterialMaps(top->texture, orm, albedo);
-        ++g_attached;
-        if (orm)
-            RvkLog("materials: PBR material %s (%ux%u) on RDB texture %u:%u", ormFrom.c_str(), orm->Width(),
-                   orm->Height(), type, id);
-        if (albedo)
-            RvkLog("materials: albedo %s (%ux%u) on RDB texture %u:%u", albedoPath.c_str(), albedo->Width(),
-                   albedo->Height(), type, id);
+    {
+        std::lock_guard<std::mutex> lock(g_worker->mutex);
+        g_worker->jobs.emplace_back(key, std::move(files));
     }
+    g_worker->wake.notify_one();
 }
 
 }  // namespace rvkproxy

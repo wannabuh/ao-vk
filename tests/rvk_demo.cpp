@@ -875,22 +875,23 @@ void AttachFileMaps(D& dev, Texture* tex, const std::string& stem)
         std::string p = g_pbrMaps + "\\" + stem + suffix;
         return GetFileAttributesA(p.c_str()) != INVALID_FILE_ATTRIBUTES ? p : std::string();
     };
-    std::string error, from;
-    maps::NormalSpread spread;
-    if (std::string n = file("_n.png"); !n.empty()) {
-        if (Texture* t = maps::LoadNormalMap(dev, n, &spread, &error)) dev.SetNormalMap(tex, t);
-        else std::printf("pbr maps: %s\n", error.c_str());
-    }
-    std::string parts[3] = {file("_ao.png"), file("_r.png"), file("_m.png")};
-    std::string packed = file("_orm.png");
-    Texture* orm = nullptr;
-    if (!packed.empty() || !parts[0].empty() || !parts[1].empty() || !parts[2].empty())
-        orm = maps::LoadOrmMap(dev, packed, parts, spread, &from, &error);
-    Texture* albedo = nullptr;
-    if (std::string d = file("_d.png"); !d.empty()) albedo = maps::LoadAlbedoMap(dev, d, &error);
-    if (orm || albedo) dev.SetMaterialMaps(tex, orm, albedo);
-    std::printf("pbr maps: %s: orm from %s, albedo %s\n", stem.c_str(), from.empty() ? "(none)" : from.c_str(),
-                albedo ? "yes" : "no");
+    LARGE_INTEGER freq, t0, t1;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t0);
+    maps::MaterialFiles f;
+    f.normal = file("_n.png");
+    f.packed = file("_orm.png");
+    f.parts[0] = file("_ao.png");
+    f.parts[1] = file("_r.png");
+    f.parts[2] = file("_m.png");
+    f.albedo = file("_d.png");
+    maps::Decoded d = maps::Decode(f);
+    maps::Attach(dev, tex, d);
+    QueryPerformanceCounter(&t1);
+    std::printf("pbr maps: %s: orm from %s, albedo %s (%.1f ms)%s%s\n", stem.c_str(),
+                d.ormFrom.empty() ? "(none)" : d.ormFrom.c_str(), d.albedo.Empty() ? "no" : "yes",
+                double(t1.QuadPart - t0.QuadPart) * 1000.0 / double(freq.QuadPart), d.errors.empty() ? "" : " errors: ",
+                d.errors.c_str());
 }
 
 template <typename D>

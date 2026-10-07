@@ -39,6 +39,8 @@ void SceneLights(const rnative::scene::SceneLight* lights, size_t count);   // r
 extern const GUID IID_RvkSurface;
 class RSurface;
 void AttachMaterialMaps(RSurface* top);           // after the surface's rvk texture is (re)created
+void PollMaterialMaps();                          // each present: uploads maps decoded in the background
+void ForgetMaterialMaps(RSurface* top);           // the surface is going: it no longer waits for maps
 
 // One lock around every call into the rvk backend: the game may use DirectDraw from more than one thread
 // (D3D serialises internally too). Recursive, since methods call each other. Logs each new thread once.

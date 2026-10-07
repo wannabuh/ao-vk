@@ -65,6 +65,7 @@ RSurface::~RSurface()
     if (clipper) clipper->Release();
     if (palette) palette->Release();
     if (nextLevel) nextLevel->Release();
+    ForgetMaterialMaps(this);
     if (top == this && texture && g_rvk.device)
         g_rvk.device->DestroyTexture(texture);
     if (g_rvk.mainSurface == this)

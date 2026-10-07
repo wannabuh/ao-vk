@@ -181,6 +181,7 @@ void RvkState::Present()
         rnative::gui::Install();   // GUI.dll's interface drawing (RVK_UiRate), once it is loaded
     Frame();                  // a present without any rendering still shows a frame
     device->EndFrame();
+    PollMaterialMaps();       // material maps decoded in the background, uploaded between frames
     ParticleFrame();
     // Hotkeys (Ctrl+Shift+...). Those for options change the setting (saved, shown in the settings window).
     bool chord = (GetAsyncKeyState(VK_CONTROL) & 0x8000) && (GetAsyncKeyState(VK_SHIFT) & 0x8000);
