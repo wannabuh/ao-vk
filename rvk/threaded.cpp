@@ -883,6 +883,40 @@ void ThreadedDevice::SetFoliageLod(float distance)
     Enqueue([this, distance](const uint8_t*) { m_device.SetFoliageLod(distance); });
 }
 
+void ThreadedDevice::SetGrassField(bool on, float distance, float density, float height, bool texOnly)
+{
+    Enqueue([this, on, distance, density, height, texOnly](const uint8_t*) {
+        m_device.SetGrassField(on, distance, density, height, texOnly);
+    });
+}
+
+void ThreadedDevice::SetGrassWidth(float width)
+{
+    Enqueue([this, width](const uint8_t*) { m_device.SetGrassWidth(width); });
+}
+
+void ThreadedDevice::SetGrassBrightness(float brightness)
+{
+    Enqueue([this, brightness](const uint8_t*) { m_device.SetGrassBrightness(brightness); });
+}
+
+void ThreadedDevice::SetGrassStyle(float variety, float flowers, float glow, float gusts, bool trails)
+{
+    Enqueue([this, variety, flowers, glow, gusts, trails](const uint8_t*) {
+        m_device.SetGrassStyle(variety, flowers, glow, gusts, trails);
+    });
+}
+
+void ThreadedDevice::SetGrassShadows(bool on)
+{
+    Enqueue([this, on](const uint8_t*) { m_device.SetGrassShadows(on); });
+}
+
+void ThreadedDevice::SetGrassEven(float even)
+{
+    Enqueue([this, even](const uint8_t*) { m_device.SetGrassEven(even); });
+}
+
 void ThreadedDevice::SetShadowResolution(uint32_t sun, uint32_t point)
 {
     Enqueue([this, sun, point](const uint8_t*) { m_device.SetShadowResolution(sun, point); });

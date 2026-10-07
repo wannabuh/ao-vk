@@ -798,6 +798,8 @@ void Device::FillPushers(detail::FrameLights* fl, const float eye[3])
         m_framePushers.push_back({{items[i].p->x, items[i].p->y, items[i].p->z}});
     }
     fl->info[1] = used;
+    if (used > m_pusherSeenMax)
+        m_pusherSeenMax = used;
 }
 
 // Splits a plant's triangles evenly (each into n x n, all its vertex data interpolated) so that the pieces are about
@@ -1917,7 +1919,18 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         m_terrainLitPassCur = true;
     Frame& f = m_frames[m_frameIndex];
     VkCommandBuffer cmd = f.main;
+    // Ground grass (RVK_GrassOn): the blades are opaque and write depth, so they must go in before the game's first
+    // blended draw of the frame. The game's grass and foliage blend without writing depth; drawn after them (as at the
+    // end of the scene), our grass would pass the depth test against the ground behind them and cover them however far
+    // away it is. Before their pass, their fragments depth-test against ours and blend over us only where they are
+    // nearer - the right order.
+    if (m_grassOn && !m_grassDrawnThisFrame && m_scenePhase && m_target == m_scene && !m_external && vertexCount &&
+        (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ && m_rs[d3d::RS_ALPHABLENDENABLE] && !IsTerrain(fvf))
+        DrawGrassTiles(cmd);
     FvfLayout layout = DecodeFvf(fvf);
+    // RVK_GrassOn: the terrain's ground heights feed the procedural grass (grass.cpp CaptureTerrain / RenderGrassField).
+    if (m_grassOn && !m_external && vertices && IsTerrain(fvf))
+        CaptureTerrain(primitive, layout, vertices, vertexCount, indices, indexCount);
     DrawMeshInfo(fvf, layout.stride, vertices, vertexCount, indices, indexCount);
     PushCandidateDraw(fvf);
     // A swaying plant: its big quads split into small ones (cached), so they bend rather than tilt as a whole.
@@ -2342,6 +2355,20 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_drawFoliage) {
         ++m_foliageDraws;
         if (m_drawFoliage == 2u) ++m_foliageLodDraws;
+        // A survey of the game's own foliage, for deciding what to replace: whether its meshes are world-fixed (a
+        // swaying plant) or change every frame (a camera-facing billboard or a skinned thing), and their size.
+        if (m_drawMeshStatic)
+            ++m_foliageStatic;
+        else
+            ++m_foliageDynamic;
+        m_foliageVerts += vertexCount;
+        float c[3], e[3];
+        DrawWorldBox(c, e);
+        const float h = e[1] * 2.0f;
+        if (m_foliageMinH == 0.0f || h < m_foliageMinH)
+            m_foliageMinH = h;
+        if (h > m_foliageMaxH)
+            m_foliageMaxH = h;
     }
 
     ProfileDrawSection("draw: constants", since);

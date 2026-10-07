@@ -867,6 +867,22 @@ int g_walkerSkip = 0;
 bool g_walkerLight = false;    // --walker-light: the round "character" carries a point light at head height and swings
                                // an arm beside its body (its own light's shadow on itself)          // --walker-skip N: the "character" animates only every N-th frame (crowds: the game skips)    // --walker-round: the "character" a low-polygon smooth-shaded 8-sided column
 int g_grassDense = 1;          // --grass-dense K: K x K as many tufts, K times closer (a field, for profiling)      // --grass-flip: the tufts modelled upside down, turned up by their world matrix
+bool g_grassBench = false;     // --grass-bench: RunGrassBench (a big terrain, the camera walking)
+bool g_grassFieldOn = false;   // --grass-field: the procedural ground grass (RVK_GrassOn) over the shadow test's terrain
+float g_grassFieldDist = 25.0f;
+float g_grassEven = 1.0f;         // --grass-even E: RVK_GrassEven
+bool g_grassShadow = true;        // --grass-shadow 0|1: RVK_GrassShadow
+float g_grassStyle[5] = {1, 1, 1, 1, 1};   // --grass-style V,F,G,U,T: variety, flowers, glow, gusts, trails (SetGrassStyle)
+float g_grassBenchYaw = 0.0f;  // --grass-bench-yaw R: the bench's camera turned R radians (pi: into the sun)
+bool g_grassBenchWalker = false;  // --grass-bench-walker: a "character" walking through the grass ahead of the camera
+bool g_grassBenchNight = false;   // --grass-bench-night: a dim lightmap and ambient, a faint bluish moon
+int g_grassBenchLoading = 0;      // --grass-bench-loading N: the ground's texture a plain green stand-in until frame N
+bool g_grassBenchLoadingNull = false;   // --grass-bench-loading-null: ... drawn untextured instead
+bool g_grassBenchStill = false;   // --grass-bench-still: the camera stays where it starts (to watch the wind)
+int g_grassBenchFilm = 0;         // --grass-bench-film N: ~60 frames a second, a screenshot every N (film_NNN.bmp)
+float g_grassBenchPitch = -1.0f;  // --grass-bench-pitch R: the camera looking R radians down, raised to match (top-down)
+bool g_grassFieldTex = true;   // --grass-field-any: over every ground, not only where the ground texture is green
+bool g_grassFieldTan = false;  // --grass-field-tan: leave the terrain's tan ground (a filter that must reject it)
 
 // Sun shadow test (--shadow-test): cubes and an alpha-tested fence on a ground of two halves - lit by the sun
 // (left) and unlit like Anarchy Online's ground base pass (right) - from a camera above and behind.
@@ -887,12 +903,198 @@ void AddCube(std::vector<VtxMesh>& v, std::vector<uint16_t>& idx, float cx, floa
     }
 }
 
+// Ground grass benchmark (--grass-bench): a big hilly terrain drawn like AnarchyGround_t - world-space chunks of
+// non-indexed triangles, an unlit base pass with a green texture and a multiplying light pass with a lightmap - under
+// RVK_GrassOn, the camera walking and turning so tiles keep coming into range. Prints the frame time (mean and worst).
+template <typename D>
+void RunGrassBench(D& dev, int frames, const std::string& shot)
+{
+    std::vector<uint32_t> grassPixels(64 * 64);
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x)
+            grassPixels[y * 64 + x] = (x >= 26 && x < 38) ? 0xFF8A6A4A : ((x / 4 + y / 4) & 1 ? 0xFF3C6A2A : 0xFF2E5320);
+    // (Loading: a game draws ground whose texture isn't in yet with a stand-in, then uploads the picture.)
+    const std::vector<uint32_t> standIn(64 * 64, 0xFF3C6A2A);
+    Texture* grassGround = dev.CreateTexture(64, 64, g_grassBenchLoading > 0 ? standIn.data() : grassPixels.data());
+    std::vector<uint32_t> lightmapPixels(64 * 64);
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x) {
+            uint32_t l = uint32_t(150 + 60 * std::sin(x * 0.2f) * std::cos(y * 0.15f));
+            if (g_grassBenchNight)
+                l /= 5;
+            lightmapPixels[y * 64 + x] = 0xFF000000u | l << 16 | l << 8 | l;
+        }
+    Texture* lightmap = dev.CreateTexture(64, 64, lightmapPixels.data());
+    struct VtxTerrain { float x, y, z, nx, ny, nz, u0, v0, u1, v1; };
+    const uint32_t kFvfTerrain = FVF_XYZ | FVF_NORMAL | (2 << 8);
+    auto height = [](float x, float z) { return 1.5f * std::sin(x * 0.13f) * std::cos(z * 0.11f); };
+    constexpr int kChunks = 6, kChunkCells = 16;
+    constexpr float kChunk = 32.0f, kCell = kChunk / kChunkCells, kOrigin = -kChunk * kChunks / 2;
+    std::vector<std::vector<VtxTerrain>> chunks;
+    for (int cz = 0; cz < kChunks; ++cz)
+        for (int cx = 0; cx < kChunks; ++cx) {
+            std::vector<VtxTerrain> v;
+            for (int j = 0; j < kChunkCells; ++j)
+                for (int i = 0; i < kChunkCells; ++i) {
+                    float xs[2] = {kOrigin + cx * kChunk + i * kCell, kOrigin + cx * kChunk + (i + 1) * kCell};
+                    float zs[2] = {kOrigin + cz * kChunk + j * kCell, kOrigin + cz * kChunk + (j + 1) * kCell};
+                    auto vert = [&](int a, int b) {
+                        float x = xs[a], z = zs[b];
+                        return VtxTerrain{x, height(x, z), z, 0, 1, 0, x / 4, z / 4, float(i + a) / kChunkCells,
+                                          float(j + b) / kChunkCells};
+                    };
+                    VtxTerrain q[6] = {vert(0, 0), vert(0, 1), vert(1, 0), vert(1, 0), vert(0, 1), vert(1, 1)};
+                    v.insert(v.end(), q, q + 6);
+                }
+            chunks.push_back(std::move(v));
+        }
+    LARGE_INTEGER freq, prev, now;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&prev);
+    double sum = 0.0, worst = 0.0;
+    int counted = 0, worstFrame = 0;
+    std::vector<double> times;
+    dev.SetGrassField(true, g_grassFieldDist, 5.0f, 0.5f, true);   // the game's default density
+    for (int frame = 0; frame < frames; ++frame) {
+        if (frame == frames - 1)
+            dev.RequestScreenshot(shot);
+        else if (g_grassBenchFilm > 0 && frame >= 60 && frame % g_grassBenchFilm == 0) {
+            char name[32];
+            std::snprintf(name, sizeof(name), "film_%03d.bmp", (frame - 60) / g_grassBenchFilm);
+            dev.RequestScreenshot(name);
+        }
+        if (g_grassBenchFilm > 0)
+            Sleep(16);
+        if (g_grassBenchLoading > 0 && frame == g_grassBenchLoading)
+            dev.UpdateTexture(grassGround, 0, 0, 0, 64, 64, grassPixels.data(), 64 * 4);
+        Texture* const groundNow = g_grassBenchLoadingNull && frame < g_grassBenchLoading ? nullptr : grassGround;
+        dev.BeginFrame();
+        dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
+        dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF6080A0, 1.0f);
+        const float t = g_grassBenchStill ? 0.0f : float(frame);
+        const float ex = -60.0f + 0.06f * t, ez = 10.0f * std::sin(t * 0.004f);
+        const float yaw = 0.6f * std::sin(t * 0.007f) + g_grassBenchYaw;
+        const float pitch = g_grassBenchPitch >= 0.0f ? std::min(g_grassBenchPitch, 1.5f) : 0.197f;
+        const float ey = height(ex, ez) + 1.0f + 6.0f * std::sin(pitch);
+        const float fwd = 6.0f * std::cos(pitch);
+        dev.SetTransform(View, LookAtLH({ex, ey, ez}, {ex + fwd * std::cos(yaw), ey - 6.0f * std::sin(pitch), ez + fwd * std::sin(yaw)},
+                                        {0, 1, 0}));
+        dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.3f, 300.0f));
+        dev.SetTransform(World, Identity());
+        dev.SetRenderState(RS_ZENABLE, 1);
+        dev.SetRenderState(RS_ZWRITEENABLE, 1);
+        dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+        dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+        dev.SetRenderState(RS_ALPHATESTENABLE, 0);
+        Material mat{{1, 1, 1, 1}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}, 0.0f};
+        dev.SetMaterial(mat);
+        Light sun{};
+        sun.type = LIGHT_DIRECTIONAL;
+        sun.diffuse = {0.9f, 0.85f, 0.75f, 1};
+        sun.direction = {0.55f, -0.7f, 0.45f};
+        if (g_grassBenchNight)
+            sun.diffuse = {0.12f, 0.14f, 0.22f, 1};
+        dev.SetLight(0, sun);
+        dev.LightEnable(0, true);
+        dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+        dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
+        for (const auto& c : chunks) {               // base pass: the ground's own texture, unlit
+            dev.SetRenderState(RS_LIGHTING, 0);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+            dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+            dev.SetTexture(0, groundNow);
+            dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 0);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
+            dev.DrawPrimitive(TriangleList, kFvfTerrain, c.data(), uint32_t(c.size()));
+            // light pass: lightmap + ambient multiplying it
+            dev.SetRenderState(RS_LIGHTING, 1);
+            dev.SetRenderState(RS_AMBIENT, g_grassBenchNight ? 0xFF181C28 : 0xFF515151);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+            dev.SetRenderState(RS_SRCBLEND, BLEND_ZERO);
+            dev.SetRenderState(RS_DESTBLEND, BLEND_SRCCOLOR);
+            dev.SetRenderState(RS_ZFUNC, CMP_EQUAL);
+            dev.SetTexture(0, lightmap);
+            dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 1);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_ADD);
+            dev.DrawPrimitive(TriangleList, kFvfTerrain, c.data(), uint32_t(c.size()));
+        }
+        dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 0);
+        dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+        if (g_grassBenchWalker) {   // a lit column a few units ahead, its vertices moving each frame (CPU-skinned)
+            const float wx = ex + 4.0f * std::cos(yaw) + 1.5f * std::sin(t * 0.02f), wz = ez + 4.0f * std::sin(yaw);
+            const float wy = height(wx, wz);
+            std::vector<VtxMesh> cv;
+            std::vector<uint16_t> ci;
+            const int kSides = 8, kRings = 5;
+            for (int r = 0; r < kRings; ++r)
+                for (int sd = 0; sd < kSides; ++sd) {
+                    const float a = 6.28318f * float(sd) / float(kSides), y = 0.05f + 1.7f * float(r) / float(kRings - 1);
+                    const float rad = 0.15f + 0.2f * std::sin(3.14159f * float(r) / float(kRings - 1));
+                    const float sway = r > 2 ? 0.02f * std::sin(t * 0.9f) : 0.0f;
+                    cv.push_back({wx + rad * std::cos(a) + sway, wy + y, wz + rad * std::sin(a), std::cos(a), 0,
+                                  std::sin(a), 0xFFFFFFFF, 0, 0});
+                }
+            for (int r = 0; r + 1 < kRings; ++r)
+                for (int sd = 0; sd < kSides; ++sd) {
+                    const uint16_t a = uint16_t(r * kSides + sd), b = uint16_t(r * kSides + (sd + 1) % kSides);
+                    const uint16_t q[6] = {a, uint16_t(a + kSides), b, b, uint16_t(a + kSides), uint16_t(b + kSides)};
+                    ci.insert(ci.end(), q, q + 6);
+                }
+            dev.SetRenderState(RS_LIGHTING, 1);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+            dev.SetTexture(0, nullptr);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+            dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, cv.data(), uint32_t(cv.size()), ci.data(), uint32_t(ci.size()));
+        }
+        {   // a blended draw, as the game's foliage: the grass goes in before it
+            dev.SetRenderState(RS_LIGHTING, 0);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+            dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+            dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
+            dev.SetRenderState(RS_ZWRITEENABLE, 0);
+            dev.SetTexture(0, nullptr);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+            VtxMesh q[4] = {{ex + 30, 40, ez - 2, 0, 1, 0, 0x40FFFFFF, 0, 0}, {ex + 30, 40, ez + 2, 0, 1, 0, 0x40FFFFFF, 1, 0},
+                            {ex + 30, 44, ez + 2, 0, 1, 0, 0x40FFFFFF, 1, 1}, {ex + 30, 44, ez - 2, 0, 1, 0, 0x40FFFFFF, 0, 1}};
+            dev.DrawPrimitive(TriangleFan, kFvfMesh, q, 4);
+            dev.SetRenderState(RS_ZWRITEENABLE, 1);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        }
+        dev.EndFrame();
+        QueryPerformanceCounter(&now);
+        const double ms = double(now.QuadPart - prev.QuadPart) * 1000.0 / double(freq.QuadPart);
+        prev = now;
+        if (frame >= 60) {
+            sum += ms;
+            if (ms > worst) {
+                worst = ms;
+                worstFrame = frame;
+            }
+            ++counted;
+            times.push_back(ms);
+        }
+    }
+    std::sort(times.begin(), times.end());
+    const double p99 = times.empty() ? 0.0 : times[size_t(double(times.size() - 1) * 0.99)];
+    std::printf("grass bench: %d frames, mean %.3f ms, 99th percentile %.3f ms, worst %.3f ms (frame %d)\n", counted,
+                sum / std::max(counted, 1), p99, worst, worstFrame);
+}
+
 template <typename D>
 void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, int frameMs, const std::string& dump)
 {
     auto groundPixels = Checker(64, 8, 0xFFC8C0B0, 0xFFA09888);
     auto fencePixels = Checker(64, 8, 0xFF806040, 0x00000000);
     Texture* ground = dev.CreateTexture(64, 64, groundPixels.data());
+    // --grass-field: a green ground with a vertical brick stripe, for the grass filter (and its texture/not-texture
+    // edge): grass must grow on the green and leave the stripe bare.
+    std::vector<uint32_t> grassPixels(64 * 64);
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x)
+            grassPixels[y * 64 + x] = (x >= 26 && x < 38) ? 0xFF8A6A4A : ((x / 4 + y / 4) & 1 ? 0xFF3C6A2A : 0xFF2E5320);
+    Texture* grassGround = dev.CreateTexture(64, 64, grassPixels.data());
     Texture* fence = dev.CreateTexture(64, 64, fencePixels.data());
     std::vector<uint32_t> blobPixels(64, 0xFFFFFFFF);
     std::vector<uint32_t> lightmapPixels(64, 0xFFC0C0C0);
@@ -901,6 +1103,8 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
     Texture* lightmap = dev.CreateTexture(8, 8, lightmapPixels.data());
     Texture* blobTex = dev.CreateTexture(8, 8, blobPixels.data());
     for (int frame = 0; frame < frames; ++frame) {
+        if (g_grassFieldOn && frame == 5)
+            dev.SetGrassField(true, g_grassFieldDist, 7.0f, 0.5f, g_grassFieldTex);   // a change rebuilds the tiles
         if (frame == frames - 1) {
             dev.RequestScreenshot(shot);
             if (!dump.empty()) dev.RequestFrameDump(dump);     // the shadow test dumps its last frame
@@ -986,9 +1190,12 @@ void RunShadowTest(D& dev, int frames, const std::string& shot, int cacheTest, i
                 uint16_t q[6] = {a, c, b, b, c, d};
                 tidx.insert(tidx.end(), q, q + 6);
             }
+        if (g_grassFieldOn && !g_grassFieldTan)
+            dev.SetTexture(0, grassGround);      // --grass-field: green ground, so RVK_GrassTex accepts it
         dev.SetRenderState(RS_LIGHTING, 0);
         dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
         dev.DrawIndexedPrimitive(TriangleList, kFvfTerrain, terrain.data(), uint32_t(terrain.size()), tidx.data(), uint32_t(tidx.size()));
+        dev.SetTexture(0, ground);
         Light lamp{};
         lamp.type = LIGHT_POINT;
         lamp.diffuse = {1.0f, 0.8f, 0.4f, 1};
@@ -1719,7 +1926,31 @@ int main(int argc, char** argv)
         else if (a == "--grass-walk" && i + 1 < argc) g_grassWalk = float(std::atof(argv[++i]));
         else if (a == "--grass-walk-speed" && i + 1 < argc) g_grassWalkSpeed = float(std::atof(argv[++i]));
         else if (a == "--grass-flip") g_grassFlip = true;
-        else if (a == "--walker-round") g_walkerRound = true;
+        else if (a == "--grass-field") { g_grassFieldOn = true; hdr = true; }
+        else if (a == "--grass-bench") { g_grassFieldOn = g_grassBench = true; hdr = true; }
+        else if (a == "--grass-field-any") g_grassFieldTex = false;
+        else if (a == "--grass-field-tan") g_grassFieldTan = true;
+        else if (a == "--grass-field-dist" && i + 1 < argc) g_grassFieldDist = float(std::atof(argv[++i]));
+        else if (a == "--grass-bench-yaw" && i + 1 < argc) g_grassBenchYaw = float(std::atof(argv[++i]));
+        else if (a == "--grass-bench-walker") g_grassBenchWalker = true;
+        else if (a == "--grass-bench-night") g_grassBenchNight = true;
+        else if (a == "--grass-bench-still") g_grassBenchStill = true;
+        else if (a == "--grass-bench-loading" && i + 1 < argc) g_grassBenchLoading = std::atoi(argv[++i]);
+        else if (a == "--grass-bench-loading-null") g_grassBenchLoadingNull = true;
+        else if (a == "--grass-bench-film" && i + 1 < argc) g_grassBenchFilm = std::atoi(argv[++i]);
+        else if (a == "--grass-bench-pitch" && i + 1 < argc) g_grassBenchPitch = float(std::atof(argv[++i]));
+        else if (a == "--grass-even" && i + 1 < argc) g_grassEven = float(std::atof(argv[++i]));
+        else if (a == "--grass-shadow" && i + 1 < argc) g_grassShadow = std::atoi(argv[++i]) != 0;
+        else if (a == "--grass-style" && i + 1 < argc) {
+            char* at = argv[++i];
+            for (int k = 0; k < 5; ++k) {
+                char* end = nullptr;
+                g_grassStyle[k] = std::strtof(at, &end);
+                if (end == at || *end != ',')
+                    break;
+                at = end + 1;
+            }
+        } else if (a == "--walker-round") g_walkerRound = true;
         else if (a == "--walker-light") g_walkerLight = true;
         else if (a == "--walker-skip" && i + 1 < argc) g_walkerSkip = std::atoi(argv[++i]);
         else if (a == "--grass-dense" && i + 1 < argc) g_grassDense = std::atoi(argv[++i]);
@@ -1821,8 +2052,13 @@ int main(int argc, char** argv)
     dev.SetContactShadows(contact);
     dev.SetSway(sway);
     dev.SetGrassPush(grassPush);
+    dev.SetGrassStyle(g_grassStyle[0], g_grassStyle[1], g_grassStyle[2], g_grassStyle[3], g_grassStyle[4] != 0.0f);
+    dev.SetGrassEven(g_grassEven);
+    dev.SetGrassShadows(g_grassShadow);
     dev.SetPlantDetail(plantDetail);
     dev.SetFoliageLod(foliageLod);
+    if (g_grassFieldOn)                  // --grass-field: the procedural ground grass (needs HDR: its pass draws into the scene)
+        dev.SetGrassField(true, g_grassFieldDist, 3.0f, 0.5f, g_grassFieldTex);
     dev.SetShadowResolution(uint32_t(sunRes), uint32_t(ptRes));
     dev.SetPointLightIntensity(ptLight, ptLight);
     dev.SetTessellation(tess, 20.0f, uint32_t(tessLevel));
@@ -1908,6 +2144,8 @@ int main(int argc, char** argv)
         if (!dump.empty() && !shadowTest) tdev.RequestFrameDump(dump);
         if (shadowTest) RunShadowTest(tdev, frames, shot, cacheTest, frameMs, dump);
         else RunDemo(tdev, windowed, stress, frames, shot);
+    } else if (g_grassBench) {
+        RunGrassBench(dev, frames, shot);
     } else if (shadowTest) {
         if (g_walkerLight) {                     // the character's own light casts point shadows, full strength by day
             dev.SetPointShadows(pointShadows);

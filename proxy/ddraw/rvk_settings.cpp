@@ -67,6 +67,20 @@ Setting g_settings[] = {
     {"RVK_FolEdges",   "Soft leaf edges drawn over the finished scene (no see-through outlines)", "Plants", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_FolLodOn",   "Cheaper shading of distant foliage",                       "Plants",           Bool,  0, 1, 1, 1, nullptr, 0},
     {"RVK_FoliageLod", "From this distance (world units)",                         "Plants",           Int,   10, 150, 1, 35, nullptr, 0, "RVK_FolLodOn"},
+    {"RVK_GrassOn",    "Ground grass (procedural blades over the terrain)",         "Plants",           Bool,  0, 1, 1, 0, nullptr, 0},
+    {"RVK_GrassTex",   "Only on grassy ground (by the ground texture's colour)",    "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassDist",  "Grass up to this distance (world units)",                   "Plants",           Int,   8, 80, 1, 25, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassBlades","Blades a patch (denser with a lower height)",               "Plants",           Float, 1, 12, 0.5f, 5, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassHeight","Blade height (world units)",                                "Plants",           Float, 0.15f, 2, 0.05f, 0.5f, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassWidth", "Blade width (1 = default)",                                 "Plants",           Float, 0.25f, 3, 0.25f, 1, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassBright","Grass brightness (1 = as bright as the ground it grows on)", "Plants",           Float, 0.5f, 1.5f, 0.05f, 1, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassVary",  "Grass variety: tufts, dry and tall patches (0 = even)",      "Plants",           Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassFlower","Wildflowers, seed heads and broad blades (0 = none)",       "Plants",           Float, 0, 3, 0.25f, 1, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassGlow",  "Sunlight on the blades: backlit tips, sheen, shading",      "Plants",           Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassGusts", "Gusts of wind sweeping over the grass (0 = none)",          "Plants",           Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassTrail", "Trodden grass stays down a few seconds behind characters",  "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassShadow","Grass blades cast the sun's shadow (near the camera)",       "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_GrassEven",  "Even grass colour (1 = one green, 0 = the ground's colours)", "Plants",          Float, 0, 1, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
 
     {"RVK_SunShadow",  "Sun shadows",                                              "Shadows",          Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
     {"RVK_SunRes",     "Resolution (4096 = 256 MB, 8192 = 1 GB of video memory)",  "Shadows",          Choice, 1024, 8192, 1, 4096, nullptr, 0, "RVK_SunShadow", "1024 2048 4096 8192"},
@@ -158,6 +172,16 @@ constexpr uint32_t kCount = sizeof(g_settings) / sizeof(g_settings[0]);
 
 char g_iniPath[MAX_PATH];
 bool g_loaded;
+FILETIME g_iniWritten;                           // randy-vk.ini's last write as we last read or wrote it (PollIni)
+
+// randy-vk.ini's last write time (zero if it can't be read).
+FILETIME IniWriteTime()
+{
+    WIN32_FILE_ATTRIBUTE_DATA a{};
+    if (!GetFileAttributesExA(g_iniPath, GetFileExInfoStandard, &a))
+        return FILETIME{};
+    return a.ftLastWriteTime;
+}
 
 Setting* Find(const char* name)
 {
@@ -171,7 +195,7 @@ Setting* Find(const char* name)
 struct Vanilla { const char* name; float value; };
 const Vanilla kVanilla[] = {
     {"RVK_PixelLight", 0}, {"RVK_LightOver", 0}, {"RVK_Bump", 0}, {"RVK_NormalMaps", 0}, {"RVK_LeafLight", 0}, {"RVK_Headroom", 1},
-    {"RVK_Sway", 0}, {"RVK_FolEdges", 0}, {"RVK_GrassPush", 0}, {"RVK_PlantDetail", 0}, {"RVK_FoliageLod", 0}, {"RVK_PtLight", 1}, {"RVK_CharLight", 1}, {"RVK_Tess", 0}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
+    {"RVK_Sway", 0}, {"RVK_FolEdges", 0}, {"RVK_GrassPush", 0}, {"RVK_GrassOn", 0}, {"RVK_PlantDetail", 0}, {"RVK_FoliageLod", 0}, {"RVK_PtLight", 1}, {"RVK_CharLight", 1}, {"RVK_Tess", 0}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
     {"RVK_Hdr", 0}, {"RVK_Bloom", 0}, {"RVK_BloomFx", 0}, {"RVK_NightGlow", 0}, {"RVK_Ao", 0}, {"RVK_Gi", 0},
     {"RVK_Volume", 0}, {"RVK_Ssr", 0}, {"RVK_MBlur", 0}, {"RVK_Taa", 0}, {"RVK_Saturation", 1}, {"RVK_Contrast", 1},
     {"RVK_Warmth", 0}, {"RVK_NightTint", 0}, {"RVK_Vignette", 0}, {"RVK_LutAmount", 0}, {"RVK_Dof", 0},
@@ -234,6 +258,7 @@ void Save(const Setting& s)
     if (s.type == Float) std::snprintf(buf, sizeof(buf), "%g", s.value);
     else std::snprintf(buf, sizeof(buf), "%d", int(s.value));
     WritePrivateProfileStringA("Renderer", s.name, buf, g_iniPath);
+    g_iniWritten = IniWriteTime();              // (our own write: PollIni mustn't take it for an edit)
 }
 
 void ApplyOne(const Setting& s, rvk::ThreadedDevice* d);
@@ -286,6 +311,20 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_GrassPush")) d->SetGrassPush(V(n));
     else if (is("RVK_PlantDetail")) d->SetPlantDetail(V(n));
     else if (is("RVK_FoliageLod")) d->SetFoliageLod(V(n));
+    else if (is("RVK_GrassOn") || is("RVK_GrassTex") || is("RVK_GrassDist") || is("RVK_GrassBlades") ||
+             is("RVK_GrassHeight"))
+        d->SetGrassField(V("RVK_GrassOn") != 0.0f, V("RVK_GrassDist"), V("RVK_GrassBlades"), V("RVK_GrassHeight"),
+                         V("RVK_GrassTex") != 0.0f);
+    else if (is("RVK_GrassWidth")) d->SetGrassWidth(V(n));
+    else if (is("RVK_GrassBright")) d->SetGrassBrightness(V(n));
+    else if (is("RVK_GrassVary") || is("RVK_GrassFlower") || is("RVK_GrassGlow") || is("RVK_GrassGusts") ||
+             is("RVK_GrassTrail"))
+        d->SetGrassStyle(V("RVK_GrassVary"), V("RVK_GrassFlower"), V("RVK_GrassGlow"), V("RVK_GrassGusts"),
+                         V("RVK_GrassTrail") != 0.0f);
+    else if (is("RVK_GrassShadow"))
+        d->SetGrassShadows(V("RVK_GrassShadow") != 0.0f);
+    else if (is("RVK_GrassEven"))
+        d->SetGrassEven(V("RVK_GrassEven"));
     else if (is("RVK_Taa") || is("RVK_Sharpen")) d->SetTaa(V("RVK_Taa") != 0.0f, V("RVK_Sharpen"));
     else if (is("RVK_Saturation") || is("RVK_Contrast") || is("RVK_Warmth") || is("RVK_NightTint") ||
              is("RVK_Vignette") || is("RVK_LutAmount"))
@@ -374,6 +413,7 @@ void Load()
         s.value = Clamp(s, s.value);
         Save(s);                                  // the ini always lists every setting
     }
+    g_iniWritten = IniWriteTime();
 }
 
 float Get(const char* name)
@@ -418,6 +458,43 @@ void Set(const char* name, float value)
     Save(*s);
     Apply(*s, g_rvk.device);
     RvkLog("setting %s = %g", s->name, s->value);
+}
+
+// An edit made to randy-vk.ini while the game runs: checked twice a second (its write time), and every setting whose
+// value there differs from the one in effect is applied - as from the settings window, but not written back (the
+// file already says it). A setting missing from the file or not a number (a save half done) is left as it is.
+void PollIni(rvk::ThreadedDevice* device)
+{
+    Load();
+    static ULONGLONG next;
+    const ULONGLONG now = GetTickCount64();
+    if (now < next)
+        return;
+    next = now + 500;
+    const FILETIME written = IniWriteTime();
+    if (CompareFileTime(&written, &g_iniWritten) == 0)
+        return;
+    g_iniWritten = written;
+    std::vector<const Setting*> changed;
+    for (Setting& s : g_settings) {
+        char buf[64] = "";
+        GetPrivateProfileStringA("Renderer", s.name, "", buf, sizeof(buf), g_iniPath);
+        char* end = nullptr;
+        const float read = std::strtof(buf, &end);
+        if (!buf[0] || end == buf || !std::isfinite(read))
+            continue;
+        const float v = Clamp(s, read);
+        if (v == s.value)
+            continue;
+        s.value = v;
+        RvkLog("setting %s = %g (randy-vk.ini edited)", s.name, s.value);
+        changed.push_back(&s);
+    }
+    // Applied once all are read (a device call takes a setting with its partners, some of which may have changed
+    // too); a feature's on / off setting with the settings it switches.
+    if (device)
+        for (const Setting* s : changed)
+            Apply(*s, device);
 }
 
 void ApplyAll(rvk::ThreadedDevice* device)

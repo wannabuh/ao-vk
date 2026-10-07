@@ -198,6 +198,7 @@ Device::~Device()
     DestroyProfiler();
     DestroyParticleResources();
     DestroySkinResources();
+    DestroyGrassResources();
     DestroyStaticGeometry();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_setLayout) vkDestroyDescriptorSetLayout(m_device, m_setLayout, nullptr);
@@ -853,6 +854,7 @@ bool Device::CreatePipelines(std::string* error)
     if (!ok || !CreateShadowResources(error) || !CreatePointShadowResources(error) || !CreateHdrResources(error) ||
         !CreateParticleResources(error) || !CreateSkinResources(error))
         return false;
+    CreateGrassResources(error);                 // not fatal: without it the ground grass is simply unavailable
     char gpuSkin[8] = "";
     if (GetEnvironmentVariableA("RANDYVK_GPU_SKIN", gpuSkin, sizeof(gpuSkin)) && gpuSkin[0] == '0')
         m_gpuSkin = false;
@@ -1314,12 +1316,39 @@ void Device::BeginFrame()
         Log("opaque static fast path: %llu draws (last 600 frames)", (unsigned long long)m_opaqueDraws);
         Log("foliage: %llu draws, %llu of them far (LOD) (last 600 frames)", (unsigned long long)m_foliageDraws,
             (unsigned long long)m_foliageLodDraws);
+        Log("foliage survey: %.0f draws a frame (%.0f static, %.0f changing), %.0f vertices; box height %.2f .. %.2f",
+            double(m_foliageDraws) / 600.0, double(m_foliageStatic) / 600.0, double(m_foliageDynamic) / 600.0,
+            double(m_foliageVerts) / 600.0, m_foliageMinH, m_foliageMaxH);
         Log("no-discard pipeline (early-Z): %llu draws (last 600 frames)", (unsigned long long)m_noCutDraws);
+        if (m_grassOn)
+            Log("ground grass: %llu frames drawn, %.0f blades a frame; tiles %llu, %llu built (%.2f ms each, %.0f%% of "
+                "their blades lit by the ground's lightmap), capture %.3f ms a frame; terrain ambient %.2f %.2f %.2f; "
+                "pushers now %llu max %u; candidates left out: %llu clumps, %llu no grass ground, %llu steep, %llu "
+                "edge; %llu tiles waiting to build; %.0f blades a frame cast the sun's shadow (last 600 frames)",
+                (unsigned long long)m_grassDraws, double(m_grassBlades) / std::max<uint64_t>(m_grassDraws, 1),
+                (unsigned long long)m_grassTiles.size(), (unsigned long long)m_grassBuilds,
+                m_grassBuildMs / double(std::max<uint64_t>(m_grassBuilds, 1)),
+                100.0 * double(m_grassLitBlades) / double(std::max<uint64_t>(m_grassBuiltBlades, 1)),
+                m_grassCaptureMs / 600.0, m_terrainAmbient[0], m_terrainAmbient[1], m_terrainAmbient[2],
+                (unsigned long long)m_framePushers.size(), m_pusherSeenMax, (unsigned long long)m_grassLeftOut[0],
+                (unsigned long long)m_grassLeftOut[1], (unsigned long long)m_grassLeftOut[2],
+                (unsigned long long)m_grassLeftOut[3], (unsigned long long)GrassTilesWaiting(),
+                double(m_grassShadowBlades) / 600.0);
+        m_grassShadowBlades = 0;
+        m_grassLitBlades = m_grassBuiltBlades = 0;
+        for (uint64_t& n : m_grassLeftOut)
+            n = 0;
+        m_pusherSeenMax = 0;
+        m_grassBuilds = 0;
+        m_grassBuildMs = m_grassCaptureMs = 0.0;
+        m_grassDraws = m_grassBlades = 0;
         PrepassLog();
         m_ringPeak = 0;
         m_midFrameFlushes = 0;
         m_opaqueDraws = 0;
         m_foliageDraws = m_foliageLodDraws = 0;
+        m_foliageStatic = m_foliageDynamic = m_foliageVerts = 0;
+        m_foliageMinH = m_foliageMaxH = 0.0f;
         m_noCutDraws = 0;
     }
     ++m_ringGeneration;                          // a different slot's ring: cached offsets are invalid
@@ -1350,6 +1379,7 @@ void Device::BeginFrame()
     m_profileDraws += m_frameDraw;               // last frame's batching (the profile's log)
     m_frameDraw = 0;
     m_prepassEndedThisFrame = false;
+    m_grassDrawnThisFrame = false;
     m_profileGroupCalls += m_groupCalls;
     m_profileGroupDraws += m_groupDraws;
     m_profileConstBlocks += m_constCount;

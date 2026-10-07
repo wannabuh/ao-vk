@@ -151,7 +151,9 @@ Delete ao-vk's `randy31.dll`, rename `randy31_orig.dll` back to `randy31.dll`, a
 All settings live in `randy-vk.ini` (section `[Renderer]`; the native code's switches in `[Native]`, above) and are
 saved whenever they change. With AOReloaded they
 appear in the game's options window (F10) under **Renderer**: every feature as an on/off checkbox at the top, its
-sliders and choices further down, grouped by feature. Changes apply immediately.
+sliders and choices further down, grouped by feature. Changes apply immediately. Edits to the `[Renderer]` section of
+`randy-vk.ini` made while the game runs apply too, within half a second (the options window shows them once
+reopened).
 
 Some useful ones:
 
@@ -163,6 +165,18 @@ Some useful ones:
 | `RVK_CharLight` | 1 | brightness of lights characters carry (lower it if your own light feels too strong) |
 | `RVK_TessOn`, `RVK_Tess*` | on | rounder characters: roundness, detail, distance |
 | `RVK_FoliageLod` | 35 | distance from which foliage is shaded cheaply |
+| `RVK_GrassOn` | 0 | our own ground grass: procedural blades over the terrain (off = the game's foliage only) |
+| `RVK_GrassTex` | 1 | grass only where the ground's own texture is green (not on sand, brick, roads) |
+| `RVK_GrassDist` / `RVK_GrassBlades` / `RVK_GrassHeight` | 25 / 5 / 0.5 | how far the grass reaches (world units), blades a patch, blade height |
+| `RVK_GrassWidth` | 1 | blade width (1 = default; 0.25–3) |
+| `RVK_GrassBright` | 1 | grass brightness against the ground it grows on (1 = the same; 0.5–1.5) |
+| `RVK_GrassVary` | 1 | variety: tufts, dry and tall patches, colour jitter (0 = an even lawn; up to 2) |
+| `RVK_GrassFlower` | 1 | wildflowers, seed heads and broad blades among the grass (0 = none; up to 3) |
+| `RVK_GrassGlow` | 1 | sunlight on the blades: backlit tips, a sheen, rounded shading (0 = off; up to 2) |
+| `RVK_GrassGusts` | 1 | gusts of wind sweeping visibly over the grass (0 = none; up to 2) |
+| `RVK_GrassTrail` | 1 | grass trodden by characters stays down a few seconds behind them (needs `RVK_PushOn`) |
+| `RVK_GrassShadow` | 1 | grass blades cast the sun's shadow near the camera, onto the ground and each other (needs `RVK_SunShadow`) |
+| `RVK_GrassEven` | 1 | an even grass colour: one green (1) rather than the colours of the ground under each blade (0) |
 
 ### Hotkeys (Ctrl+Shift + key)
 

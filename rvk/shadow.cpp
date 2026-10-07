@@ -153,7 +153,7 @@ bool Device::CreateShadowMap(std::string* error)
     ci.format = kDepthFormat;
     ci.extent = {m_shadowSize, m_shadowSize, 1};
     ci.mipLevels = 1;
-    ci.arrayLayers = kShadowCascades;
+    ci.arrayLayers = kShadowLayers;
     ci.samples = VK_SAMPLE_COUNT_1_BIT;
     ci.tiling = VK_IMAGE_TILING_OPTIMAL;
     ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -166,11 +166,11 @@ bool Device::CreateShadowMap(std::string* error)
     vi.image = m_shadowImage;
     vi.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
     vi.format = kDepthFormat;
-    vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, kShadowCascades};
+    vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, kShadowLayers};
     if (!Check(vkCreateImageView(m_device, &vi, nullptr, &m_shadowView), "shadow map view", error))
         return false;
     vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    for (uint32_t i = 0; i < kShadowCascades; ++i) {
+    for (uint32_t i = 0; i < kShadowLayers; ++i) {
         vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, i, 1};
         if (!Check(vkCreateImageView(m_device, &vi, nullptr, &m_shadowLayerViews[i]), "shadow cascade view", error))
             return false;
@@ -341,7 +341,7 @@ void Device::PrepareShadowMap(VkCommandBuffer cmd)
                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, 0,
                  VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
     VkClearDepthStencilValue clear{1.0f, 0};
-    VkImageSubresourceRange range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, kShadowCascades};
+    VkImageSubresourceRange range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, kShadowLayers};
     vkCmdClearDepthStencilImage(cmd, m_shadowImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1, &range);
     ImageBarrier(cmd, m_shadowImage, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
@@ -1222,6 +1222,29 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
         m_cascadeViewProj[c] = lightViewProj;
         m_cascadeTexel[c] = texel;
         m_cascadeDepth[c] = 2.0f * depth;
+    }
+    {   // The ground grass's layer (grass.cpp DrawGrassShadow), over the nearest cascade's square; cleared to lit when
+        // it has none, so receivers can always take it.
+        VkRenderingAttachmentInfo depthAtt{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        depthAtt.imageView = m_shadowLayerViews[kGrassShadowLayer];
+        depthAtt.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depthAtt.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        depthAtt.clearValue.depthStencil = {1.0f, 0};
+        VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
+        ri.renderArea = {{0, 0}, {m_shadowSize, m_shadowSize}};
+        ri.layerCount = 1;
+        ri.pDepthAttachment = &depthAtt;
+        vkCmdBeginRendering(cmd, &ri);
+        if (m_grassShadows && m_grassOn) {
+            vkCmdSetViewport(cmd, 0, 1, &viewport);
+            vkCmdSetScissor(cmd, 0, 1, &scissor);
+            const double grassStart = ProfileCpu();
+            DrawGrassShadow(cmd, m_cascadeViewProj[0], m_cascadeTexel[0], 0.5f * m_cascadeDepth[0]);
+            ProfileCpuAdd("grass shadow", grassStart);
+            m_shadowArenaBound = false;          // (its own set took set 0: the point lights' passes bind theirs again)
+        }
+        vkCmdEndRendering(cmd);
     }
     ImageBarrier(cmd, m_shadowImage, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
