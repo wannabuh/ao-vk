@@ -230,6 +230,7 @@ void RvkState::Present()
         if (dn || upKey)
             rvk_settings::Set(s.setting, rvk_settings::Get(s.setting) + (upKey ? s.step : -s.step));
     }
+    rvk_settings::PollIni(device);              // randy-vk.ini edited while the game runs
     // Ctrl+Shift+L: reload the colour lookup tables (randy-vk-day/night.cube).
     if (pressed('L'))
         rvk_settings::LoadLuts(device);

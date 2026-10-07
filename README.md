@@ -151,7 +151,9 @@ Delete ao-vk's `randy31.dll`, rename `randy31_orig.dll` back to `randy31.dll`, a
 All settings live in `randy-vk.ini` (section `[Renderer]`; the native code's switches in `[Native]`, above) and are
 saved whenever they change. With AOReloaded they
 appear in the game's options window (F10) under **Renderer**: every feature as an on/off checkbox at the top, its
-sliders and choices further down, grouped by feature. Changes apply immediately.
+sliders and choices further down, grouped by feature. Changes apply immediately. Edits to the `[Renderer]` section of
+`randy-vk.ini` made while the game runs apply too, within half a second (the options window shows them once
+reopened).
 
 Some useful ones:
 

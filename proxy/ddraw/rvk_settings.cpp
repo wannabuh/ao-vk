@@ -172,6 +172,16 @@ constexpr uint32_t kCount = sizeof(g_settings) / sizeof(g_settings[0]);
 
 char g_iniPath[MAX_PATH];
 bool g_loaded;
+FILETIME g_iniWritten;                           // randy-vk.ini's last write as we last read or wrote it (PollIni)
+
+// randy-vk.ini's last write time (zero if it can't be read).
+FILETIME IniWriteTime()
+{
+    WIN32_FILE_ATTRIBUTE_DATA a{};
+    if (!GetFileAttributesExA(g_iniPath, GetFileExInfoStandard, &a))
+        return FILETIME{};
+    return a.ftLastWriteTime;
+}
 
 Setting* Find(const char* name)
 {
@@ -248,6 +258,7 @@ void Save(const Setting& s)
     if (s.type == Float) std::snprintf(buf, sizeof(buf), "%g", s.value);
     else std::snprintf(buf, sizeof(buf), "%d", int(s.value));
     WritePrivateProfileStringA("Renderer", s.name, buf, g_iniPath);
+    g_iniWritten = IniWriteTime();              // (our own write: PollIni mustn't take it for an edit)
 }
 
 void ApplyOne(const Setting& s, rvk::ThreadedDevice* d);
@@ -402,6 +413,7 @@ void Load()
         s.value = Clamp(s, s.value);
         Save(s);                                  // the ini always lists every setting
     }
+    g_iniWritten = IniWriteTime();
 }
 
 float Get(const char* name)
@@ -446,6 +458,43 @@ void Set(const char* name, float value)
     Save(*s);
     Apply(*s, g_rvk.device);
     RvkLog("setting %s = %g", s->name, s->value);
+}
+
+// An edit made to randy-vk.ini while the game runs: checked twice a second (its write time), and every setting whose
+// value there differs from the one in effect is applied - as from the settings window, but not written back (the
+// file already says it). A setting missing from the file or not a number (a save half done) is left as it is.
+void PollIni(rvk::ThreadedDevice* device)
+{
+    Load();
+    static ULONGLONG next;
+    const ULONGLONG now = GetTickCount64();
+    if (now < next)
+        return;
+    next = now + 500;
+    const FILETIME written = IniWriteTime();
+    if (CompareFileTime(&written, &g_iniWritten) == 0)
+        return;
+    g_iniWritten = written;
+    std::vector<const Setting*> changed;
+    for (Setting& s : g_settings) {
+        char buf[64] = "";
+        GetPrivateProfileStringA("Renderer", s.name, "", buf, sizeof(buf), g_iniPath);
+        char* end = nullptr;
+        const float read = std::strtof(buf, &end);
+        if (!buf[0] || end == buf || !std::isfinite(read))
+            continue;
+        const float v = Clamp(s, read);
+        if (v == s.value)
+            continue;
+        s.value = v;
+        RvkLog("setting %s = %g (randy-vk.ini edited)", s.name, s.value);
+        changed.push_back(&s);
+    }
+    // Applied once all are read (a device call takes a setting with its partners, some of which may have changed
+    // too); a feature's on / off setting with the settings it switches.
+    if (device)
+        for (const Setting* s : changed)
+            Apply(*s, device);
 }
 
 void ApplyAll(rvk::ThreadedDevice* device)
