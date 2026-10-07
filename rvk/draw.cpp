@@ -1944,6 +1944,17 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_grassOn && !m_external && vertices && IsTerrain(fvf))
         CaptureTerrain(primitive, layout, vertices, vertexCount, indices, indexCount);
     DrawMeshInfo(fvf, layout.stride, vertices, vertexCount, indices, indexCount);
+    // ... and solid objects lying on the ground keep it off where they are (not characters, effects, the sky, plants
+    // or anything see-through; grass.cpp CaptureCover).
+    if (m_grassOn && !m_external && vertices && !IsTerrain(fvf) && m_target == m_scene &&
+        (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ && m_rs[d3d::RS_ZENABLE] && m_rs[d3d::RS_ZWRITEENABLE] &&
+        m_rs[d3d::RS_ZFUNC] != d3d::CMP_ALWAYS && !IsMultiplyPass() && !m_drawSkin && !m_drawIsLabel &&
+        (!m_textures[0] || m_textures[0]->m_opaque) && !m_rs[d3d::RS_ALPHATESTENABLE]) {
+        const auto kind = VisualKind(m_drawVisualKind);
+        if ((kind == VisualKind::Static || kind == VisualKind::Room || kind == VisualKind::Unknown) &&
+            !CharacterDraw(fvf, vertexCount))
+            CaptureCover(primitive, layout, vertices, vertexCount, indices, indexCount);
+    }
     PushCandidateDraw(fvf);
     // A swaying plant: its big quads split into small ones (cached), so they bend rather than tilt as a whole.
     float sway[4] = {};

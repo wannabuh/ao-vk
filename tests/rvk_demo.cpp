@@ -879,6 +879,7 @@ bool g_grassBenchWalker = false;  // --grass-bench-walker: a "character" walking
 bool g_grassBenchNight = false;   // --grass-bench-night: a dim lightmap and ambient, a faint bluish moon
 int g_grassBenchLoading = 0;      // --grass-bench-loading N: the ground's texture a plain green stand-in until frame N
 bool g_grassBenchLoadingNull = false;   // --grass-bench-loading-null: ... drawn untextured instead
+bool g_grassBenchPlatform = false;  // --grass-bench-platform: a flat slab lying on the ground ahead (no grass under it)
 bool g_grassBenchStorm = false;   // --grass-bench-storm: AO's sandstorm tint (a depth-writing ZFUNC ALWAYS sprite)
 bool g_grassBenchStill = false;   // --grass-bench-still: the camera stays where it starts (to watch the wind)
 int g_grassBenchFilm = 0;         // --grass-bench-film N: ~60 frames a second, a screenshot every N (film_NNN.bmp)
@@ -1050,6 +1051,16 @@ void RunGrassBench(D& dev, int frames, const std::string& shot)
             dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
             dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, cv.data(), uint32_t(cv.size()), ci.data(), uint32_t(ci.size()));
         }
+        if (g_grassBenchPlatform) {   // a slab 6 x 4 units, its top 0.1 over the ground, 5 units ahead of the start
+            const float px = -60.0f + 5.0f, pz = 0.0f, top = height(px, pz) + 0.1f;
+            auto v = [&](float x, float z) { return VtxMesh{px + x, top, pz + z, 0, 1, 0, 0xFF808890, 0, 0}; };
+            VtxMesh q[6] = {v(-3, -2), v(-3, 2), v(3, 2), v(-3, -2), v(3, 2), v(3, -2)};
+            dev.SetRenderState(RS_LIGHTING, 1);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+            dev.SetTexture(0, nullptr);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+            dev.DrawPrimitive(TriangleList, kFvfMesh, q, 6);
+        }
         {   // a blended draw, as the game's foliage: the grass goes in before it
             dev.SetRenderState(RS_LIGHTING, 0);
             dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
@@ -1102,6 +1113,226 @@ void RunGrassBench(D& dev, int frames, const std::string& shot)
     const double p99 = times.empty() ? 0.0 : times[size_t(double(times.size() - 1) * 0.99)];
     std::printf("grass bench: %d frames, mean %.3f ms, 99th percentile %.3f ms, worst %.3f ms (frame %d)\n", counted,
                 sum / std::max(counted, 1), p99, worst, worstFrame);
+}
+
+// Water test scenes (--water-lake, --water-coast): terrain drawn like AnarchyGround_t (base pass, then the light pass
+// that gives the water its sun and ambient), a few lit props standing in and over the water, the game's fog, and the
+// water handed over as the proxy does with the game's VisualLiquid_t mesh - a few huge flat triangles (DrawWater).
+// The lake: a bowl of ground 200 units across under one big square of water; the coast: a beach sloping into a sea
+// that reaches far out (the open-water swell).
+int g_waterScene = 0;             // 1 = --water-lake, 2 = --water-coast
+float g_waterStyle = 0.5f;        // --water-style S (0 = enhanced AO, 1 = realistic)
+float g_waterYaw = 0.0f;          // --water-yaw R: the camera turned R radians from the scene's default
+float g_waterPitch = -1.0f;       // --water-pitch R: looking R radians down (default per scene)
+float g_waterHeight = -1.0f;      // --water-height H: the eye this high above the water (default per scene)
+float g_waterWaves = 1.0f;        // --water-waves W
+int g_waterQuality = 2;           // --water-quality 1..3
+bool g_waterOff = false;          // --water-off: the game's way instead (no DrawWater: a flat blended quad)
+bool g_waterNight = false;        // --water-night
+float g_waterZ = -1e6f;           // --water-z Z: the camera's z (default per scene)
+bool g_waterNoPrepass = false;    // --water-noprepass
+
+template <typename D>
+void RunWaterScene(D& dev, int frames, const std::string& shot)
+{
+    const bool coast = g_waterScene == 2;
+    // Ground: sand to grass by a pattern (one texture, as the game's terrain tile would be).
+    std::vector<uint32_t> groundPixels(64 * 64);
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x) {
+            uint32_t n = uint32_t((x * 7 + y * 13) % 17);
+            groundPixels[y * 64 + x] = coast ? (0xFFC2B08A - n * 0x020202u) : (0xFF6E7A4A - n * 0x020202u);
+        }
+    Texture* ground = dev.CreateTexture(64, 64, groundPixels.data());
+    std::vector<uint32_t> lightmapPixels(64 * 64, g_waterNight ? 0xFF303040u : 0xFFB8B8B8u);
+    Texture* lightmap = dev.CreateTexture(64, 64, lightmapPixels.data());
+    // The game's water texture stand-in (water5.png: a pale blue mottled pattern).
+    std::vector<uint32_t> waterPixels(64 * 64);
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x) {
+            float v = 0.5f + 0.25f * std::sin(x * 0.39f + std::sin(y * 0.2f) * 2.0f) + 0.25f * std::cos(y * 0.33f);
+            uint32_t b = uint32_t(140 + 80 * v), g = uint32_t(110 + 70 * v), r = uint32_t(70 + 40 * v);
+            waterPixels[y * 64 + x] = 0xFF000000u | r << 16 | g << 8 | b;
+        }
+    Texture* waterTex = dev.CreateTexture(64, 64, waterPixels.data());
+    struct VtxTerrain { float x, y, z, nx, ny, nz, u0, v0, u1, v1; };
+    const uint32_t kFvfTerrain = FVF_XYZ | FVF_NORMAL | (2 << 8);
+    auto height = [&](float x, float z) {
+        if (coast) {
+            // Land at z < 20, the beach down into the sea, a sea floor at -14 from z ~ 140; a few bumps.
+            float h = 5.0f - 0.16f * z + 0.6f * std::sin(x * 0.05f) * std::cos(z * 0.07f);
+            return std::max(h, -14.0f + 0.8f * std::sin(x * 0.03f));
+        }
+        float r = std::sqrt(x * x + (z - 40.0f) * (z - 40.0f) * 1.3f);
+        float bowl = -5.0f + 9.0f * std::pow(std::min(r / 75.0f, 1.4f), 2.0f);
+        return bowl + 0.8f * std::sin(x * 0.11f) * std::cos(z * 0.09f);
+    };
+    const float cell = coast ? 5.0f : 2.5f;
+    const float x0 = coast ? -250.0f : -110.0f, x1 = -x0;
+    const float z0 = coast ? -80.0f : -70.0f, z1 = coast ? 320.0f : 150.0f;
+    std::vector<VtxTerrain> terrain;
+    for (float z = z0; z < z1; z += cell)
+        for (float x = x0; x < x1; x += cell) {
+            auto vert = [&](float vx, float vz) {
+                float e = 0.5f;
+                float nx = height(vx - e, vz) - height(vx + e, vz), nz = height(vx, vz - e) - height(vx, vz + e);
+                float l = std::sqrt(nx * nx + 1.0f + nz * nz);
+                return VtxTerrain{vx, height(vx, vz), vz, nx / l, 1.0f / l, nz / l, vx / 6, vz / 6, (vx - x0) / (x1 - x0),
+                                  (vz - z0) / (z1 - z0)};
+            };
+            VtxTerrain q[6] = {vert(x, z), vert(x, z + cell), vert(x + cell, z), vert(x + cell, z), vert(x, z + cell),
+                               vert(x + cell, z + cell)};
+            terrain.insert(terrain.end(), q, q + 6);
+        }
+    // Props: lit boxes (a pillar and rocks standing in the water, a pier over it).
+    std::vector<VtxMesh> props;
+    auto box = [&](float cx, float cy, float cz, float sx, float sy, float sz, uint32_t colour) {
+        const float c[3] = {cx, cy, cz}, e[3] = {sx * 0.5f, sy * 0.5f, sz * 0.5f};
+        for (int axis = 0; axis < 3; ++axis)
+            for (int sign = -1; sign <= 1; sign += 2) {
+                int a = (axis + 1) % 3, b = (axis + 2) % 3;
+                float n[3] = {0, 0, 0};
+                n[axis] = float(sign);
+                auto corner = [&](float ua, float ub) {
+                    float p[3];
+                    p[axis] = c[axis] + sign * e[axis];
+                    p[a] = c[a] + ua * e[a];
+                    p[b] = c[b] + ub * e[b];
+                    return VtxMesh{p[0], p[1], p[2], n[0], n[1], n[2], colour, 0, 0};
+                };
+                VtxMesh q[6] = {corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, -1), corner(1, 1), corner(-1, 1)};
+                props.insert(props.end(), q, q + 6);
+            }
+    };
+    if (coast) {
+        for (int i = 0; i < 9; ++i)
+            box(-12.0f + float(i) * 0.1f, 1.5f, 30.0f + float(i) * 6.0f, 0.5f, 7.0f, 0.5f, 0xFF6A5038);   // pier posts
+        box(-11.6f, 2.6f, 54.0f, 3.0f, 0.3f, 52.0f, 0xFF8A6A48);                                      // the deck
+        box(18.0f, -1.0f, 60.0f, 6.0f, 6.0f, 5.0f, 0xFF707070);                                        // a rock
+        box(40.0f, -4.0f, 110.0f, 10.0f, 12.0f, 8.0f, 0xFF6A6A70);
+    } else {
+        box(8.0f, 0.5f, 28.0f, 1.2f, 9.0f, 1.2f, 0xFFB0A898);                                          // a pillar
+        box(-15.0f, -0.5f, 45.0f, 5.0f, 3.0f, 4.0f, 0xFF707068);                                       // a rock
+        box(25.0f, -2.0f, 70.0f, 8.0f, 6.0f, 3.0f, 0xFF606060);
+        box(-6.0f, 1.2f, 15.0f, 1.0f, 1.0f, 1.0f, 0xFFC04030);                                         // a red crate
+    }
+    // The water, as the game has it: big flat triangles (the lake one square; the sea out to the horizon).
+    const uint32_t tint = 0xCC00186A;
+    std::vector<Device::WaterVertex> water;
+    if (coast)
+        water = {{{-3000, 0, 5}, tint}, {{3000, 0, 5}, tint}, {{3000, 0, 4000}, tint}, {{-3000, 0, 4000}, tint}};
+    else
+        water = {{{-90, 0, -40}, tint}, {{90, 0, -40}, tint}, {{90, 0, 130}, tint}, {{-90, 0, 130}, tint}};
+    const uint16_t waterIdx[6] = {0, 1, 2, 0, 2, 3};
+
+    Device::WaterParams wp;
+    wp.style = g_waterStyle;
+    wp.waves = g_waterWaves;
+    wp.quality = uint32_t(g_waterQuality);
+    dev.SetWaterParams(wp);
+    if (g_waterNoPrepass)
+        dev.SetDepthPrepass(false);
+    const uint32_t sky = g_waterNight ? 0xFF101828u : 0xFF8FB0CCu;
+    for (int frame = 0; frame < frames; ++frame) {
+        if (frame == frames - 1)
+            dev.RequestScreenshot(shot);
+        dev.BeginFrame();
+        dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
+        dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, sky, 1.0f);
+        // Standing on the shore (the eye 1.8 above the ground there, or --water-height above the water), looking out.
+        const float ex = coast ? 2.0f : 0.0f, ez = g_waterZ > -1e5f ? g_waterZ : coast ? 22.0f : -25.0f;
+        const float eyeY = g_waterHeight >= 0.0f ? g_waterHeight : std::max(height(ex, ez), 0.0f) + 1.8f;
+        const float pitch = g_waterPitch >= 0.0f ? g_waterPitch : (coast ? 0.1f : 0.16f);
+        const float yaw = kPi * 0.5f + g_waterYaw;           // +z
+        const Vector eye{ex, eyeY, ez};
+        if (frame == 0)
+            std::printf("water scene: eye %.2f %.2f %.2f, ground there %.2f, at z 60: %.2f, at z 150: %.2f, %zu terrain vertices\n",
+                        double(ex), double(eyeY), double(ez), double(height(ex, ez)), double(height(0, 60)),
+                        double(height(0, 150)), terrain.size());
+        const Vector at{eye.x + std::cos(yaw) * std::cos(pitch), eye.y - std::sin(pitch), eye.z + std::sin(yaw) * std::cos(pitch)};
+        dev.SetTransform(View, LookAtLH(eye, at, {0, 1, 0}));
+        dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.3f, 2000.0f));
+        dev.SetTransform(World, Identity());
+        dev.SetRenderState(RS_ZENABLE, 1);
+        dev.SetRenderState(RS_ZWRITEENABLE, 1);
+        dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+        dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+        dev.SetRenderState(RS_ALPHATESTENABLE, 0);
+        dev.SetRenderState(RS_FOGENABLE, 1);
+        dev.SetRenderState(RS_FOGCOLOR, sky);
+        dev.SetRenderState(RS_FOGTABLEMODE, FOG_LINEAR);
+        dev.SetRenderState(RS_FOGSTART, FloatBits(coast ? 200.0f : 120.0f));
+        dev.SetRenderState(RS_FOGEND, FloatBits(coast ? 1400.0f : 600.0f));
+        Material mat{{1, 1, 1, 1}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}, 0.0f};
+        dev.SetMaterial(mat);
+        Light sun{};
+        sun.type = LIGHT_DIRECTIONAL;
+        sun.diffuse = g_waterNight ? Color{0.1f, 0.12f, 0.2f, 1} : Color{1.0f, 0.93f, 0.8f, 1};
+        sun.direction = {0.35f, -0.55f, 0.75f};             // the sun ahead of the camera, low: a glint on the water
+        dev.SetLight(0, sun);
+        dev.LightEnable(0, true);
+        dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+        dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
+        // The ground: base pass, then the light pass (lightmap + ambient, multiplied).
+        dev.SetRenderState(RS_LIGHTING, 0);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        dev.SetTexture(0, ground);
+        dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 0);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
+        const uint32_t kChunkVerts = 1536;               // in chunks, as the game draws its ground
+        for (size_t at = 0; at < terrain.size(); at += kChunkVerts)
+            dev.DrawPrimitive(TriangleList, kFvfTerrain, terrain.data() + at,
+                              uint32_t(std::min<size_t>(kChunkVerts, terrain.size() - at)));
+        dev.SetRenderState(RS_LIGHTING, 1);
+        dev.SetRenderState(RS_AMBIENT, g_waterNight ? 0xFF181C28 : 0xFF606468);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+        dev.SetRenderState(RS_SRCBLEND, BLEND_ZERO);
+        dev.SetRenderState(RS_DESTBLEND, BLEND_SRCCOLOR);
+        dev.SetRenderState(RS_ZFUNC, CMP_EQUAL);
+        dev.SetTexture(0, lightmap);
+        dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 1);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_ADD);
+        for (size_t at = 0; at < terrain.size(); at += kChunkVerts)
+            dev.DrawPrimitive(TriangleList, kFvfTerrain, terrain.data() + at,
+                              uint32_t(std::min<size_t>(kChunkVerts, terrain.size() - at)));
+        dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 0);
+        dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        // The props: lit, coloured by their vertices.
+        dev.SetRenderState(RS_LIGHTING, 1);
+        dev.SetRenderState(RS_COLORVERTEX, 1);
+        dev.SetRenderState(RS_DIFFUSEMATERIALSOURCE, MCS_COLOR1);
+        dev.SetRenderState(RS_AMBIENTMATERIALSOURCE, MCS_COLOR1);
+        dev.SetTexture(0, nullptr);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+        dev.DrawPrimitive(TriangleList, kFvfMesh, props.data(), uint32_t(props.size()));
+        // The water, last of the opaque scene (the game draws it from its sorted list after the solid world).
+        dev.SetRenderState(RS_LIGHTING, 0);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+        dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+        dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
+        dev.SetRenderState(RS_ZWRITEENABLE, 0);
+        dev.SetTexture(0, waterTex);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG2);
+        dev.SetTextureStageState(0, TSS_ALPHAARG2, TA_DIFFUSE);
+        if (g_waterOff) {
+            std::vector<VtxMesh> flat;
+            for (int k : {0, 1, 2, 0, 2, 3}) {
+                const auto& w = water[size_t(k)];
+                flat.push_back({w.pos[0], w.pos[1], w.pos[2], 0, 1, 0, tint, w.pos[0] / 40, w.pos[2] / 40});
+            }
+            dev.DrawPrimitive(TriangleList, kFvfMesh, flat.data(), uint32_t(flat.size()));
+        } else {
+            dev.DrawWater(water.data(), uint32_t(water.size()), waterIdx, 6);
+        }
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        dev.SetRenderState(RS_ZWRITEENABLE, 1);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        dev.EndFrame();
+    }
 }
 
 template <typename D>
@@ -1951,6 +2182,21 @@ int main(int argc, char** argv)
         else if (a == "--grass-flip") g_grassFlip = true;
         else if (a == "--grass-field") { g_grassFieldOn = true; hdr = true; }
         else if (a == "--grass-bench") { g_grassFieldOn = g_grassBench = true; hdr = true; }
+        else if (a == "--water-lake") { g_waterScene = 1; hdr = true; }
+        else if (a == "--water-coast") { g_waterScene = 2; hdr = true; }
+        else if (a == "--water-shadows") shadows = true;   // (the coast's camera then goes wrong from frame 2: not the water's)
+        else if (a == "--water-style" && i + 1 < argc) g_waterStyle = float(std::atof(argv[++i]));
+        else if (a == "--water-yaw" && i + 1 < argc) g_waterYaw = float(std::atof(argv[++i]));
+        else if (a == "--water-pitch" && i + 1 < argc) g_waterPitch = float(std::atof(argv[++i]));
+        else if (a == "--water-height" && i + 1 < argc) g_waterHeight = float(std::atof(argv[++i]));
+        else if (a == "--water-waves" && i + 1 < argc) g_waterWaves = float(std::atof(argv[++i]));
+        else if (a == "--water-quality" && i + 1 < argc) g_waterQuality = std::atoi(argv[++i]);
+        else if (a == "--water-off") g_waterOff = true;
+        else if (a == "--water-night") g_waterNight = true;
+        else if (a == "--water-z" && i + 1 < argc) g_waterZ = float(std::atof(argv[++i]));
+        else if (a == "--water-noshadow") shadows = false;
+        else if (a == "--water-nohdr") hdr = false;
+        else if (a == "--water-noprepass") g_waterNoPrepass = true;
         else if (a == "--grass-field-any") g_grassFieldTex = false;
         else if (a == "--grass-field-tan") g_grassFieldTan = true;
         else if (a == "--grass-field-dist" && i + 1 < argc) g_grassFieldDist = float(std::atof(argv[++i]));
@@ -1959,6 +2205,7 @@ int main(int argc, char** argv)
         else if (a == "--grass-bench-night") g_grassBenchNight = true;
         else if (a == "--grass-bench-still") g_grassBenchStill = true;
         else if (a == "--grass-bench-storm") g_grassBenchStorm = true;
+        else if (a == "--grass-bench-platform") g_grassBenchPlatform = true;
         else if (a == "--grass-bench-loading" && i + 1 < argc) g_grassBenchLoading = std::atoi(argv[++i]);
         else if (a == "--grass-bench-loading-null") g_grassBenchLoadingNull = true;
         else if (a == "--grass-bench-film" && i + 1 < argc) g_grassBenchFilm = std::atoi(argv[++i]);
@@ -2173,6 +2420,8 @@ int main(int argc, char** argv)
         else RunDemo(tdev, windowed, stress, frames, shot);
     } else if (g_grassBench) {
         RunGrassBench(dev, frames, shot);
+    } else if (g_waterScene) {
+        RunWaterScene(dev, frames, shot);
     } else if (shadowTest) {
         if (g_walkerLight) {                     // the character's own light casts point shadows, full strength by day
             dev.SetPointShadows(pointShadows);

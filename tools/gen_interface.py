@@ -22,7 +22,8 @@ CLIENT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else
 # The client's randy31.dll is the proxy once installed; read exports from the pristine copy.
 ORIGINAL = ROOT / "orig/randy31.dll"
 TARGET = "randy31.dll"
-OWN_EXPORTS = ["RvkSettings_Version", "RvkSettings_Count", "RvkSettings_Get", "RvkSettings_Set"]
+OWN_EXPORTS = ["RvkSettings_Version", "RvkSettings_Count", "RvkSettings_Get", "RvkSettings_Set",
+               "RvkPresets_Count", "RvkPresets_Name", "RvkPresets_Apply", "RvkPresets_Current"]
 ORIG = "randy31_orig"
 # Exports the proxy implements itself (wrapping the original): mangled name -> proxy symbol.
 # proxy/texture_ids.cpp: learns which RDB texture each surface holds.

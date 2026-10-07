@@ -157,6 +157,19 @@ Spell effects with GPU particles, and depth of field.
 - Grass and plants bend out of the way of characters walking through them, then spring back.
 - Big plant quads are split near characters so they bend smoothly instead of tilting as one piece.
 - Distant foliage is shaded more cheaply (a level of detail), for speed in grassy areas.
+- No grass grows under objects lying on the ground (platforms, floors, road pieces).
+
+**Water**
+- The game's flat water is replaced by a real surface: waves (a gentle ripple on ponds, a swell on the open sea),
+  small ripples, refraction of what is under it, water that gets deeper in colour the deeper it is, caustics on the
+  bottom, reflections of the scene and the sky with a sun glint, foam along shores, and the game's fog.
+- One slider from "the game's water made richer" (its own colour and texture) to realistic water; halfway by
+  default. Needs HDR.
+
+**Presets**
+- One click in the Renderer tab: **Original** (every enhancement off), **Classic+** (the game's look, lit and
+  shadowed better), **Modern** (the defaults) or **Ultra** (everything turned up). Changing any setting by hand
+  makes it **Custom**. To keep a setup of your own, back up `randy-vk.ini`.
 
 **Characters**
 - Phong tessellation: character bodies and heads get rounder silhouettes up close. Hard edges (armour, weapons)
@@ -293,7 +306,8 @@ Delete ao-vk's `randy31.dll`, rename `randy31_orig.dll` back to `randy31.dll`, a
 
 All settings live in `randy-vk.ini` (section `[Renderer]`; the native code's switches in `[Native]`, above) and are
 saved whenever they change. With AOReloaded they
-appear in the game's options window (F10) under **Renderer**: every feature as an on/off checkbox at the top, its
+appear in the game's options window (F10) under **Renderer**: the presets first, then every feature as an on/off
+checkbox, its
 sliders and choices further down, grouped by feature. Changes apply immediately. Edits to the `[Renderer]` section of
 `randy-vk.ini` made while the game runs apply too, within half a second (the options window shows them once
 reopened).
@@ -303,15 +317,17 @@ Some useful ones:
 | Setting | Default | |
 | --- | --- | --- |
 | `RVK_Enhance` | 1 | master switch: 0 = the game's own look (keeps your other settings) |
-| `RVK_SunRes` | 4096 | sun shadow resolution; **1024 is much faster** and still looks good |
-| `RVK_PtShadows` / `RVK_PtRes` | 8 / 1024 | how many lights cast point shadows, and their resolution |
-| `RVK_CharLight` | 1 | brightness of lights characters carry (lower it if your own light feels too strong) |
+| `RVK_SunRes` | 2048 | sun shadow resolution; **1024 is faster** and still looks good |
+| `RVK_SunStrength` | 0.6 | how dark sun shadows are; lamp and character lights fill them in, so their intensities matter too |
+| `RVK_PtShadows` / `RVK_PtRes` | 8 / 512 | how many lights cast point shadows, and their resolution |
+| `RVK_PtLight` | 0.3 | brightness of lamps, fires and other lights |
+| `RVK_CharLight` | 0.25 | brightness of lights characters carry (your own included) |
 | `RVK_TessOn`, `RVK_Tess*` | on | rounder characters: roundness, detail, distance |
 | `RVK_FoliageLod` | 35 | distance from which foliage is shaded cheaply |
-| `RVK_GrassOn` | 0 | our own ground grass: procedural blades over the terrain (off = the game's foliage only) |
+| `RVK_GrassOn` | 1 | our own ground grass: procedural blades over the terrain (off = the game's foliage only; needs HDR) |
 | `RVK_GrassTex` | 1 | grass only where the ground's own texture is green (not on sand, brick, roads) |
-| `RVK_GrassDist` / `RVK_GrassBlades` / `RVK_GrassHeight` | 25 / 5 / 0.5 | how far the grass reaches (world units), blades a patch, blade height |
-| `RVK_GrassWidth` | 1 | blade width (1 = default; 0.25–3) |
+| `RVK_GrassDist` / `RVK_GrassBlades` / `RVK_GrassHeight` | 40 / 8 / 0.3 | how far the grass reaches (world units), blades a patch, blade height |
+| `RVK_GrassWidth` | 0.75 | blade width (0.25–3) |
 | `RVK_GrassBright` | 1 | grass brightness against the ground it grows on (1 = the same; 0.5–1.5) |
 | `RVK_GrassVary` | 1 | variety: tufts, dry and tall patches, colour jitter (0 = an even lawn; up to 2) |
 | `RVK_GrassFlower` | 1 | wildflowers, seed heads and broad blades among the grass (0 = none; up to 3) |
@@ -320,6 +336,12 @@ Some useful ones:
 | `RVK_GrassTrail` | 1 | grass trodden by characters stays down a few seconds behind them (needs `RVK_PushOn`) |
 | `RVK_GrassShadow` | 1 | grass blades cast the sun's shadow near the camera, onto the ground and each other (needs `RVK_SunShadow`) |
 | `RVK_GrassEven` | 1 | an even grass colour: one green (1) rather than the colours of the ground under each blade (0) |
+| `RVK_WaterOn` | 1 | the new water (off = the game's own; needs HDR) |
+| `RVK_WaterStyle` | 0.5 | 0 = the game's water made richer, 1 = realistic |
+| `RVK_WaterQual` | 2 | 1 low, 2 medium, 3 high: surface detail and reflection quality |
+| `RVK_WaterWaves` / `RVK_WaterRipple` | 0.3 / 1 | wave height, small ripples |
+| `RVK_WaterRefl` / `RVK_WaterRefr` / `RVK_WaterClear` | 1 / 1 / 1 | reflections, refraction, how far one sees into it |
+| `RVK_WaterFoam` / `RVK_WaterCaust` / `RVK_WaterTex` | 0 / 1 / 0.5 | shore and crest foam, caustics, the game's water texture on it |
 
 ### Hotkeys (Ctrl+Shift + key)
 
@@ -360,6 +382,8 @@ feature costs exactly where you are.
 - In very large crowds the game's own CPU work (its interface, game logic) still limits the frame rate; the native
   character code (below) takes the renderer's share of it off the game's thread.
 - Shadows are drawn from the untessellated characters.
+- Ground grass and the new water need HDR (`RVK_Hdr`): with it off they don't show.
+- The water's reflections are screen-space: what is off screen reflects as sky.
 
 ## How it works
 

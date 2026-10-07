@@ -148,6 +148,10 @@ public:
     void ParticleEmitter(uint64_t key, const float center[3], const float origin[3], const Device::ParticleSprite* sprites,
                          uint32_t count);
     void EndParticleEmitter();
+    // The water (Device::DrawWater): vertices and indices copied.
+    void SetWaterParams(const Device::WaterParams& params);
+    void DrawWater(const Device::WaterVertex* vertices, uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount);
+    bool WaterReady() const { return m_device.WaterReady(); }
     void SetTexture(uint32_t stage, Texture* texture);
     void SetDrawVisual(uint32_t kind, const char* className, uint32_t owner = 0);   // className: stays valid (RTTI)
     void SetSceneLights(const Device::SceneLight* lights, uint32_t count);   // copied

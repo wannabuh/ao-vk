@@ -117,6 +117,7 @@
     X(vkCmdCopyBufferToImage) \
     X(vkCmdCopyBuffer) \
     X(vkCmdCopyImageToBuffer) \
+    X(vkCmdCopyImage) \
     X(vkCmdBlitImage)
 
 namespace rvk::vk {

@@ -463,6 +463,8 @@ HRESULT RDevice::DrawIndexedVBRetained(D3DPRIMITIVETYPE type, RVertexBuffer* vb,
     CountBackendDraw();
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !vb || !idx || start + vcount > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
+    if (vb->water && DrawWaterInstead(type, vb, start, vcount, idx, icount))
+        return D3D_OK;
     g_rvk.Frame();
     NoteVisual(dev);
     if (vb->skin) {
@@ -754,6 +756,33 @@ HRESULT RDevice::DoDrawPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER
     return D3D_OK;
 }
 
+bool RDevice::DrawWaterInstead(D3DPRIMITIVETYPE type, RVertexBuffer* vb, DWORD start, DWORD vcount, const WORD* idx,
+                               DWORD icount)
+{
+    RVertexBuffer::Water* w = vb->water.get();
+    rvk::ThreadedDevice* dev = g_rvk.device;
+    // (Floating text comes out of ProcessVertices in the same format, drawn over everything: never water.)
+    if (!w || w->frame != g_rvk.presentCount || type != D3DPT_TRIANGLELIST || !dev || !dev->WaterReady() ||
+        m_rs[D3DRENDERSTATE_ZFUNC] == D3DCMP_ALWAYS)
+        return false;
+    if (w->drawn)
+        return true;                             // the game's second pass / refraction pass over the same water
+    std::vector<uint16_t> indices(icount);
+    const size_t n = w->vertices.size();
+    for (DWORD i = 0; i < icount; ++i) {
+        const int64_t k = int64_t(start) + idx[i] - int64_t(w->first);
+        if (k < 0 || size_t(k) >= n || n > 65535)
+            return false;                        // not all of it ours: as the game draws it
+        indices[i] = uint16_t(k);
+    }
+    (void)vcount;
+    g_rvk.Frame();
+    NoteVisual(dev);
+    dev->DrawWater(w->vertices.data(), uint32_t(n), indices.data(), icount);
+    w->drawn = true;
+    return true;
+}
+
 HRESULT RDevice::DoDrawIndexedPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER7 iface, DWORD start, DWORD vcount,
                                           LPWORD idx, DWORD icount, DWORD)
 {
@@ -763,6 +792,8 @@ HRESULT RDevice::DoDrawIndexedPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTE
     auto* vb = static_cast<RVertexBuffer*>(iface);
     rvk::ThreadedDevice* dev = g_rvk.device;
     if (!dev || !vb || !idx || start + vcount > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
+    if (vb->water && DrawWaterInstead(type, vb, start, vcount, idx, icount))
+        return D3D_OK;
     g_rvk.Frame();
     NoteVisual(dev);
     if (vb->skin)
@@ -1011,6 +1042,31 @@ HRESULT RDevice::ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, D
         }
 
     dst->Written();                              // its shared copy (StaticSnapshot) is out of date
+    // The game's water mesh going to the screen (VisualLiquid_t): its world-space vertices kept for our water.
+    const bool water = sf.diffuse >= 0 && src->desc.dwFVF == (D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX1) &&
+                       dst->desc.dwFVF == (D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX1) &&
+                       g_rvk.device && g_rvk.device->WaterReady();
+    if (water) {
+        if (!dst->water) dst->water = std::make_unique<RVertexBuffer::Water>();
+        RVertexBuffer::Water& w = *dst->water;
+        w.vertices.resize(count);
+        w.first = dstIndex;
+        w.frame = g_rvk.presentCount;
+        w.drawn = false;
+        for (DWORD i = 0; i < count; ++i) {
+            const uint8_t* in = src->Bytes() + size_t(srcIndex + i) * sf.stride;
+            float p[4] = {0, 0, 0, 1}, pw[4];
+            std::memcpy(p, in + sf.pos, 12);
+            Transform(world, p, pw);
+            rvk::Device::WaterVertex& v = w.vertices[i];
+            v.pos[0] = pw[0];
+            v.pos[1] = pw[1];
+            v.pos[2] = pw[2];
+            std::memcpy(&v.colour, in + sf.diffuse, 4);
+        }
+    } else if (dst->water) {
+        dst->water->frame = ~0ull;               // something else in it now
+    }
     for (DWORD i = 0; i < count; ++i) {
         const uint8_t* in = src->Bytes() + size_t(srcIndex + i) * sf.stride;
         uint8_t* out = dst->Bytes() + size_t(dstIndex + i) * df.stride;

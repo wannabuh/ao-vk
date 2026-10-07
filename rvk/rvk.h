@@ -190,7 +190,7 @@ public:
     // Enhancement: the 3D scene is drawn into a 16-bit float target (colours above 1 kept) and tone mapped into the
     // 8-bit main target when the interface starts drawing (hdr.cpp). knee: colours up to it are shown unchanged,
     // brighter ones roll off towards white (1 = only clip, keeping the hue). exposure scales the scene first.
-    void SetHdr(bool enable) { m_hdr = enable; m_constantsDirty = true; m_frameLightsDirty = true; }
+    void SetHdr(bool enable) { m_hdr = enable; m_constantsDirty = true; m_frameLightsDirty = true; UpdateWaterReady(); }
     bool Hdr() const { return m_hdr; }
     void SetTonemap(float knee, float exposure) { m_tonemapKnee = knee; m_exposure = exposure; }
     // With HDR: glow around light above the threshold (hdr.cpp). strength 0 = off.
@@ -386,6 +386,31 @@ public:
     static constexpr uint32_t kParticlesPerBlock = kParticleSlots * kParticleChildren, kParticleBlocks = 256;
     static constexpr uint32_t kParticleDrawnBlocks = 128;     // effects simulated and drawn per frame (nearest first)
     static constexpr uint32_t kParticleFvf = 0x142;           // XYZ | DIFFUSE | TEX1: the game's sprite vertices
+
+    // Enhancement: the water (water.cpp). The game's water triangles (VisualLiquid_t's world-space mesh, kept by the
+    // proxy from its ProcessVertices call) drawn as our water surface in their place: waves, refraction, absorption,
+    // reflections, foam, caustics. Called where the game draws its water (the scene's rendering).
+    struct WaterVertex {
+        float pos[3];                            // world space
+        uint32_t colour;                         // the game's vertex colour (ARGB): the water's tint
+    };
+    struct WaterParams {
+        bool enable = true;
+        float style = 0.5f;                      // 0 = the game's water made richer, 1 = realistic
+        float waves = 1.0f;                      // wave height (0 = flat)
+        float ripples = 1.0f;                    // small ripples (normals)
+        float reflections = 1.0f;
+        float refraction = 1.0f;
+        float clarity = 1.0f;                    // how far one sees into the water
+        float foam = 1.0f;
+        float caustics = 1.0f;
+        float gameTexture = 0.5f;                // the game's water texture on the surface (enhanced AO look)
+        uint32_t quality = 2;                    // 1 low, 2 medium, 3 high: grid density, reflection steps
+    };
+    void SetWaterParams(const WaterParams& params) { m_waterParams = params; UpdateWaterReady(); }
+    void DrawWater(const WaterVertex* vertices, uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount);
+    // The water can be drawn (on, HDR on, resources made): the proxy replaces the game's water only then. Any thread.
+    bool WaterReady() const { return m_waterReady.load(std::memory_order_relaxed); }
 
     void SetTexture(uint32_t stage, Texture* texture);
     // The game's visual issuing the next draws (rnative::scene): its kind (VisualKind) and class name - for exact
@@ -1122,6 +1147,10 @@ private:
         uint32_t colour[kCells];   // the ground texel's RGB; bit 24: grass
         uint32_t light[kCells];    // the lightmap texel's RGB
         uint8_t rank[kCells];      // 255: never seen
+        // The lowest few surfaces of solid objects (a platform, a floor, a road piece) over each cell, lowest first
+        // (CaptureCover; 1e30: none). One on or just above the ground (CoveredAt): no blades grow there.
+        static constexpr int kCoverLayers = 8;
+        float cover[kCells][kCoverLayers];
         uint8_t lightRank[kCells];
         uint8_t blockRank[kBlocks];        // the coarsest rank in each block (255: a cell unseen)
         uint8_t blockLightRank[kBlocks];
@@ -1173,6 +1202,15 @@ private:
     uint32_t m_trailActive = 0;                  // cells with any push left (none: nothing uploaded)
     void UpdateGrassTrail();
     uint64_t GrassTilesWaiting() const;          // tiles in range with ground seen, not built or from an older ground
+    // Solid objects' upward surfaces near the ground (CaptureCover): the grass under them stays away. Each object
+    // (mesh x world matrix) once, like the terrain chunks.
+    void CaptureCover(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
+                      const uint16_t* indices, uint32_t indexCount);
+    bool CoveredAt(float x, float z, float groundY) const;
+    std::unordered_map<uint64_t, GrassChunk> m_grassCovers;
+    std::vector<GrassTile*> m_grassCoverGrid;    // CaptureCover's scratch: the new tiles under an object
+    uint64_t m_grassCoverFrame = 0;              // the frame m_grassCoverMs counts
+    double m_grassCoverMs = 0.0;                 // CaptureCover's time this frame (a budget: the rest waits)
     void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
                         const uint16_t* indices, uint32_t indexCount);
     bool GroundAt(float x, float z, float* y, uint32_t* colour, uint32_t* light) const;
@@ -1189,6 +1227,44 @@ private:
     // its texel size, depth its light-space depth range.
     void DrawGrassShadow(VkCommandBuffer cmd, const d3d::Matrix& lightViewProj, float texel, float depth);
     bool m_grassDrawnThisFrame = false;            // the blades go in before the game's transparent pass (see Draw)
+    // The water (water.cpp).
+    WaterParams m_waterParams;
+    std::atomic<bool> m_waterReady{false};
+    struct WaterMap {
+        uint64_t key = 0;                        // the mesh's hash
+        Texture* texture = nullptr;              // RGBA16F: R height above `base`, G water
+        float origin[2] = {}, size[2] = {};      // the map's world x, z origin and size
+        float lo[2] = {}, hi[2] = {};            // the water's x, z extent
+        float base = 0.0f, texel = 1.0f, extent = 0.0f;
+        uint32_t flatTriangles = 0, colour = 0;
+        uint64_t lastFrame = 0;
+    };
+    std::vector<WaterMap> m_waterMaps;
+    struct WaterGrid { uint32_t segments = 0; VkBuffer buffer = VK_NULL_HANDLE; VmaAllocation_T* allocation = nullptr; };
+    std::vector<WaterGrid> m_waterGrids;
+    std::vector<uint32_t> m_waterSteep;
+    VkDescriptorSetLayout m_waterSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout m_waterLayout = VK_NULL_HANDLE;
+    VkPipeline m_waterPipeline = VK_NULL_HANDLE;
+    VkSampler m_waterRepeatSampler = VK_NULL_HANDLE;
+    Texture* m_waterDetail = nullptr;            // RG ripple slope, B noise, A cell edges (tiled, mipmapped)
+    Texture* m_waterSceneCopy = nullptr;         // the scene before the water (once a frame)
+    VkImage m_waterDepthCopy = VK_NULL_HANDLE;   // ... and its depth
+    VkImageView m_waterDepthCopyView = VK_NULL_HANDLE;
+    VmaAllocation_T* m_waterDepthCopyAllocation = nullptr;
+    VkImageLayout m_waterDepthCopyLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    uint32_t m_waterDepthW = 0, m_waterDepthH = 0;
+    uint64_t m_waterCopyFrame = ~0ull;
+    uint64_t m_waterDraws = 0, m_waterTriangles = 0;
+    uint32_t m_waterLogCount = 0;
+    bool CreateWaterResources(std::string* error);
+    void DestroyWaterResources();
+    void UpdateWaterReady();
+    const WaterGrid* WaterGridFor(uint32_t segments);
+    WaterMap* WaterMapFor(const WaterVertex* v, uint32_t count, const uint16_t* idx, uint32_t icount,
+                          std::vector<uint32_t>& steep);
+    bool CopySceneForWater(VkCommandBuffer cmd);
+    void WaterLog(const char* fmt, ...);
     bool CreateGrassResources(std::string* error);
     void DestroyGrassResources();
     uint64_t m_grassDraws = 0, m_grassBlades = 0, m_grassBuilds = 0;   // counters, logged with the foliage line

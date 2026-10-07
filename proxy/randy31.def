@@ -779,3 +779,7 @@ EXPORTS
     RvkSettings_Count
     RvkSettings_Get
     RvkSettings_Set
+    RvkPresets_Count
+    RvkPresets_Name
+    RvkPresets_Apply
+    RvkPresets_Current

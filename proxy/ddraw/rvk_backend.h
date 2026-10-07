@@ -251,6 +251,16 @@ public:
     // buf are out of date until someone reads them (Materialize). Any write drops it.
     std::shared_ptr<rvk::skin::Job> skin;
     void Materialize();
+    // The game's water (VisualLiquid_t, rvk/water.cpp): the world-space vertices ProcessVertices transformed into
+    // this buffer from the game's water mesh (FVF 0x152 into 0x1C4), from vertex `first` on; `frame` when; `drawn`:
+    // this frame's draw of them went to the renderer (the game's further passes over them are skipped).
+    struct Water {
+        std::vector<rvk::Device::WaterVertex> vertices;
+        DWORD first = 0;
+        uint64_t frame = ~0ull;
+        bool drawn = false;
+    };
+    std::unique_ptr<Water> water;
 
 protected:
     void* Cast(REFIID iid) override { return iid == IID_IDirect3DVertexBuffer7 ? this : nullptr; }
@@ -326,6 +336,10 @@ public:
     // since `indexGeneration` (a native triangle list's) are kept as a snapshot the renderer retains on the GPU.
     HRESULT DrawIndexedVBRetained(D3DPRIMITIVETYPE type, RVertexBuffer* vb, DWORD start, DWORD vcount, const WORD* idx,
                                   DWORD icount, uint64_t indexGeneration);
+    // A draw of the game's water (RVertexBuffer::water): handed to the renderer as our water (the first this frame) or
+    // skipped (the game's later passes over it). False: draw it as it is.
+    bool DrawWaterInstead(D3DPRIMITIVETYPE type, RVertexBuffer* vb, DWORD start, DWORD vcount, const WORD* idx,
+                          DWORD icount);
 
 protected:
     void* Cast(REFIID iid) override { return iid == IID_IDirect3DDevice7 ? this : nullptr; }

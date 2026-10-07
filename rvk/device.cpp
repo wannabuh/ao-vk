@@ -199,6 +199,7 @@ Device::~Device()
     DestroyParticleResources();
     DestroySkinResources();
     DestroyGrassResources();
+    DestroyWaterResources();
     DestroyStaticGeometry();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_setLayout) vkDestroyDescriptorSetLayout(m_device, m_setLayout, nullptr);
@@ -507,7 +508,8 @@ bool Device::EnsureDepth(uint32_t width, uint32_t height)
     ci.arrayLayers = 1;
     ci.samples = VK_SAMPLE_COUNT_1_BIT;
     ci.tiling = VK_IMAGE_TILING_OPTIMAL;
-    ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;   // sampled: ambient occlusion
+    // sampled: ambient occlusion; copied: the water's view of the scene
+    ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     VmaAllocationCreateInfo ac{};
     ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     ac.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
@@ -855,6 +857,14 @@ bool Device::CreatePipelines(std::string* error)
         !CreateParticleResources(error) || !CreateSkinResources(error))
         return false;
     CreateGrassResources(error);                 // not fatal: without it the ground grass is simply unavailable
+    {
+        std::string waterError;                  // not fatal either: the game's own water stays
+        if (!CreateWaterResources(&waterError)) {
+            Log("water: unavailable (%s)", waterError.c_str());
+            DestroyWaterResources();
+        }
+        UpdateWaterReady();
+    }
     char gpuSkin[8] = "";
     if (GetEnvironmentVariableA("RANDYVK_GPU_SKIN", gpuSkin, sizeof(gpuSkin)) && gpuSkin[0] == '0')
         m_gpuSkin = false;

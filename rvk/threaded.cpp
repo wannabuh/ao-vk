@@ -1005,6 +1005,24 @@ void ThreadedDevice::EndParticleEmitter()
     Enqueue([this](const uint8_t*) { m_device.EndParticleEmitter(); });
 }
 
+void ThreadedDevice::SetWaterParams(const Device::WaterParams& params)
+{
+    Enqueue([this, params](const uint8_t*) { m_device.SetWaterParams(params); });
+}
+
+void ThreadedDevice::DrawWater(const Device::WaterVertex* vertices, uint32_t vertexCount, const uint16_t* indices,
+                               uint32_t indexCount)
+{
+    const size_t vertexBytes = size_t(vertexCount) * sizeof(Device::WaterVertex);
+    std::vector<uint8_t> blob(vertexBytes + size_t(indexCount) * 2);
+    std::memcpy(blob.data(), vertices, vertexBytes);
+    std::memcpy(blob.data() + vertexBytes, indices, size_t(indexCount) * 2);
+    Enqueue([this, vertexCount, indexCount, vertexBytes](const uint8_t* data) {
+        m_device.DrawWater(reinterpret_cast<const Device::WaterVertex*>(data), vertexCount,
+                           reinterpret_cast<const uint16_t*>(data + vertexBytes), indexCount);
+    }, blob.data(), uint32_t(blob.size()));
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Drawing
 

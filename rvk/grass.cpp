@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <climits>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -518,6 +519,165 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
 
 // The ground at a world x, z: the nearest captured cell within two cells (a stray gap at the captured region's edge).
 // False where no ground was captured or (with `grassOnly`) where the nearest ground isn't grass.
+// Solid objects' upward surfaces (a platform, a floor, a road piece laid over the terrain): each cell under one keeps
+// the heights of the lowest few, and BuildGrassTile grows nothing where one lies from half a unit under the ground to
+// kCoverAbove over it (CoveredAt) - a bridge or a roof higher up leaves the grass under it. The heights are kept
+// whatever the ground, so an object needs no ground under it yet. Each object (its mesh under its world matrix) goes
+// into the tiles made since it was last taken - walking on makes new tiles, and only those take it - within a time
+// budget a frame (an object left over waits for the next frame).
+namespace {
+constexpr float kCoverBelow = 0.5f, kCoverAbove = 2.5f;
+constexpr double kCoverBudgetMs = 0.3;
+}
+
+void Device::CaptureCover(uint32_t primitive, const FvfLayout& layout, const void* vertices, uint32_t vertexCount,
+                          const uint16_t* indices, uint32_t indexCount)
+{
+    if (!m_drawMesh || m_grassTiles.empty() || primitive != d3d::TriangleList || layout.offset[0] < 0)
+        return;
+    if (m_grassCoverFrame != m_frameNumber) {
+        m_grassCoverFrame = m_frameNumber;
+        m_grassCoverMs = 0.0;
+    }
+    uint64_t key = uint64_t(reinterpret_cast<uintptr_t>(m_drawMesh)) * 0x9E3779B97F4A7C15ull;
+    const uint32_t* wb = reinterpret_cast<const uint32_t*>(&m_world);
+    for (int i = 0; i < 16; ++i)
+        key = (key ^ wb[i]) * 0x100000001B3ull;
+    GrassChunk& seen = m_grassCovers[key];
+    seen.lastSeen = m_frameNumber;
+    if (seen.processed && seen.processed > m_grassTileEpoch)
+        return;                                  // no tile anywhere is newer than its last capture
+    if (m_grassCoverMs > kCoverBudgetMs)
+        return;                                  // this frame's budget spent: next frame
+    const double since = ProfileCpu();
+    const auto& w = m_world.m;
+    if (!seen.boxed) {                           // the object's world box (its mesh's bounds under the world matrix)
+        seen.box[0] = seen.box[1] = 1e30f;
+        seen.box[2] = seen.box[3] = -1e30f;
+        for (int c = 0; c < 8; ++c) {
+            const float p[3] = {c & 1 ? m_drawMesh->boundsMax[0] : m_drawMesh->boundsMin[0],
+                                c & 2 ? m_drawMesh->boundsMax[1] : m_drawMesh->boundsMin[1],
+                                c & 4 ? m_drawMesh->boundsMax[2] : m_drawMesh->boundsMin[2]};
+            const float x = p[0] * w[0][0] + p[1] * w[1][0] + p[2] * w[2][0] + w[3][0];
+            const float z = p[0] * w[0][2] + p[1] * w[1][2] + p[2] * w[2][2] + w[3][2];
+            seen.box[0] = std::min(seen.box[0], x);
+            seen.box[1] = std::min(seen.box[1], z);
+            seen.box[2] = std::max(seen.box[2], x);
+            seen.box[3] = std::max(seen.box[3], z);
+        }
+        seen.boxed = true;
+    }
+    // The tiles under it made since it was last taken.
+    const int32_t gx0 = std::max(int32_t(std::floor(seen.box[0] / kGrassTileSize)), m_grassTileBox[0]);
+    const int32_t gz0 = std::max(int32_t(std::floor(seen.box[1] / kGrassTileSize)), m_grassTileBox[1]);
+    const int32_t gx1 = std::min(int32_t(std::floor(seen.box[2] / kGrassTileSize)), m_grassTileBox[2]);
+    const int32_t gz1 = std::min(int32_t(std::floor(seen.box[3] / kGrassTileSize)), m_grassTileBox[3]);
+    const uint64_t capturedAt = seen.processed;
+    seen.processed = m_frameNumber + 1;
+    if (gx0 > gx1 || gz0 > gz1)
+        return;
+    const int32_t gw = gx1 - gx0 + 1, gh = gz1 - gz0 + 1;
+    std::vector<GrassTile*>& grid = m_grassCoverGrid;
+    grid.assign(size_t(gw) * gh, nullptr);
+    bool any = false;
+    for (int32_t tz = gz0; tz <= gz1; ++tz)
+        for (int32_t tx = gx0; tx <= gx1; ++tx) {
+            GrassTile* t = GrassTileAt(tx, tz);
+            if (t && (capturedAt == 0 || t->created >= capturedAt)) {
+                grid[size_t(tz - gz0) * gw + (tx - gx0)] = t;
+                any = true;
+            }
+        }
+    if (!any) {
+        m_grassCoverMs += ProfileCpu() - since;
+        return;
+    }
+    const uint8_t* base = static_cast<const uint8_t*>(vertices);
+    auto at = [&](uint32_t i, float out[3]) {
+        float p[3];
+        std::memcpy(p, base + size_t(i) * layout.stride + layout.offset[0], 12);
+        for (int k = 0; k < 3; ++k)
+            out[k] = p[0] * w[0][k] + p[1] * w[1][k] + p[2] * w[2][k] + w[3][k];
+    };
+    // The cells it can reach: those of the new tiles.
+    const int32_t lx = gx0 * kGroundN, lz = gz0 * kGroundN, hx = (gx1 + 1) * kGroundN - 1, hz = (gz1 + 1) * kGroundN - 1;
+    const uint32_t triangles = indices ? indexCount / 3 : vertexCount / 3;
+    for (uint32_t t = 0; t < triangles; ++t) {
+        uint32_t i0 = indices ? indices[t * 3] : t * 3, i1 = indices ? indices[t * 3 + 1] : t * 3 + 1,
+                 i2 = indices ? indices[t * 3 + 2] : t * 3 + 2;
+        if (i0 >= vertexCount || i1 >= vertexCount || i2 >= vertexCount)
+            continue;
+        float a[3], b[3], c[3];
+        at(i0, a);
+        at(i1, b);
+        at(i2, c);
+        // Upward (or downward: either winding) and fairly flat: a surface one could stand on.
+        const float e1[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, e2[3] = {c[0] - a[0], c[1] - a[1], c[2] - a[2]};
+        const float n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+        const float len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+        if (len < 1e-6f || std::fabs(n[1]) < 0.6f * len)
+            continue;
+        const float det = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
+        if (std::fabs(det) < 1e-9f)
+            continue;
+        const int32_t cx0 = std::max(int32_t(std::floor(std::min({a[0], b[0], c[0]}) / kGroundCell)), lx);
+        const int32_t cx1 = std::min(int32_t(std::floor(std::max({a[0], b[0], c[0]}) / kGroundCell)), hx);
+        const int32_t cz0 = std::max(int32_t(std::floor(std::min({a[2], b[2], c[2]}) / kGroundCell)), lz);
+        const int32_t cz1 = std::min(int32_t(std::floor(std::max({a[2], b[2], c[2]}) / kGroundCell)), hz);
+        for (int32_t cz = cz0; cz <= cz1; ++cz) {
+            const int32_t tz = FloorDiv(cz, kGroundN);
+            for (int32_t cx = cx0; cx <= cx1; ++cx) {
+                const int32_t tx = FloorDiv(cx, kGroundN);
+                GrassTile* tile = grid[size_t(tz - gz0) * gw + (tx - gx0)];
+                if (!tile)
+                    continue;                    // not a new tile (it has this object already)
+                const float px = (float(cx) + 0.5f) * kGroundCell, pz = (float(cz) + 0.5f) * kGroundCell;
+                const float l0 = ((b[2] - c[2]) * (px - c[0]) + (c[0] - b[0]) * (pz - c[2])) / det;
+                const float l1 = ((c[2] - a[2]) * (px - c[0]) + (a[0] - c[0]) * (pz - c[2])) / det;
+                const float l2 = 1.0f - l0 - l1;
+                if (l0 < -0.01f || l1 < -0.01f || l2 < -0.01f)
+                    continue;
+                const float y = l0 * a[1] + l1 * b[1] + l2 * c[1];
+                float* layers = tile->cover[(cz - tz * kGroundN) * kGroundN + (cx - tx * kGroundN)];
+                int slot = GrassTile::kCoverLayers;
+                for (int k = 0; k < GrassTile::kCoverLayers; ++k) {
+                    if (std::fabs(layers[k] - y) < 0.05f) { slot = -1; break; }   // (that surface already)
+                    if (y < layers[k]) { slot = k; break; }
+                }
+                if (slot < 0 || slot >= GrassTile::kCoverLayers)
+                    continue;
+                for (int k = GrassTile::kCoverLayers - 1; k > slot; --k)
+                    layers[k] = layers[k - 1];
+                layers[slot] = y;
+                if (tile->lastChange != m_frameNumber) {   // its blades rebuilt without the covered cells
+                    ++tile->version;
+                    tile->lastChange = m_frameNumber;
+                }
+            }
+        }
+    }
+    m_grassCoverMs += ProfileCpu() - since;
+    m_grassCaptureMs += ProfileCpu() - since;
+}
+
+// Whether a solid object lies on the ground at x, z (its cell or a neighbour: a blade leans a little).
+bool Device::CoveredAt(float x, float z, float groundY) const
+{
+    const int32_t gx = int32_t(std::floor(x / kGroundCell)), gz = int32_t(std::floor(z / kGroundCell));
+    for (int d = 0; d < 5; ++d) {
+        const int32_t cx = gx + (d == 1 ? 1 : d == 2 ? -1 : 0), cz = gz + (d == 3 ? 1 : d == 4 ? -1 : 0);
+        const int32_t tx = FloorDiv(cx, kGroundN), tz = FloorDiv(cz, kGroundN);
+        const GrassTile* tile = GrassTileAt(tx, tz);
+        if (!tile)
+            continue;
+        const float* layers = tile->cover[(cz - tz * kGroundN) * kGroundN + (cx - tx * kGroundN)];
+        for (int k = 0; k < GrassTile::kCoverLayers; ++k)
+            if (layers[k] >= groundY - kCoverBelow && layers[k] <= groundY + kCoverAbove)
+                return true;
+    }
+    return false;
+}
+
 bool Device::GroundAt(float x, float z, float* y, uint32_t* colour, uint32_t* light) const
 {
     const int32_t gx = int32_t(std::floor(x / kGroundCell)), gz = int32_t(std::floor(z / kGroundCell));
@@ -1091,8 +1251,8 @@ bool Device::BuildGrassTile(GrassTile& tile)
         }
         float py;
         uint32_t pcol, plight;
-        if (!ground(px, pz, &py, &pcol, &plight) || !(pcol >> 24 & 1u)) {
-            ++m_grassLeftOut[1];                 // no grass ground here
+        if (!ground(px, pz, &py, &pcol, &plight) || !(pcol >> 24 & 1u) || CoveredAt(px, pz, py)) {
+            ++m_grassLeftOut[1];                 // no grass ground here (or an object lies on it)
             continue;
         }
         float tn[3];
@@ -1388,14 +1548,18 @@ void Device::UpdateGrassTiles()
                 std::memset(t.lightRank, 255, sizeof(t.lightRank));
                 std::memset(t.blockRank, 255, sizeof(t.blockRank));
                 std::memset(t.blockLightRank, 255, sizeof(t.blockLightRank));
+                std::fill(&t.cover[0][0], &t.cover[0][0] + GrassTile::kCells * GrassTile::kCoverLayers, 1e30f);
                 t.lastChange = m_frameNumber;
                 t.created = m_grassTileEpoch = m_frameNumber + 1;
             }
             slot->lastUsed = m_frameNumber;
         }
-    if ((m_frameNumber % 600) == 0)              // chunks not drawn for a while (the level of detail moved on)
+    if ((m_frameNumber % 600) == 0) {            // chunks not drawn for a while (the level of detail moved on)
         for (auto it = m_grassChunks.begin(); it != m_grassChunks.end();)
             it = it->second.lastSeen + 600 < m_frameNumber ? m_grassChunks.erase(it) : std::next(it);
+        for (auto it = m_grassCovers.begin(); it != m_grassCovers.end();)
+            it = it->second.lastSeen + 600 < m_frameNumber ? m_grassCovers.erase(it) : std::next(it);
+    }
     // Out of range for a while (a margin against churn when walking back and forth): dropped.
     if ((m_frameNumber & 15) == 0)
         for (auto it = m_grassTiles.begin(); it != m_grassTiles.end();) {
