@@ -11,6 +11,36 @@ environment variables.)
 It is client-side only: no game files, network traffic or gameplay are changed, and no Funcom files are part of this
 repository. Every enhancement can be switched off (in-game or with one hotkey) to get the game's own look back.
 
+## Screenshots
+
+<!-- HEADLINE VIDEO: drag newland-walk-comparison.mp4 onto this line in GitHub's web editor (replacing it). -->
+
+The game's own renderer on the left, ao-vk on the right - the same moment, switched with Ctrl+Shift+E. Click an
+image for the full size.
+
+**Daylight: sun shadows, HDR, colour grading and ground grass** (West Bank)
+![West Bank by day](docs/screenshots/west-bank.jpg)
+
+![West Bank gate](docs/screenshots/west-bank-gate.jpg)
+
+**Grass and paths by day** (Newland)
+![Newland by day](docs/screenshots/newland.jpg)
+
+**Night: every lamp lights its surroundings and casts shadows** (Newland, Borealis)
+![Newland at night](docs/screenshots/newland-night.jpg)
+
+![Borealis at night](docs/screenshots/borealis-night.jpg)
+
+![A lamp in the grass at night](docs/screenshots/night-lamp.jpg)
+
+**Depth of field, focused on your character**
+![Depth of field](docs/screenshots/depth-of-field.jpg)
+
+**GPU particles on spell effects, with depth of field**
+![GPU particles](docs/screenshots/particles.jpg)
+
+<!-- More videos (grass, Newland walks, particles) can be dragged in here in GitHub's web editor. -->
+
 ## What it adds
 
 **Lighting**

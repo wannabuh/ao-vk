@@ -12,12 +12,15 @@ Before / after images for the project README, made by `tools/screenshot-pairs.py
    and labelled (`--stack` puts them one above the other), 1600 pixels wide (`--width`). It prints the markdown for
    the README.
 
-The pairs in use:
+The images in use (the project README's Screenshots section):
 
-| Name | What it shows |
+| File | What it shows |
 |---|---|
-| `field` | A grassy area by day, low sun: the ground grass, sun shadows, HDR, colour grading |
-| `night` | A town at night with lamps: per-pixel lighting, lamp shadows, night glow, bloom |
-| `grass` | Grass up close at a path's edge, towards the sun: blade shadows, backlit tips, flowers |
-| `character` | A character in sunlight: smoother outlines, a real shadow instead of the blob |
-| `wind.gif` | Grass in the wind with a character walking through it (no before shot) |
+| `west-bank.jpg`, `west-bank-gate.jpg` | West Bank by day: sun shadows, HDR, colour grading, ground grass |
+| `newland.jpg` | Newland by day: grass and paths |
+| `newland-night.jpg`, `borealis-night.jpg`, `night-lamp.jpg` | Night: lamps lighting their surroundings, lamp shadows |
+| `depth-of-field.jpg` | Depth of field focused on the character |
+| `particles.jpg` | GPU particles with depth of field (a single shot, no pair) |
+
+Videos are not kept here: GitHub plays only videos uploaded through its web editor, so they are uploaded there
+(1080p H.264, under 10 MB each) and their links put in the README.
