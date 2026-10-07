@@ -874,6 +874,9 @@ float g_grassStyle[5] = {1, 1, 1, 1, 1};   // --grass-style V,F,G,U,T: variety, 
 float g_grassBenchYaw = 0.0f;  // --grass-bench-yaw R: the bench's camera turned R radians (pi: into the sun)
 bool g_grassBenchWalker = false;  // --grass-bench-walker: a "character" walking through the grass ahead of the camera
 bool g_grassBenchNight = false;   // --grass-bench-night: a dim lightmap and ambient, a faint bluish moon
+bool g_grassBenchStill = false;   // --grass-bench-still: the camera stays where it starts (to watch the wind)
+int g_grassBenchFilm = 0;         // --grass-bench-film N: ~60 frames a second, a screenshot every N (film_NNN.bmp)
+float g_grassBenchPitch = -1.0f;  // --grass-bench-pitch R: the camera looking R radians down, raised to match (top-down)
 bool g_grassFieldTex = true;   // --grass-field-any: over every ground, not only where the ground texture is green
 bool g_grassFieldTan = false;  // --grass-field-tan: leave the terrain's tan ground (a filter that must reject it)
 
@@ -949,14 +952,24 @@ void RunGrassBench(D& dev, int frames, const std::string& shot)
     for (int frame = 0; frame < frames; ++frame) {
         if (frame == frames - 1)
             dev.RequestScreenshot(shot);
+        else if (g_grassBenchFilm > 0 && frame >= 60 && frame % g_grassBenchFilm == 0) {
+            char name[32];
+            std::snprintf(name, sizeof(name), "film_%03d.bmp", (frame - 60) / g_grassBenchFilm);
+            dev.RequestScreenshot(name);
+        }
+        if (g_grassBenchFilm > 0)
+            Sleep(16);
         dev.BeginFrame();
         dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
         dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF6080A0, 1.0f);
-        const float t = float(frame);
+        const float t = g_grassBenchStill ? 0.0f : float(frame);
         const float ex = -60.0f + 0.06f * t, ez = 10.0f * std::sin(t * 0.004f);
         const float yaw = 0.6f * std::sin(t * 0.007f) + g_grassBenchYaw;
-        const float ey = height(ex, ez) + 2.2f;
-        dev.SetTransform(View, LookAtLH({ex, ey, ez}, {ex + 6 * std::cos(yaw), ey - 1.2f, ez + 6 * std::sin(yaw)}, {0, 1, 0}));
+        const float pitch = g_grassBenchPitch >= 0.0f ? std::min(g_grassBenchPitch, 1.5f) : 0.197f;
+        const float ey = height(ex, ez) + 1.0f + 6.0f * std::sin(pitch);
+        const float fwd = 6.0f * std::cos(pitch);
+        dev.SetTransform(View, LookAtLH({ex, ey, ez}, {ex + fwd * std::cos(yaw), ey - 6.0f * std::sin(pitch), ez + fwd * std::sin(yaw)},
+                                        {0, 1, 0}));
         dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.3f, 300.0f));
         dev.SetTransform(World, Identity());
         dev.SetRenderState(RS_ZENABLE, 1);
@@ -1912,6 +1925,9 @@ int main(int argc, char** argv)
         else if (a == "--grass-bench-yaw" && i + 1 < argc) g_grassBenchYaw = float(std::atof(argv[++i]));
         else if (a == "--grass-bench-walker") g_grassBenchWalker = true;
         else if (a == "--grass-bench-night") g_grassBenchNight = true;
+        else if (a == "--grass-bench-still") g_grassBenchStill = true;
+        else if (a == "--grass-bench-film" && i + 1 < argc) g_grassBenchFilm = std::atoi(argv[++i]);
+        else if (a == "--grass-bench-pitch" && i + 1 < argc) g_grassBenchPitch = float(std::atof(argv[++i]));
         else if (a == "--grass-style" && i + 1 < argc) {
             char* at = argv[++i];
             for (int k = 0; k < 5; ++k) {

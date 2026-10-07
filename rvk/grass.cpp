@@ -64,7 +64,8 @@ struct GrassBlade {
     uint32_t light;      // the lightmap's RGB at the root; A nonzero = captured
     uint32_t ground;     // the ground texel's RGB | kind << 24 (GrassKind) | dense << 26 | fade rank (0..31) << 27
     uint32_t head;       // the head's RGB (seed stalks, flowers) | the canopy's density around it (unorm8) << 24
-    uint32_t spare[2];
+    uint32_t headSize;   // a flower head's half width (unorm16 x 0.25 units; 0 for the others)
+    uint32_t spare;
 };
 static_assert(sizeof(GrassBlade) == 48, "grass blade record");
 
@@ -798,7 +799,7 @@ bool Device::BuildGrassTile(GrassTile& tile)
     // A pure random scatter, not a patch grid: a jittered lattice shows as rows at grazing angles (a moire). The
     // expected count sets the density; the clump noise drops about half (the clumps and the edges a little more).
     const float perM2 = m_grassDensity / (spacing * spacing);
-    const int32_t total = int32_t(perM2 * kGrassTileSize * kGrassTileSize * 1.7f * (1.0f + 0.2f * variety));
+    const int32_t total = int32_t(perM2 * kGrassTileSize * kGrassTileSize * 2.3f * (1.0f + 0.2f * variety));
     // The ground's slope on a coarse grid over the tile (it varies slowly), bilinear per blade.
     constexpr int kNG = 9;
     const float ngCell = kGrassTileSize / float(kNG);
@@ -984,7 +985,7 @@ bool Device::BuildGrassTile(GrassTile& tile)
         // What it is: mostly grass blades; a few broad blades, seed stalks and (in patches) flowers.
         const float pick = w3;
         GrassKind kind = kBlade;
-        const float pFlowerBase = 0.012f * flowers;
+        const float pFlowerBase = 0.016f * flowers;
         float pFlower = 0.0f;
         if (pick < pFlowerBase * 2.0f + 0.04f * flowers + 0.06f * std::min(flowers, 1.0f)) {   // (a rare candidate)
             const float patch = ValueNoise(px * 0.07f + 5.5f, pz * 0.07f - 9.1f);
@@ -997,7 +998,7 @@ bool Device::BuildGrassTile(GrassTile& tile)
                 kind = kBroad;
         }
         const float tall = 1.0f + 0.5f * variety * (field(tallF, fa) - 0.5f);
-        float height = m_grassHeight * (0.45f + 1.2f * v0) * tall * (1.0f + 0.2f * variety * (1.0f - rim) * vigour) *
+        float height = m_grassHeight * (0.45f + 1.2f * v0) * tall * (1.0f + 0.35f * variety * (1.0f - rim) * vigour) *
                        (0.65f + 0.35f * edge);
         const float yaw = v1 * 6.2831853f;       // the blade's droop direction
         const float rx = std::cos(yaw), rz = std::sin(yaw);
@@ -1034,6 +1035,7 @@ bool Device::BuildGrassTile(GrassTile& tile)
         for (int c = 0; c < 3; ++c)
             tintRgb[c] = hue[c] * scale;
         float headRgb[3] = {0.0f, 0.0f, 0.0f};
+        float headSize = 0.0f;
         switch (kind) {
         case kBroad:                             // shorter, broader, arching over further
             height *= 0.7f + 0.2f * v4;
@@ -1052,7 +1054,10 @@ bool Device::BuildGrassTile(GrassTile& tile)
             break;
         }
         case kFlower: {                          // a stem just above the grass, a head of the patch's colour
-            height *= 0.95f + 0.35f * v4;
+            // The head a hand's width across (it has to read among the blades, and from above), whatever the
+            // blades' width; the stem reaches up past the grass so the head sits on top of it.
+            headSize = (0.045f + 0.03f * v2) * (0.5f + m_grassHeight);
+            height = std::max(height * (1.0f + 0.35f * v4), m_grassHeight * 0.9f) + 1.3f * headSize;
             half *= 1.1f;
             droop = 0.03f;
             const int32_t fx = int32_t(std::floor(px * 0.08f)), fz = int32_t(std::floor(pz * 0.08f));
@@ -1084,7 +1089,8 @@ bool Device::BuildGrassTile(GrassTile& tile)
         b.ground = (pcol & 0xFFFFFFu) | uint32_t(kind) << 24 | (sparse ? 0u : 1u << 26) |
                    (uint32_t(Unit(hw * 0x165667B1u) * 32.0f) & 31u) << 27;
         b.head = pack(headRgb) | unorm(canopy, 1.0f, 255) << 24;
-        b.spare[0] = b.spare[1] = 0;
+        b.headSize = unorm(headSize, 0.25f, 65535);
+        b.spare = 0;
         m_grassLitBlades += plight ? 1 : 0;
         ++m_grassBuiltBlades;
         minY = std::min(minY, py);

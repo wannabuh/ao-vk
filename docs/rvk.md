@@ -85,14 +85,17 @@
     and shortened towards the edge of the grass ground (a path, a rock) and gone on steep slopes. `RVK_GrassVary` (0-2)
     scales the tufts, dry straw-coloured patches, taller patches and a per-blade hue jitter - every colour still matched
     to the ground texel's brightness. `RVK_GrassFlower` (0-3) scales the share of other kinds: broad blades, seed stalks
-    (a straw head) and flowers (in patches of one colour, a few strays). Each subset near-to-far from the tile's centre
+    (a straw head) and flowers (in patches of one colour, a few strays; a head a hand's width across on a stem above
+    the grass, opening towards the camera). Each subset near-to-far from the tile's centre
     (early-Z); the first quarter is a sparse subset for the edge.
   - *Drawing* (`DrawGrassTiles`, at the game's first blended draw - which comes before the terrain - or at the end of
     the scene): frustum-culled tiles, nearest first, one indexed draw each through a shared index pattern: vertex v of
     blade b is 8 b + v (cross section v >> 1, edge v & 1); near, 6 triangles a blade (a pointed tip's last one has no
-    area), from half the radius 4. The vertex shader expands the record into a camera-facing strip shaped by its kind
-    (`kSectionT` / `kSectionW`), bends it with the wind, the gusts (`RVK_GrassGusts`: bands of stronger wind sweeping
-    along it, the bent blades a little lighter) and the pushers (the plants' push), and lights it per vertex as the
+    area), from half the radius 4. The vertex shader expands the record into a strip facing the camera about the
+    blade's axis, shaped by its kind (`kSectionT` / `kSectionW`); the steeper the camera looks down on a blade the
+    further it lies over (its own way) and the wider it is, so the field stays full seen from above. It bends it -
+    keeping its length - with the wind (waves running through the field along it, a cross wave, each blade's flutter),
+    the gusts (`RVK_GrassGusts`: bands of stronger wind sweeping along it, the bent blades lighter) and the pushers (the plants' push), and lights it per vertex as the
     terrain's light pass lights the ground: (lightmap + its global ambient + its directional light - none under the
     light override) clamped, darkened by the sun's shadow, plus the frame's local lights (a per-tile light mask) with
     their point shadows. The blade's colour is the grass hue at the ground texel's brightness, with a root-to-tip
@@ -115,7 +118,8 @@
   - Demo: `--grass-field` (the shadow test's terrain; `--grass-field-tan` / `--grass-field-any` for the filter),
     `--grass-bench` (a 192 x 192 terrain, the camera walking; prints mean and worst frame times; with
     `--grass-field-dist`, `--grass-bench-yaw 3.14` into the sun, `--grass-bench-walker` a character walking through,
-    `--grass-bench-night`), `--grass-style V,F,G,U,T` (variety, flowers, glow, gusts, trails). The log's `ground grass:` line every 600 frames: blades drawn, tiles, builds and their cost,
+    `--grass-bench-night`, `--grass-bench-pitch R` the camera looking down R radians, `--grass-bench-still` the camera
+    standing, `--grass-bench-film N` ~60 frames a second with a screenshot every N: film_NNN.bmp), `--grass-style V,F,G,U,T` (variety, flowers, glow, gusts, trails). The log's `ground grass:` line every 600 frames: blades drawn, tiles, builds and their cost,
     the share of blades lit by a captured lightmap, the capture's cost, the terrain's ambient.
 - **Vertex buffers** keep their contents in CPU memory; every draw copies the range it uses into the ring
   buffer, so rewriting a buffer between draws is safe (the game's CPU skinning reuses one buffer).
