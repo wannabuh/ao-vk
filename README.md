@@ -7,6 +7,8 @@ A modern Vulkan renderer for Anarchy Online (the Project Rubi-Ka client), droppe
 game's renderer DLL, `randy31.dll`. The game keeps running its own code; ao-vk takes over the Direct3D 7 drawing
 underneath it and draws everything with Vulkan, adding modern lighting, shadows and effects while doing so - and is
 step by step replacing the game's renderer code itself with native code (see *Replacing the game's renderer*).
+Despite the added effects it is often faster than the game's own renderer, most of all in crowds (see
+*Performance*).
 
 (Its files still carry the project's earlier name, randy-vk: `randy-vk.ini`, `randy-vk.log`, the `RANDYVK_*`
 environment variables.)
@@ -28,6 +30,7 @@ repository. Every enhancement can be switched off (in-game or with one hotkey) t
   - [Depth of field](#depth-of-field)
   - [GPU particles](#gpu-particles)
 - [What it adds](#what-it-adds)
+- [Performance](#performance)
 - [Replacing the game's renderer](#replacing-the-games-renderer)
 - [Requirements](#requirements)
 - [Installing](#installing)
@@ -169,6 +172,46 @@ Spell effects with GPU particles, and depth of field.
 - Caches (mesh fingerprints, shadow casters, shared vertex buffers) keep the per-frame cost down; in big crowds the
   game's own CPU work, not the renderer, is usually the limit.
 - A built-in profiler that measures what each enhancement costs where you stand (Ctrl+Shift+O, see below).
+
+## Performance
+
+Anarchy Online's own renderer is held back by the CPU, not the graphics card. One thread runs the game, sends every
+draw to Direct3D 7 one call at a time, and animates every character's mesh on the CPU. So crowds and busy cities
+pull the frame rate down even on a fast PC, while the graphics card sits mostly idle. (The client also caps itself
+at 100 FPS; AOReloaded's frame rate setting lifts that.)
+
+ao-vk spends that idle graphics card on its effects, and takes work off the game's thread:
+
+- The Vulkan work runs on a thread of its own: the game's thread only hands the draws over.
+- Characters are animated (skinned) on the graphics card instead of the CPU.
+- Static meshes stay on the graphics card and are drawn by reference instead of being sent again every frame.
+- The interface can be redrawn fewer times a second than the 3D (`RVK_UiRate`, 60 recommended).
+
+How much that gains depends on where the time goes:
+
+- **Crowds gain the most.** Animating characters is the game's heaviest renderer work, and it moves to the graphics
+  card.
+- **Busy cities** gain from the cheaper draw path: on the PC below, a busy spot ran at 178 FPS with every effect
+  on.
+- **Quiet areas** were never limited by the CPU; there the frame rate depends mostly on which effects you run and
+  how strong your graphics card is.
+
+Measured on one PC (Intel Core i5-11600K, NVIDIA RTX 4070 Ti, 2560x1440, Linux with Wine):
+
+| Where | Before | With ao-vk |
+| --- | --- | --- |
+| 100 animated characters (test harness) | 118 FPS, game thread 8.4 ms a frame (the game's own character code) | 350-410 FPS, game thread 0.9 ms (skinned on the graphics card) |
+| A busy city spot, every effect on | 132 FPS (ao-vk's first draw path) | 178 FPS (draws folded and retained) |
+| The interface's cost to the game thread | 1.5 ms a frame (redrawn every frame) | 0.34 ms (`RVK_UiRate` 60) |
+
+The game's own renderer on the same PC (through D7VK) ran crowds at about 100-110 FPS, but that was not measured at
+the same spots, so take it only as a rough guide.
+
+Effects cost graphics-card time, and on a weaker card the frame rate depends mostly on them. On the PC above, with
+every effect on, a frame takes about 5.6 ms of graphics-card time; the biggest shares are indirect light (0.75 ms),
+sun shadows (0.48 ms at `RVK_SunRes` 2048; 1024 is much cheaper), the ground grass (0.45 ms), ambient occlusion,
+motion blur, depth of field and lamp shadows (about 0.3 ms each). The profiler (Ctrl+Shift+O, under *Settings*)
+measures what each costs where you stand.
 
 ## Replacing the game's renderer
 
