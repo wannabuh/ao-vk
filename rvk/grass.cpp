@@ -194,7 +194,12 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
     const bool basePass = !m_rs[d3d::RS_LIGHTING] && !m_rs[d3d::RS_ALPHABLENDENABLE];
     if (!lightPass && !basePass)
         return;
-    const int uvSet = lightPass ? 5 : 4;
+    // Stage 0's coordinate set (the base pass' texture on set 0, the lightmap on set 1 - as the stage says); a
+    // generated coordinate (the high bits) can't be read from the vertices.
+    const uint32_t tci = m_tss[0][d3d::TSS_TEXCOORDINDEX];
+    if ((tci & 0xFFFF0000u) != 0 || (tci & 0xFFFFu) > 1)
+        return;
+    const int uvSet = 4 + int(tci & 1u);
     if (layout.offset[uvSet] < 0)
         return;
     Texture* tex = m_textures[0];

@@ -937,7 +937,8 @@ void RunGrassBench(D& dev, int frames, const std::string& shot)
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&prev);
     double sum = 0.0, worst = 0.0;
-    int counted = 0;
+    int counted = 0, worstFrame = 0;
+    std::vector<double> times;
     dev.SetGrassField(true, g_grassFieldDist, 5.0f, 0.5f, true);   // the game's default density
     for (int frame = 0; frame < frames; ++frame) {
         if (frame == frames - 1)
@@ -1011,11 +1012,18 @@ void RunGrassBench(D& dev, int frames, const std::string& shot)
         prev = now;
         if (frame >= 60) {
             sum += ms;
-            worst = std::max(worst, ms);
+            if (ms > worst) {
+                worst = ms;
+                worstFrame = frame;
+            }
             ++counted;
+            times.push_back(ms);
         }
     }
-    std::printf("grass bench: %d frames, mean %.3f ms, worst %.3f ms\n", counted, sum / std::max(counted, 1), worst);
+    std::sort(times.begin(), times.end());
+    const double p99 = times.empty() ? 0.0 : times[size_t(double(times.size() - 1) * 0.99)];
+    std::printf("grass bench: %d frames, mean %.3f ms, 99th percentile %.3f ms, worst %.3f ms (frame %d)\n", counted,
+                sum / std::max(counted, 1), p99, worst, worstFrame);
 }
 
 template <typename D>
