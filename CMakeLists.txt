@@ -62,7 +62,8 @@ target_compile_options(rvk PRIVATE /W3)
 target_compile_definitions(rvk PRIVATE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(rvk PUBLIC user32 synchronization)
 
-add_executable(rvk_demo tests/rvk_demo.cpp)
+add_executable(rvk_demo tests/rvk_demo.cpp proxy/native/stb_image.cpp)   # (stb: --pbr-maps, rvk/material_maps.h)
+target_include_directories(rvk_demo PRIVATE third_party)
 target_link_libraries(rvk_demo PRIVATE rvk)
 
 # Native replacements against the original code they replace (run with tools/native-check.sh).

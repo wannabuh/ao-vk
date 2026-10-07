@@ -1,8 +1,13 @@
-// Material maps for RDB textures, side-loaded from <client>\randy-vk\materials\:
-//   <type>_<id>_n.png    tangent-space normal map (OpenGL convention, as Blender bakes; any size); <type> is the
-//                        full-quality table (1010004 world, 1010006 ground), which also covers its lower levels
-//   <id>_n.png           the same, any type (fallback)
-// ao-assets writes these names (python -m aoassets material-template).
+// Material maps for RDB textures, side-loaded from <client>\randy-vk\materials\ (any size each):
+//   <type>_<id>_n.png    tangent-space normal map (OpenGL convention, as Blender bakes); <type> is the full-quality
+//                        table (1010004 world, 1010006 ground, 1010011 character skins), which also covers its lower
+//                        levels
+//   <type>_<id>_orm.png  PBR material, glTF packing: R occlusion, G roughness, B metallic
+//   <type>_<id>_r.png, _m.png, _ao.png   ... or separate greyscale roughness / metallic / occlusion maps (packed here;
+//                        a missing one is roughness 1, metallic 0, occlusion 1). Ignored when there is an _orm.png.
+//   <type>_<id>_d.png    albedo (diffuse colour): drawn instead of the game's texture, alpha included
+//   <id>_<suffix>        any of these for any type (fallback)
+// ao-assets writes these names (python -m aoassets material-template / import).
 //
 // Identity (see HOOKED_EXPORTS in tools/gen_interface.py; the hooks call the original, then record the identity on the
 // surface_t's IDirectDrawSurface7 when it is one of ours):
@@ -26,9 +31,7 @@
 
 #include "rvk_backend.h"
 
-#define STBI_NO_HDR
-#define STBI_NO_LINEAR
-#include "stb/stb_image.h"
+#include "material_maps.h"
 
 namespace rvkproxy {
 
@@ -134,6 +137,7 @@ uint32_t FullQualityType(uint32_t type)
     switch (type) {
     case 1010021: case 1010022: return 1010006;
     case 1010016: case 1010017: return 1010004;
+    case 1010019: case 1010020: return 1010011;
     default: return type;
     }
 }
@@ -150,56 +154,15 @@ std::string FindMap(uint32_t type, uint32_t id, const char* suffix)
     return {};
 }
 
-// ---------------------------------------------------------------- normal map loading
-// RGBA8 -> mip chain of A8R8G8B8 (BGRA bytes). Normal maps: each level averages the decoded normals of the level
-// above and renormalises them, so distant surfaces don't flatten or tilt.
-rvk::Texture* LoadNormalMap(const std::string& path, rvk::ThreadedDevice* dev)
+// ---------------------------------------------------------------- map loading (rvk/material_maps.h)
+std::string FindParts(uint32_t type, uint32_t id, std::string parts[3])
 {
-    int w = 0, h = 0, n = 0;
-    stbi_uc* rgba = stbi_load(path.c_str(), &w, &h, &n, 4);
-    if (!rgba) {
-        RvkLog("materials: can't read %s (%s)", path.c_str(), stbi_failure_reason());
-        return nullptr;
-    }
-    std::vector<float> nrm(size_t(w) * h * 3);
-    for (size_t i = 0; i < size_t(w) * h; ++i)
-        for (int c = 0; c < 3; ++c)
-            nrm[i * 3 + c] = rgba[i * 4 + c] / 127.5f - 1.0f;
-    stbi_image_free(rgba);
-    uint32_t levels = 1;
-    for (int s = std::max(w, h); s > 1; s >>= 1) ++levels;
-    rvk::Texture* tex = dev->CreateTexture(uint32_t(w), uint32_t(h), rvk::Format::A8R8G8B8, levels);
-    if (!tex)
-        return nullptr;
-    std::vector<uint32_t> out;
-    for (uint32_t level = 0; level < levels; ++level) {
-        out.resize(size_t(w) * h);
-        for (size_t i = 0; i < out.size(); ++i) {
-            float x = nrm[i * 3], y = nrm[i * 3 + 1], z = nrm[i * 3 + 2];
-            float len = std::sqrt(x * x + y * y + z * z);
-            if (len < 1e-6f) { x = y = 0.0f; z = 1.0f; len = 1.0f; }
-            auto enc = [&](float v) { return uint32_t(std::lround(std::clamp((v / len) * 0.5f + 0.5f, 0.0f, 1.0f) * 255.0f)); };
-            out[i] = 0xFF000000u | enc(x) << 16 | enc(y) << 8 | enc(z);
-        }
-        dev->UpdateTexture(tex, level, 0, 0, uint32_t(w), uint32_t(h), out.data(), uint32_t(w) * 4);
-        if (level + 1 == levels)
-            break;
-        int nw = std::max(w / 2, 1), nh = std::max(h / 2, 1);
-        std::vector<float> next(size_t(nw) * nh * 3, 0.0f);
-        for (int y = 0; y < nh; ++y)
-            for (int x = 0; x < nw; ++x)
-                for (int dy = 0; dy < 2; ++dy)
-                    for (int dx = 0; dx < 2; ++dx) {
-                        int sx = std::min(x * 2 + dx, w - 1), sy = std::min(y * 2 + dy, h - 1);
-                        for (int c = 0; c < 3; ++c)
-                            next[(size_t(y) * nw + x) * 3 + c] += nrm[(size_t(sy) * w + sx) * 3 + c] * 0.25f;
-                    }
-        nrm.swap(next);
-        w = nw;
-        h = nh;
-    }
-    return tex;
+    const char* suffixes[3] = {"_ao.png", "_r.png", "_m.png"};
+    for (int c = 0; c < 3; ++c) parts[c] = FindMap(type, id, suffixes[c]);
+    return FindMap(type, id, "_orm.png");
 }
+
+void LogError(const std::string& error) { RvkLog("materials: %s", error.c_str()); }
 
 unsigned g_registered = 0, g_attached = 0;
 
@@ -256,14 +219,42 @@ void AttachMaterialMaps(RSurface* top)
     if (!top || !top->rdbId || !top->texture || top->materialsFor == top->texture || !g_rvk.device)
         return;
     top->materialsFor = top->texture;
-    std::string path = FindMap(top->rdbType, top->rdbId, "_n.png");
-    if (path.empty())
-        return;
-    if (rvk::Texture* normal = LoadNormalMap(path, g_rvk.device)) {
-        g_rvk.device->SetNormalMap(top->texture, normal);
+    uint32_t type = top->rdbType, id = top->rdbId;
+    rvk::maps::NormalSpread spread;
+    std::string error;
+    std::string path = FindMap(type, id, "_n.png");
+    if (!path.empty()) {
+        rvk::Texture* normal = rvk::maps::LoadNormalMap(*g_rvk.device, path, &spread, &error);
+        if (!normal) LogError(error);
+        if (normal) {
+            g_rvk.device->SetNormalMap(top->texture, normal);
+            ++g_attached;
+            RvkLog("materials: normal map %s (%ux%u) on RDB texture %u:%u (%u attached)", path.c_str(),
+                   normal->Width(), normal->Height(), type, id, g_attached);
+        }
+    }
+    std::string parts[3], ormFrom;
+    std::string packed = FindParts(type, id, parts);
+    rvk::Texture* orm = nullptr;
+    if (!packed.empty() || !parts[0].empty() || !parts[1].empty() || !parts[2].empty()) {
+        orm = rvk::maps::LoadOrmMap(*g_rvk.device, packed, parts, spread, &ormFrom, &error);
+        if (!orm) LogError(error);
+    }
+    rvk::Texture* albedo = nullptr;
+    std::string albedoPath = FindMap(type, id, "_d.png");
+    if (!albedoPath.empty()) {
+        albedo = rvk::maps::LoadAlbedoMap(*g_rvk.device, albedoPath, &error);
+        if (!albedo) LogError(error);
+    }
+    if (orm || albedo) {
+        g_rvk.device->SetMaterialMaps(top->texture, orm, albedo);
         ++g_attached;
-        RvkLog("materials: normal map %s (%ux%u) on RDB texture %u:%u (%u attached)", path.c_str(),
-               normal->Width(), normal->Height(), top->rdbType, top->rdbId, g_attached);
+        if (orm)
+            RvkLog("materials: PBR material %s (%ux%u) on RDB texture %u:%u", ormFrom.c_str(), orm->Width(),
+                   orm->Height(), type, id);
+        if (albedo)
+            RvkLog("materials: albedo %s (%ux%u) on RDB texture %u:%u", albedoPath.c_str(), albedo->Width(),
+                   albedo->Height(), type, id);
     }
 }
 

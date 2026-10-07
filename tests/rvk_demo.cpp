@@ -6,6 +6,7 @@
 // --window opens a window and animates until it is closed.
 #include "rvk.h"
 #include "threaded.h"
+#include "material_maps.h"
 
 #include <cmath>
 #include <cstdio>
@@ -861,6 +862,35 @@ void RunNormalMapTest(D& dev, int frames, const std::string& shot, float bump)
 //   row 1: red non-metal      row 2: gold metal      row 3: silver metal (last column: occlusion map stripes)
 // The floor has a material too: a checker, smooth-ish non-metal (roughness 0.3), reflecting the spheres with --ssr.
 uint32_t g_pbrDebug = 0;      // --pbr-debug N: RVK_PbrDebug's views
+// --pbr-maps DIR: the side-loaded files, through the proxy's loader (rvk/material_maps.h): the floor gets
+// floor_n.png, floor_ao.png / floor_r.png / floor_m.png (separate) and floor_d.png; the bottom row's middle ball
+// ball_n.png and ball_orm.png (packed). Missing files are skipped.
+std::string g_pbrMaps;
+
+template <typename D>
+void AttachFileMaps(D& dev, Texture* tex, const std::string& stem)
+{
+    auto file = [&](const char* suffix) {
+        std::string p = g_pbrMaps + "\\" + stem + suffix;
+        return GetFileAttributesA(p.c_str()) != INVALID_FILE_ATTRIBUTES ? p : std::string();
+    };
+    std::string error, from;
+    maps::NormalSpread spread;
+    if (std::string n = file("_n.png"); !n.empty()) {
+        if (Texture* t = maps::LoadNormalMap(dev, n, &spread, &error)) dev.SetNormalMap(tex, t);
+        else std::printf("pbr maps: %s\n", error.c_str());
+    }
+    std::string parts[3] = {file("_ao.png"), file("_r.png"), file("_m.png")};
+    std::string packed = file("_orm.png");
+    Texture* orm = nullptr;
+    if (!packed.empty() || !parts[0].empty() || !parts[1].empty() || !parts[2].empty())
+        orm = maps::LoadOrmMap(dev, packed, parts, spread, &from, &error);
+    Texture* albedo = nullptr;
+    if (std::string d = file("_d.png"); !d.empty()) albedo = maps::LoadAlbedoMap(dev, d, &error);
+    if (orm || albedo) dev.SetMaterialMaps(tex, orm, albedo);
+    std::printf("pbr maps: %s: orm from %s, albedo %s\n", stem.c_str(), from.empty() ? "(none)" : from.c_str(),
+                albedo ? "yes" : "no");
+}
 
 template <typename D>
 void RunPbrTest(D& dev, int frames, const std::string& shot)
@@ -911,6 +941,10 @@ void RunPbrTest(D& dev, int frames, const std::string& shot)
     auto floorPixels = Checker(64, 8, 0xFF909090, 0xFF505050);
     Texture* floor = dev.CreateTexture(64, 64, floorPixels.data());
     dev.SetMaterialMaps(floor, orm(1.0f, 0.3f, 0.0f), nullptr);
+    if (!g_pbrMaps.empty()) {
+        AttachFileMaps(dev, floor, "floor");
+        AttachFileMaps(dev, tex[3][2], "ball");
+    }
     dev.SetPixelLighting(true);
     Device::PbrSettings pbr;
     pbr.debug = g_pbrDebug;
@@ -2392,6 +2426,7 @@ int main(int argc, char** argv)
         else if (a == "--bump" && i + 1 < argc) bump = float(std::atof(argv[++i]));
         else if (a == "--normal-map-test") normalMapTest = true;
         else if (a == "--pbr-test") pbrTest = true;
+        else if (a == "--pbr-maps" && i + 1 < argc) { g_pbrMaps = argv[++i]; pbrTest = true; }
         else if (a == "--pbr-debug" && i + 1 < argc) g_pbrDebug = uint32_t(std::atoi(argv[++i]));
         else if (a == "--ao" && i + 1 < argc) { ao = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--ao-radius" && i + 1 < argc) aoRadius = float(std::atof(argv[++i]));
