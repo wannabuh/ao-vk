@@ -17,12 +17,12 @@ repository. Every enhancement can be switched off (in-game or with one hotkey) t
 ## Contents
 
 - [Videos](#videos)
-  - [Walking through Newland: before and after](#walking-through-newland-before-and-after)
-  - [Grass in the wind](#grass-in-the-wind)
+  - [Walking through Newland](#walking-through-newland-before-and-after)
+  - [Grass](#grass-in-the-wind)
   - [Newland](#newland)
   - [Spell particles](#spell-particles)
 - [Screenshots](#screenshots)
-  - [West Bank by day](#west-bank-by-day)
+  - [West Bank](#west-bank-by-day)
   - [Newland by day](#newland-by-day)
   - [Night](#night)
   - [Depth of field](#depth-of-field)
@@ -50,12 +50,12 @@ repository. Every enhancement can be switched off (in-game or with one hotkey) t
 Each video is uploaded through GitHub's web editor (GitHub plays only those): drag the file named in a marker onto
 it, replacing it.
 
-### Walking through Newland: before and after
+### Walking through Newland
 
 <!-- VIDEO: newland-walk-comparison.mp4 -->
 https://github.com/user-attachments/assets/07daac86-358c-4e47-ac21-5247b7c71a87
 
-### Grass in the wind
+### Grass
 
 <!-- VIDEO: grass_02.mp4 -->
 https://github.com/user-attachments/assets/740be825-a600-4441-b9d0-135ec040b125
@@ -84,7 +84,7 @@ https://github.com/user-attachments/assets/00f57f4c-7343-482b-ac3e-9604693b53a8
 The game's own renderer on the left, ao-vk on the right - the same moment, switched with Ctrl+Shift+E. Click an
 image for the full size.
 
-### West Bank by day
+### West Bank
 
 Sun shadows, HDR, colour grading and the ground grass.
 
