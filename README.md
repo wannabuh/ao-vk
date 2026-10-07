@@ -203,6 +203,7 @@ Some useful ones:
 | Insert / Delete | effect glow stronger / weaker | PgUp / PgDn | local light headroom up / down |
 | L | reload the colour look-up tables | F11 | lighting debug view |
 | F9 | frame dump (draw list + screenshot next to the log) | O | profiling sweep (below) |
+| H | hide the game's interface (screenshots) | | |
 
 **Profiling sweep (Ctrl+Shift+O):** stand still for a minute or two; ao-vk switches each enhancement off in turn,
 measures, and writes lines like `sweep sun shadows off (133.6 fps): gpu ms: ...` to the log. It shows what each

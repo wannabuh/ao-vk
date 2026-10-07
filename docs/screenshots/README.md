@@ -2,7 +2,8 @@
 
 Before / after images for the project README, made by `tools/screenshot-pairs.py` from pairs of game screenshots.
 
-1. In game, hide the interface windows, find the spot and take a screenshot.
+1. In game, press **Ctrl+Shift+H** to hide the interface (again to bring it back), find the spot and take a
+   screenshot.
 2. Press **Ctrl+Shift+E** (switches every ao-vk enhancement off: the game's own look) and take another without moving
    the camera. Press it again to switch them back on.
 3. Put both in a folder as `NAME-before.png` (the game's own look) and `NAME-after.png` (ao-vk). A clip goes in as

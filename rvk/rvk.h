@@ -156,6 +156,10 @@ public:
     // Diagnostic: tint each draw by how it is lit (lighting off / no local light / lit by a local light).
     void SetLightingDebug(bool enable) { if (m_lightingDebug != enable) { m_lightingDebug = enable; m_constantsDirty = true; } }
     bool LightingDebug() const { return m_lightingDebug; }
+    // The game's interface hidden (Ctrl+Shift+H, for screenshots): its draws after the 3D scene and the names over
+    // characters are dropped, and the interface layer isn't put over the frame. Not a setting: off at each start.
+    void SetHideInterface(bool hide) { m_hideInterface = hide; }
+    bool HideInterface() const { return m_hideInterface; }
     // Enhancement, with per-pixel lighting: every lit draw gets the frame's active point / spot lights nearest
     // the camera instead of the (at most 8) the game enabled for it. Directional lights stay as the game set them.
     void SetLightOverride(bool enable) { if (m_lightOverride != enable) { m_lightOverride = enable; m_constantsDirty = true; } }
@@ -808,6 +812,7 @@ private:
     Texture* m_ldrMain = nullptr;
     Texture* m_scene = nullptr;
     bool m_scenePhase = false;                   // 3D drawn into m_scene; ends at the first interface draw
+    bool m_hideInterface = false;                // SetHideInterface
     bool m_sceneSaw3D = false;
     uint32_t m_sceneEndDraw = 0, m_sceneEndFvf = 0;   // frame dumps: where the scene phase ended
     VkPipeline m_pipelinesHdr[3] = {};           // m_pipelines for the float target

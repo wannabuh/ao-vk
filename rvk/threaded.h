@@ -75,6 +75,8 @@ public:
     bool PixelLighting() const { return m_pixelLighting; }
     void SetLightingDebug(bool enable);
     bool LightingDebug() const { return m_lightingDebug; }
+    void SetHideInterface(bool hide);
+    bool HideInterface() const { return m_hideInterface; }
     void SetLightOverride(bool enable);
     void SetCarrierLit(bool enable);
     bool LightOverride() const { return m_lightOverride; }
@@ -354,6 +356,7 @@ private:
     d3d::Viewport m_viewport{};
     Texture* m_target = nullptr;
     bool m_pixelLighting = false, m_lightingDebug = false, m_lightOverride = false, m_shadows = false;
+    bool m_hideInterface = false;
     uint32_t m_pointShadows = 0;
     bool m_hdr = false;
     float m_hdrHeadroom = 1.5f;

@@ -871,7 +871,8 @@ bool g_grassBench = false;     // --grass-bench: RunGrassBench (a big terrain, t
 bool g_grassFieldOn = false;   // --grass-field: the procedural ground grass (RVK_GrassOn) over the shadow test's terrain
 float g_grassFieldDist = 25.0f;
 float g_grassEven = 1.0f;         // --grass-even E: RVK_GrassEven
-bool g_grassShadow = true;        // --grass-shadow 0|1: RVK_GrassShadow
+bool g_grassShadow = true;
+bool g_hideUi = false;            // --hide-ui: the interface hidden (SetHideInterface, Ctrl+Shift+H in game)        // --grass-shadow 0|1: RVK_GrassShadow
 float g_grassStyle[5] = {1, 1, 1, 1, 1};   // --grass-style V,F,G,U,T: variety, flowers, glow, gusts, trails (SetGrassStyle)
 float g_grassBenchYaw = 0.0f;  // --grass-bench-yaw R: the bench's camera turned R radians (pi: into the sun)
 bool g_grassBenchWalker = false;  // --grass-bench-walker: a "character" walking through the grass ahead of the camera
@@ -1903,6 +1904,7 @@ int main(int argc, char** argv)
         else if (a == "--threaded") threaded = true;
         else if (a == "--pixel-lighting") pixelLighting = true;
         else if (a == "--lighting-debug") lightingDebug = true;
+        else if (a == "--hide-ui") g_hideUi = true;
         else if (a == "--light-override") lightOverride = true;
         else if (a == "--shadows") shadows = true;
         else if (a == "--shadow-test") shadowTest = shadows = true;
@@ -2038,6 +2040,7 @@ int main(int argc, char** argv)
     }
     dev.SetPixelLighting(pixelLighting);
     dev.SetLightingDebug(lightingDebug);
+    dev.SetHideInterface(g_hideUi);
     dev.SetLightOverride(lightOverride);
     dev.SetShadows(shadows);
     dev.SetLightHeadroom(headroom);
@@ -2106,6 +2109,7 @@ int main(int argc, char** argv)
             if (!tdev.Init(nullptr, kWidth, kHeight, &error)) { std::printf("init failed: %s\n", error.c_str()); return 1; }
             tdev.SetHdr(hdr);
             tdev.SetBloom(bloom, 1.0f);
+            tdev.SetHideInterface(g_hideUi);
             RunParticleTest(tdev, frames, frameMs, shot, dump, !particlesOff, particleEnd, particleEffects);
             tdev.Sync();
         } else {
@@ -2139,6 +2143,7 @@ int main(int argc, char** argv)
         if (!tdev.Init(hwnd, kWidth, kHeight, &error)) { std::printf("init failed: %s\n", error.c_str()); return 1; }
         tdev.SetPixelLighting(pixelLighting);
         tdev.SetLightingDebug(lightingDebug);
+        tdev.SetHideInterface(g_hideUi);
         tdev.SetLightOverride(lightOverride);
         tdev.SetShadows(shadows);
         if (!dump.empty() && !shadowTest) tdev.RequestFrameDump(dump);

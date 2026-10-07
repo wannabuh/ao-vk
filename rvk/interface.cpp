@@ -80,7 +80,7 @@ void Device::InterfaceEnd()
         EndRendering();
     }
     // The layer over the main target - this frame's interface, or the last one drawn.
-    if (m_uiLayer && m_uiCompositePipeline && m_uiLayerReady.load(std::memory_order_relaxed) &&
+    if (m_uiLayer && m_uiCompositePipeline && m_uiLayerReady.load(std::memory_order_relaxed) && !m_hideInterface &&
         m_main->m_format == Format::A8R8G8B8 && m_uiLayer->m_width == m_main->m_width &&
         m_uiLayer->m_height == m_main->m_height) {
         Transition(cmd, m_uiLayer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);

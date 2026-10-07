@@ -1911,6 +1911,12 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     }
     double since = (m_frameNumber & 15) == 0 ? ProfileCpu() : 0.0;   // per-draw CPU sections (profiling)
     m_drawIsLabel = !m_external && IsLabel(primitive, fvf, vertexCount);
+    // The interface hidden (screenshots): its draws - pre-transformed, onto the frame or into the interface layer,
+    // not while the 3D scene is still being drawn - and the names over characters.
+    if (m_hideInterface && !m_external &&
+        (m_drawIsLabel || (IsInterfaceDraw(fvf) && (m_target == m_main || m_target == m_uiLayer) &&
+                           !(m_scenePhase && m_target == m_scene))))
+        return;
     if (m_dumpFile && !m_external)
         DumpDraw(primitive, fvf, m_drawGpu ? nullptr : vertices, vertexCount, indices, indexCount);
     if (!m_external && !m_drawGpu && IsBlobShadow(primitive, fvf, vertices, vertexCount, indexCount))

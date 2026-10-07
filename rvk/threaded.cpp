@@ -675,6 +675,12 @@ void ThreadedDevice::SetPixelLighting(bool enable)
     Enqueue([this, enable](const uint8_t*) { m_device.SetPixelLighting(enable); });
 }
 
+void ThreadedDevice::SetHideInterface(bool hide)
+{
+    m_hideInterface = hide;
+    Enqueue([this, hide](const uint8_t*) { m_device.SetHideInterface(hide); });
+}
+
 void ThreadedDevice::SetLightingDebug(bool enable)
 {
     m_lightingDebug = enable;

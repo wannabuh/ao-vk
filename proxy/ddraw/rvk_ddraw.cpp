@@ -234,6 +234,11 @@ void RvkState::Present()
     // Ctrl+Shift+L: reload the colour lookup tables (randy-vk-day/night.cube).
     if (pressed('L'))
         rvk_settings::LoadLuts(device);
+    // Ctrl+Shift+H: hide the game's interface (screenshots; not a setting).
+    if (pressed('H')) {
+        device->SetHideInterface(!device->HideInterface());
+        RvkLog("interface %s", device->HideInterface() ? "hidden" : "shown");
+    }
     // Ctrl+Shift+F11: lighting debug view (not a setting).
     if (pressed(VK_F11)) {
         device->SetLightingDebug(!device->LightingDebug());
