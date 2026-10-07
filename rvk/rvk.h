@@ -21,6 +21,7 @@
 
 struct VmaAllocator_T;
 struct VmaAllocation_T;
+struct VmaVirtualBlock_T;
 
 namespace rvk::detail { struct FrameLights; struct FvfLayout; struct DrawConstants; struct DrawTransform; struct ShadowRecord; }
 
@@ -61,10 +62,9 @@ public:
     Format GetFormat() const { return m_format; }
     bool IsRenderTarget() const { return m_renderTarget; }
     // The texture's colour at (u, v), RGB 0..255, from the small grid taken at upload (resources.cpp
-    // PixelsThumbnail); false until a full level-0 upload has been sampled. GrassTexel: whether it is green enough to
-    // be grass (the ground's own texel, so a tile atlas holding several grounds classifies per ground). grass.cpp.
+    // PixelsThumbnail); false until a full level-0 upload has been sampled.
     bool TexelRgbAt(float u, float v, uint8_t rgb[3]) const;
-    bool GrassTexel(float u, float v) const;
+    bool TexelRgbBilinear(float u, float v, uint8_t rgb[3]) const;   // ... filtered (the lightmaps)
 
 private:
     friend class Device;
@@ -75,9 +75,12 @@ private:
     Format m_format = Format::A8R8G8B8;
     bool m_renderTarget = false;
     bool m_opaque = false;             // the texture's pixels are all alpha 1 (a blended static draw can be opaque)
-    static constexpr uint32_t kThumb = 8;              // the classification grid (kThumb x kThumb, RGB)
-    uint8_t m_thumb[kThumb * kThumb * 3] = {};         // sampled from level 0 (PixelsThumbnail)
+    // A small RGB copy of level 0 for the ground grass (PixelsThumbnail): textures up to 64 x 64 (the terrain's
+    // lightmaps) whole, bigger ones on a 16 x 16 grid (enough to classify a ground atlas' tiles).
+    std::vector<uint8_t> m_thumb;
+    uint32_t m_thumbW = 0, m_thumbH = 0;
     bool m_thumbValid = false;
+    bool m_lightmap = false;           // captured as a terrain lightmap (a re-upload recaptures the grass's light)
     Texture* m_normalMap = nullptr;    // tangent-space normal map drawn with this texture (owned; SetNormalMap)
     uint32_t m_bindless = ~0u;         // its slot in the bindless image array (M1)
     // Layout as of the end of the commands recorded so far (main command buffer for render targets;
@@ -257,7 +260,7 @@ public:
         if (m_grassOn && (density != m_grassDensity || height != m_grassHeight || texOnly != m_grassTex))
             m_grassDirty = true;
         if (texOnly != m_grassTex)
-            m_groundHeights.clear();
+            m_grassGroundReset = true;           // the ground's grass/not must be classified again
         m_grassOn = on;
         m_grassDistance = distance;
         m_grassDensity = density;
@@ -1053,9 +1056,14 @@ private:
     std::unordered_map<uint64_t, float> m_plantMaxEdge;   // a plant mesh's longest edge (model units)
     float m_plantDetail = 1.0f;
     float m_foliageLod = 35.0f;                  // RVK_FoliageLod (draw.cpp FoliageFar)
-    // Procedural ground grass (RVK_GrassOn, grass.cpp): the ground heights are sampled from the terrain draws into a
-    // world-space grid (CaptureTerrain); a pass in EndScene generates and draws camera-centred blades over it.
+    // Procedural ground grass (RVK_GrassOn, grass.cpp). The ground is captured from the terrain's own draws into
+    // world-aligned tiles (CaptureTerrain): per quarter-unit cell its height, its texture's colour (grass or not) and
+    // its baked light (the terrain lightmap). A tile's blades are baked once its ground is known (BuildGrassTile) as
+    // compact records in one GPU pool, expanded into strips by the vertex shader (grass.vert).
     static constexpr float kGroundCell = 0.25f;  // the ground grid's cell size (world units)
+    static constexpr float kGrassTileSize = 8.0f;   // world units a tile covers
+    static constexpr int kGroundN = 32;          // cells along a tile's side (kGrassTileSize / kGroundCell)
+    static constexpr int kGroundBlock = 8;       // cells along a capture block's side (4 x 4 blocks a tile)
     bool m_grassOn = false;                      // RVK_GrassOn (off: nothing drawn, nothing captured)
     float m_grassDistance = 25.0f;               // RVK_GrassDist (radius around the camera, world units)
     float m_grassDensity = 5.0f;                 // RVK_GrassBlades (blades a patch)
@@ -1063,61 +1071,80 @@ private:
     float m_grassWidth = 1.0f;                   // RVK_GrassWidth: a multiplier on the blades' width
     bool m_grassTex = true;                      // RVK_GrassTex: grass only where the ground's texel is green
     float m_grassPrevTime = 0.0f;                // the wind clock last frame, so a blade's motion vector is exact
-    struct GroundCell { float y; bool grass; uint32_t colour; };   // colour: the ground texel's RGB (the grass tint)
-    std::unordered_map<uint64_t, GroundCell> m_groundHeights;   // the ground by world x, z cell (grass or not)
-    float m_groundEyeX = 0.0f, m_groundEyeZ = 0.0f;             // where the grid was last cleared (it only grows)
+    // The ground under one tile and its baked blades. A cell is written by the finest terrain triangle seen there
+    // (rank: the triangle's size class), so a coarse level of detail never overwrites a finer one; a capture block
+    // whose cells are all known at least as finely as a triangle skips that triangle.
+    struct GrassTile {
+        static constexpr int kCells = kGroundN * kGroundN;
+        static constexpr int kBlocks = (kGroundN / kGroundBlock) * (kGroundN / kGroundBlock);
+        float y[kCells];
+        uint32_t colour[kCells];   // the ground texel's RGB; bit 24: grass
+        uint32_t light[kCells];    // the lightmap texel's RGB
+        uint8_t rank[kCells];      // 255: never seen
+        uint8_t lightRank[kCells];
+        uint8_t blockRank[kBlocks];        // the coarsest rank in each block (255: a cell unseen)
+        uint8_t blockLightRank[kBlocks];
+        int32_t tx = 0, tz = 0;
+        uint32_t seen = 0;                 // cells with a height
+        uint32_t version = 0;              // bumped whenever the ground or its light changes
+        uint64_t lastChange = 0;           // the frame of that change
+        uint64_t created = 0;              // (frame number + 1: CaptureTerrain's chunk times)
+        uint64_t lightReset = 0;           // its light last dropped (a lightmap re-uploaded), the same clock
+        uint64_t lastUsed = 0;
+        const void* lightmaps[4] = {};     // the lightmaps captured into it (a re-upload recaptures their light)
+        // The baked blades: in the pool at `first` (in blades), `blades` of them, the first `sparse` a thinned subset.
+        uint64_t alloc = 0;                // VmaVirtualAllocation
+        uint32_t first = 0, blades = 0, sparse = 0;
+        bool built = false;
+        uint32_t builtVersion = 0;
+        float minY = 0.0f, maxY = 0.0f;    // the roots' height range (culling, light masks)
+    };
+    std::unordered_map<uint64_t, std::unique_ptr<GrassTile>> m_grassTiles;
+    GrassTile* GrassTileAt(int32_t tx, int32_t tz) const;
+    // The terrain chunks seen (by contents, pass and texture): their ground box and when they were last captured, so
+    // an unchanged chunk over tiles that already have it is skipped whole.
+    struct GrassChunk { float box[4] = {}; bool boxed = false; uint64_t processed = 0, lastSeen = 0; };
+    std::unordered_map<uint64_t, GrassChunk> m_grassChunks;
+    std::vector<GrassTile*> m_grassChunkGrid;    // CaptureTerrain's scratch: the tiles under a chunk
+    uint64_t m_grassTileEpoch = 0;               // the latest tile made or light reset (the chunks' clock)
+    int32_t m_grassTileBox[4] = {0, 0, -1, -1};  // the tile range around the camera: x0, z0, x1, z1
+    bool m_grassDirty = false;                   // a blade setting changed: rebuild the tiles
+    bool m_grassGroundReset = false;             // the ground filter changed: capture the ground again
+    std::vector<const void*> m_lightmapsUploaded;   // terrain lightmaps re-uploaded since the last grass frame
+    float m_terrainAmbient[4] = {};              // the terrain light pass's global ambient this frame (w: seen)
+    float m_terrainSun[8] = {};                  // ... the directional light it takes: colour, direction
+    struct GrassTrash { uint64_t alloc; VkBuffer buffer; VmaAllocation_T* allocation; uint64_t frame; };
+    std::vector<GrassTrash> m_grassTrash;        // pool ranges and buffers freed once no frame in flight reads them
     void CaptureTerrain(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
                         const uint16_t* indices, uint32_t indexCount);
-    bool GroundHeight(float x, float z, float* y, uint32_t* colour = nullptr) const;
-    bool GroundSeen(float x, float z) const;     // the terrain has been captured near here (grass or not)
-
+    bool GroundAt(float x, float z, float* y, uint32_t* colour, uint32_t* light) const;
     void GroundNormal(float x, float z, float out[3]) const;   // the ground's upward normal (the slope) at x, z
-    // One grass vertex: world position, normal, and how far up the blade (0 root, 1 tip), the wind phase, the blade's
-    // height and its root's world y (the tip shrinks towards it at the field's edge).
-    // Packed to 40 bytes (from 56): the normal as 8-bit signed, the atlas coordinate as 16-bit, the height along the
-    // blade in the colour's alpha (its alpha is otherwise unused) - the field's vertex data is fetched twice a frame
-    // now that it has a depth pre-pass.
-    struct GrassVertex {
-        float pos[3];      // the cross section's centre, on the blade's axis (the width is expanded in the shader)
-        float height;
-        float baseY;
-        float phase;
-        float across;      // how far this edge is from the axis, along the width: the shader billboards it
-        int8_t normal[4];  // the blade's normal, 8-bit signed normalized (SNORM)
-        uint16_t uv[2];    // the blade texture's atlas coordinate, 16-bit normalized (UNORM)
-        uint32_t colour;   // RGB tint (the ground's texel) + the height along the blade in A, 0xAARRGGBB
-    };
-    // A grid tile's baked grass, on the GPU (grass.cpp BuildGrassTile). Tiles are world-aligned and static: built the
-    // first time they come into range and kept until evicted, so a frame costs only the visible tiles' draws (no
-    // per-frame generation - the wind moves in the vertex shader).
-    struct GrassTile {
-        VkBuffer buffer = VK_NULL_HANDLE;
-        VmaAllocation_T* allocation = nullptr;
-        uint32_t vertexCount = 0;
-        uint32_t sparseCount = 0;   // the first N vertices are a decimated subset: a distant tile draws only these
-        bool built = false;
-        uint32_t tries = 0;         // times building was attempted before the ground under it was captured
-        uint64_t lastUsed = 0;
-    };
-    std::unordered_map<uint64_t, GrassTile> m_grassTiles;
-    static constexpr float kGrassTileSize = 8.0f;   // world units a tile covers
-    bool m_grassDirty = false;                      // a setting changed: rebuild the tiles
-    struct GrassTrash { VkBuffer buffer; VmaAllocation_T* allocation; uint64_t frame; };
-    std::vector<GrassTrash> m_grassTrash;           // retired tile buffers, freed once no frame can use them
-    void BuildGrassTile(int32_t tx, int32_t tz);
+    bool BuildGrassTile(GrassTile& tile);
+    void FreeGrassBlades(GrassTile& tile);
+    bool GrowGrassPool(uint32_t minBlades);
+    bool EnsureGrassIndices(uint32_t blades);
+    void UpdateGrassTiles();
     void DestroyGrassTiles();
     void DrawGrassTiles(VkCommandBuffer cmd);      // the blades into the rendering already active on the scene
     void RenderGrassField(VkCommandBuffer cmd);    // ... on its own, at the end of the scene (nothing blended was drawn)
     bool m_grassDrawnThisFrame = false;            // the blades go in before the game's transparent pass (see Draw)
     bool CreateGrassResources(std::string* error);
     void DestroyGrassResources();
-    uint64_t m_grassDraws = 0, m_grassBlades = 0;   // counters, logged with the foliage line
-    VkDescriptorSetLayout m_grassSetLayout = VK_NULL_HANDLE;   // camera (UBO), blade atlas, frame lights, shadow map
+    uint64_t m_grassDraws = 0, m_grassBlades = 0, m_grassBuilds = 0;   // counters, logged with the foliage line
+    double m_grassBuildMs = 0.0, m_grassCaptureMs = 0.0;
+    uint64_t m_grassLitBlades = 0, m_grassBuiltBlades = 0;   // built blades, and those with the ground's lightmap
+    VkDescriptorSetLayout m_grassSetLayout = VK_NULL_HANDLE;   // camera, blades, frame lights, shadow maps
     VkPipelineLayout m_grassLayout = VK_NULL_HANDLE;
     VkPipeline m_grassPipeline = VK_NULL_HANDLE;
-    VkPipeline m_grassDepthPipeline = VK_NULL_HANDLE;   // the blades' depth pre-pass (no colour, no shading)
-    Texture* m_grassBlade = nullptr;             // the procedural blade atlas (owned), generated at init
-    bool m_independentBlend = false;             // device feature: the grass pipeline's per-attachment write masks
+    // The blade pool (one storage buffer, suballocated per tile) and the shared index pattern (five triangles a
+    // blade near, then three far).
+    VkBuffer m_grassPool = VK_NULL_HANDLE;
+    VmaAllocation_T* m_grassPoolAllocation = nullptr;
+    VmaVirtualBlock_T* m_grassPoolBlock = nullptr;
+    uint32_t m_grassPoolBlades = 0;
+    VkBuffer m_grassIndex = VK_NULL_HANDLE;
+    VmaAllocation_T* m_grassIndexAllocation = nullptr;
+    uint32_t m_grassIndexBlades = 0;
     float m_pointLightScale = 1.0f, m_charLightScale = 1.0f;   // SetPointLightIntensity
     float LightScale(const d3d::Light& l) const;
     bool FoliageFar() const;                  // pieces per 0.3 world units (0 = plants drawn as the game gives them)

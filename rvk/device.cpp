@@ -406,10 +406,6 @@ bool Device::CreateLogicalDevice(std::string* error)
     enabled.pNext = &enV13;
     enabled.features.samplerAnisotropy = features.features.samplerAnisotropy;
     m_maxAnisotropy = features.features.samplerAnisotropy ? m_props.limits.maxSamplerAnisotropy : 0.0f;
-    // The ground grass pipeline (grass.cpp) writes the scene colour only: its five colour attachments carry different
-    // write masks, which needs independent blend.
-    m_independentBlend = features.features.independentBlend;
-    enabled.features.independentBlend = features.features.independentBlend;
     // Out-of-range vertex indices in game data read zeros instead of faulting the GPU.
     enabled.features.robustBufferAccess = features.features.robustBufferAccess;
     enabled.features.textureCompressionBC = features.features.textureCompressionBC;
@@ -1325,12 +1321,19 @@ void Device::BeginFrame()
             double(m_foliageVerts) / 600.0, m_foliageMinH, m_foliageMaxH);
         Log("no-discard pipeline (early-Z): %llu draws (last 600 frames)", (unsigned long long)m_noCutDraws);
         if (m_grassOn)
-            Log("ground grass: %llu frames drawn, %.0f blades a frame; ground cells %llu, tiles %llu, pushers now %llu "
-                "max %u (last 600 frames)",
+            Log("ground grass: %llu frames drawn, %.0f blades a frame; tiles %llu, %llu built (%.2f ms each, %.0f%% of "
+                "their blades lit by the ground's lightmap), capture %.3f ms a frame; terrain ambient %.2f %.2f %.2f; "
+                "pushers now %llu max %u (last 600 frames)",
                 (unsigned long long)m_grassDraws, double(m_grassBlades) / std::max<uint64_t>(m_grassDraws, 1),
-                (unsigned long long)m_groundHeights.size(), (unsigned long long)m_grassTiles.size(),
+                (unsigned long long)m_grassTiles.size(), (unsigned long long)m_grassBuilds,
+                m_grassBuildMs / double(std::max<uint64_t>(m_grassBuilds, 1)),
+                100.0 * double(m_grassLitBlades) / double(std::max<uint64_t>(m_grassBuiltBlades, 1)),
+                m_grassCaptureMs / 600.0, m_terrainAmbient[0], m_terrainAmbient[1], m_terrainAmbient[2],
                 (unsigned long long)m_framePushers.size(), m_pusherSeenMax);
+        m_grassLitBlades = m_grassBuiltBlades = 0;
         m_pusherSeenMax = 0;
+        m_grassBuilds = 0;
+        m_grassBuildMs = m_grassCaptureMs = 0.0;
         m_grassDraws = m_grassBlades = 0;
         PrepassLog();
         m_ringPeak = 0;

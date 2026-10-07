@@ -345,17 +345,18 @@ static bool TexelRgb(Format fmt, const uint8_t* base, uint32_t pitch, uint32_t x
     }
 }
 
-// Samples a texture on a small grid (RGB) for the ground-texture classification (grass.cpp Texture::GrassTexel).
+// Samples a texture on a small grid (RGB, nw x nh, each sample at its cell's centre) for the ground grass (grass.cpp:
+// the ground's colour and whether it is grass, and the lightmaps' baked light).
 static bool PixelsThumbnail(Format fmt, const void* data, uint32_t width, uint32_t height, uint32_t pitch,
-                            uint8_t* out, uint32_t n)
+                            uint8_t* out, uint32_t nw, uint32_t nh)
 {
     const uint8_t* base = static_cast<const uint8_t*>(data);
-    for (uint32_t j = 0; j < n; ++j)
-        for (uint32_t i = 0; i < n; ++i) {
-            uint32_t x = (i * width) / n, y = (j * height) / n;
+    for (uint32_t j = 0; j < nh; ++j)
+        for (uint32_t i = 0; i < nw; ++i) {
+            uint32_t x = ((2 * i + 1) * width) / (2 * nw), y = ((2 * j + 1) * height) / (2 * nh);
             x = x < width ? x : width - 1;
             y = y < height ? y : height - 1;
-            if (!TexelRgb(fmt, base, pitch, x, y, out + (size_t(j) * n + i) * 3))
+            if (!TexelRgb(fmt, base, pitch, x, y, out + (size_t(j) * nw + i) * 3))
                 return false;
         }
     return true;
@@ -377,10 +378,21 @@ void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, u
         else
             t->m_opaque = false;
         // The colour grid the ground-grass classification reads (grass.cpp): a full level-0 upload only.
-        t->m_thumbValid = x == 0 && y == 0 && width >= t->m_width && height >= t->m_height &&
-                          pitch >= FormatRowBytes(t->m_format, t->m_width) &&
-                          PixelsThumbnail(t->m_format, data, t->m_width, t->m_height, pitch, t->m_thumb,
-                                          Texture::kThumb);
+        // Small textures (the terrain's 64 x 64 lightmaps) are kept whole, bigger ones on a 16 x 16 grid.
+        t->m_thumbValid = false;
+        if (x == 0 && y == 0 && width >= t->m_width && height >= t->m_height &&
+            pitch >= FormatRowBytes(t->m_format, t->m_width)) {
+            const bool whole = t->m_width <= 64 && t->m_height <= 64;
+            t->m_thumbW = whole ? t->m_width : 16;
+            t->m_thumbH = whole ? t->m_height : 16;
+            t->m_thumb.resize(size_t(t->m_thumbW) * t->m_thumbH * 3);
+            t->m_thumbValid = PixelsThumbnail(t->m_format, data, t->m_width, t->m_height, pitch, t->m_thumb.data(),
+                                              t->m_thumbW, t->m_thumbH);
+            if (!t->m_thumbValid)
+                std::vector<uint8_t>().swap(t->m_thumb);
+            if (t->m_lightmap && m_grassOn)
+                m_lightmapsUploaded.push_back(t);   // the grass's light baked from it is stale
+        }
     }
 
     // Stage tightly packed rows in this frame's ring buffer; the upload command buffer runs before the
