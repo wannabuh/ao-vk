@@ -120,7 +120,9 @@ Spell effects with GPU particles, and depth of field.
   ground and big objects often missed the lights around you). Up to 64 lights a frame.
 - Separate intensity sliders for lamps and for the lights characters carry (your own included).
 - Generated surface relief: normal maps derived from each texture's brightness, the ground included.
-- Side-loaded normal maps for individual game textures (`randy-vk\materials\`, see `docs/materials.md`).
+- Side-loaded material maps for individual game textures (`randy-vk\materials\`, see `docs/materials.md`): normal
+  maps, PBR materials (roughness / metallic / occlusion: GGX highlights, metals, reflections) and replacement
+  textures.
 - Sunlight shining through leaves and grass.
 - Anisotropic filtering.
 
@@ -396,7 +398,7 @@ patched over the original's entry once the client build is recognised), keeping 
 other DLLs, which derive from Randy's classes, keep working.
 
 - `docs/architecture.md`: the overall design; `docs/frame.md`: how the game draws a frame
-- `docs/rvk.md`: the renderer; `docs/materials.md`: normal maps; `docs/d3d7-vocabulary.md`: what the game uses
+- `docs/rvk.md`: the renderer; `docs/materials.md`: material maps (normal, PBR, albedo); `docs/d3d7-vocabulary.md`: what the game uses
 - `docs/native.md`: replacing Randy; `docs/skinning.md`, `docs/animation.md`: the character code
 
 ## Building
