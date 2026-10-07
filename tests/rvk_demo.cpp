@@ -871,6 +871,7 @@ bool g_grassBench = false;     // --grass-bench: RunGrassBench (a big terrain, t
 bool g_grassFieldOn = false;   // --grass-field: the procedural ground grass (RVK_GrassOn) over the shadow test's terrain
 float g_grassFieldDist = 25.0f;
 float g_grassEven = 1.0f;         // --grass-even E: RVK_GrassEven
+bool g_grassShadow = true;        // --grass-shadow 0|1: RVK_GrassShadow
 float g_grassStyle[5] = {1, 1, 1, 1, 1};   // --grass-style V,F,G,U,T: variety, flowers, glow, gusts, trails (SetGrassStyle)
 float g_grassBenchYaw = 0.0f;  // --grass-bench-yaw R: the bench's camera turned R radians (pi: into the sun)
 bool g_grassBenchWalker = false;  // --grass-bench-walker: a "character" walking through the grass ahead of the camera
@@ -1939,6 +1940,7 @@ int main(int argc, char** argv)
         else if (a == "--grass-bench-film" && i + 1 < argc) g_grassBenchFilm = std::atoi(argv[++i]);
         else if (a == "--grass-bench-pitch" && i + 1 < argc) g_grassBenchPitch = float(std::atof(argv[++i]));
         else if (a == "--grass-even" && i + 1 < argc) g_grassEven = float(std::atof(argv[++i]));
+        else if (a == "--grass-shadow" && i + 1 < argc) g_grassShadow = std::atoi(argv[++i]) != 0;
         else if (a == "--grass-style" && i + 1 < argc) {
             char* at = argv[++i];
             for (int k = 0; k < 5; ++k) {
@@ -2052,6 +2054,7 @@ int main(int argc, char** argv)
     dev.SetGrassPush(grassPush);
     dev.SetGrassStyle(g_grassStyle[0], g_grassStyle[1], g_grassStyle[2], g_grassStyle[3], g_grassStyle[4] != 0.0f);
     dev.SetGrassEven(g_grassEven);
+    dev.SetGrassShadows(g_grassShadow);
     dev.SetPlantDetail(plantDetail);
     dev.SetFoliageLod(foliageLod);
     if (g_grassFieldOn)                  // --grass-field: the procedural ground grass (needs HDR: its pass draws into the scene)

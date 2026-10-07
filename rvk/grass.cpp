@@ -37,6 +37,19 @@ const uint32_t kGrassVertSpirv[] = {
 const uint32_t kGrassFragSpirv[] = {
 #include "grass.frag.inc"
 };
+const uint32_t kGrassShadowVertSpirv[] = {
+#include "grass_shadow.vert.inc"
+};
+
+// grass_shadow.vert's push constants.
+struct GrassShadowPass {
+    float lightViewProj[16];
+    float camera[4];     // xyz: the camera; w: the field radius
+    float wind[4];       // as GrassFrame.wind
+    float sun[4];        // xyz: the direction sunlight travels; w: the gusts
+    float cascade[4];    // x: the least half width; y, z: the edge fade (NDC)
+};
+static_assert(sizeof(GrassShadowPass) == 128, "grass shadow push constants (the guaranteed minimum)");
 
 // The pass's frame block (grass.vert / grass.frag GrassFrame), one UBO.
 struct GrassFrame {
@@ -648,6 +661,67 @@ bool Device::CreateGrassResources(std::string* error)
     }
     if (vert) vkDestroyShaderModule(m_device, vert, nullptr);
     if (frag) vkDestroyShaderModule(m_device, frag, nullptr);
+    // The blades into the sun's shadow map: depth only, the blades (binding 2, as above) and the pass's push constants.
+    VkShaderModule shadowVert = VK_NULL_HANDLE;
+    if (ok) {
+        VkDescriptorSetLayoutBinding sb{2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr};
+        VkDescriptorSetLayoutCreateInfo ssl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        ssl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+        ssl.bindingCount = 1;
+        ssl.pBindings = &sb;
+        VkPushConstantRange spr{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GrassShadowPass)};
+        VkPipelineLayoutCreateInfo spl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        spl.setLayoutCount = 1;
+        spl.pSetLayouts = &m_grassShadowSetLayout;
+        spl.pushConstantRangeCount = 1;
+        spl.pPushConstantRanges = &spr;
+        ok = Check(vkCreateDescriptorSetLayout(m_device, &ssl, nullptr, &m_grassShadowSetLayout),
+                   "vkCreateDescriptorSetLayout", error) &&
+             Check(vkCreatePipelineLayout(m_device, &spl, nullptr, &m_grassShadowLayout), "vkCreatePipelineLayout", error) &&
+             module(kGrassShadowVertSpirv, sizeof(kGrassShadowVertSpirv), &shadowVert);
+    }
+    if (ok) {
+        VkPipelineShaderStageCreateInfo stage{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0,
+                                              VK_SHADER_STAGE_VERTEX_BIT, shadowVert, "main", nullptr};
+        VkDynamicState dyn[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_DEPTH_BIAS};
+        VkPipelineDynamicStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+        ds.dynamicStateCount = 3;
+        ds.pDynamicStates = dyn;
+        VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+        ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+        vp.viewportCount = vp.scissorCount = 1;
+        VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        rs.polygonMode = VK_POLYGON_MODE_FILL;
+        rs.cullMode = VK_CULL_MODE_NONE;
+        rs.depthBiasEnable = VK_TRUE;
+        rs.lineWidth = 1.0f;
+        VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+        ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        VkPipelineDepthStencilStateCreateInfo dss{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+        dss.depthTestEnable = dss.depthWriteEnable = VK_TRUE;
+        dss.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
+        rendering.depthAttachmentFormat = kDepthFormat;
+        VkGraphicsPipelineCreateInfo ci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        ci.pNext = &rendering;
+        ci.stageCount = 1;
+        ci.pStages = &stage;
+        ci.pVertexInputState = &vi;
+        ci.pInputAssemblyState = &ia;
+        ci.pViewportState = &vp;
+        ci.pRasterizationState = &rs;
+        ci.pMultisampleState = &ms;
+        ci.pDepthStencilState = &dss;
+        ci.pColorBlendState = &cb;
+        ci.pDynamicState = &ds;
+        ci.layout = m_grassShadowLayout;
+        ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, &m_grassShadowPipeline),
+                   "vkCreateGraphicsPipelines", error);
+    }
+    if (shadowVert) vkDestroyShaderModule(m_device, shadowVert, nullptr);
     return ok;
 }
 
@@ -661,6 +735,18 @@ void Device::DestroyGrassResources()
     if (m_grassLayout) {
         vkDestroyPipelineLayout(m_device, m_grassLayout, nullptr);
         m_grassLayout = VK_NULL_HANDLE;
+    }
+    if (m_grassShadowPipeline) {
+        vkDestroyPipeline(m_device, m_grassShadowPipeline, nullptr);
+        m_grassShadowPipeline = VK_NULL_HANDLE;
+    }
+    if (m_grassShadowLayout) {
+        vkDestroyPipelineLayout(m_device, m_grassShadowLayout, nullptr);
+        m_grassShadowLayout = VK_NULL_HANDLE;
+    }
+    if (m_grassShadowSetLayout) {
+        vkDestroyDescriptorSetLayout(m_device, m_grassShadowSetLayout, nullptr);
+        m_grassShadowSetLayout = VK_NULL_HANDLE;
     }
     if (m_grassSetLayout) {
         vkDestroyDescriptorSetLayout(m_device, m_grassSetLayout, nullptr);
@@ -1654,6 +1740,66 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
     ProfileMark("ground grass");
     m_grassBlades += drawn;
     ++m_grassDraws;
+}
+
+// The blades into the sun shadow map's grass layer (kGrassShadowLayer, over the nearest cascade's square; shadow.cpp
+// RenderShadowMap has its rendering open). Each tile reaching into the square, through the far pattern (four
+// triangles: the map's texels are coarser than a blade's middle section), shaped and swayed as the visible pass will
+// place it. Receivers weigh this layer apart (grass.vert SunShadow, ffp_main.glsl SunVisibility).
+void Device::DrawGrassShadow(VkCommandBuffer cmd, const d3d::Matrix& lightViewProj, float texel, float depth)
+{
+    if (!m_grassOn || !m_grassShadows || !m_grassShadowPipeline || !m_grassPool || !m_grassIndex || !m_frameEyeValid)
+        return;
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassShadowPipeline);
+    VkDescriptorBufferInfo bladeInfo{m_grassPool, 0, VK_WHOLE_SIZE};
+    VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    w.dstBinding = 2;
+    w.descriptorCount = 1;
+    w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    w.pBufferInfo = &bladeInfo;
+    vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassShadowLayout, 0, 1, &w);
+    vkCmdBindIndexBuffer(cmd, m_grassIndex, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdSetDepthBias(cmd, 2.0f * 600.0f / depth, 0.0f, 2.5f);   // as the cascade's casters
+    GrassShadowPass p{};
+    std::memcpy(p.lightViewProj, &lightViewProj, sizeof(p.lightViewProj));
+    p.camera[0] = m_frameEye[0];
+    p.camera[1] = m_frameEye[1];
+    p.camera[2] = m_frameEye[2];
+    p.camera[3] = m_grassDistance;
+    p.wind[0] = float(m_windTime);              // (as DrawGrassTiles: the blades sway the same)
+    p.wind[1] = 0.56f;
+    p.wind[2] = 0.35f;
+    p.wind[3] = std::max(m_sway, 0.3f);
+    p.sun[0] = m_sunDir[0];
+    p.sun[1] = m_sunDir[1];
+    p.sun[2] = m_sunDir[2];
+    p.sun[3] = std::max(m_grassGusts, 0.0f);
+    p.cascade[0] = 0.5f * texel;
+    p.cascade[1] = 0.75f;
+    p.cascade[2] = 0.95f;
+    vkCmdPushConstants(cmd, m_grassShadowLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(p), &p);
+    const float tall = m_grassHeight * 1.7f + 1.0f;
+    const float reach = m_grassDistance + kGrassTileSize * 0.7072f;
+    for (const auto& [key, tp] : m_grassTiles) {
+        const GrassTile& t = *tp;
+        if (!t.built || !t.blades)
+            continue;
+        const float x0 = float(t.tx) * kGrassTileSize, z0 = float(t.tz) * kGrassTileSize;
+        const float dx = x0 + 0.5f * kGrassTileSize - m_frameEye[0], dz = z0 + 0.5f * kGrassTileSize - m_frameEye[2];
+        if (dx * dx + dz * dz > reach * reach)
+            continue;
+        const float lo[3] = {x0 - 1.0f, t.minY - 1.0f, z0 - 1.0f};
+        const float hi[3] = {x0 + kGrassTileSize + 1.0f, t.maxY + tall, z0 + kGrassTileSize + 1.0f};
+        if (BoxInClip(lo, hi, lightViewProj, false) == -1)
+            continue;
+        // Every blade near the camera; further out, where a blade's shadow is a texel or two, the sparse quarter (a
+        // tenth of a millisecond saved at the game's density).
+        const float nx = std::max({x0 - m_frameEye[0], 0.0f, m_frameEye[0] - x0 - kGrassTileSize});
+        const float nz = std::max({z0 - m_frameEye[2], 0.0f, m_frameEye[2] - z0 - kGrassTileSize});
+        const uint32_t n = nx * nx + nz * nz > 10.0f * 10.0f && t.sparse ? t.sparse : t.blades;
+        vkCmdDrawIndexed(cmd, n * kFarIndices, 1, m_grassIndexBlades * kNearIndices, int32_t(t.first * 8), 0);
+        m_grassShadowBlades += n;
+    }
 }
 
 // The fallback: if the frame never saw a blended draw to hook, the blades go in at the end of the scene, on their own

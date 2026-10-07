@@ -194,9 +194,39 @@ float NeighbourhoodAlpha(vec2 uv)
     return sum / 9.0;
 }
 
+// The ground grass's shadow on a surface point (the map's layer after the cascades, over the nearest cascade's square;
+// cleared to lit without grass shadows): 1 = lit. One filtered tap - blades are a texel or two wide.
+const float kGrassShadowLayer = 4.0;            // rvk.h kGrassShadowLayer
+float GrassShadowVisibility(vec3 posW, vec3 n, float nl)
+{
+    if (nl >= 0.0)
+        posW += n * FL.cascadeTexel[0] * (1.5 + 2.0 * (1.0 - nl));   // as the nearest cascade
+    vec4 sc = FL.shadowViewProj[0] * vec4(posW, 1.0);
+    vec3 ndc = sc.xyz / sc.w;
+    if (max(abs(ndc.x), abs(ndc.y)) >= 1.0 || ndc.z <= 0.0 || ndc.z >= 1.0)
+        return 1.0;
+    return texture(shadowMap, vec4(ndc.xy * 0.5 + 0.5, kGrassShadowLayer, ndc.z));
+}
+
 // Sun visibility at a surface point: 1 = lit, 0 = in shadow. The sharpest cascade covering the point, blended into
-// the next one towards its border; the last fades out to lit.
+// the next one towards its border; the last fades out to lit. Times the ground grass's shadow, weakened (the ground
+// under a field, a character's legs in it: in full, a sunlit field would be far darker than before it cast).
+const float kGrassShadowStrength = 0.45;
+float SunVisibilityCasters(vec3 posW, vec3 n);
 float SunVisibility(vec3 posW, vec3 n)
+{
+    float v = SunVisibilityCasters(posW, n);
+    if (v > 0.0 && (C.flags.x & F_SHADOWCHEAP) == 0u) {
+        bool hasN = dot(n, n) > 0.0;
+        vec3 nn = hasN ? normalize(n) : n;
+        float nl = hasN ? dot(nn, -FL.sunDir.xyz) : -1.0;
+        if (!hasN || nl > 0.0)                   // (facing away: the light equation handles it, as above)
+            v *= mix(1.0, GrassShadowVisibility(posW, nn, nl), kGrassShadowStrength);
+    }
+    return v;
+}
+
+float SunVisibilityCasters(vec3 posW, vec3 n)
 {
     vec3 L = -FL.sunDir.xyz;
     float nl = -1.0;

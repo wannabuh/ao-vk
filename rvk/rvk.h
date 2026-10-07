@@ -270,6 +270,8 @@ public:
         m_grassGusts = gusts;
         m_grassTrails = trails;
     }
+    // RVK_GrassShadow: the blades cast the sun's shadow (into its nearest cascade: onto the ground and each other).
+    void SetGrassShadows(bool on) { m_grassShadows = on; }
     // RVK_GrassEven: the blades' colour from one green (1) rather than the ground texel under each (0); baked.
     void SetGrassEven(float even)
     {
@@ -613,6 +615,9 @@ private:
     void DestroyPointShadowMaps();
     void ApplyShadowResolution();                // at a frame's start: recreates maps whose size changed
     static constexpr uint32_t kShadowCascades = 4;   // layers of the sun shadow map, each 3x the area of the last
+    // ... and after them the ground grass's own (grass_shadow.vert; the nearest cascade's square): receivers weigh it
+    // apart from the other casters' (a field shading itself in full would be far darker than its ground).
+    static constexpr uint32_t kGrassShadowLayer = kShadowCascades, kShadowLayers = kShadowCascades + 1;
     static constexpr float kCasterCacheRange = 60.0f; // remembered casters: kept within 3x, forgotten beyond 4x
     struct ShadowCaster {
         uint32_t primitive, stride, vertexCount, indexCount;
@@ -691,7 +696,7 @@ private:
     VkImage m_shadowImage = VK_NULL_HANDLE;
     VmaAllocation_T* m_shadowAllocation = nullptr;
     VkImageView m_shadowView = VK_NULL_HANDLE;   // all cascades (sampled)
-    VkImageView m_shadowLayerViews[kShadowCascades] = {};   // one cascade each (rendered)
+    VkImageView m_shadowLayerViews[kShadowLayers] = {};     // one cascade each, and the grass's (rendered)
     VkImageLayout m_shadowImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkSampler m_shadowSampler = VK_NULL_HANDLE;
     VkSampler m_shadowDepthSampler = VK_NULL_HANDLE;   // the same map without comparison
@@ -1100,7 +1105,8 @@ private:
     float m_grassGlow = 1.0f;                    // RVK_GrassGlow: backlit tips, the sheen, rounded shading
     float m_grassGusts = 1.0f;                   // RVK_GrassGusts: gusts sweeping the field
     bool m_grassTrails = true;                   // RVK_GrassTrail: pushed grass stays down behind a character
-    float m_grassEven = 1.0f;                    // RVK_GrassEven: the blades' colour from one green, not the texel
+    float m_grassEven = 1.0f;
+    bool m_grassShadows = true;                  // RVK_GrassShadow: the blades cast the sun's shadow                    // RVK_GrassEven: the blades' colour from one green, not the texel
     // The ground under one tile and its baked blades. A cell is written by the finest terrain triangle seen there
     // (rank: the triangle's size class), so a coarse level of detail never overwrites a finer one; a capture block
     // whose cells are all known at least as finely as a triangle skips that triangle.
@@ -1174,6 +1180,9 @@ private:
     void DestroyGrassTiles();
     void DrawGrassTiles(VkCommandBuffer cmd);      // the blades into the rendering already active on the scene
     void RenderGrassField(VkCommandBuffer cmd);    // ... on its own, at the end of the scene (nothing blended was drawn)
+    // The blades into the sun's nearest cascade (RVK_GrassShadow), after its casters: lightViewProj its matrix, texel
+    // its texel size, depth its light-space depth range.
+    void DrawGrassShadow(VkCommandBuffer cmd, const d3d::Matrix& lightViewProj, float texel, float depth);
     bool m_grassDrawnThisFrame = false;            // the blades go in before the game's transparent pass (see Draw)
     bool CreateGrassResources(std::string* error);
     void DestroyGrassResources();
@@ -1185,6 +1194,10 @@ private:
     VkDescriptorSetLayout m_grassSetLayout = VK_NULL_HANDLE;   // camera, blades, frame lights, shadow maps
     VkPipelineLayout m_grassLayout = VK_NULL_HANDLE;
     VkPipeline m_grassPipeline = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_grassShadowSetLayout = VK_NULL_HANDLE;   // the blades (grass_shadow.vert)
+    VkPipelineLayout m_grassShadowLayout = VK_NULL_HANDLE;
+    VkPipeline m_grassShadowPipeline = VK_NULL_HANDLE;
+    uint64_t m_grassShadowBlades = 0;            // blades drawn into the sun's cascade (the log's 600 frames)
     // The blade pool (one storage buffer, suballocated per tile, its virtual block counted in blades) and the shared
     // index pattern (six triangles a blade near, then four far).
     VkBuffer m_grassPool = VK_NULL_HANDLE;

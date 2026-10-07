@@ -173,6 +173,7 @@ Some useful ones:
 | `RVK_GrassGlow` | 1 | sunlight on the blades: backlit tips, a sheen, rounded shading (0 = off; up to 2) |
 | `RVK_GrassGusts` | 1 | gusts of wind sweeping visibly over the grass (0 = none; up to 2) |
 | `RVK_GrassTrail` | 1 | grass trodden by characters stays down a few seconds behind them (needs `RVK_PushOn`) |
+| `RVK_GrassShadow` | 1 | grass blades cast the sun's shadow near the camera, onto the ground and each other (needs `RVK_SunShadow`) |
 | `RVK_GrassEven` | 1 | an even grass colour: one green (1) rather than the colours of the ground under each blade (0) |
 
 ### Hotkeys (Ctrl+Shift + key)

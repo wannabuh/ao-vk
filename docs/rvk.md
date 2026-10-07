@@ -119,13 +119,24 @@
     base-pass cell's rank is the coarser of its triangle's and of the world area a texel covers, so a close draw with a
     finer picture replaces a distant one's. The demo's `--grass-bench-loading N` (`--grass-bench-loading-null`) draws
     the ground with a stand-in (untextured) until frame N.
+  - *Shadows* (`RVK_GrassShadow`, with the sun's shadows): the blades go into a layer of the sun shadow map of their
+    own (`kGrassShadowLayer`, after the cascades), over the nearest cascade's square, after its casters
+    (`DrawGrassShadow`, `grass_shadow.vert`): placed as the visible pass will place them (`grass_common.glsl`: shape,
+    lean, field edge, wind, gusts; not the characters' push), their width turned square to the sun and at least half a
+    texel, shrinking away towards the square's edge. Every blade within 10 units, the sparse quarter beyond. Receivers
+    weigh the layer apart from the other casters: a blade takes it at 0.4 (`grass.vert` `SunShadow`, sampled at the
+    blade's axis a little towards the sun so it doesn't shadow itself), the scene's surfaces at 0.45 (`ffp_main.glsl`
+    `SunVisibility`; the ground under a field, a character's legs in it) - in full, a sunlit field came out 12-20%
+    darker; so 5-8% (the demo, shadow strength 0.65), about what it was brighter than its ground. The layer is
+    cleared to lit without grass shadows. GPU: ~0.1 ms in the bench.
   - `RVK_GrassEven` (default 1): the blades' colour from one green rather than the ground texel under each (the
     game's ground textures are patchy); still luminance-matched to that colour, the root still blends to the texel.
   - Demo: `--grass-field` (the shadow test's terrain; `--grass-field-tan` / `--grass-field-any` for the filter),
     `--grass-bench` (a 192 x 192 terrain, the camera walking; prints mean and worst frame times; with
     `--grass-field-dist`, `--grass-bench-yaw 3.14` into the sun, `--grass-bench-walker` a character walking through,
     `--grass-bench-night`, `--grass-bench-pitch R` the camera looking down R radians, `--grass-bench-still` the camera
-    standing, `--grass-bench-film N` ~60 frames a second with a screenshot every N: film_NNN.bmp), `--grass-style V,F,G,U,T` (variety, flowers, glow, gusts, trails). The log's `ground grass:` line every 600 frames: blades drawn, tiles, builds and their cost,
+    standing, `--grass-bench-film N` ~60 frames a second with a screenshot every N: film_NNN.bmp; the bench has no other
+    shadow caster: add `--grass-bench-walker` for a sun shadow map), `--grass-shadow 0|1`, `--grass-style V,F,G,U,T` (variety, flowers, glow, gusts, trails). The log's `ground grass:` line every 600 frames: blades drawn, tiles, builds and their cost,
     the share of blades lit by a captured lightmap, the capture's cost, the terrain's ambient.
 - **Vertex buffers** keep their contents in CPU memory; every draw copies the range it uses into the ring
   buffer, so rewriting a buffer between draws is safe (the game's CPU skinning reuses one buffer).
