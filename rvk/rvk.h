@@ -213,9 +213,9 @@ public:
     void SetMaterialMaps(Texture* texture, Texture* orm, Texture* albedo);
     // PBR lighting: on/off, direct specular strength, ambient (environment) specular strength, how much smooth
     // surfaces feed the screen-space reflections, the occlusion map's strength, debug view (0 off, 1 albedo,
-    // 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 specular only).
+    // 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 specular only); whether albedo maps replace their textures.
     struct PbrSettings {
-        bool enabled = true;
+        bool enabled = true, albedoMaps = true;
         float specular = 1.0f, ambient = 1.0f, reflections = 1.0f, occlusion = 1.0f;
         uint32_t debug = 0;
     };

@@ -2553,7 +2553,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // Bindless textures (set 1, M1): the draw's four textures and four samplers by index, so nothing per-draw is
     // bound as an image descriptor. The indices live in the draw's record (constants.glsl D.texIdx/sampIdx).
     // A texture's albedo map (SetMaterialMaps) is drawn in its place.
-    auto drawn = [this](Texture* t) { return !t ? m_blackTexture : t->m_albedoMap ? t->m_albedoMap : t; };
+    auto drawn = [this](Texture* t) { return !t ? m_blackTexture : t->m_albedoMap && m_pbr.albedoMaps ? t->m_albedoMap : t; };
     Texture* texStage0 = drawn(m_textures[0]);
     Texture* texStage1 = drawn(m_textures[1]);
     Texture* bumpBase = drawn(m_drawBumpBase);
