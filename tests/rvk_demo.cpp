@@ -879,6 +879,7 @@ bool g_grassBenchWalker = false;  // --grass-bench-walker: a "character" walking
 bool g_grassBenchNight = false;   // --grass-bench-night: a dim lightmap and ambient, a faint bluish moon
 int g_grassBenchLoading = 0;      // --grass-bench-loading N: the ground's texture a plain green stand-in until frame N
 bool g_grassBenchLoadingNull = false;   // --grass-bench-loading-null: ... drawn untextured instead
+bool g_grassBenchStorm = false;   // --grass-bench-storm: AO's sandstorm tint (a depth-writing ZFUNC ALWAYS sprite)
 bool g_grassBenchStill = false;   // --grass-bench-still: the camera stays where it starts (to watch the wind)
 int g_grassBenchFilm = 0;         // --grass-bench-film N: ~60 frames a second, a screenshot every N (film_NNN.bmp)
 float g_grassBenchPitch = -1.0f;  // --grass-bench-pitch R: the camera looking R radians down, raised to match (top-down)
@@ -1061,6 +1062,26 @@ void RunGrassBench(D& dev, int frames, const std::string& shot)
                             {ex + 30, 44, ez + 2, 0, 1, 0, 0x40FFFFFF, 1, 1}, {ex + 30, 44, ez - 2, 0, 1, 0, 0x40FFFFFF, 0, 1}};
             dev.DrawPrimitive(TriangleFan, kFvfMesh, q, 4);
             dev.SetRenderState(RS_ZWRITEENABLE, 1);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        }
+        if (g_grassBenchStorm) {   // AO's sandstorm tint: a screen-sized blended sprite 5 units ahead, writing depth, ZFUNC ALWAYS
+            const float fx = std::cos(yaw), fz = std::sin(yaw), rx = -fz, rz = fx;
+            const float cx = ex + 5.0f * fx, cy = ey - 0.5f, cz = ez + 5.0f * fz;
+            auto v = [&](float a, float b) { return VtxMesh{cx + a * rx, cy + b, cz + a * rz, 0, 1, 0, 0x60C07830, 0, 0}; };
+            VtxMesh q[4] = {v(-12, -8), v(12, -8), v(12, 8), v(-12, 8)};
+            dev.SetRenderState(RS_LIGHTING, 0);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
+            dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+            dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
+            dev.SetRenderState(RS_ZWRITEENABLE, 1);
+            dev.SetRenderState(RS_ZFUNC, CMP_ALWAYS);
+            dev.SetTexture(0, nullptr);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+            dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG2);   // (the vertex colour's alpha)
+            dev.SetTextureStageState(0, TSS_ALPHAARG2, TA_DIFFUSE);
+            dev.DrawPrimitive(TriangleFan, kFvfMesh, q, 4);
+            dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+            dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
             dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
         }
         dev.EndFrame();
@@ -1937,6 +1958,7 @@ int main(int argc, char** argv)
         else if (a == "--grass-bench-walker") g_grassBenchWalker = true;
         else if (a == "--grass-bench-night") g_grassBenchNight = true;
         else if (a == "--grass-bench-still") g_grassBenchStill = true;
+        else if (a == "--grass-bench-storm") g_grassBenchStorm = true;
         else if (a == "--grass-bench-loading" && i + 1 < argc) g_grassBenchLoading = std::atoi(argv[++i]);
         else if (a == "--grass-bench-loading-null") g_grassBenchLoadingNull = true;
         else if (a == "--grass-bench-film" && i + 1 < argc) g_grassBenchFilm = std::atoi(argv[++i]);

@@ -379,6 +379,11 @@ bool Device::IsShadowCaster(uint32_t primitive, uint32_t fvf) const
     if (!(m_shadows || m_pointShadows) || m_target != m_main || TopologyClassOf(primitive) != 2 ||
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || !m_rs[d3d::RS_ZENABLE] || !m_rs[d3d::RS_ZWRITEENABLE])
         return false;
+    // Drawn over everything whatever is in front (ZFUNC ALWAYS): an overlay, not a solid - a sandstorm's tint is a
+    // screen-sized sprite a few units ahead of the camera, which writes depth; cast, it threw a shadow over the
+    // foreground.
+    if (m_rs[d3d::RS_ZFUNC] == d3d::CMP_ALWAYS)
+        return false;
     if (IsTerrain(fvf))
         return false;
     if (!m_rs[d3d::RS_ALPHABLENDENABLE])

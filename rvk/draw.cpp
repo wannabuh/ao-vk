@@ -1537,6 +1537,12 @@ void Device::ApplyDynamicState(uint32_t primitive, uint32_t fvf, uint32_t stride
     // back-to-front sorted list, so nothing drawn after them needs their depth.
     if (m_drawIsLabel && m_target == m_scene && m_aoStrength > 0.0f)
         zWrite = 0;
+    // A blended overlay drawn over everything (ZFUNC ALWAYS) - a sandstorm's tint is a screen-sized sprite a few
+    // units ahead of the camera - writes its depth over the whole frame: the post passes (ambient occlusion, depth
+    // of field, contact shadows, volumetric light) would take the frame for a wall a few units away.
+    if (zWrite && m_target == m_scene && m_rs[d3d::RS_ALPHABLENDENABLE] && m_rs[d3d::RS_ZFUNC] == d3d::CMP_ALWAYS &&
+        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW)
+        zWrite = 0;
     if (WaterWritesDepth(fvf))
         zWrite = 1;
     uint32_t zFunc = m_rs[d3d::RS_ZFUNC];
