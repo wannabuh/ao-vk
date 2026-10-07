@@ -1,3 +1,6 @@
+
+
+
 # ao-vk
 
 A modern Vulkan renderer for Anarchy Online (the Project Rubi-Ka client), dropped in as a replacement for the
@@ -50,24 +53,31 @@ it, replacing it.
 ### Walking through Newland: before and after
 
 <!-- VIDEO: newland-walk-comparison.mp4 -->
+https://github.com/user-attachments/assets/07daac86-358c-4e47-ac21-5247b7c71a87
 
 ### Grass in the wind
 
 <!-- VIDEO: grass_02.mp4 -->
+https://github.com/user-attachments/assets/740be825-a600-4441-b9d0-135ec040b125
 
 <!-- VIDEO: grass_01.mp4 -->
+https://github.com/user-attachments/assets/99c6c440-424e-47ff-aacc-0a2cd3c5fc84
 
 ### Newland
 
 <!-- VIDEO: newland-walk_01.mp4 -->
+https://github.com/user-attachments/assets/2a29fc01-2e78-49c9-958b-9dea8c1cdf59
 
 <!-- VIDEO: newland-walk_02.mp4 -->
+https://github.com/user-attachments/assets/ddee9f9c-0938-49c4-b66e-05b8dee89a30
 
 ### Spell particles
 
 <!-- VIDEO: particles_01.mp4 -->
+https://github.com/user-attachments/assets/05409949-a300-487d-a9b1-d6d8d400aaf8
 
 <!-- VIDEO: particles_02.mp4 -->
+https://github.com/user-attachments/assets/00f57f4c-7343-482b-ac3e-9604693b53a8
 
 ## Screenshots
 
