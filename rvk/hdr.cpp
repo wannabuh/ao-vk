@@ -809,11 +809,12 @@ bool Device::RenderSsr(VkCommandBuffer cmd)
             return false;
     }
     MakeDepthReadable(cmd);
+    Transition(cmd, m_motionVectors, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);   // zw: PBR shading normals
     float params[12] = {m_aoProj.m[2][2], m_aoProj.m[3][2], m_aoProj.m[0][0], m_aoProj.m[1][1],
                         float(m_scene->m_width), float(m_scene->m_height), 48.0f, 80.0f,
                         m_ssr, 0.0f, 0.0f, 0.0f};
     FullscreenPass(cmd, m_ssrTex, m_ssrPipeline, m_depthView, m_scene->m_view, m_pointSampler, params, sizeof(params), false,
-                   m_localFraction->m_view);
+                   m_localFraction->m_view, m_motionVectors->m_view);
     Transition(cmd, m_ssrTex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     return true;
 }

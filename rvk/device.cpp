@@ -461,7 +461,7 @@ bool Device::CreateMainTargets(std::string* error)
     m_scene = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);
     m_glow = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);
     m_localFraction = CreateImage(m_width, m_height, Format::RGBA8, 1, true);
-    m_motionVectors = CreateImage(m_width, m_height, Format::RG16F, 1, true);
+    m_motionVectors = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);   // zw: PBR shading normal (ssr.frag)
     m_albedo = CreateImage(m_width, m_height, Format::A8R8G8B8, 1, true);
     if (!m_ldrMain || !m_scene || !m_glow || !m_localFraction || !m_motionVectors || !m_albedo) {
         if (error) *error = "main colour target";
@@ -769,7 +769,7 @@ bool Device::CreatePipelines(std::string* error)
     // 8-bit targets: one colour attachment. HDR scene: the float scene, the glow (additive effects, for the bloom) and
     // the local-light fraction (for the ambient occlusion), the motion vectors and the surface colour (indirect light).
     VkFormat colorFormats[5] = {kColorFormat, GetFormatInfo(Format::RGBA16F).vk, GetFormatInfo(Format::RGBA8).vk,
-                                GetFormatInfo(Format::RG16F).vk, GetFormatInfo(Format::A8R8G8B8).vk};
+                                GetFormatInfo(Format::RGBA16F).vk, GetFormatInfo(Format::A8R8G8B8).vk};
     VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     rendering.colorAttachmentCount = 1;
     rendering.pColorAttachmentFormats = colorFormats;

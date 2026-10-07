@@ -303,6 +303,13 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->sunDir[3] = m_hdr ? m_hdrHeadroom : m_lightHeadroom;
     for (int i = 0; i < 3; ++i) fl->sunColor[i] = m_shadowValid ? m_shadowSunColor[i] : m_frameSunColor[i];
     fl->sunColor[3] = 0.0f;
+    fl->pbr[0] = m_pbr.specular;
+    fl->pbr[1] = m_pbr.ambient;
+    fl->pbr[2] = m_ssr > 0.0f ? m_pbr.reflections : 0.0f;
+    fl->pbr[3] = m_pbr.occlusion;
+    fl->pbr2[0] = float(m_pbr.debug);
+    fl->pbr2[1] = m_pbr.enabled ? 1.0f : 0.0f;
+    fl->pbr2[2] = fl->pbr2[3] = 0.0f;
     fl->prevView = m_prevView;                   // the world camera last frame (motion vectors)
     fl->prevProj = m_prevProj;
     m_frameLightIndices.clear();
@@ -2025,7 +2032,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 
     // The frame's light list (binding 4): rebuilt when lights changed; always bound, as layouts require.
     // Only lit draws read it; the others bind any in-range part of the ring.
-    bool needLights = (m_lightOverride && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
+    // (PBR materials read their settings from it: every per-pixel lit draw while they are on.)
+    bool needLights = ((m_lightOverride || m_pbr.enabled) && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
                        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) || ShadowReceiver(fvf) ||
                       ShadowCompensated(fvf) || motion ||
                       (TaaActive() && m_target == m_scene && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW);
@@ -2151,7 +2159,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         } else if (m_rs[d3d::RS_LIGHTING] && IsMultiplyPass()) {
             auto it = m_terrainBases.find(TerrainChunkKey(vertices, vertexCount, layout.stride, indexCount));
             if (it != m_terrainBases.end() &&
-                (m_bump > 0.0f || (m_normalMaps && m_pixelLighting && it->second->m_normalMap)))
+                (m_bump > 0.0f || (m_normalMaps && m_pixelLighting && it->second->m_normalMap) ||
+                 (m_pbr.enabled && m_pixelLighting && it->second->m_ormMap)))
                 m_drawBumpBase = it->second;
         }
     }
@@ -2159,12 +2168,23 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // The texture's own normal map (F_NORMALMAP), when it is the surface (stage 0, plain coordinates) of a per-pixel
     // lit draw; for the ground's lightmap pass, the normal map of its chunk's base texture (as the generated normals).
     Texture* normalMap = nullptr;
-    if (m_normalMaps && m_pixelLighting && m_textures[0] && m_textures[0]->m_normalMap && !terrain &&
-        m_rs[d3d::RS_LIGHTING] && m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
-        !(m_tss[0][d3d::TSS_TEXTURETRANSFORMFLAGS] & 256u) && (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
+    bool surfaceStage0 = m_pixelLighting && m_textures[0] && !terrain && m_rs[d3d::RS_LIGHTING] &&
+                         m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE &&
+                         !(m_tss[0][d3d::TSS_TEXTURETRANSFORMFLAGS] & 256u) &&
+                         (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0;
+    if (m_normalMaps && surfaceStage0 && m_textures[0]->m_normalMap)
         normalMap = m_textures[0]->m_normalMap;
     else if (m_normalMaps && m_pixelLighting && m_drawBumpBase && m_drawBumpBase->m_normalMap)
         normalMap = m_drawBumpBase->m_normalMap;
+    // Its PBR material (occlusion / roughness / metallic map), on the same terms. In the record, not the constants.
+    m_drawOrm = nullptr;
+    m_drawOrmBase = false;
+    if (m_pbr.enabled && surfaceStage0 && m_textures[0]->m_ormMap) {
+        m_drawOrm = m_textures[0]->m_ormMap;
+    } else if (m_pbr.enabled && m_pixelLighting && m_drawBumpBase && m_drawBumpBase->m_ormMap) {
+        m_drawOrm = m_drawBumpBase->m_ormMap;
+        m_drawOrmBase = true;
+    }
     // The foliage level of detail depends on the draw's distance, not the render state: part of the block's key, or
     // a run of plants with the same state would all get the first one's (flickering as the camera moves).
     uint32_t foliageLod = FoliageFar() ? (m_drawSway[3] > 0.5f ? 2u : 1u) : 0u;
@@ -2532,9 +2552,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
 
     // Bindless textures (set 1, M1): the draw's four textures and four samplers by index, so nothing per-draw is
     // bound as an image descriptor. The indices live in the draw's record (constants.glsl D.texIdx/sampIdx).
-    Texture* texStage0 = m_textures[0] ? m_textures[0] : m_blackTexture;
-    Texture* texStage1 = m_textures[1] ? m_textures[1] : m_blackTexture;
-    Texture* bumpBase = m_drawBumpBase ? m_drawBumpBase : m_blackTexture;
+    // A texture's albedo map (SetMaterialMaps) is drawn in its place.
+    auto drawn = [this](Texture* t) { return !t ? m_blackTexture : t->m_albedoMap ? t->m_albedoMap : t; };
+    Texture* texStage0 = drawn(m_textures[0]);
+    Texture* texStage1 = drawn(m_textures[1]);
+    Texture* bumpBase = drawn(m_drawBumpBase);
     Texture* normalTex = normalMap ? normalMap : m_flatNormal;
     dt.texIdx[0] = BindlessImage(texStage0);
     dt.texIdx[1] = BindlessImage(texStage1);
@@ -2544,6 +2566,15 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     dt.sampIdx[1] = StageSamplerSlot(1);
     dt.sampIdx[2] = FixedSamplerSlot(0, m_bumpSampler);
     dt.sampIdx[3] = FixedSamplerSlot(1, m_normalSampler);
+    // The PBR material (the shader uses it only where the draw is lit per pixel and isn't far foliage).
+    if (m_drawOrm) {
+        dt.mat[0] = BindlessImage(m_drawOrm);
+        dt.mat[1] = FixedSamplerSlot(1, m_normalSampler);
+        dt.mat[2] = kMatPbr | (m_drawOrmBase ? kMatBase : 0u);
+    } else {
+        dt.mat[0] = dt.texIdx[3];               // a valid slot even unused
+        dt.mat[1] = dt.sampIdx[3];
+    }
     // GPU-driven M2: this draw's record, and the frame's two arrays (bindings 0 = constants, 12 = records) pushed
     // once per frame's command buffer. The record index travels in firstInstance (gl_InstanceIndex).
     uint32_t recordIndex = AppendRecord(constIndex, dt);

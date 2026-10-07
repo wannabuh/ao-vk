@@ -778,6 +778,16 @@ void ThreadedDevice::SetNormalMap(Texture* texture, Texture* normal)
     Enqueue([this, texture, normal](const uint8_t*) { m_device.SetNormalMap(texture, normal); });
 }
 
+void ThreadedDevice::SetMaterialMaps(Texture* texture, Texture* orm, Texture* albedo)
+{
+    Enqueue([this, texture, orm, albedo](const uint8_t*) { m_device.SetMaterialMaps(texture, orm, albedo); });
+}
+
+void ThreadedDevice::SetPbr(const Device::PbrSettings& s)
+{
+    Enqueue([this, s](const uint8_t*) { m_device.SetPbr(s); });
+}
+
 void ThreadedDevice::SetAo(float strength, float radius)
 {
     m_aoStrength = strength;

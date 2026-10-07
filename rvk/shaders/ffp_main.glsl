@@ -64,12 +64,18 @@ vec3 gLocalDiffuse = vec3(0.0), gLocalSpecular = vec3(0.0);
 float gLocalFraction = 0.0;                     // how much of the final colour the local lights gave (outLocal)
 float gLightmapRelief = 1.0;                    // F_BUMPBASE: the ground's relief in its baked sunlight (stage 0)
 float gSunShare = 0.0;                          // how much of the colour is direct sunlight (contact shadows)
+// PBR material (D.mat.z & MAT_PBR, lit per pixel): its maps at this pixel, and the specular light the surface reflects,
+// added after the texture stages (unclamped in the HDR scene).
+bool gPbrOn = false, gPbrBase = false;
+vec3 gPbrAlbedo = vec3(0.0), gPbrNormal = vec3(0.0, 0.0, 1.0), gPbrSpec = vec3(0.0);
+float gPbrAo = 1.0, gPbrRough = 1.0, gPbrMetal = 0.0;
 
 layout(location = 0) out vec4 outColor;
 #ifdef RVK_GLOW
 layout(location = 1) out vec4 outGlow;     // HDR scene only: the glow attachment (F_GLOW)
 layout(location = 2) out vec4 outLocal;    // HDR scene only: local lights' fraction of the colour, reflectivity, sun's share
-layout(location = 3) out vec4 outMotion;   // HDR scene only: screen motion since last frame, pixels (solid geometry)
+layout(location = 3) out vec4 outMotion;   // HDR scene only: screen motion since last frame, pixels (solid geometry);
+                                           // zw: a PBR surface's shading normal for the reflections (PbrNormalOut)
 layout(location = 4) out vec4 outAlbedo;   // HDR scene only: the surface's colour without lighting (indirect light)
 #endif
 
@@ -318,6 +324,20 @@ vec3 BumpNormal(texture2D img, sampler smp, vec3 n, vec3 posW, vec2 uv)
     return BendNormal(n, px, py, dot(slope, uvx) * k, dot(slope, uvy) * k);
 }
 
+// What a PBR surface reflects of its surroundings without a reflection probe: a sky-and-ground environment made from
+// the scene's ambient light, the fog colour (the horizon) and a little sunlight, through the split-sum BRDF, with
+// specular occlusion from the occlusion map (Lagarde). Screen-space reflections replace part of it (reflectivity).
+vec3 PbrAmbientSpecular(vec3 nu, vec3 V, vec3 ambientLight)
+{
+    float nv = max(dot(nu, V), 1e-4);
+    vec3 R = reflect(-V, nu);
+    vec3 sky = (C.flags.x & F_FOG) != 0u ? mix(ambientLight, C.fogColor.rgb, 0.5) : ambientLight;
+    sky += FL.sunColor.rgb * 0.25;
+    vec3 env = mix(ambientLight * 0.5, sky * 1.3, smoothstep(-0.4, 0.6, R.y));
+    float so = clamp(pow(nv + gPbrAo, exp2(-16.0 * gPbrRough - 1.0)) - 1.0 + gPbrAo, 0.0, 1.0);
+    return EnvBrdfApprox(gPbrF0, gPbrRough, nv) * env * so;
+}
+
 // Normal mapping (F_NORMALMAP): the texture's own tangent-space normal map, OpenGL convention (what Blender bakes:
 // +X along +u, +Y up in the image = against D3D's v). A normal (x, y, z) is the height slope (-x/z, y/z) per world
 // unit along u and down-v; scaled by the world size of a uv unit it bends the normal exactly like the generated
@@ -436,15 +456,48 @@ void main()
                 gLightmapRelief = clamp((after + 0.25) / (before + 0.25), 0.6, 1.4);
             }
         }
+        // PBR material: its maps, and the specular lobe the lights below use (lighting.glsl gPbr*). The ground's
+        // lighting pass takes its chunk's base texture's material (MAT_BASE), read with the base's coordinates.
+        gPbrOn = (D.mat.z & MAT_PBR) != 0u && FL.pbr2.y > 0.5 && (C.flags.x & F_SHADOWCHEAP) == 0u;
+        if (gPbrOn) {
+            gPbrBase = (D.mat.z & MAT_BASE) != 0u;
+            vec3 orm = texture(ORMTEX, gPbrBase ? vSet0 : vTex0.xy).rgb;
+            gPbrAo = mix(1.0, orm.r, clamp(FL.pbr.w, 0.0, 1.0));
+            gPbrRough = clamp(orm.g, 0.03, 1.0);
+            gPbrMetal = clamp(orm.b, 0.0, 1.0);
+            gPbrAlbedo = gPbrBase ? texture(BUMPTEX, vSet0).rgb : Sample(0u).rgb * clamp(vDiffuse.rgb, 0.0, 1.0);
+            gPbrNormal = len2 > 0.0 ? normalize(n) : vec3(0.0, 1.0, 0.0);
+            // Specular anti-aliasing: how much the normal turns across the pixel widens the highlight (Kaplanyan /
+            // Tokuyoshi), so small bright highlights don't sparkle on curved or bumpy surfaces in the distance.
+            vec3 dnx = dFdx(gPbrNormal), dny = dFdy(gPbrNormal);
+            float a2 = gPbrRough * gPbrRough * gPbrRough * gPbrRough;
+            a2 = clamp(a2 + min(0.5 * (dot(dnx, dnx) + dot(dny, dny)), 0.18), 1e-6, 1.0);
+            gPbrAlpha = sqrt(a2);
+            gPbrF0 = mix(vec3(0.04), gPbrAlbedo, gPbrMetal);
+            gPbr = true;
+        }
         vec3 ambient = vec3(0.0), diff = vec3(0.0), spec = vec3(0.0), diffL = vec3(0.0), specL = vec3(0.0);
         // Sunlight is shadowed: by the receiver's shade, or in the ground's lighting pass by the lightmap's.
         float sunScale = (C.flags.x & F_SHADOWTEX) != 0u ? texShade : shadeSun ? shade : 1.0;
         AccumulateLights(vPosW, n, sunScale, localScale, ambient, diff, spec, diffL, specL);
+        // PBR: metals have no diffuse light; the occlusion map takes ambient light away.
+        float kd = gPbrOn ? 1.0 - gPbrMetal : 1.0, kAmb = gPbrOn ? kd * gPbrAo : 1.0;
         // The ground's lighting pass (F_SHADOWTEX): the shadow takes the global ambient and emissive part along
         // with the lightmap, leaving only the lights' own contribution: (lightmap + ambient) * shadow + lights.
-        vec3 base = (vMatEmissive + vMatAmbient * C.ambient.rgb) * texShade;
-        vec3 lit = base + vMatAmbient * ambient + vDiffuse.rgb * diff, litSpec = vSpecular.rgb * spec;
-        vec3 local = vDiffuse.rgb * diffL, localSpec = vSpecular.rgb * specL;
+        vec3 base = (vMatEmissive + vMatAmbient * C.ambient.rgb * kAmb) * texShade;
+        vec3 lit = base + vMatAmbient * ambient * kAmb + vDiffuse.rgb * diff * kd, litSpec = vSpecular.rgb * spec;
+        vec3 local = vDiffuse.rgb * diffL * kd, localSpec = vSpecular.rgb * specL;
+        if (gPbrOn) {
+            vec3 V = normalize(C.eyePos.xyz - vPosW);
+            gPbrSpec = (spec + specL) * FL.pbr.x;
+            // The ground's sunlight is baked into its lightmap, so the sun isn't among its lights: its highlight here.
+            if (gPbrBase && dot(FL.sunColor.rgb, FL.sunColor.rgb) > 0.0 && dot(FL.sunDir.xyz, FL.sunDir.xyz) > 0.0)
+                gPbrSpec += FL.sunColor.rgb * PbrSpecular(gPbrNormal, -normalize(FL.sunDir.xyz), V) * texShade * FL.pbr.x;
+            gPbrSpec += PbrAmbientSpecular(gPbrNormal, V, vMatAmbient * (C.ambient.rgb + ambient)) * FL.pbr.y;
+            litSpec = localSpec = vec3(0.0);     // the game's own specular is replaced
+            // The ground's lightmap (its baked sun and ambient): less of it on metal, less in occluded creases.
+            if (gPbrBase) gLightmapRelief *= kd * mix(1.0, gPbrAo, 0.6);
+        }
         // The direct sunlight's share of the colour: what the contact shadows may take away. The ground's sunlight
         // is baked into its lightmap: about the lit side's part of it.
         if (dot(FL.sunColor.rgb, FL.sunColor.rgb) > 0.0 && len2 > 0.0) {
@@ -508,6 +561,12 @@ void main()
         const vec3 kLuma = vec3(0.3, 0.59, 0.11);
         gLocalFraction = clamp(dot(added, kLuma) / max(dot(current.rgb, kLuma), 1e-4), 0.0, 1.0);
     }
+    if (gPbrOn) {
+        // The ground's lighting pass multiplies its base pass (about its albedo): divided by it, it adds the highlight.
+        vec3 s = gPbrBase ? gPbrSpec / max(gPbrAlbedo, vec3(0.04)) : gPbrSpec;
+        current.rgb += s;
+        if ((C.flags.x & F_HDR) == 0u) current.rgb = min(current.rgb, vec3(1.0));
+    }
     if (!shadeSun)
         current.rgb *= shade;
     // Sunlight through leaves: where the sun is behind a leaf (seen from the camera), its light comes through tinted
@@ -556,6 +615,12 @@ void main()
     float reflectivity = uintBitsToFloat(C.vtx.z), wet = uintBitsToFloat(C.vtx.w);
     if (wet > 0.0 && dot(vNormalW.xyz, vNormalW.xyz) > 0.0)
         reflectivity = max(reflectivity, wet * smoothstep(0.7, 0.95, normalize(vNormalW.xyz).y));
+    // PBR: smooth surfaces reflect the scene (metals most); rough ones only their ambient environment.
+    if (gPbrOn)
+        reflectivity = max(reflectivity, FL.pbr.z * (1.0 - smoothstep(0.1, 0.55, gPbrRough)) * mix(0.12, 0.9, gPbrMetal));
+    // ... and their albedo for indirect light is the diffuse part: none on metal, less in occluded creases.
+    if (gPbrOn && !gPbrBase)
+        albedo *= (1.0 - gPbrMetal) * gPbrAo;
 #endif
     if ((C.flags.x & F_FOG) != 0u) {
         float f = vFogFactor;
@@ -579,6 +644,13 @@ void main()
                   : vec3(0.1, 1.0, 0.2);
         current.rgb = mix(current.rgb, tint, 0.45);
     }
+    // PBR debug views (RVK_PbrDebug): the material of lit 3D draws; others dimmed grey.
+    uint pbrDebug = uint(FL.pbr2.x + 0.5);
+    if (pbrDebug != 0u && (C.flags.x & F_LIGHTING) != 0u && (C.vtx.x & 0xEu) != 4u) {
+        vec3 v = pbrDebug == 1u ? gPbrAlbedo : pbrDebug == 2u ? vec3(gPbrRough) : pbrDebug == 3u ? vec3(gPbrMetal)
+               : pbrDebug == 4u ? vec3(gPbrAo) : pbrDebug == 5u ? gPbrNormal * 0.5 + 0.5 : gPbrSpec;
+        current.rgb = gPbrOn ? v : vec3(dot(current.rgb, vec3(0.3, 0.59, 0.11)) * 0.25);
+    }
 #ifndef RVK_NO_CUTOUT
     if ((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(current.a))
         discard;
@@ -597,6 +669,14 @@ void main()
     // Motion vectors (written by depth-writing draws only, see the blend state): where this point was last frame.
     vec2 now = vClip.xy / vClip.w, before = vPrevClip.xy / max(vPrevClip.w, 1e-6);
     outMotion = vec4(vPrevClip.w > 1e-6 ? (now - before) * 0.5 * C.viewport.zw * vec2(1.0, -1.0) : vec2(0.0), 0.0, 1.0);
+    // PBR surfaces give the screen-space reflections their shading normal (view space, octahedral; w above 1.5 marks
+    // it): the depth buffer's normals are the triangles' own, which mirror faceted on curved low-poly meshes.
+    if (gPbrOn && reflectivity > 0.0) {
+        vec3 nv = normalize((C.view * vec4(gPbrNormal, 0.0)).xyz);
+        vec2 o = nv.xy / (abs(nv.x) + abs(nv.y) + abs(nv.z));
+        if (nv.z < 0.0) o = (1.0 - abs(o.yx)) * vec2(o.x >= 0.0 ? 1.0 : -1.0, o.y >= 0.0 ? 1.0 : -1.0);
+        outMotion.zw = vec2(o.x, o.y + 3.0);
+    }
     // Blended with this fragment's alpha like the colour (kept by multiplying and additive passes, see the blend state).
     outAlbedo = vec4(clamp(albedo, 0.0, 1.0), current.a);
 #endif

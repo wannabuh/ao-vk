@@ -83,6 +83,8 @@ private:
     bool m_lightmap = false;           // captured as a terrain lightmap (a re-upload recaptures the grass's light)
     bool m_groundBase = false;         // captured as a terrain base texture (a re-upload recaptures the grass's ground)
     Texture* m_normalMap = nullptr;    // tangent-space normal map drawn with this texture (owned; SetNormalMap)
+    Texture* m_ormMap = nullptr;       // PBR material: R occlusion, G roughness, B metallic (owned; SetMaterialMaps)
+    Texture* m_albedoMap = nullptr;    // drawn instead of this texture's own pixels (owned; SetMaterialMaps)
     uint32_t m_bindless = ~0u;         // its slot in the bindless image array (M1)
     // Layout as of the end of the commands recorded so far (main command buffer for render targets;
     // plain textures only change layout in the upload command buffer, which runs first).
@@ -203,6 +205,21 @@ public:
     // image), used instead of the generated normals when it is drawn in stage 0. The device owns `normal` and
     // frees it with the texture; null removes it.
     void SetNormalMap(Texture* texture, Texture* normal);
+    // PBR materials: a texture's occlusion / roughness / metallic map (glTF packing: R occlusion, G roughness,
+    // B metallic), lit with a GGX specular and metal-tinted reflections instead of the game's Blinn-Phong when it is
+    // drawn like a normal map would be (per-pixel lit, stage 0, plain coordinates; or the ground's base texture).
+    // `albedo` is drawn instead of the texture's own pixels wherever the texture is used (a higher resolution
+    // replacement; its alpha is used too). The device owns both and frees them with the texture; null removes one.
+    void SetMaterialMaps(Texture* texture, Texture* orm, Texture* albedo);
+    // PBR lighting: on/off, direct specular strength, ambient (environment) specular strength, how much smooth
+    // surfaces feed the screen-space reflections, the occlusion map's strength, debug view (0 off, 1 albedo,
+    // 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 specular only).
+    struct PbrSettings {
+        bool enabled = true;
+        float specular = 1.0f, ambient = 1.0f, reflections = 1.0f, occlusion = 1.0f;
+        uint32_t debug = 0;
+    };
+    void SetPbr(const PbrSettings& s);
     void SetNormalMaps(bool enable, float strength) { if (m_normalMaps != enable || m_normalStrength != strength) { m_normalMaps = enable; m_normalStrength = strength; m_constantsDirty = true; } }
     void SetBump(float strength) { strength = strength < 0.0f ? 0.0f : strength; if (m_bump != strength) { m_bump = strength; m_constantsDirty = true; } }
     float Bump() const { return m_bump; }
@@ -580,12 +597,15 @@ private:
     Texture* m_flatNormal = nullptr;             // binding 9 when the draw has no normal map
     VkSampler m_normalSampler = VK_NULL_HANDLE;
     Texture* m_constantsNormalMap = nullptr;
+    PbrSettings m_pbr;
     uint32_t m_anisotropy = 1;
     float m_maxAnisotropy = 1.0f;               // GPU limit (0 without the feature)
     // The ground's base pass textures this frame, by chunk (TerrainChunkKey): its lighting pass, drawn later with the
     // lightmap, takes its relief from them. And the sampler they're read with (repeat, mipmapped).
     std::unordered_map<uint64_t, Texture*> m_terrainBases;
     Texture* m_drawBumpBase = nullptr;           // the current draw's (Draw)
+    Texture* m_drawOrm = nullptr;                // the current draw's PBR material map (Draw)
+    bool m_drawOrmBase = false;                  // ... from the ground's base texture
     Texture* m_constantsBumpBase = nullptr;
     bool m_drawTerrainBase = false;              // the current draw is the ground's unlit base pass (Draw)
     bool m_drawTerrainLight = false;             // ... or its multiplying lightmap pass

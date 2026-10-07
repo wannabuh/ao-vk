@@ -854,6 +854,145 @@ void RunNormalMapTest(D& dev, int frames, const std::string& shot, float bump)
         dev.DestroyTexture(t);              // the normal maps go with their textures
 }
 
+// PBR test (--pbr-test [--hdr] [--ssr 1] [--pbr-debug N]): a grid of spheres, roughness rising to the right
+// (0.05 .. 1), lit by a warm sun from the upper left and a blue point light at the lower right, over a floor.
+//   row 0: the game's own lighting (no material; Blinn-Phong specular, power 20) on red; last: a grey texture
+//          whose albedo map is a checker (SetMaterialMaps albedo, must show the checker)
+//   row 1: red non-metal      row 2: gold metal      row 3: silver metal (last column: occlusion map stripes)
+// The floor has a material too: a checker, smooth-ish non-metal (roughness 0.3), reflecting the spheres with --ssr.
+uint32_t g_pbrDebug = 0;      // --pbr-debug N: RVK_PbrDebug's views
+
+template <typename D>
+void RunPbrTest(D& dev, int frames, const std::string& shot)
+{
+    const int kSeg = 32, kRing = 24;
+    std::vector<VtxMesh> sphere;
+    std::vector<uint16_t> sphereIdx;
+    for (int r = 0; r <= kRing; ++r)
+        for (int sgm = 0; sgm <= kSeg; ++sgm) {
+            float th = kPi * r / kRing, ph = 2 * kPi * sgm / kSeg;
+            float x = std::sin(th) * std::cos(ph), y = std::cos(th), z = std::sin(th) * std::sin(ph);
+            sphere.push_back({x * 0.45f, y * 0.45f, z * 0.45f, x, y, z, 0xFFFFFFFF, float(sgm) / kSeg * 4, float(r) / kRing * 2});
+        }
+    for (int r = 0; r < kRing; ++r)
+        for (int sgm = 0; sgm < kSeg; ++sgm) {
+            uint16_t a = uint16_t(r * (kSeg + 1) + sgm), b = uint16_t(a + kSeg + 1);
+            for (uint16_t i : {a, b, uint16_t(a + 1), uint16_t(a + 1), b, uint16_t(b + 1)}) sphereIdx.push_back(i);
+        }
+    auto solid = [&](uint32_t argb) { return dev.CreateTexture(1, 1, &argb); };
+    auto orm = [&](float ao, float rough, float metal) {
+        uint32_t px = 0xFF000000u | uint32_t(std::lround(ao * 255)) << 16 | uint32_t(std::lround(rough * 255)) << 8 |
+                      uint32_t(std::lround(metal * 255));
+        return solid(px);
+    };
+    const float rough[5] = {0.05f, 0.25f, 0.45f, 0.7f, 1.0f};
+    const uint32_t albedo[4] = {0xFFB02020, 0xFFB02020, 0xFFE0B050, 0xFFD8D8D8};
+    Texture* tex[4][5] = {};
+    for (int row = 0; row < 4; ++row)
+        for (int col = 0; col < 5; ++col) {
+            tex[row][col] = solid(albedo[row]);
+            if (row > 0) {
+                Texture* m = orm(1.0f, rough[col], row >= 2 ? 1.0f : 0.0f);
+                if (row == 3 && col == 4) {          // occlusion stripes on a half-rough silver ball
+                    dev.DestroyTexture(m);
+                    std::vector<uint32_t> px(64 * 64);
+                    for (uint32_t y = 0; y < 64; ++y)
+                        for (uint32_t x = 0; x < 64; ++x)
+                            px[y * 64 + x] = 0xFF000000u | ((x / 8) % 2 ? 0x20u : 0xFFu) << 16 | 0x80u << 8 | 0xFFu;
+                    m = dev.CreateTexture(64, 64, px.data());
+                }
+                dev.SetMaterialMaps(tex[row][col], m, nullptr);
+            }
+        }
+    {   // row 0, last: the albedo map replaces the grey texture
+        auto checker = Checker(64, 8, 0xFFF0F0F0, 0xFF2040C0);
+        dev.SetMaterialMaps(tex[0][4], nullptr, dev.CreateTexture(64, 64, checker.data()));
+    }
+    auto floorPixels = Checker(64, 8, 0xFF909090, 0xFF505050);
+    Texture* floor = dev.CreateTexture(64, 64, floorPixels.data());
+    dev.SetMaterialMaps(floor, orm(1.0f, 0.3f, 0.0f), nullptr);
+    dev.SetPixelLighting(true);
+    Device::PbrSettings pbr;
+    pbr.debug = g_pbrDebug;
+    dev.SetPbr(pbr);
+
+    VtxMesh floorQuad[4] = {{-8, 0, -4, 0, 1, 0, 0xFFFFFFFF, 0, 0}, {8, 0, -4, 0, 1, 0, 0xFFFFFFFF, 8, 0},
+                            {-8, 0, 12, 0, 1, 0, 0xFFFFFFFF, 0, 8}, {8, 0, 12, 0, 1, 0, 0xFFFFFFFF, 8, 8}};
+    for (int frame = 0; frame < frames; ++frame) {
+        if (frame == frames - 1)
+            dev.RequestScreenshot(shot);
+        dev.BeginFrame();
+        dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
+        dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF8098B8, 1.0f);
+        dev.SetRenderState(RS_ZENABLE, 1);
+        dev.SetRenderState(RS_ZWRITEENABLE, 1);
+        dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+        dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+        dev.SetRenderState(RS_LIGHTING, 1);
+        dev.SetRenderState(RS_AMBIENT, 0xFF505860);
+        dev.SetRenderState(RS_DIFFUSEMATERIALSOURCE, MCS_MATERIAL);
+        dev.SetRenderState(RS_NORMALIZENORMALS, 1);
+        dev.SetRenderState(RS_FOGENABLE, 1);
+        dev.SetRenderState(RS_FOGTABLEMODE, FOG_LINEAR);
+        dev.SetRenderState(RS_FOGCOLOR, 0xFF8098B8);
+        float fogStart = 60.0f, fogEnd = 200.0f;
+        uint32_t bits;
+        std::memcpy(&bits, &fogStart, 4); dev.SetRenderState(RS_FOGSTART, bits);
+        std::memcpy(&bits, &fogEnd, 4); dev.SetRenderState(RS_FOGEND, bits);
+        Light sun{};
+        sun.type = LIGHT_DIRECTIONAL;
+        sun.diffuse = {1.0f, 0.95f, 0.85f, 1};
+        sun.specular = {1, 1, 1, 1};
+        sun.direction = {0.5f, -0.6f, 0.6f};
+        dev.SetLight(0, sun);
+        dev.LightEnable(0, true);
+        Light lamp{};
+        lamp.type = LIGHT_POINT;
+        lamp.diffuse = {0.3f, 0.5f, 1.0f, 1};
+        lamp.specular = {0.3f, 0.5f, 1.0f, 1};
+        lamp.position = {2.6f, -1.6f, -1.2f};
+        lamp.range = 6;
+        lamp.attenuation0 = 0.2f;
+        lamp.attenuation1 = 0.3f;
+        dev.SetLight(1, lamp);
+        dev.LightEnable(1, true);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+        dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+        dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
+        dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 0);
+        dev.SetTextureStageState(0, TSS_TEXTURETRANSFORMFLAGS, TTFF_DISABLE);
+        dev.SetTextureStageState(0, TSS_MAGFILTER, TFG_LINEAR);
+        dev.SetTextureStageState(0, TSS_MINFILTER, TFN_LINEAR);
+        dev.SetTextureStageState(0, TSS_ADDRESS, TADDRESS_WRAP);
+        dev.SetTextureStageState(1, TSS_COLOROP, TOP_DISABLE);
+        dev.SetTransform(View, LookAtLH({0, 0.3f, -6.2f}, {0, -0.3f, 0}, {0, 1, 0}));
+        dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.1f, 300.0f));
+        Material plain{{1, 1, 1, 1}, {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 0.0f};
+        Material glossy{{1, 1, 1, 1}, {1, 1, 1, 1}, {0.6f, 0.6f, 0.6f, 1}, {0, 0, 0, 0}, 20.0f};
+        dev.SetMaterial(plain);
+        dev.SetRenderState(RS_SPECULARENABLE, 0);
+        dev.SetTexture(0, floor);
+        dev.SetTransform(World, Translate(0, -2.4f, 0));
+        dev.DrawPrimitive(TriangleStrip, kFvfMesh, floorQuad, 4);
+        for (int row = 0; row < 4; ++row)
+            for (int col = 0; col < 5; ++col) {
+                bool legacy = row == 0 && col < 4;
+                dev.SetMaterial(legacy ? glossy : plain);
+                dev.SetRenderState(RS_SPECULARENABLE, legacy ? 1 : 0);
+                dev.SetTexture(0, tex[row][col]);
+                dev.SetTransform(World, Translate((col - 2) * 1.1f, 1.45f - row * 1.1f, 0));
+                dev.DrawIndexedPrimitive(TriangleList, kFvfMesh, sphere.data(), uint32_t(sphere.size()), sphereIdx.data(),
+                                         uint32_t(sphereIdx.size()));
+            }
+        dev.EndFrame();
+    }
+    for (auto& row : tex)
+        for (Texture* t : row) dev.DestroyTexture(t);   // their maps go with them
+    dev.DestroyTexture(floor);
+}
+
 float g_cameraYaw = 0.0f;  // --camera-yaw: the shadow test's camera turns this much a frame (motion blur)
 bool g_sunView = false;    // --sun-view: the shadow test's camera low, looking into the sun
 float g_movingCube = 0.0f; // --moving-cube: the shadow test's big right cube moves this far a frame along x
@@ -2123,8 +2262,20 @@ void RunParticleTest(D& dev, int frames, int frameMs, const std::string& shot, c
     if (offscreen) dev.DestroyTexture(offscreen);
 }
 
+// A crash prints a line and exits (3): no Wine crash dialog on the desktop.
+LONG WINAPI Crashed(EXCEPTION_POINTERS* e)
+{
+    std::printf("rvk_demo crashed: exception %08lx at %p\n", (unsigned long)e->ExceptionRecord->ExceptionCode,
+                e->ExceptionRecord->ExceptionAddress);
+    std::fflush(stdout);
+    TerminateProcess(GetCurrentProcess(), 3);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
 int main(int argc, char** argv)
 {
+    SetUnhandledExceptionFilter(&Crashed);
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
     bool windowed = false, stress = false, threaded = false, pixelLighting = false, lightingDebug = false, lightOverride = false, shadows = false, shadowTest = false, pointShadowTest = false, pointShadowSun = false;
     int cacheTest = 0, frameMs = 0;
     bool particleTest = false, particlesOff = false;
@@ -2140,7 +2291,7 @@ int main(int argc, char** argv)
     float saturation = 1.0f, contrast = 1.0f, warmth = 0.0f, nightTint = 0.0f, vignette = 0.0f;
     bool lutSepia = false, taa = false;
     float sharpen = 0.4f;
-    bool normalMapTest = false;
+    bool normalMapTest = false, pbrTest = false;
     uint32_t anisotropy = 1;
     float motionBlur = 0.0f, dof = 0.0f, dofFocus = 0.0f;
     bool dofBokeh = true, dofFar = true;
@@ -2240,6 +2391,8 @@ int main(int argc, char** argv)
         else if (a == "--aniso" && i + 1 < argc) anisotropy = uint32_t(std::atoi(argv[++i]));
         else if (a == "--bump" && i + 1 < argc) bump = float(std::atof(argv[++i]));
         else if (a == "--normal-map-test") normalMapTest = true;
+        else if (a == "--pbr-test") pbrTest = true;
+        else if (a == "--pbr-debug" && i + 1 < argc) g_pbrDebug = uint32_t(std::atoi(argv[++i]));
         else if (a == "--ao" && i + 1 < argc) { ao = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--ao-radius" && i + 1 < argc) aoRadius = float(std::atof(argv[++i]));
         else if (a == "--gi" && i + 1 < argc) { gi = float(std::atof(argv[++i])); hdr = true; }
@@ -2359,6 +2512,11 @@ int main(int argc, char** argv)
     dev.SetMotionBlurMode(motionMode);
     dev.SetDof(dof > 0.0f, dofBokeh, true, dof, 16.0f, dofFocus, 0.2f, dofFar, 3.0f);
     dev.SetPointShadowFadeIn(fadeIn);    // frames here are milliseconds apart: no fade-in unless asked
+    if (pbrTest) {
+        RunPbrTest(dev, frames, shot);
+        std::printf("rendered; screenshot %s\n", shot.c_str());
+        return 0;
+    }
     if (normalMapTest) {
         RunNormalMapTest(dev, frames, shot, bump > 0.0f ? bump : 1.0f);
         std::printf("rendered; screenshot %s\n", shot.c_str());

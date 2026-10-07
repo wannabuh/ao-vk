@@ -915,7 +915,7 @@ void Device::BindShadowItem(VkCommandBuffer cmd, ShadowBind& bind, const ShadowI
         bind.texOffset = item.texOffset;
     }
     // Every caster binds a texture: the vertex shader may read it (sway.glsl); casters without one get a stand-in.
-    Texture* texture = item.texture ? item.texture : m_blackTexture;
+    Texture* texture = item.texture ? (item.texture->m_albedoMap ? item.texture->m_albedoMap : item.texture) : m_blackTexture;
     if (texture != bind.texture) {
         VkDescriptorImageInfo image{SamplerFor(0), texture->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};

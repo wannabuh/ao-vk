@@ -14,7 +14,9 @@ struct DrawTransform {
     vec4 tess;                  // characters' Phong tessellation: level (0 = off), shape (0..1), base vertex (binding 10)
     uvec4 texIdx;               // bindless (set 1): image slots for stage 0, stage 1, bump base, normal map
     uvec4 sampIdx;              // bindless (set 1): sampler slots for stage 0, stage 1, bump, normal
+    uvec4 mat;                  // PBR material: occlusion/roughness/metallic image slot, its sampler slot, MAT_* bits
 };
+const uint MAT_PBR = 1u, MAT_BASE = 2u;   // D.mat.z: the draw has an ORM map; it is the ground base texture's
 
 struct DrawConstants {
     mat4 view, proj;
@@ -63,6 +65,7 @@ layout(set = 1, binding = 1) uniform sampler bindlessSamplers[256];
 #define TEX1 sampler2D(texImages[D.texIdx.y], bindlessSamplers[D.sampIdx.y])
 #define BUMPTEX sampler2D(texImages[D.texIdx.z], bindlessSamplers[D.sampIdx.z])
 #define NORMALTEX sampler2D(texImages[D.texIdx.w], bindlessSamplers[D.sampIdx.w])
+#define ORMTEX sampler2D(texImages[D.mat.x], bindlessSamplers[D.mat.y])
 
 const uint F_LIGHTING = 1u, F_COLORVERTEX = 2u, F_SPECULAR = 4u, F_NORMALIZE = 8u, F_FOG = 16u,
            F_RANGEFOG = 32u, F_LOCALVIEWER = 64u, F_TEX0 = 128u, F_TEX1 = 256u, F_ALPHATEST = 512u,
