@@ -1644,7 +1644,7 @@ void Device::UpdateGrassTrail()
         m_trailActive = active;
     }
     // The characters standing in the grass now (the push trail's heads seen this frame), on the ground the grass has.
-    const float reach = 0.75f * std::sqrt(m_grassPush);
+    const float reach = 0.4f * std::sqrt(m_grassPush);   // the lane: ~0.8 units wide, ~1.2 with the grid's smoothing
     for (const PushPoint& p : m_pushTrail) {
         if (!p.head || now - p.time > 0.1)
             continue;
