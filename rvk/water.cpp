@@ -477,10 +477,12 @@ Device::WaterMap* Device::WaterMapFor(const WaterVertex* v, uint32_t count, cons
         const float* c = v[t.c].pos;
         float minX = std::min({a[0], b[0], c[0]}), maxX = std::max({a[0], b[0], c[0]});
         float minZ = std::min({a[2], b[2], c[2]}), maxZ = std::max({a[2], b[2], c[2]});
-        int x0 = std::max(int(std::floor((minX - m.origin[0]) / texel)) - 1, 0);
-        int x1 = std::min(int(std::ceil((maxX - m.origin[0]) / texel)) + 1, int(w) - 1);
-        int z0 = std::max(int(std::floor((minZ - m.origin[1]) / texel)) - 1, 0);
-        int z1 = std::min(int(std::ceil((maxZ - m.origin[1]) / texel)) + 1, int(h) - 1);
+        // (Never the outermost texels: they stay dry, so what the clamped sampler reads beyond the map is no water - a
+        // small pool's slack once reached them and flooded everything around it at its height.)
+        int x0 = std::max(int(std::floor((minX - m.origin[0]) / texel)) - 1, 1);
+        int x1 = std::min(int(std::ceil((maxX - m.origin[0]) / texel)) + 1, int(w) - 2);
+        int z0 = std::max(int(std::floor((minZ - m.origin[1]) / texel)) - 1, 1);
+        int z1 = std::min(int(std::ceil((maxZ - m.origin[1]) / texel)) + 1, int(h) - 2);
         float det = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
         if (std::fabs(det) < 1e-12f)
             continue;
@@ -506,9 +508,15 @@ Device::WaterMap* Device::WaterMapFor(const WaterVertex* v, uint32_t count, cons
         return nullptr;
     UpdateTexture(m.texture, 0, 0, 0, w, h, pixels.data(), w * 8);
     m_waterMaps.push_back(m);
-    WaterLog("water map %016llx: %u flat + %u steep triangles, %.0f x %.0f units at y %.1f, %u x %u texels of %.2f",
+    // (The vertex alphas, flat and steep: the game fades its water's shore edges out by them.)
+    uint32_t flatLo = 255, flatHi = 0, steepLo = 255, steepHi = 0;
+    for (const Tri& t : flat)
+        for (uint32_t i : {t.a, t.b, t.c}) { uint32_t a = v[i].colour >> 24; flatLo = std::min(flatLo, a); flatHi = std::max(flatHi, a); }
+    for (uint32_t i : steep) { uint32_t a = v[i].colour >> 24; steepLo = std::min(steepLo, a); steepHi = std::max(steepHi, a); }
+    WaterLog("water map %016llx: %u flat + %u steep triangles, %.0f x %.0f units at y %.1f, %u x %u texels of %.2f; "
+             "vertex alpha flat %u..%u, steep %u..%u",
              (unsigned long long)key, m.flatTriangles, uint32_t(steep.size() / 3), double(ex), double(ez),
-             double(m.base), w, h, double(texel));
+             double(m.base), w, h, double(texel), flatLo, flatHi, steep.empty() ? 0u : steepLo, steepHi);
     return &m_waterMaps.back();
 }
 

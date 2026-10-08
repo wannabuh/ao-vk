@@ -65,8 +65,9 @@ struct GrassFrame {
     float sunDir[4];     // xyz: the direction it travels
     float lod[4];        // x: pixels per world unit at view depth 1; y: the least width a blade is drawn at (pixels)
     float trail[4];      // xy: the trail window's first cell; z: its cell size; w: cells a side (0 = no trails)
+    float trail2[4];     // x: the trodden grass's lawn-stripe shading (RVK_TrailShade)
 };
-static_assert(sizeof(GrassFrame) == 272, "grass frame block");
+static_assert(sizeof(GrassFrame) == 288, "grass frame block");
 
 // One blade in the pool (grass.vert Blade).
 struct GrassBlade {
@@ -269,10 +270,13 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
         if (!tex || !tex->m_thumbValid)
             return;                              // no lightmap to read (an unsupported format): the shader's fallback
         tex->m_lightmap = true;
-    } else if (m_grassTex && (!tex || !tex->m_thumbValid)) {
+    } else if (m_grassTex && (!tex || !tex->m_thumbValid || tex->Width() * tex->Height() <= 32u * 32u)) {
         // The base pass without a texture we can read: the game draws ground whose texture is still loading (walking
         // into an area) untextured or with a stand-in, and classifying that would take all of it as grass, of one
-        // colour - for good, a cell only ever takes a finer triangle. Wait for the texture.
+        // colour - for good, a cell only ever takes a finer triangle. Wait for the texture. A ground texture of 32 x 32
+        // or less is such a stand-in too (its lowest quality level, 16 x 16: after an AI mission the game drew all of
+        // a playfield's ground with those - a few blurred green texels, taken as grass everywhere, an even carpet
+        // over its paths).
         return;
     }
     if (m_grassTiles.empty())
@@ -528,6 +532,7 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
 namespace {
 constexpr float kCoverBelow = 0.5f, kCoverAbove = 2.5f;
 constexpr double kCoverBudgetMs = 0.3;
+constexpr uint64_t kCoverSettleFrames = 120;   // frames an object must be seen in the same place first
 }
 
 void Device::CaptureCover(uint32_t primitive, const FvfLayout& layout, const void* vertices, uint32_t vertexCount,
@@ -544,7 +549,13 @@ void Device::CaptureCover(uint32_t primitive, const FvfLayout& layout, const voi
     for (int i = 0; i < 16; ++i)
         key = (key ^ wb[i]) * 0x100000001B3ull;
     GrassChunk& seen = m_grassCovers[key];
+    if (seen.lastSeen + 1 < m_frameNumber)
+        seen.firstSeen = m_frameNumber;          // new, or back after a gap: its still run starts again
     seen.lastSeen = m_frameNumber;
+    // Only an object that stays where it is: one that moves (a weapon or armour piece on a walking character, a
+    // vehicle) is a new key every frame, and taking it would leave a trail of bare ground behind it.
+    if (m_frameNumber - seen.firstSeen < kCoverSettleFrames)
+        return;
     if (seen.processed && seen.processed > m_grassTileEpoch)
         return;                                  // no tile anywhere is newer than its last capture
     if (m_grassCoverMs > kCoverBudgetMs)
@@ -1576,12 +1587,15 @@ void Device::UpdateGrassTiles()
 }
 
 // The trails (RVK_GrassTrail): once a frame, the grid around the camera recovers a little and takes a stamp from each
-// character standing in the grass - its blades pushed out from under its feet, swept the way it walks. The live push
-// (grass.vert PusherOffset) bends the grass as a character passes; this keeps it trodden down for a few seconds after.
+// character standing in the grass - laid down the way it walks (a lane of grass combed one way reads as a path; pushed
+// out from under the feet it only looked ruffled), splayed out a little towards the lane's edges, or all outwards under
+// a character standing still. The live push (grass.vert PusherOffset) bends the grass as a character passes; this
+// keeps it trodden down for RVK_TrailTime seconds after (the shader keeps it flat for most of that time, then lets
+// it spring back).
 void Device::UpdateGrassTrail()
 {
     constexpr int N = kTrailN;
-    constexpr float kRecover = 0.2f;             // the push a cell loses a second: flattened grass is up in ~5 s
+    const float kRecover = 1.0f / m_trailSeconds;   // the push a cell loses a second
     const double now = SwayClock();
     const float dt = m_trailValid ? float(std::clamp(now - m_trailClock, 0.0, 0.25)) : 0.0f;
     m_trailClock = now;
@@ -1633,7 +1647,7 @@ void Device::UpdateGrassTrail()
         m_trailActive = active;
     }
     // The characters standing in the grass now (the push trail's heads seen this frame), on the ground the grass has.
-    const float reach = 0.6f * std::sqrt(m_grassPush);
+    const float reach = 0.4f * std::sqrt(m_grassPush);   // the lane: ~0.8 units wide, ~1.2 with the grid's smoothing
     for (const PushPoint& p : m_pushTrail) {
         if (!p.head || now - p.time > 0.1)
             continue;
@@ -1656,8 +1670,13 @@ void Device::UpdateGrassTrail()
                 const float d = std::sqrt(dx * dx + dz * dz);
                 if (d >= reach)
                     continue;
-                const float q = d / reach, amount = 1.0f - q * q;
-                float wx = (d > 1e-3f ? dx / d : 0.0f) + 0.8f * mx, wz = (d > 1e-3f ? dz / d : 0.0f) + 0.8f * mz;
+                const float q = d / reach, amount = 1.0f - q * q * q * q;   // flat across most of the lane
+                const bool walking = mx != 0.0f || mz != 0.0f;
+                // Outwards as well as forwards: parted like a bow wave, the two halves lying different ways - so the
+                // lane shows from behind too (grass lying straight away from the camera hardly does). More towards
+                // the edges.
+                const float splay = walking ? 0.5f + 0.5f * q : 1.0f;
+                float wx = splay * (d > 1e-3f ? dx / d : 0.0f) + mx, wz = splay * (d > 1e-3f ? dz / d : 0.0f) + mz;
                 const float wl = std::sqrt(wx * wx + wz * wz);
                 if (wl < 1e-3f)
                     continue;
@@ -1826,6 +1845,7 @@ void Device::DrawGrassTiles(VkCommandBuffer cmd)
         gf.trail[1] = float(m_trailOrigin[1]);
         gf.trail[2] = kTrailCell;
         gf.trail[3] = float(kTrailN);
+        gf.trail2[0] = m_trailShade;
     } else {
         std::memset(trailCpu, 0, size_t(trailBytes));
     }

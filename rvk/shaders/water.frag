@@ -25,6 +25,7 @@ layout(location = 3) in vec4 vPrevClip;
 layout(location = 4) in vec3 vRest;
 layout(location = 5) in float vFold;
 layout(location = 6) in float vSpacing;
+layout(location = 7) in float vAlpha;       // mesh mode: the game's vertex alpha (its shore fade)
 
 layout(location = 0) out vec4 outScene;
 layout(location = 1) out vec4 outGlow;
@@ -161,8 +162,11 @@ void main()
         outScene = vec4(sd < gl_FragCoord.z ? 1.0 : 0.0, fract(vRest.x * 0.1), fract(vRest.z * 0.1), 1.0);
         return;
     }
-    if (!mesh && W.mapInfo.z > 0.5 && texture(waterMap, MapUv(vRest.xz)).g < 0.5)
-        discard;
+    if (!mesh && W.mapInfo.z > 0.5) {
+        vec2 uv = MapUv(vRest.xz);                // beyond the map: no water (the sampler would repeat its edge)
+        if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))) || texture(waterMap, uv).g < 0.5)
+            discard;
+    }
     float style = W.look.x;
     float t = W.time.x;
     vec3 eye = W.camera.xyz;
@@ -202,13 +206,20 @@ void main()
     float zR = dR >= 1.0 ? 1e5 : ViewZ(dR);
     if (zR < zWater) { uvR = uv; zR = zScene; dR = dScene; }
     float path = dist * max(zR / zWater - 1.0, 0.0);             // world length of the ray under the water
+    // A steep triangle (a fall, or the side of a pool where the game's water steps down) is a sheet, not a body of
+    // water: what is behind it is not under it. As thick as the game's alpha is meant for (two units: as opaque as the
+    // game drew it), or the gap behind it if less; refraction then none.
+    if (mesh) {
+        path = min(path, 2.0);
+        uvR = uv;
+    }
     vec3 bottom = eye - V * (dist * zR / zWater);                 // what the ray reaches
     float depthBelow = dR >= 1.0 ? 1e4 : max(vRest.y - bottom.y, 0.0);
     vec3 behind = texture(sceneCopy, uvR).rgb;
     vec3 behindRaw = texture(sceneCopy, uv).rgb;
 
     // Caustics on the bottom: sunlit, fading with depth and gone where the bottom is in shadow.
-    if (dR < 1.0 && W.look2.y > 0.0 && !under) {
+    if (dR < 1.0 && W.look2.y > 0.0 && !under && !mesh) {
         float c = Caustics(bottom.xz, t) * smoothstep(0.0, 0.4, depthBelow) * exp(-depthBelow * 0.35);
         float sunOn = clamp(dot(sun, kLuma) * 2.0, 0.0, 1.0) * SunShadow(bottom + vec3(0.0, 0.05, 0.0));
         behind *= 1.0 + c * sunOn * W.look2.y * 1.1;
@@ -288,6 +299,10 @@ void main()
     // Where the surface meets the shore: fade over to what is behind, so the water has no hard line along the land.
     float edge = dR >= 1.0 ? 1.0 : smoothstep(0.0, 0.12, path);
     colour = mix(behindRaw, colour, edge);
+    // A steep sheet (mesh mode) fades out as the game's vertex alpha does: the sides of a body of water, where its
+    // surface steps down to the shore, are see-through at their far edge (drawn opaque, they stood as blue walls).
+    if (mesh)
+        colour = mix(behindRaw, colour, clamp(vAlpha / max(W.tint.a, 0.05), 0.0, 1.0));
 
     // The game's fog, by the view distance.
     float fog = FogFactor(dist);

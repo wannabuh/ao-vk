@@ -1310,12 +1310,13 @@ void Device::BeginFrame()
     CollectGarbage();
     ApplyShadowResolution();
     if (!uploadsPending) {
-        if (f.ringSize < m_ringWanted) {         // the slot is idle (waited for): a bigger ring
+        if (f.ringSize != m_ringWanted) {        // the slot is idle (waited for): a bigger (or again smaller) ring
             std::string error;
             VkDeviceSize old = f.ringSize;
             if (CreateRing(f, m_ringWanted, &error))
-                Log("ring buffer: %llu -> %llu MB (frames overflowed it)", (unsigned long long)(old >> 20),
-                    (unsigned long long)(m_ringWanted >> 20));
+                Log("ring buffer: %llu -> %llu MB (%s)", (unsigned long long)(old >> 20),
+                    (unsigned long long)(m_ringWanted >> 20),
+                    m_ringWanted > old ? "frames overflowed it" : "frames have used little of it for a while");
             else if (!CreateRing(f, old, &error))
                 Log("ring buffer: %s", error.c_str());
             else
@@ -1327,6 +1328,20 @@ void Device::BeginFrame()
     if (m_frameNumber % 600 == 599) {            // how full frames get (logged with the profiler's numbers)
         Log("ring buffer: peak %.1f of %llu MB a frame, %u mid-frame flushes (last 600 frames)",
             double(m_ringPeak) / 1048576.0, (unsigned long long)(f.ringSize >> 20), m_midFrameFlushes);
+        // The rings are mapped into the game's (32-bit) address space, two of them: grown for a burst (a zone's
+        // uploads), they give it back once frames have used under a quarter of them for three windows (~30 s), so
+        // a long session doesn't keep 512 MB of it - the game, short of address space, falls back to its smallest
+        // ground textures.
+        m_ringQuietWindows = m_ringPeak < f.ringSize / 4 && m_midFrameFlushes == 0 ? m_ringQuietWindows + 1 : 0;
+        if (m_ringQuietWindows >= 3 && m_ringWanted > kRingSize) {
+            m_ringWanted = std::max(kRingSize, m_ringWanted / 2);
+            m_ringQuietWindows = 0;
+        }
+        MEMORYSTATUSEX mem{};
+        mem.dwLength = sizeof(mem);
+        if (GlobalMemoryStatusEx(&mem))
+            Log("address space: %llu of %llu MB free (the game's process)", (unsigned long long)(mem.ullAvailVirtual >> 20),
+                (unsigned long long)(mem.ullTotalVirtual >> 20));
         Log("opaque static fast path: %llu draws (last 600 frames)", (unsigned long long)m_opaqueDraws);
         Log("foliage: %llu draws, %llu of them far (LOD) (last 600 frames)", (unsigned long long)m_foliageDraws,
             (unsigned long long)m_foliageLodDraws);
@@ -1337,14 +1352,14 @@ void Device::BeginFrame()
         if (m_grassOn)
             Log("ground grass: %llu frames drawn, %.0f blades a frame; tiles %llu, %llu built (%.2f ms each, %.0f%% of "
                 "their blades lit by the ground's lightmap), capture %.3f ms a frame; terrain ambient %.2f %.2f %.2f; "
-                "pushers now %llu max %u; candidates left out: %llu clumps, %llu no grass ground, %llu steep, %llu "
+                "pushers now %llu max %u; trail cells %u; candidates left out: %llu clumps, %llu no grass ground, %llu steep, %llu "
                 "edge; %llu tiles waiting to build; %.0f blades a frame cast the sun's shadow (last 600 frames)",
                 (unsigned long long)m_grassDraws, double(m_grassBlades) / std::max<uint64_t>(m_grassDraws, 1),
                 (unsigned long long)m_grassTiles.size(), (unsigned long long)m_grassBuilds,
                 m_grassBuildMs / double(std::max<uint64_t>(m_grassBuilds, 1)),
                 100.0 * double(m_grassLitBlades) / double(std::max<uint64_t>(m_grassBuiltBlades, 1)),
                 m_grassCaptureMs / 600.0, m_terrainAmbient[0], m_terrainAmbient[1], m_terrainAmbient[2],
-                (unsigned long long)m_framePushers.size(), m_pusherSeenMax, (unsigned long long)m_grassLeftOut[0],
+                (unsigned long long)m_framePushers.size(), m_pusherSeenMax, m_trailActive, (unsigned long long)m_grassLeftOut[0],
                 (unsigned long long)m_grassLeftOut[1], (unsigned long long)m_grassLeftOut[2],
                 (unsigned long long)m_grassLeftOut[3], (unsigned long long)GrassTilesWaiting(),
                 double(m_grassShadowBlades) / 600.0);

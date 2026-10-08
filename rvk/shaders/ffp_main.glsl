@@ -378,7 +378,7 @@ bool gSunVisibilityValid = false;
 bool AlphaPass(float a)
 {
     float a8 = floor(a * 255.0 + 0.5), ref = C.misc.y;
-    switch (C.flags.w) {
+    switch (C.flags.w & 0xFFu) {
     case 1u: return false;
     case 2u: return a8 < ref;
     case 3u: return a8 == ref;
@@ -726,6 +726,8 @@ void main()
 #endif
     if ((C.flags.x & F_OVERBRIGHT2X) != 0u)
         current.rgb *= 0.5;                               // blended as dst * src * 2
+    if ((C.flags.w & 256u) != 0u)
+        current.a = 1.0;                                  // the interface layer: a replacing draw covers fully
     outColor = current;
 }
 #endif

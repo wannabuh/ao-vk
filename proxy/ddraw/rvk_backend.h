@@ -265,6 +265,12 @@ public:
         bool drawn = false;
     };
     std::unique_ptr<Water> water;
+    // The vertex ranges ProcessVertices wrote this frame (`processedFrame`; a discarding Lock forgets them). Only a
+    // draw from one of them is the 3D scene's (water, floating text) in the pre-transformed 0x1C4 format; the game's
+    // screen sprites (RenderSprite_t: the timer bars) write the same format themselves and are interface.
+    std::vector<std::pair<DWORD, DWORD>> processed;   // [first, end)
+    uint64_t processedFrame = ~0ull;
+    bool Processed(DWORD start, DWORD count) const;
 
 protected:
     void* Cast(REFIID iid) override { return iid == IID_IDirect3DVertexBuffer7 ? this : nullptr; }

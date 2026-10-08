@@ -104,6 +104,7 @@ public:
     void SetGrassWidth(float width);
     void SetGrassBrightness(float brightness);
     void SetGrassStyle(float variety, float flowers, float glow, float gusts, bool trails);
+    void SetGrassTrailLook(float seconds, float shade);
     void SetGrassEven(float even);
     void SetGrassShadows(bool on);
     void SetDepthPrepass(bool on);
@@ -135,6 +136,7 @@ public:
     Device::PickResult LastPick() const { return m_device.LastPick(); }   // (thread-safe)
     void SetPickHighlight(Texture* t);
     void SetPbr(const Device::PbrSettings& s);
+    void SetDrawProcessed(bool processed);
     void SetAnisotropy(uint32_t level);
     void SetMotionBlur(float strength, float focusNear);
     void SetMotionBlurMode(uint32_t mode);

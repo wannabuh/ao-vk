@@ -773,6 +773,11 @@ void ThreadedDevice::SetNormalMaps(bool enable, float strength)
     Enqueue([this, enable, strength](const uint8_t*) { m_device.SetNormalMaps(enable, strength); });
 }
 
+void ThreadedDevice::SetDrawProcessed(bool processed)
+{
+    Enqueue([this, processed](const uint8_t*) { m_device.SetDrawProcessed(processed); });
+}
+
 void ThreadedDevice::SetNormalMap(Texture* texture, Texture* normal)
 {
     Enqueue([this, texture, normal](const uint8_t*) { m_device.SetNormalMap(texture, normal); });
@@ -929,6 +934,11 @@ void ThreadedDevice::SetGrassWidth(float width)
 void ThreadedDevice::SetGrassBrightness(float brightness)
 {
     Enqueue([this, brightness](const uint8_t*) { m_device.SetGrassBrightness(brightness); });
+}
+
+void ThreadedDevice::SetGrassTrailLook(float seconds, float shade)
+{
+    Enqueue([this, seconds, shade](const uint8_t*) { m_device.SetGrassTrailLook(seconds, shade); });
 }
 
 void ThreadedDevice::SetGrassStyle(float variety, float flowers, float glow, float gusts, bool trails)
