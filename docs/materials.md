@@ -60,9 +60,9 @@ split the constant blocks. ffp_main.glsl, per-pixel lit draws only (and not far 
 - lights: the game's diffuse term weighted by 1 - metallic; the game's Blinn-Phong specular is replaced by GGX /
   height-correlated Smith / Schlick (lighting.glsl `PbrSpecular`), lit by each light's diffuse colour, scaled by
   pi to match the game's Lambert term (albedo x nl, no 1 / pi), shadows and the light override as before;
-- ambient: the game's ambient terms x occlusion x (1 - metallic); plus an ambient specular from a sky-and-ground
-  environment made of the ambient light, the fog colour and a little sunlight through the split-sum approximation
-  (`EnvBrdfApprox`, Karis), with specular occlusion (Lagarde);
+- ambient: the game's ambient terms x occlusion x (1 - metallic); plus an ambient specular through the split-sum
+  approximation (`EnvBrdfApprox`, Karis), with specular occlusion (Lagarde), of the environment probe (below) where
+  it has seen, else a sky-and-ground environment made of the ambient light, the fog colour and a little sunlight;
 - specular anti-aliasing: the normal's change across the pixel widens alpha (Kaplanyan / Tokuyoshi);
 - the specular is added after the texture stages, unclamped in the HDR scene. The ground's lightmap pass multiplies
   the base pass, so its highlight is divided by the base texture's colour; its sunlight is baked into the lightmap,
@@ -76,6 +76,18 @@ split the constant blocks. ffp_main.glsl, per-pixel lit draws only (and not far 
 Colours stay in the game's (gamma) space like everything else the renderer lights, so a fully rough non-metal looks
 like the game's own lighting plus a faint sheen.
 
+**Environment probe** (hdr.cpp `RenderEnvProbe`, HDR only): after each scene, `env_accum.frag` carries the HDR
+scene into a 128 x 128 octahedral map of the directions around the camera (world space; alpha: how sure). Texels
+whose direction is on screen move 12% a frame towards the scene there, unless what is there is nearer than 6 units
+(the player's character would otherwise be reflected everywhere); sureness fades as the camera moves (half in ~140
+units) and slowly with time, and a jump of 40+ units (a teleport, a zone) forgets it all. `env_filter.frag` then
+prefilters it into a 192 x 128 atlas of five levels for roughness 0.08, 0.3, 0.5, 0.75 and 1 (48 GGX-lobe taps,
+weighted by sureness; layout in env_common.glsl). The next frame's scene reads it through `FL.pbr2.w` (bindless
+slot + 1, sampler slot, strength), between the two levels nearest the roughness, and mixes it over the analytic sky
+by its sureness; the water reads it (binding 12) where its screen-space reflections miss. It only knows what the
+camera has looked at, without parallax (a direction, not a place), so it is what lies around, not a mirror. While a
+debug view colours the scene the probe keeps what it had. `RVK_PbrProbe` (strength, 0 = off).
+
 **Emissive maps**: `Device::SetEmissiveMap(texture, emissive)`. A draw whose stage 0 texture (plain coordinates, not
 the ground's passes nor screen-space draws) has one carries it in the record (`D.mat.w`, sampled with `D.mat.y`;
 `MAT_EMISSIVE`); ffp_main.glsl adds map x `RVK_PbrGlow` (`FL.pbr2.z`) after the texture stages and night glow,
@@ -86,12 +98,12 @@ shadow casters' alpha. The game's own uploads still go to the original texture.
 
 Settings (Renderer tab, Lighting): `RVK_Pbr` (on/off), `RVK_PbrSpec` (highlights), `RVK_PbrEnv` (reflected
 surroundings), `RVK_PbrSsr` (screen-space reflections on smooth materials, with reflections on), `RVK_PbrAo`
-(occlusion map strength), `RVK_PbrGlow` (emissive maps' brightness, 0 = off), `RVK_PbrDebug` (7 which surfaces
-have maps: the scene tinted green where a PBR material lights it, blue for a normal map only, magenta for an albedo
-map, orange where an emissive map glows; 8 the emitted light only; 1 albedo, 2 roughness, 3 metallic,
-4 occlusion, 5 normal, 6 highlights only - other lit draws dimmed grey), `RVK_Albedo` (albedo maps on/off).
-Hotkeys: Ctrl+Shift+K steps through the debug views (7, 8, then the rest; switches PBR on), Ctrl+Shift+B toggles
-`RVK_Pbr`. They live in the frame block (`FL.pbr`,
+(occlusion map strength), `RVK_PbrProbe` (environment probe), `RVK_PbrGlow` (emissive maps' brightness, 0 = off),
+`RVK_PbrDebug` (7 which surfaces have maps: the scene tinted green where a PBR material lights it, blue for a
+normal map only, magenta for an albedo map, orange where an emissive map glows; 8 the emitted light only; 9 what
+PBR surfaces reflect (probe or sky); 1 albedo, 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 highlights only -
+other lit draws dimmed grey), `RVK_Albedo` (albedo maps on/off). Hotkeys: Ctrl+Shift+K steps through the debug views
+(7, 8, 9, then the rest; switches PBR on), Ctrl+Shift+B toggles `RVK_Pbr`. They live in the frame block (`FL.pbr`,
 `FL.pbr2`), which every lit 3D draw now writes.
 
 ## Tests
@@ -105,5 +117,9 @@ Hotkeys: Ctrl+Shift+K steps through the debug views (7, 8, then the rest; switch
   (last: occlusion stripes), over a material floor.
 - `--pbr-maps DIR`: the floor and a ball get files through the loader (`floor_n/_ao/_r/_m/_d/_e.png`,
   `ball_n/_orm/_e.png`).
+- `--pbr-room` (with `--pbr-test --hdr --frames 40`): unlit red, green and blue walls left, right and ahead for
+  the environment probe; `--pbr-debug 9 --pbr-debug-late` shows what the surfaces reflect (the floor: red, blue,
+  green from left to right), `--pbr-probe 0` the analytic sky only. `--water-lake --frames 40 [--pbr-probe 0]`: the
+  lake reflects the hills where screen-space reflections miss.
 - `--terrain-pbr [--grass-bench-yaw 3.8]`: the grass bench's ground the game's way (base pass + lightmap pass) with a
   glossy path through rough grass; the path catches the sun looking towards it.
