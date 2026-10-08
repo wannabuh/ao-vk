@@ -1960,6 +1960,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_grassOn && !m_external && vertices && IsTerrain(fvf))
         CaptureTerrain(primitive, layout, vertices, vertexCount, indices, indexCount);
     DrawMeshInfo(fvf, layout.stride, vertices, vertexCount, indices, indexCount);
+    if (m_pickActive && !m_external && vertices && !m_drawGpu && m_textures[0] &&
+        (m_target == m_scene || m_target == m_main) && (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ &&
+        m_rs[d3d::RS_ZENABLE])
+        PickDraw(primitive, layout, vertices, vertexCount, indices, indexCount);
     // ... and solid objects lying on the ground keep it off where they are (not characters, effects, the sky, plants
     // or anything see-through; grass.cpp CaptureCover).
     if (m_grassOn && !m_external && vertices && !IsTerrain(fvf) && m_target == m_scene &&
@@ -2595,6 +2599,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         dt.mat[1] = dt.sampIdx[3];
     }
     if (m_textures[0] && texStage0 == m_textures[0]->m_albedoMap) dt.mat[2] |= kMatAlbedo;   // (debug view 7)
+    if (m_pickHighlight && m_textures[0] == m_pickHighlight)
+        dt.mat[2] |= kMatPicked;                 // (texture picking: flashes)
     if (m_drawEmissive) {                        // (sampled with the ORM map's sampler, set either way)
         dt.mat[3] = BindlessImage(m_drawEmissive);
         dt.mat[2] |= kMatEmissive;
@@ -2736,6 +2742,69 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         DrawParticles(*block);
     }
     ProfileDrawSection("draw: state + descriptors + draw", since);
+}
+
+}  // namespace rvk
+
+namespace rvk {
+
+// Texture picking (RequestPick): the draw's triangles in clip space against the picked point, in the viewport's
+// coordinates; the nearest hit (depth) so far keeps its stage 0 texture. One frame, on the CPU.
+void Device::PickDraw(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
+                      const uint16_t* indices, uint32_t indexCount)
+{
+    if ((primitive != d3d::TriangleList && primitive != d3d::TriangleStrip && primitive != d3d::TriangleFan) ||
+        layout.offset[0] < 0 || !m_target || !m_viewport.width || !m_viewport.height)
+        return;
+    const float tx = m_pickX * float(m_target->m_width), ty = m_pickY * float(m_target->m_height);
+    const float px = (tx - float(m_viewport.x)) / float(m_viewport.width) * 2.0f - 1.0f;
+    const float py = 1.0f - (ty - float(m_viewport.y)) / float(m_viewport.height) * 2.0f;
+    if (std::fabs(px) > 1.0f || std::fabs(py) > 1.0f)
+        return;
+    const d3d::Matrix m = MulMatrix(MulMatrix(m_world, m_view), m_proj);
+    const auto* base = static_cast<const uint8_t*>(vertices);
+    auto clip = [&](uint32_t i, float out[3]) {
+        float p[3];
+        std::memcpy(p, base + size_t(i) * layout.stride + layout.offset[0], 12);
+        float c[4];
+        for (int k = 0; k < 4; ++k)
+            c[k] = p[0] * m.m[0][k] + p[1] * m.m[1][k] + p[2] * m.m[2][k] + m.m[3][k];
+        if (c[3] <= 1e-6f)
+            return false;
+        out[0] = c[0] / c[3];
+        out[1] = c[1] / c[3];
+        out[2] = c[2] / c[3];
+        return true;
+    };
+    const uint32_t n = indices ? indexCount : vertexCount;
+    const uint32_t triangles = primitive == d3d::TriangleList ? n / 3 : n >= 3 ? n - 2 : 0;
+    for (uint32_t t = 0; t < triangles; ++t) {
+        uint32_t k[3];
+        if (primitive == d3d::TriangleList) {
+            k[0] = t * 3; k[1] = t * 3 + 1; k[2] = t * 3 + 2;
+        } else if (primitive == d3d::TriangleStrip) {
+            k[0] = t; k[1] = t + 1; k[2] = t + 2;
+        } else {
+            k[0] = 0; k[1] = t + 1; k[2] = t + 2;
+        }
+        float a[3], b[3], c[3];
+        uint32_t i0 = indices ? indices[k[0]] : k[0], i1 = indices ? indices[k[1]] : k[1], i2 = indices ? indices[k[2]] : k[2];
+        if (i0 >= vertexCount || i1 >= vertexCount || i2 >= vertexCount || !clip(i0, a) || !clip(i1, b) || !clip(i2, c))
+            continue;
+        const float det = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+        if (std::fabs(det) < 1e-12f)
+            continue;
+        const float l0 = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / det;
+        const float l1 = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / det;
+        const float l2 = 1.0f - l0 - l1;
+        if (l0 < 0.0f || l1 < 0.0f || l2 < 0.0f)
+            continue;
+        const float z = l0 * a[2] + l1 * b[2] + l2 * c[2];
+        if (z < 0.0f || z > 1.0f || z >= m_pickDepth)
+            continue;
+        m_pickDepth = z;
+        m_pickBest = m_textures[0];
+    }
 }
 
 }  // namespace rvk

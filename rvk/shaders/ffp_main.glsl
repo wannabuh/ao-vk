@@ -671,6 +671,9 @@ void main()
                   : vec3(0.1, 1.0, 0.2);
         current.rgb = mix(current.rgb, tint, 0.45);
     }
+    // Texture picking (Ctrl+Shift+I): the picked texture's draws in yellow for a few seconds.
+    if ((D.mat.z & MAT_PICKED) != 0u)
+        current.rgb = mix(current.rgb, vec3(1.0, 0.85, 0.1) * max(dot(current.rgb, vec3(0.3, 0.59, 0.11)), 0.35) * 2.0, 0.7);
     // PBR debug views (RVK_PbrDebug). 7: the scene, tinted where surfaces have maps - green a PBR material (lit with
     // it), blue only a normal map, magenta an albedo map (any draw), orange where an emissive map gives off light.
     // 8: only the emitted light (everything else dark grey). 9: what PBR surfaces reflect (the environment probe

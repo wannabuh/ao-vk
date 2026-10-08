@@ -293,8 +293,14 @@ void PollMaterialMaps()
     }
 }
 
+namespace {
+std::unordered_set<RSurface*> g_identified;       // surfaces holding an RDB texture (for DescribeTexture)
+std::unordered_map<uint64_t, std::string> g_names;   // RDB texture -> the name the game gave it
+}  // namespace
+
 void ForgetMaterialMaps(RSurface* top)
 {
+    g_identified.erase(top);
     if (g_waiting.empty() && g_uploads.empty())
         return;
     for (auto& [key, list] : g_waiting)
@@ -311,7 +317,7 @@ unsigned g_registered = 0;
 
 unsigned g_ground = 0;
 
-void Register(void* surface_t, uint32_t type, uint32_t id)
+void Register(void* surface_t, uint32_t type, uint32_t id, const char* name)
 {
     if (!surface_t || !Readable(surface_t, 4))
         return;
@@ -324,6 +330,12 @@ void Register(void* surface_t, uint32_t type, uint32_t id)
     RSurface* top = s->top ? s->top : s;
     top->rdbType = type;
     top->rdbId = id;
+    g_identified.insert(top);
+    if (name && Readable(name, 1)) {
+        std::string& known = g_names[KeyOf(type, id)];
+        if (known.empty())
+            known.assign(name, strnlen(name, 120));
+    }
     bool ground = type == 1010006 || type == 1010021 || type == 1010022;
     g_ground += ground;
     if (++g_registered <= 8 || (g_registered & (g_registered - 1)) == 0 || (ground && g_ground <= 4))
@@ -334,13 +346,13 @@ void Register(void* surface_t, uint32_t type, uint32_t id)
     s->Release();
 }
 
-void RegisterCreator(void* surface, const void* creator)
+void RegisterCreator(void* surface, const void* creator, const char* name)
 {
     if (ClassOf(creator) != Kind::AnarchyTexCreator || !Readable(creator, 0x48))
         return;
     static const unsigned index = ComIndex("rvk::Materials");
     ComScope scope(index);
-    Register(surface, U32(creator, 0x40), U32(creator, 0x44));
+    Register(surface, U32(creator, 0x40), U32(creator, 0x44), name);
 }
 
 using CreateFromBitmap = void*(__thiscall*)(void* self, void* bitmap, const char* name);
@@ -356,6 +368,36 @@ F Original(const char* mangled)
 }
 
 }  // namespace
+
+std::string DescribeTexture(const rvk::Texture* texture, std::string* reference)
+{
+    if (!texture)
+        return "nothing (no textured 3D surface there)";
+    char buf[512];
+    for (RSurface* top : g_identified) {
+        if (top->texture != texture)
+            continue;
+        const uint32_t full = FullQualityType(top->rdbType);
+        auto it = g_names.find(KeyOf(top->rdbType, top->rdbId));
+        std::string maps;
+        for (const char* suffix : {"_n.png", "_orm.png", "_r.png", "_m.png", "_ao.png", "_d.png", "_e.png"})
+            if (!FindMap(top->rdbType, top->rdbId, suffix).empty())
+                maps += std::string(" ") + suffix;
+        std::snprintf(buf, sizeof(buf), "RDB texture %u:%u%s%s%s, %lux%lu; maps:%s", full, top->rdbId,
+                      it != g_names.end() ? " '" : "", it != g_names.end() ? it->second.c_str() : "",
+                      it != g_names.end() ? "'" : "", top->desc.dwWidth, top->desc.dwHeight,
+                      maps.empty() ? " none" : maps.c_str());
+        if (reference) {
+            char ref[32];
+            std::snprintf(ref, sizeof(ref), "%u:%u", full, top->rdbId);
+            *reference = ref;
+        }
+        return buf;
+    }
+    std::snprintf(buf, sizeof(buf), "a texture that isn't an RDB texture (%ux%u; made by the game itself)",
+                  texture->Width(), texture->Height());
+    return buf;
+}
 
 void AttachMaterialMaps(RSurface* top)
 {
@@ -397,7 +439,7 @@ extern "C" void* __fastcall rvk_CreateTextureBitmap(void* self, void*, void* bit
 {
     static auto original = Original<CreateFromBitmap>("?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVLBitmap_t@@PBD@Z");
     void* surface = original(self, bitmap, name);
-    RegisterCreator(surface, self);
+    RegisterCreator(surface, self, name);
     return surface;
 }
 
@@ -405,7 +447,7 @@ extern "C" void* __fastcall rvk_CreateTextureStream(void* self, void*, void* str
 {
     static auto original = Original<CreateFromStream>("?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVPositionIO_t@fun@@PBD@Z");
     void* surface = original(self, stream, name);
-    RegisterCreator(surface, self);
+    RegisterCreator(surface, self, name);
     return surface;
 }
 
@@ -426,7 +468,8 @@ extern "C" void* __fastcall rvk_RTextureFromCreator(void* self, void*, const cha
     if (maker && texture && Readable(static_cast<uint8_t*>(texture) + 0x30, 4)) {
         static const unsigned index = ComIndex("rvk::Materials");
         ComScope scope(index);
-        Register(*reinterpret_cast<void**>(static_cast<uint8_t*>(texture) + 0x30), U32(maker, 0x08), U32(maker, 0x0C));
+        Register(*reinterpret_cast<void**>(static_cast<uint8_t*>(texture) + 0x30), U32(maker, 0x08), U32(maker, 0x0C),
+                 name);
     }
     return texture;
 }

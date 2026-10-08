@@ -21,6 +21,15 @@ ao-assets makes and collects these files (its `docs/blender-workflow.md`):
 - GLB exports carry the side-loaded maps as the glTF material's normal, metallicRoughness, occlusion and base
   colour textures; `import` / `import-materials` writes what was painted or baked in Blender back as these files.
 
+## Finding a surface's texture id in game
+
+**Ctrl+Shift+I** with the mouse over a surface: the next frame's 3D draws are tested on the CPU against the cursor
+(rvk `Device::RequestPick` / `PickDraw`: the triangles in clip space, nearest depth wins), and the log says what the
+nearest one's texture is - `pick: RDB texture 1010004:55900 'brown_clan_teleporterside2', 256x256; maps: _n.png
+_orm.png _e.png` - its `type:id` goes to the clipboard (paste it into `material-template`), and every surface drawn
+with it flashes yellow for three seconds (`MAT_PICKED`). GPU-skinned characters are drawn from their unskinned
+vertices on the CPU side, so they can't be picked. rvk_demo `--pbr-test --pick X Y` tests it.
+
 ## How a surface learns its texture id
 
 Every RDB texture comes from DisplaySystem's RDB texture object (`FUN_100774c7`): it builds an

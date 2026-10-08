@@ -215,6 +215,20 @@ public:
     // `emissive`: the light a texture's surface gives off (its colour, any resolution), added after the lighting and
     // as bright as PbrSettings::emissive - into the bloom with HDR. Owned by the device as above; null removes it.
     void SetEmissiveMap(Texture* texture, Texture* emissive);
+    // Texture picking (the proxy's Ctrl+Shift+I): the next frame's 3D scene draws are tested on the CPU against the
+    // point (x, y: 0..1 across the target, y down) and the nearest one's stage 0 texture is kept; LastPick gives it once
+    // that frame has ended (serial: one more each result; thread-safe). SetPickHighlight: draws with that texture
+    // flash yellow (null: none).
+    void RequestPick(float x, float y) { m_pickX = x; m_pickY = y; m_pickArmed = true; }
+    struct PickResult { Texture* texture = nullptr; uint32_t serial = 0; };
+    PickResult LastPick() const
+    {
+        PickResult r;
+        r.serial = m_pickSerial.load(std::memory_order_acquire);
+        r.texture = m_pickPublished.load(std::memory_order_relaxed);
+        return r;
+    }
+    void SetPickHighlight(Texture* t) { if (m_pickHighlight != t) { m_pickHighlight = t; m_constantsDirty = true; } }
     // PBR lighting: on/off, direct specular strength, ambient (environment) specular strength, how much smooth
     // surfaces feed the screen-space reflections, the occlusion map's strength, debug view (0 off, 1 albedo,
     // 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 specular only, 7 which surfaces have maps, 8 emission);
@@ -613,6 +627,16 @@ private:
     Texture* m_drawOrm = nullptr;                // the current draw's PBR material map (Draw)
     bool m_drawOrmBase = false;                  // ... from the ground's base texture
     Texture* m_drawEmissive = nullptr;           // the draw's emissive map (stage 0's), or null
+    // Texture picking (RequestPick): armed by the proxy, active for one frame, published at its end.
+    float m_pickX = 0.0f, m_pickY = 0.0f;
+    bool m_pickArmed = false, m_pickActive = false;
+    Texture* m_pickBest = nullptr;
+    float m_pickDepth = 2.0f;
+    std::atomic<Texture*> m_pickPublished{nullptr};
+    std::atomic<uint32_t> m_pickSerial{0};
+    Texture* m_pickHighlight = nullptr;
+    void PickDraw(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
+                  const uint16_t* indices, uint32_t indexCount);
     Texture* m_constantsBumpBase = nullptr;
     bool m_drawTerrainBase = false;              // the current draw is the ground's unlit base pass (Draw)
     bool m_drawTerrainLight = false;             // ... or its multiplying lightmap pass

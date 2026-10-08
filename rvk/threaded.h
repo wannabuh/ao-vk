@@ -131,6 +131,9 @@ public:
     void SetNormalMap(Texture* texture, Texture* normal);   // the device owns `normal` from here on
     void SetMaterialMaps(Texture* texture, Texture* orm, Texture* albedo);   // ... and these
     void SetEmissiveMap(Texture* texture, Texture* emissive);               // ... and this
+    void RequestPick(float x, float y);
+    Device::PickResult LastPick() const { return m_device.LastPick(); }   // (thread-safe)
+    void SetPickHighlight(Texture* t);
     void SetPbr(const Device::PbrSettings& s);
     void SetAnisotropy(uint32_t level);
     void SetMotionBlur(float strength, float focusNear);

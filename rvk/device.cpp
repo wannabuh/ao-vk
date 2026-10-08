@@ -1281,6 +1281,10 @@ void Device::SetRenderTarget(Texture* target)
 
 void Device::BeginFrame()
 {
+    m_pickActive = m_pickArmed;                  // texture picking (RequestPick): this frame's draws
+    m_pickArmed = false;
+    m_pickBest = nullptr;
+    m_pickDepth = 2.0f;
     m_batchRuns = m_batchMerged = m_batchMaxRun = 0;
     m_batchKey = 0;
     m_batchRun = 0;
@@ -1422,6 +1426,11 @@ void Device::BeginFrame()
 
 void Device::EndFrame()
 {
+    if (m_pickActive) {                          // texture picking: the nearest draw's texture, for LastPick
+        m_pickActive = false;
+        m_pickPublished.store(m_pickBest, std::memory_order_relaxed);
+        m_pickSerial.fetch_add(1, std::memory_order_release);
+    }
     if (m_rendering && !m_particleOrphansDone) {
         m_particleOrphanTrigger = "end of the frame";   // no interface draw after the 3D
         DrawOrphanParticles();

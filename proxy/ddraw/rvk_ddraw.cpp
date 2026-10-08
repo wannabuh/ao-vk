@@ -249,6 +249,45 @@ void RvkState::Present()
         RvkLog("PBR debug view: %s", kNames[next]);
     }
     rvk_settings::PollIni(device);              // randy-vk.ini edited while the game runs
+    // Ctrl+Shift+I: which texture is under the mouse (texture picking, for making material maps): the next frame's
+    // nearest 3D surface there - logged ("pick: RDB texture 1010004:55900 'name', 256x256; maps: ..."), its "type:id"
+    // copied to the clipboard, and its surfaces flash yellow for three seconds.
+    static bool picking = false;
+    static uint32_t pickBefore = 0;
+    static ULONGLONG highlightUntil = 0;
+    if (pressed('I') && window) {
+        POINT p;
+        RECT r;
+        if (GetCursorPos(&p) && ScreenToClient(window, &p) && GetClientRect(window, &r) && r.right > 0 && r.bottom > 0) {
+            pickBefore = device->LastPick().serial;
+            device->RequestPick(float(p.x) / float(r.right), float(p.y) / float(r.bottom));
+            picking = true;
+        }
+    }
+    if (picking) {
+        rvk::Device::PickResult result = device->LastPick();
+        if (result.serial != pickBefore) {
+            picking = false;
+            std::string reference;
+            RvkLog("pick: %s", DescribeTexture(result.texture, &reference).c_str());
+            if (!reference.empty() && OpenClipboard(window)) {
+                EmptyClipboard();
+                if (HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, reference.size() + 1)) {
+                    std::memcpy(GlobalLock(h), reference.c_str(), reference.size() + 1);
+                    GlobalUnlock(h);
+                    if (!SetClipboardData(CF_TEXT, h))
+                        GlobalFree(h);
+                }
+                CloseClipboard();
+            }
+            device->SetPickHighlight(result.texture);
+            highlightUntil = result.texture ? GetTickCount64() + 3000 : 0;
+        }
+    }
+    if (highlightUntil && GetTickCount64() > highlightUntil) {
+        device->SetPickHighlight(nullptr);
+        highlightUntil = 0;
+    }
     // Ctrl+Shift+L: reload the colour lookup tables (randy-vk-day/night.cube).
     if (pressed('L'))
         rvk_settings::LoadLuts(device);

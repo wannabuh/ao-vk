@@ -866,6 +866,7 @@ uint32_t g_pbrDebug = 0;      // --pbr-debug N: RVK_PbrDebug's views
 bool g_pbrOff = false;        // --pbr-off: materials attached but PBR lighting off (RVK_Pbr 0)
 float g_pbrProbe = 1.0f;      // --pbr-probe S: the environment probe's strength (0 = the analytic sky only)
 bool g_pbrDebugLate = false;  // --pbr-debug-late: the debug view only in the last frames (the probe learns the scene)
+float g_pick[2] = {-1.0f, -1.0f};   // --pick X Y: texture picking at (X, Y) of the target (0..1); prints which ball
 bool g_pbrRoom = false;       // --pbr-room: unlit coloured walls around (red left, green right, blue ahead), for the
                               // environment probe: mirror balls show red on their left, green on their right
 // --pbr-maps DIR: the side-loaded files, through the proxy's loader (rvk/material_maps.h): the floor gets
@@ -979,6 +980,17 @@ void RunPbrTest(D& dev, int frames, const std::string& shot)
     for (int frame = 0; frame < frames; ++frame) {
         if (frame == frames - 1)
             dev.RequestScreenshot(shot);
+        if (g_pick[0] >= 0.0f && frame == frames - 4)
+            dev.RequestPick(g_pick[0], g_pick[1]);
+        if (g_pick[0] >= 0.0f && frame == frames - 2) {
+            Texture* picked = dev.LastPick().texture;
+            std::string what = picked == floor ? "the floor" : picked ? "another texture" : "nothing";
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 5; ++c)
+                    if (picked == tex[r][c]) what = "ball row " + std::to_string(r) + " column " + std::to_string(c);
+            std::printf("pick: %s (serial %u)\n", what.c_str(), dev.LastPick().serial);
+            dev.SetPickHighlight(picked);
+        }
         if (g_pbrDebugLate && frame == frames - 3) {
             pbr.debug = g_pbrDebug;
             dev.SetPbr(pbr);
@@ -2486,6 +2498,7 @@ int main(int argc, char** argv)
         else if (a == "--pbr-off") g_pbrOff = true;
         else if (a == "--pbr-probe" && i + 1 < argc) g_pbrProbe = float(std::atof(argv[++i]));
         else if (a == "--pbr-room") g_pbrRoom = true;
+        else if (a == "--pick" && i + 2 < argc) { g_pick[0] = float(std::atof(argv[++i])); g_pick[1] = float(std::atof(argv[++i])); }
         else if (a == "--pbr-debug-late") g_pbrDebugLate = true;
         else if (a == "--pbr-debug" && i + 1 < argc) g_pbrDebug = uint32_t(std::atoi(argv[++i]));
         else if (a == "--ao" && i + 1 < argc) { ao = float(std::atof(argv[++i])); hdr = true; }

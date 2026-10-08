@@ -17,8 +17,9 @@ struct DrawTransform {
     uvec4 mat;                  // PBR material: occlusion/roughness/metallic image slot, the maps' sampler slot, MAT_* bits,
                                 // emissive image slot
 };
-const uint MAT_PBR = 1u, MAT_BASE = 2u, MAT_ALBEDO = 4u, MAT_EMISSIVE = 8u;   // D.mat.z: the draw has an ORM map; it is
-                                // the ground base texture's; stage 0 draws an albedo map; it has an emissive map
+const uint MAT_PBR = 1u, MAT_BASE = 2u, MAT_ALBEDO = 4u, MAT_EMISSIVE = 8u, MAT_PICKED = 16u;   // D.mat.z: the draw has an
+                                // ORM map; it is the ground base texture's; stage 0 draws an albedo map; it has an
+                                // emissive map; its texture was picked (Ctrl+Shift+I: flashes yellow)
 
 struct DrawConstants {
     mat4 view, proj;
