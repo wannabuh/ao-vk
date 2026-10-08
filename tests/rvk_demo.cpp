@@ -864,6 +864,10 @@ void RunNormalMapTest(D& dev, int frames, const std::string& shot, float bump)
 // The floor has a material too: a checker, smooth-ish non-metal (roughness 0.3), reflecting the spheres with --ssr.
 uint32_t g_pbrDebug = 0;      // --pbr-debug N: RVK_PbrDebug's views
 bool g_pbrOff = false;        // --pbr-off: materials attached but PBR lighting off (RVK_Pbr 0)
+float g_pbrProbe = 1.0f;      // --pbr-probe S: the environment probe's strength (0 = the analytic sky only)
+bool g_pbrDebugLate = false;  // --pbr-debug-late: the debug view only in the last frames (the probe learns the scene)
+bool g_pbrRoom = false;       // --pbr-room: unlit coloured walls around (red left, green right, blue ahead), for the
+                              // environment probe: mirror balls show red on their left, green on their right
 // --pbr-maps DIR: the side-loaded files, through the proxy's loader (rvk/material_maps.h): the floor gets
 // floor_n.png, floor_ao.png / floor_r.png / floor_m.png (separate) and floor_d.png; the bottom row's middle ball
 // ball_n.png and ball_orm.png (packed). Missing files are skipped.
@@ -958,14 +962,27 @@ void RunPbrTest(D& dev, int frames, const std::string& shot)
     dev.SetPixelLighting(true);
     Device::PbrSettings pbr;
     pbr.enabled = !g_pbrOff;
-    pbr.debug = g_pbrDebug;
+    pbr.debug = g_pbrDebugLate ? 0u : g_pbrDebug;
+    pbr.probe = g_pbrProbe;
     dev.SetPbr(pbr);
 
+    Texture* wallTex[3] = {solid(0xFFC03020), solid(0xFF30B040), solid(0xFF3050C0)};
+    const VtxMesh walls[3][4] = {
+        {{-10, -3, -8, 1, 0, 0, 0xFFFFFFFF, 0, 0}, {-10, 12, -8, 1, 0, 0, 0xFFFFFFFF, 0, 1},
+         {-10, -3, 25, 1, 0, 0, 0xFFFFFFFF, 1, 0}, {-10, 12, 25, 1, 0, 0, 0xFFFFFFFF, 1, 1}},
+        {{10, -3, -8, -1, 0, 0, 0xFFFFFFFF, 0, 0}, {10, 12, -8, -1, 0, 0, 0xFFFFFFFF, 0, 1},
+         {10, -3, 25, -1, 0, 0, 0xFFFFFFFF, 1, 0}, {10, 12, 25, -1, 0, 0, 0xFFFFFFFF, 1, 1}},
+        {{-10, -3, 25, 0, 0, -1, 0xFFFFFFFF, 0, 0}, {-10, 12, 25, 0, 0, -1, 0xFFFFFFFF, 0, 1},
+         {10, -3, 25, 0, 0, -1, 0xFFFFFFFF, 1, 0}, {10, 12, 25, 0, 0, -1, 0xFFFFFFFF, 1, 1}}};
     VtxMesh floorQuad[4] = {{-8, 0, -4, 0, 1, 0, 0xFFFFFFFF, 0, 0}, {8, 0, -4, 0, 1, 0, 0xFFFFFFFF, 8, 0},
                             {-8, 0, 12, 0, 1, 0, 0xFFFFFFFF, 0, 8}, {8, 0, 12, 0, 1, 0, 0xFFFFFFFF, 8, 8}};
     for (int frame = 0; frame < frames; ++frame) {
         if (frame == frames - 1)
             dev.RequestScreenshot(shot);
+        if (g_pbrDebugLate && frame == frames - 3) {
+            pbr.debug = g_pbrDebug;
+            dev.SetPbr(pbr);
+        }
         dev.BeginFrame();
         dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
         dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF8098B8, 1.0f);
@@ -1021,6 +1038,15 @@ void RunPbrTest(D& dev, int frames, const std::string& shot)
         dev.SetTexture(0, floor);
         dev.SetTransform(World, Translate(0, -2.4f, 0));
         dev.DrawPrimitive(TriangleStrip, kFvfMesh, floorQuad, 4);
+        if (g_pbrRoom) {
+            dev.SetRenderState(RS_LIGHTING, 0);
+            dev.SetTransform(World, Translate(0, 0, 0));
+            for (int w = 0; w < 3; ++w) {
+                dev.SetTexture(0, wallTex[w]);
+                dev.DrawPrimitive(TriangleStrip, kFvfMesh, walls[w], 4);
+            }
+            dev.SetRenderState(RS_LIGHTING, 1);
+        }
         for (int row = 0; row < 4; ++row)
             for (int col = 0; col < 5; ++col) {
                 bool legacy = row == 0 && col < 4;
@@ -1036,6 +1062,7 @@ void RunPbrTest(D& dev, int frames, const std::string& shot)
     for (auto& row : tex)
         for (Texture* t : row) dev.DestroyTexture(t);   // their maps go with them
     dev.DestroyTexture(floor);
+    for (Texture* t : wallTex) dev.DestroyTexture(t);
 }
 
 float g_cameraYaw = 0.0f;  // --camera-yaw: the shadow test's camera turns this much a frame (motion blur)
@@ -2454,6 +2481,9 @@ int main(int argc, char** argv)
         else if (a == "--pbr-test") pbrTest = true;
         else if (a == "--pbr-maps" && i + 1 < argc) { g_pbrMaps = argv[++i]; pbrTest = true; }
         else if (a == "--pbr-off") g_pbrOff = true;
+        else if (a == "--pbr-probe" && i + 1 < argc) g_pbrProbe = float(std::atof(argv[++i]));
+        else if (a == "--pbr-room") g_pbrRoom = true;
+        else if (a == "--pbr-debug-late") g_pbrDebugLate = true;
         else if (a == "--pbr-debug" && i + 1 < argc) g_pbrDebug = uint32_t(std::atoi(argv[++i]));
         else if (a == "--ao" && i + 1 < argc) { ao = float(std::atof(argv[++i])); hdr = true; }
         else if (a == "--ao-radius" && i + 1 < argc) aoRadius = float(std::atof(argv[++i]));

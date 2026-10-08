@@ -40,6 +40,7 @@ float PointShadow(Light l, vec3 posW, vec3 n, float nl)
 }
 
 #include "lighting.glsl"
+#include "env_common.glsl"
 
 layout(location = 0) in vec4 vDiffuse;
 layout(location = 1) in vec4 vSpecular;
@@ -327,6 +328,7 @@ vec3 BumpNormal(texture2D img, sampler smp, vec3 n, vec3 posW, vec2 uv)
 // What a PBR surface reflects of its surroundings without a reflection probe: a sky-and-ground environment made from
 // the scene's ambient light, the fog colour (the horizon) and a little sunlight, through the split-sum BRDF, with
 // specular occlusion from the occlusion map (Lagarde). Screen-space reflections replace part of it (reflectivity).
+vec3 gPbrEnv = vec3(0.0);                        // the surroundings PbrAmbientSpecular reflected (debug view 9)
 vec3 PbrAmbientSpecular(vec3 nu, vec3 V, vec3 ambientLight)
 {
     float nv = max(dot(nu, V), 1e-4);
@@ -334,6 +336,23 @@ vec3 PbrAmbientSpecular(vec3 nu, vec3 V, vec3 ambientLight)
     vec3 sky = (C.flags.x & F_FOG) != 0u ? mix(ambientLight, C.fogColor.rgb, 0.5) : ambientLight;
     sky += FL.sunColor.rgb * 0.25;
     vec3 env = mix(ambientLight * 0.5, sky * 1.3, smoothstep(-0.4, 0.6, R.y));
+    // The environment probe (what the camera has seen that way), where it is sure, between its two levels nearest
+    // the roughness.
+    uint probe = floatBitsToUint(FL.pbr2.w);
+    if ((probe & 0xFFFFFu) != 0u) {
+        float strength = float(probe >> 28) / 15.0;
+        float lod = clamp(gPbrRough, 0.0, 1.0);
+        lod = lod < 0.3 ? (lod - 0.08) / 0.22 : lod < 0.5 ? 1.0 + (lod - 0.3) / 0.2 : lod < 0.75 ? 2.0 + (lod - 0.5) / 0.25
+            : 3.0 + (lod - 0.75) / 0.25;
+        lod = clamp(lod, 0.0, kEnvLevels - 1.0);
+        int l0 = int(lod), l1 = min(l0 + 1, int(kEnvLevels) - 1);
+        uint img = (probe & 0xFFFFFu) - 1u, smp = (probe >> 20) & 0xFFu;
+#define ENVATLAS sampler2D(texImages[img], bindlessSamplers[smp])
+        vec4 p = mix(textureLod(ENVATLAS, EnvAtlasUv(R, l0), 0.0), textureLod(ENVATLAS, EnvAtlasUv(R, l1), 0.0), lod - float(l0));
+#undef ENVATLAS
+        env = mix(env, p.rgb, clamp(p.a, 0.0, 1.0) * strength);
+    }
+    gPbrEnv = env;
     float so = clamp(pow(nv + gPbrAo, exp2(-16.0 * gPbrRough - 1.0)) - 1.0 + gPbrAo, 0.0, 1.0);
     return EnvBrdfApprox(gPbrF0, gPbrRough, nv) * env * so;
 }
@@ -654,7 +673,8 @@ void main()
     }
     // PBR debug views (RVK_PbrDebug). 7: the scene, tinted where surfaces have maps - green a PBR material (lit with
     // it), blue only a normal map, magenta an albedo map (any draw), orange where an emissive map gives off light.
-    // 8: only the emitted light (everything else dark grey).
+    // 8: only the emitted light (everything else dark grey). 9: what PBR surfaces reflect (the environment probe
+    // or, where it hasn't seen, the analytic sky), at their roughness.
     uint pbrDebug = uint(FL.pbr2.x + 0.5);
     if (pbrDebug == 7u && (C.vtx.x & 0xEu) != 4u) {
         vec3 tint = gPbrOn ? vec3(0.1, 1.0, 0.2) : (C.flags.x & F_NORMALMAP) != 0u ? vec3(0.15, 0.4, 1.0)
@@ -663,6 +683,8 @@ void main()
             tint = vec3(1.0, 0.5, 0.05);
         if (tint.x >= 0.0)
             current.rgb = mix(current.rgb, tint * max(dot(current.rgb, vec3(0.3, 0.59, 0.11)), 0.25) * 1.6, 0.6);
+    } else if (pbrDebug == 9u && (C.vtx.x & 0xEu) != 4u) {
+        current.rgb = gPbrOn ? gPbrEnv : vec3(dot(current.rgb, vec3(0.3, 0.59, 0.11)) * 0.15);
     } else if (pbrDebug == 8u && (C.vtx.x & 0xEu) != 4u) {
         current.rgb = emitted + vec3(dot(current.rgb - emitted, vec3(0.3, 0.59, 0.11)) * 0.15);
     } else if (pbrDebug != 0u && (C.flags.x & F_LIGHTING) != 0u && (C.vtx.x & 0xEu) != 4u) {

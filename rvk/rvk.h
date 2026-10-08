@@ -222,6 +222,7 @@ public:
     struct PbrSettings {
         bool enabled = true, albedoMaps = true;
         float specular = 1.0f, ambient = 1.0f, reflections = 1.0f, occlusion = 1.0f, emissive = 2.0f;
+        float probe = 1.0f;                      // how much the environment probe replaces the analytic sky (HDR)
         uint32_t debug = 0;
     };
     void SetPbr(const PbrSettings& s);
@@ -1383,6 +1384,17 @@ private:
     Texture* m_giTex[2] = {};                    // half resolution: indirect light + view depth (ping-pong)
     VkPipeline m_giPipeline = VK_NULL_HANDLE, m_giBlurPipeline = VK_NULL_HANDLE;
     bool RenderGi(VkCommandBuffer cmd);
+    // The environment probe (PBR materials' reflections of their surroundings): what the camera has seen around it
+    // by direction (octahedral, 128 x 128, ping-pong; a: how sure), and its prefiltered atlas (env_common.glsl) that
+    // the scene shaders sample through FL.pbr2.w. Updated after each scene, used by the next.
+    Texture* m_envProbe[2] = {};
+    Texture* m_envAtlas = nullptr;
+    uint32_t m_envCurrent = 0;                   // the m_envProbe holding the latest
+    bool m_envReady = false;                     // the atlas has been written (and is readable)
+    float m_envEye[3] = {};                      // the camera at the last update
+    bool m_envEyeValid = false;
+    VkPipeline m_envAccumPipeline = VK_NULL_HANDLE, m_envFilterPipeline = VK_NULL_HANDLE;
+    bool RenderEnvProbe(VkCommandBuffer cmd);
     // Volumetric light: sun shafts through the shadow cascades and lamp glow (hdr.cpp, volume.frag).
     float m_volume = 1.0f, m_volumeHaze = 1.0f, m_volumeShafts = 1.0f;
     Texture* m_volumeTex[2] = {};                // half resolution: scattered light + view depth (ping-pong)
@@ -1815,8 +1827,8 @@ private:
     uint32_t FixedSamplerSlot(uint32_t which, VkSampler s);
     uint64_t m_stageSamplerKey[2] = {~0ull, ~0ull};
     uint32_t m_stageSamplerSlot[2] = {};
-    VkSampler m_fixedSampler[2] = {};
-    uint32_t m_fixedSamplerSlot[2] = {};
+    VkSampler m_fixedSampler[3] = {};
+    uint32_t m_fixedSamplerSlot[3] = {};
     bool m_bindlessBound = false;                // set 1 bound in this frame's command buffer
     std::array<VkPipeline, 3> m_pipelines{};   // per topology class: points, lines, triangles
     VkBuffer m_nullBuffer = VK_NULL_HANDLE;    // zeros, bound at stride 0 for attributes a format lacks

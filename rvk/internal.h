@@ -99,7 +99,8 @@ struct FrameLights {               // binding 4: per-frame data (constants.glsl 
     float sunDir[4];               // w: light headroom (F_OVERBRIGHT)
     float sunColor[4];             // the shadow-casting sun's colour (0 = none)
     float pbr[4];                  // PBR materials: direct specular, ambient specular, reflections, occlusion map strength
-    float pbr2[4];                 // x: debug view (0 = off), y: 1 = PBR on, z: emissive maps' brightness
+    float pbr2[4];                 // x: debug view (0 = off), y: 1 = PBR on, z: emissive maps' brightness, w: the
+                                   // environment probe (bits: draw.cpp FillFrameLights)
     d3d::Matrix prevView, prevProj; // motion vectors: the world camera last frame (applied like view and proj, so a
                                    // still camera's motion is exactly zero)
     float pushers[kPushers][4];    // what plants bend away from (characters' feet and trails): world x, y, z, seconds

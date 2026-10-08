@@ -41,6 +41,12 @@ const uint32_t kGiSpirv[] = {
 const uint32_t kGiBlurSpirv[] = {
 #include "gi_blur.frag.inc"
 };
+const uint32_t kEnvAccumSpirv[] = {
+#include "env_accum.frag.inc"
+};
+const uint32_t kEnvFilterSpirv[] = {
+#include "env_filter.frag.inc"
+};
 const uint32_t kVolumeSpirv[] = {
 #include "volume.frag.inc"
 };
@@ -240,6 +246,8 @@ bool Device::CreateHdrResources(std::string* error)
                          &m_aoBlurPipeline) &&
               fullscreen(kGiSpirv, sizeof(kGiSpirv), hdrFormat, false, m_bloomLayout, &m_giPipeline) &&
               fullscreen(kGiBlurSpirv, sizeof(kGiBlurSpirv), hdrFormat, false, m_bloomLayout, &m_giBlurPipeline) &&
+              fullscreen(kEnvAccumSpirv, sizeof(kEnvAccumSpirv), hdrFormat, false, m_bloomLayout, &m_envAccumPipeline) &&
+              fullscreen(kEnvFilterSpirv, sizeof(kEnvFilterSpirv), hdrFormat, false, m_bloomLayout, &m_envFilterPipeline) &&
               fullscreen(kVolumeSpirv, sizeof(kVolumeSpirv), hdrFormat, false, m_volumeLayout, &m_volumePipeline) &&
               fullscreen(kVolumeBlurSpirv, sizeof(kVolumeBlurSpirv), hdrFormat, false, m_bloomLayout, &m_volumeBlurPipeline) &&
               fullscreen(kSsrSpirv, sizeof(kSsrSpirv), hdrFormat, false, m_bloomLayout, &m_ssrPipeline) &&
@@ -278,6 +286,9 @@ void Device::DestroyHdrResources()
         if (t) { DestroyTextureNow(t); t = nullptr; }
     for (Texture*& t : m_giTex)
         if (t) { DestroyTextureNow(t); t = nullptr; }
+    for (Texture** t : {&m_envProbe[0], &m_envProbe[1], &m_envAtlas})
+        if (*t) { DestroyTextureNow(*t); *t = nullptr; }
+    m_envReady = m_envEyeValid = false;
     for (Texture*& t : m_volumeTex)
         if (t) { DestroyTextureNow(t); t = nullptr; }
     if (m_ssrTex) { DestroyTextureNow(m_ssrTex); m_ssrTex = nullptr; }
@@ -295,6 +306,7 @@ void Device::DestroyHdrResources()
     for (Texture** t : {&m_dofIn, &m_dofOut, &m_dofHalf, &m_dofBlur, &m_dofTiles[0], &m_dofTiles[1], &m_dofFocus[0], &m_dofFocus[1]})
         if (*t) { DestroyTextureNow(*t); *t = nullptr; }
     for (VkPipeline* p : {&m_bloomDown, &m_bloomUp, &m_aoPipeline, &m_aoBlurPipeline, &m_giPipeline, &m_giBlurPipeline,
+                          &m_envAccumPipeline, &m_envFilterPipeline,
                           &m_volumePipeline, &m_volumeBlurPipeline, &m_ssrPipeline,
                           &m_contactPipeline, &m_taaPipeline, &m_sharpenPipeline, &m_uiCompositePipeline,
                           &m_motionPipeline,
@@ -390,6 +402,8 @@ void Device::EndScene()
     ProfileMark("ao");
     bool gi = RenderGi(cmd);
     ProfileMark("gi");
+    RenderEnvProbe(cmd);
+    ProfileMark("environment probe");
     bool volume = RenderVolume(cmd);
     ProfileMark("volumetric");
     Transition(cmd, m_localFraction, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -707,6 +721,65 @@ bool Device::RenderGi(VkCommandBuffer cmd)
     // Four passes end in m_giTex[0]: swap so that [1] holds the result.
     std::swap(m_giTex[0], m_giTex[1]);
     Transition(cmd, m_giTex[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    return true;
+}
+
+// The environment probe (env_accum.frag, env_filter.frag; rvk.h m_envProbe): the scene just drawn goes into the
+// direction map around the camera, which is then filtered into the atlas the next frame's PBR materials reflect.
+bool Device::RenderEnvProbe(VkCommandBuffer cmd)
+{
+    bool perspective = m_aoProjValid && m_aoProj.m[2][3] == 1.0f && m_aoProj.m[3][3] == 0.0f;
+    if (!m_pbr.enabled || m_pbr.probe <= 0.0f || !perspective || !m_depth || !m_envAccumPipeline) {
+        m_envEyeValid = false;
+        return false;
+    }
+    if (!m_envAtlas) {
+        for (Texture*& t : m_envProbe)
+            t = CreateImage(128, 128, Format::RGBA16F, 1, true);
+        m_envAtlas = CreateImage(192, 128, Format::RGBA16F, 1, true);
+        if (!m_envProbe[0] || !m_envProbe[1] || !m_envAtlas)
+            return false;
+    }
+    const auto& vm = m_aoView.m;
+    float eye[3];
+    for (int i = 0; i < 3; ++i)
+        eye[i] = -(vm[3][0] * vm[i][0] + vm[3][1] * vm[i][1] + vm[3][2] * vm[i][2]);
+    // Sureness fades as the camera moves away from where it saw things (half of it in ~140 units) and slowly with
+    // time (half in ~25 s at 60 fps: the light changes); a jump (a teleport, a zone) forgets everything.
+    float moved = 0.0f;
+    if (m_envEyeValid)
+        moved = std::sqrt((eye[0] - m_envEye[0]) * (eye[0] - m_envEye[0]) + (eye[1] - m_envEye[1]) * (eye[1] - m_envEye[1]) +
+                          (eye[2] - m_envEye[2]) * (eye[2] - m_envEye[2]));
+    const bool forget = !m_envEyeValid || moved > 40.0f;
+    std::memcpy(m_envEye, eye, sizeof(eye));
+    m_envEyeValid = true;
+    // A PBR debug view colours the scene: the probe would learn those colours and show them back. It keeps what it had.
+    if (m_pbr.debug != 0 && m_envReady)
+        return true;
+    MakeDepthReadable(cmd);
+    struct {
+        d3d::Matrix viewProj;
+        float proj[4];
+        float params[4];
+    } accum{MulMatrix(m_aoView, m_aoProj),
+            {m_aoProj.m[2][2], m_aoProj.m[3][2], float(m_scene->m_width), float(m_scene->m_height)},
+            {0.12f, 6.0f, std::exp(-moved / 200.0f) * 0.99954f, forget ? 1.0f : 0.0f}};
+    Texture* prev = m_envProbe[m_envCurrent];
+    Texture* next = m_envProbe[m_envCurrent ^ 1];
+    if (prev->m_layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        if (!forget)
+            return false;                        // (never written: only a forgetting pass may read it)
+        Transition(cmd, prev, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+    FullscreenPass(cmd, next, m_envAccumPipeline, prev->m_view, m_scene->m_view, m_linearSampler, &accum.viewProj.m[0][0],
+                   sizeof(accum), false, m_depthView);
+    Transition(cmd, next, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    m_envCurrent ^= 1;
+    float filter[4] = {FrameNoise(), 0.0f, 0.0f, 0.0f};
+    FullscreenPass(cmd, m_envAtlas, m_envFilterPipeline, next->m_view, next->m_view, m_linearSampler, filter,
+                   sizeof(filter), false);
+    Transition(cmd, m_envAtlas, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    m_envReady = true;
     return true;
 }
 

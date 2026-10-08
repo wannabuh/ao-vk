@@ -310,7 +310,15 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->pbr2[0] = float(m_pbr.debug);
     fl->pbr2[1] = m_pbr.enabled ? 1.0f : 0.0f;
     fl->pbr2[2] = m_pbr.enabled ? m_pbr.emissive : 0.0f;
-    fl->pbr2[3] = 0.0f;
+    // The environment probe's atlas (hdr.cpp RenderEnvProbe): bindless image slot + 1 (0 = none) in bits 0-19, the
+    // linear sampler's slot in 20-27, its strength (0..1, 1/15 steps) in 28-31 - as the float's bits.
+    uint32_t env = 0;
+    if (m_envReady && m_envAtlas && m_pbr.enabled && m_pbr.probe > 0.0f) {
+        const uint32_t image = BindlessImage(m_envAtlas), sampler = FixedSamplerSlot(2, m_linearSampler);
+        if (image != ~0u && image < (1u << 20) - 1 && sampler < 256)
+            env = (image + 1) | sampler << 20 | uint32_t(std::lround(std::clamp(m_pbr.probe, 0.0f, 1.0f) * 15.0f)) << 28;
+    }
+    std::memcpy(&fl->pbr2[3], &env, 4);
     fl->prevView = m_prevView;                   // the world camera last frame (motion vectors)
     fl->prevProj = m_prevProj;
     m_frameLightIndices.clear();

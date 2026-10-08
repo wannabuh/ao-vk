@@ -53,8 +53,9 @@ Setting g_settings[] = {
     {"RVK_PbrEnv",     "Reflected surroundings",                                   "Lighting",         Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_Pbr"},
     {"RVK_PbrSsr",     "Screen-space reflections on smooth materials (with reflections on)", "Lighting", Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_Pbr"},
     {"RVK_PbrAo",      "Occlusion map strength",                                   "Lighting",         Float, 0, 1, 0.1f, 1, nullptr, 0, "RVK_Pbr"},
+    {"RVK_PbrProbe",   "Reflect what the camera has seen around it (environment probe; with HDR)", "Lighting", Float, 0, 1, 0.1f, 1, nullptr, 0, "RVK_Pbr"},
     {"RVK_PbrGlow",    "Emissive maps' brightness (glowing surfaces from the materials folder)", "Lighting", Float, 0, 8, 0.25f, 2, nullptr, 0, "RVK_Pbr"},
-    {"RVK_PbrDebug",   "Debug view (7 which surfaces have maps: green PBR, blue normal map, magenta albedo, orange emissive; 8 emitted light only; 1 albedo, 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 highlights only; Ctrl+Shift+K)", "Lighting", Choice, 0, 8, 1, 0, nullptr, 0, "RVK_Pbr", "0 1 2 3 4 5 6 7 8"},
+    {"RVK_PbrDebug",   "Debug view (7 which surfaces have maps: green PBR, blue normal map, magenta albedo, orange emissive; 8 emitted light only; 9 reflected surroundings; 1 albedo, 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 highlights only; Ctrl+Shift+K)", "Lighting", Choice, 0, 9, 1, 0, nullptr, 0, "RVK_Pbr", "0 1 2 3 4 5 6 7 8 9"},
     {"RVK_Albedo",     "Replacement textures (albedo maps from the materials folder)", "Lighting",     Bool,  0, 1, 1, 1, nullptr, 0},
     {"RVK_LeafOn",     "Sunlight through leaves",                                  "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0},
     {"RVK_LeafLight",  "Strength",                                                 "Lighting",         Float, 0.25f, 2, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
@@ -310,7 +311,7 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
     else if (is("RVK_Bump")) d->SetBump(V(n));
     else if (is("RVK_NormalMaps") || is("RVK_NormalStr")) d->SetNormalMaps(V("RVK_NormalMaps") != 0.0f, V("RVK_NormalStr"));
     else if (is("RVK_Pbr") || is("RVK_PbrSpec") || is("RVK_PbrEnv") || is("RVK_PbrSsr") || is("RVK_PbrAo") ||
-             is("RVK_PbrGlow") || is("RVK_PbrDebug") || is("RVK_Albedo")) {
+             is("RVK_PbrGlow") || is("RVK_PbrProbe") || is("RVK_PbrDebug") || is("RVK_Albedo")) {
         rvk::Device::PbrSettings p;
         p.enabled = V("RVK_Pbr") != 0.0f;
         p.specular = V("RVK_PbrSpec");
@@ -318,6 +319,7 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
         p.reflections = V("RVK_PbrSsr");
         p.occlusion = V("RVK_PbrAo");
         p.emissive = V("RVK_PbrGlow");
+        p.probe = V("RVK_PbrProbe");
         p.debug = p.enabled ? uint32_t(V("RVK_PbrDebug")) : 0u;   // (not in kVanilla: the ini migration would read
                                                                    // its 0 as "the feature was off")
         p.albedoMaps = V("RVK_Albedo") != 0.0f;
