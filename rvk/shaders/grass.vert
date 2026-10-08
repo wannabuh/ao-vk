@@ -272,13 +272,13 @@ void main()
     float grad = mix(0.85, 1.19, t);
     float ao = (1.0 - 0.55 * canopy * (1.0 - t) * (1.0 - t)) / (1.0 - 0.275 * canopy);
     // Trodden blades (layAmount: how far the trail lays them) keep their own colour to the root - lying flat, a root
-    // gone over to the ground's colour would make the lane look like bare ground - and turn a paler, yellower green
-    // (the pressed blades' lighter undersides), so the path shows against both the ground and the standing grass.
+    // gone over to the ground's colour would make the lane look like bare ground - and turn a darker, deeper green
+    // (crushed blades), so the path shows against both the ground and the standing grass.
     float trodden = layAmount * min(GF.trail2.x, 1.0);
     float toSoil = 0.55 * (1.0 - smoothstep(0.0, 0.4, t)) * (1.0 - trodden);
     vec3 albedo = head ? headColour : mix(tint, groundAlbedo, toSoil) * (grad * ao);
     if (!head && layAmount > 0.0)
-        albedo = mix(albedo, albedo * vec3(1.12, 1.15, 0.78), clamp(layAmount * GF.trail2.x, 0.0, 1.0));
+        albedo = mix(albedo, albedo * vec3(0.55, 0.72, 0.5), clamp(layAmount * GF.trail2.x, 0.0, 1.0));
     // The sun on the blade itself (GF.look.z, RVK_GrassGlow; FL.sunColor: none at night): a rounded blade, lit on the
     // side towards the sun and darker on the other (around the ground's light: the mean stays); the light shining
     // through its thin upper part when the camera looks towards the sun; a glint along it (a hair's sheen). In a dense
