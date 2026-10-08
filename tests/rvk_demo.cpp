@@ -1134,7 +1134,8 @@ bool g_waterNoPrepass = false;    // --water-noprepass
 bool g_hudSprite = false;         // --hud-sprite: after the 3D, a screen sprite as the game's timer bars draw it (the
                                   // pre-transformed 0x1C4 format, not out of ProcessVertices): interface, so its colour
                                   // must come out exactly (0x30C050 at the top left), untouched by the HDR passes
-                                  // (with --grade 0.3 1.3 0.5 0 0.8 --dof 1 a scene draw would come out grey and blurred)
+                                  // (with --grade 0.3 1.3 0.5 0 0.8 --dof 1 a scene draw would come out grey and blurred);
+                                  // and an untextured MODULATE(TEXTURE, DIFFUSE) bar below it: 0x8040C0, not black
 bool g_waterWall = false;         // --water-wall: a steep sheet of the water mesh standing in the lake (a fall)
 
 template <typename D>
@@ -1356,6 +1357,15 @@ void RunWaterScene(D& dev, int frames, const std::string& shot)
             dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG2);
             dev.SetTextureStageState(0, TSS_ALPHAARG2, TA_DIFFUSE);
             dev.DrawPrimitive(TriangleStrip, kFvfSprite, bar, 4);
+            // ... and one as the PF map's wash: no texture, MODULATE(TEXTURE, DIFFUSE) - native Direct3D disables a
+            // textureless stage that reads its texture, so it must come out its vertex colour (0x8040C0 at y 60).
+            const uint32_t c2 = 0xFF8040C0;
+            VtxSprite wash[4] = {{20, 50, 0, 1, c2, 0, 0, 0}, {220, 50, 0, 1, c2, 0, 1, 0},
+                                 {20, 70, 0, 1, c2, 0, 0, 1}, {220, 70, 0, 1, c2, 0, 1, 1}};
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+            dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+            dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+            dev.DrawPrimitive(TriangleStrip, kFvfSprite, wash, 4);
             dev.SetRenderState(RS_ZENABLE, 1);
             dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
             dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);

@@ -2393,9 +2393,23 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c.matSources[1] = m_rs[d3d::RS_AMBIENTMATERIALSOURCE];
     c.matSources[2] = m_rs[d3d::RS_SPECULARMATERIALSOURCE];
     c.matSources[3] = m_rs[d3d::RS_EMISSIVEMATERIALSOURCE];
+    // A stage without a texture whose colour operation reads the texture (an argument it uses is D3DTA_TEXTURE) is
+    // disabled, and so the stages after it - as native Direct3D does (DXVK's fixed function does the same): the
+    // PF map's white wash is drawn untextured with MODULATE(TEXTURE, DIFFUSE) and must come out its vertex colour,
+    // not black. (Alpha arguments and implicit sampling don't count.)
+    bool stagesOff = false;
     for (int s = 0; s < 2; ++s) {
         const auto& t = m_tss[s];
-        c.stageA[s][0] = t[d3d::TSS_COLOROP];
+        uint32_t colorOp = t[d3d::TSS_COLOROP];
+        if (!stagesOff && colorOp != d3d::TOP_DISABLE && !m_textures[s]) {
+            const bool arg1 = colorOp != d3d::TOP_SELECTARG2, arg2 = colorOp != d3d::TOP_SELECTARG1;
+            if ((arg1 && (t[d3d::TSS_COLORARG1] & 0xFu) == d3d::TA_TEXTURE) ||
+                (arg2 && (t[d3d::TSS_COLORARG2] & 0xFu) == d3d::TA_TEXTURE))
+                stagesOff = true;
+        }
+        if (stagesOff)
+            colorOp = d3d::TOP_DISABLE;
+        c.stageA[s][0] = colorOp;
         c.stageA[s][1] = t[d3d::TSS_COLORARG1];
         c.stageA[s][2] = t[d3d::TSS_COLORARG2];
         c.stageA[s][3] = t[d3d::TSS_ALPHAOP];
