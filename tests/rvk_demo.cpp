@@ -1136,6 +1136,8 @@ bool g_hudSprite = false;         // --hud-sprite: after the 3D, a screen sprite
                                   // must come out exactly (0x30C050 at the top left), untouched by the HDR passes
                                   // (with --grade 0.3 1.3 0.5 0 0.8 --dof 1 a scene draw would come out grey and blurred);
                                   // and an untextured MODULATE(TEXTURE, DIFFUSE) bar below it: 0x8040C0, not black
+bool g_waterPool = false;         // --water-pool: the lake's water only a 6 x 6 pool in front (Jobe's harbour: no water
+                                  // may spread beyond it - the rest of the bowl stays dry)
 bool g_waterWall = false;         // --water-wall: a steep sheet of the water mesh standing in the lake (a fall)
 
 template <typename D>
@@ -1231,6 +1233,8 @@ void RunWaterScene(D& dev, int frames, const std::string& shot)
         water = {{{-3000, 0, 5}, tint}, {{3000, 0, 5}, tint}, {{3000, 0, 4000}, tint}, {{-3000, 0, 4000}, tint}};
     else
         water = {{{-90, 0, -40}, tint}, {{90, 0, -40}, tint}, {{90, 0, 130}, tint}, {{-90, 0, 130}, tint}};
+    if (g_waterPool)
+        water = {{{-3, 0, 17}, tint}, {{3, 0, 17}, tint}, {{3, 0, 23}, tint}, {{-3, 0, 23}, tint}};
     std::vector<uint16_t> waterIdx = {0, 1, 2, 0, 2, 3};
     if (g_waterWall) {                    // upright, 8 units tall, with the rock behind it 10 units further back
         water.insert(water.end(), {{{-30, 0, 60}, tint}, {{30, 0, 60}, tint}, {{30, 8, 60}, tint}, {{-30, 8, 60}, tint}});
@@ -2224,6 +2228,7 @@ int main(int argc, char** argv)
         else if (a == "--water-lake") { g_waterScene = 1; hdr = true; }
         else if (a == "--water-coast") { g_waterScene = 2; hdr = true; }
         else if (a == "--water-wall") g_waterWall = true;
+        else if (a == "--water-pool") g_waterPool = true;
         else if (a == "--water-shadows") shadows = true;   // (the coast's camera then goes wrong from frame 2: not the water's)
         else if (a == "--water-style" && i + 1 < argc) g_waterStyle = float(std::atof(argv[++i]));
         else if (a == "--water-yaw" && i + 1 < argc) g_waterYaw = float(std::atof(argv[++i]));

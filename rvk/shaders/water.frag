@@ -159,8 +159,11 @@ void main()
         outScene = vec4(sd < gl_FragCoord.z ? 1.0 : 0.0, fract(vRest.x * 0.1), fract(vRest.z * 0.1), 1.0);
         return;
     }
-    if (!mesh && W.mapInfo.z > 0.5 && texture(waterMap, MapUv(vRest.xz)).g < 0.5)
-        discard;
+    if (!mesh && W.mapInfo.z > 0.5) {
+        vec2 uv = MapUv(vRest.xz);                // beyond the map: no water (the sampler would repeat its edge)
+        if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))) || texture(waterMap, uv).g < 0.5)
+            discard;
+    }
     float style = W.look.x;
     float t = W.time.x;
     vec3 eye = W.camera.xyz;

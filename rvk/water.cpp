@@ -476,10 +476,12 @@ Device::WaterMap* Device::WaterMapFor(const WaterVertex* v, uint32_t count, cons
         const float* c = v[t.c].pos;
         float minX = std::min({a[0], b[0], c[0]}), maxX = std::max({a[0], b[0], c[0]});
         float minZ = std::min({a[2], b[2], c[2]}), maxZ = std::max({a[2], b[2], c[2]});
-        int x0 = std::max(int(std::floor((minX - m.origin[0]) / texel)) - 1, 0);
-        int x1 = std::min(int(std::ceil((maxX - m.origin[0]) / texel)) + 1, int(w) - 1);
-        int z0 = std::max(int(std::floor((minZ - m.origin[1]) / texel)) - 1, 0);
-        int z1 = std::min(int(std::ceil((maxZ - m.origin[1]) / texel)) + 1, int(h) - 1);
+        // (Never the outermost texels: they stay dry, so what the clamped sampler reads beyond the map is no water - a
+        // small pool's slack once reached them and flooded everything around it at its height.)
+        int x0 = std::max(int(std::floor((minX - m.origin[0]) / texel)) - 1, 1);
+        int x1 = std::min(int(std::ceil((maxX - m.origin[0]) / texel)) + 1, int(w) - 2);
+        int z0 = std::max(int(std::floor((minZ - m.origin[1]) / texel)) - 1, 1);
+        int z1 = std::min(int(std::ceil((maxZ - m.origin[1]) / texel)) + 1, int(h) - 2);
         float det = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
         if (std::fabs(det) < 1e-12f)
             continue;
