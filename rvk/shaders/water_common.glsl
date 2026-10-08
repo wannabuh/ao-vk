@@ -27,7 +27,8 @@ layout(set = 0, binding = 0) uniform WaterFrame {
     vec4 look2;         // x: foam; y: caustics; z: ripples (detail normals); w: the game's texture on the surface
     vec4 fogColour;     // rgb; w: 1 = fog on
     vec4 fogParams;     // start, end, density, table mode (D3DFOG_*: 1 exp, 2 exp2, 3 linear; 0 = none)
-    vec4 sky;           // rgb: the sky's colour overhead (from the frame's sky pixels; 0 = unknown); w: unused
+    vec4 sky;           // rgb: the sky's colour overhead (from the frame's sky pixels; 0 = unknown); w: debug view
+    vec4 env;           // x: 1 = the environment probe's atlas is bound (binding 12); y: its strength
 } W;
 
 layout(set = 0, binding = 7) uniform sampler2D waterMap;       // R: height above W.mapInfo.x, G: water (0 / 1)

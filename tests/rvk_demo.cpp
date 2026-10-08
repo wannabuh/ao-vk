@@ -1450,6 +1450,9 @@ void RunWaterScene(D& dev, int frames, const std::string& shot)
         water = {{{-90, 0, -40}, tint}, {{90, 0, -40}, tint}, {{90, 0, 130}, tint}, {{-90, 0, 130}, tint}};
     const uint16_t waterIdx[6] = {0, 1, 2, 0, 2, 3};
 
+    Device::PbrSettings pbr;                 // (the environment probe the water reflects: --pbr-probe)
+    pbr.probe = g_pbrProbe;
+    dev.SetPbr(pbr);
     Device::WaterParams wp;
     wp.style = g_waterStyle;
     wp.waves = g_waterWaves;

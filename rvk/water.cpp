@@ -43,6 +43,7 @@ struct WaterFrame {
     d3d::Matrix viewProj, prevViewProj, view;
     float proj[4], camera[4], viewport[4], time[4], wind[4], map[4], mapInfo[4], grid[4];
     float sunColour[4], sunDir[4], ambient[4], tint[4], look[4], look2[4], fogColour[4], fogParams[4], sky[4];
+    float env[4];
 };
 
 constexpr uint32_t kDetailSize = 256;
@@ -212,11 +213,11 @@ bool Device::CreateWaterResources(std::string* error)
 {
     DestroyWaterResources();
     // One pushed set: 0 the block, 2 the mesh's vertices, 4 the frame lights, 5 the sun's shadows, 7 the water map, 8
-    // the scene's depth, 9 the scene, 10 the detail texture, 11 the game's texture.
-    const uint32_t numbers[9] = {0, 2, 4, 5, 7, 8, 9, 10, 11};
-    VkDescriptorSetLayoutBinding b[9] = {};
+    // the scene's depth, 9 the scene, 10 the detail texture, 11 the game's texture, 12 the environment probe's atlas.
+    const uint32_t numbers[10] = {0, 2, 4, 5, 7, 8, 9, 10, 11, 12};
+    VkDescriptorSetLayoutBinding b[10] = {};
     const VkShaderStageFlags both = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 10; ++i) {
         b[i].binding = numbers[i];
         b[i].descriptorCount = 1;
         b[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -227,7 +228,7 @@ bool Device::CreateWaterResources(std::string* error)
     b[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 9;
+    sl.bindingCount = 10;
     sl.pBindings = b;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_waterSetLayout), "vkCreateDescriptorSetLayout",
                error))
@@ -678,6 +679,11 @@ void Device::DrawWater(const WaterVertex* vertices, uint32_t vertexCount, const 
     wf.fogParams[1] = AsFloatBits(m_rs[d3d::RS_FOGEND]);
     wf.fogParams[2] = AsFloatBits(m_rs[d3d::RS_FOGDENSITY]);
     wf.fogParams[3] = float(m_rs[d3d::RS_FOGTABLEMODE] ? m_rs[d3d::RS_FOGTABLEMODE] : m_rs[d3d::RS_FOGVERTEXMODE]);
+    // The environment probe (hdr.cpp RenderEnvProbe): what the reflections that miss the screen show, where it has
+    // seen (else the sky).
+    const bool env = m_envReady && m_envAtlas && m_pbr.enabled && m_pbr.probe > 0.0f;
+    wf.env[0] = env ? 1.0f : 0.0f;
+    wf.env[1] = m_pbr.probe;
     // The game's water colour; a colourless one (white vertices) gets a water blue.
     uint32_t colour = map ? map->colour : vertices[0].colour;
     ArgbTo4(colour, wf.tint);
@@ -747,9 +753,11 @@ void Device::DrawWater(const WaterVertex* vertices, uint32_t vertexCount, const 
         VkDescriptorImageInfo sceneInfo{m_linearSampler, m_waterSceneCopy->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkDescriptorImageInfo detailInfo{m_waterRepeatSampler, m_waterDetail->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkDescriptorImageInfo gameInfo{m_waterRepeatSampler, gameTex->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet writes[9] = {};
-        const uint32_t bindings[9] = {0, 2, 4, 5, 7, 8, 9, 10, 11};
-        for (int i = 0; i < 9; ++i) {
+        VkDescriptorImageInfo envInfo{m_linearSampler, (env ? m_envAtlas : m_waterDetail)->m_view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet writes[10] = {};
+        const uint32_t bindings[10] = {0, 2, 4, 5, 7, 8, 9, 10, 11, 12};
+        for (int i = 0; i < 10; ++i) {
             writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[i].descriptorCount = 1;
             writes[i].dstBinding = bindings[i];
@@ -767,7 +775,8 @@ void Device::DrawWater(const WaterVertex* vertices, uint32_t vertexCount, const 
         writes[6].pImageInfo = &sceneInfo;
         writes[7].pImageInfo = &detailInfo;
         writes[8].pImageInfo = &gameInfo;
-        vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_waterLayout, 0, 9, writes);
+        writes[9].pImageInfo = &envInfo;
+        vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_waterLayout, 0, 10, writes);
         if (meshMode) {
             void* idxCpu = nullptr;
             const VkDeviceSize idxOffset = Allocate(VkDeviceSize(steep.size()) * 4, 16, &idxCpu);

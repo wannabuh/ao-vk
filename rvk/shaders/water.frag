@@ -15,6 +15,8 @@ layout(set = 0, binding = 5) uniform sampler2DArrayShadow shadowMap;   // the su
 layout(set = 0, binding = 9) uniform sampler2D sceneCopy;              // the HDR scene before the water
 layout(set = 0, binding = 10) uniform sampler2D detail;                // RG: ripple slope, B: noise, A: cells
 layout(set = 0, binding = 11) uniform sampler2D gameTexture;           // the game's water texture
+layout(set = 0, binding = 12) uniform sampler2D envAtlas;              // the environment probe (env_common.glsl)
+#include "env_common.glsl"
 
 layout(location = 0) in vec3 vPos;
 layout(location = 1) in vec3 vNormal;
@@ -246,6 +248,11 @@ void main()
     } else {
         vec4 ssr = Reflect(vPos + Ns * 0.05, Rd, noise);
         vec3 sky = Sky(Rd);
+        // What the camera has seen that way (the environment probe), sharp-ish: the ripples blur it anyway.
+        if (W.env.x > 0.5) {
+            vec4 p = mix(textureLod(envAtlas, EnvAtlasUv(Rd, 0), 0.0), textureLod(envAtlas, EnvAtlasUv(Rd, 1), 0.0), 0.4);
+            sky = mix(sky, p.rgb, clamp(p.a, 0.0, 1.0) * W.env.y);
+        }
         // The sky's reflection is shadowed where the sun is (a crude stand-in for the terrain around blocking it).
         reflected = mix(sky, ssr.rgb, ssr.w);
     }
