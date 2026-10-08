@@ -2388,7 +2388,12 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     c.flags[0] = flags;
     c.flags[1] = m_rs[d3d::RS_FOGVERTEXMODE];
     c.flags[2] = m_rs[d3d::RS_FOGTABLEMODE];
-    c.flags[3] = m_rs[d3d::RS_ALPHAFUNC];
+    // (Bit 8: in the interface layer, a draw replacing what is there - blended ONE, ZERO - covers it fully, whatever
+    // its alpha: on the frame it would. The PF map's light-map tiles have alpha 0; as coverage they left the map's
+    // black parts see-through.)
+    const bool layerReplace = m_uiLayerActive && m_target == m_uiLayer && m_rs[d3d::RS_ALPHABLENDENABLE] &&
+                              m_rs[d3d::RS_SRCBLEND] == d3d::BLEND_ONE && m_rs[d3d::RS_DESTBLEND] == d3d::BLEND_ZERO;
+    c.flags[3] = m_rs[d3d::RS_ALPHAFUNC] | (layerReplace ? 256u : 0u);
     c.matSources[0] = m_rs[d3d::RS_DIFFUSEMATERIALSOURCE];
     c.matSources[1] = m_rs[d3d::RS_AMBIENTMATERIALSOURCE];
     c.matSources[2] = m_rs[d3d::RS_SPECULARMATERIALSOURCE];
