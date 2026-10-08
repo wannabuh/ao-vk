@@ -510,8 +510,16 @@ void main()
             vec3 V = normalize(C.eyePos.xyz - vPosW);
             gPbrSpec = (spec + specL) * FL.pbr.x;
             // The ground's sunlight is baked into its lightmap, so the sun isn't among its lights: its highlight here.
-            if (gPbrBase && dot(FL.sunColor.rgb, FL.sunColor.rgb) > 0.0 && dot(FL.sunDir.xyz, FL.sunDir.xyz) > 0.0)
-                gPbrSpec += FL.sunColor.rgb * PbrSpecular(gPbrNormal, -normalize(FL.sunDir.xyz), V) * texShade * FL.pbr.x;
+            // Shadowed fully (the shadow strength keeps some baked light in the lightmap's shade; a highlight has none
+            // to keep), gone where the lightmap is dark (the game's baked shade of buildings - also those beyond the
+            // shadow cascades, whose shadows a low sun makes long), and fading as the sun nears the horizon.
+            if (gPbrBase && dot(FL.sunColor.rgb, FL.sunColor.rgb) > 0.0 && dot(FL.sunDir.xyz, FL.sunDir.xyz) > 0.0) {
+                vec3 Ls = -normalize(FL.sunDir.xyz);
+                float sunVis = gSunVisibilityValid ? gSunVisibility : 1.0;
+                float horizon = smoothstep(0.03, 0.25, Ls.y);
+                float baked = smoothstep(0.2, 0.55, dot(Sample(0u).rgb, vec3(0.3, 0.59, 0.11)));
+                gPbrSpec += FL.sunColor.rgb * PbrSpecular(gPbrNormal, Ls, V) * (sunVis * horizon * baked) * FL.pbr.x;
+            }
             gPbrSpec += PbrAmbientSpecular(gPbrNormal, V, vMatAmbient * (C.ambient.rgb + ambient)) * FL.pbr.y;
             litSpec = localSpec = vec3(0.0);     // the game's own specular is replaced
             // The ground's lightmap (its baked sun and ambient): less of it on metal, less in occluded creases.
