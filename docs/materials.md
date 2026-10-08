@@ -80,8 +80,10 @@ shadow casters' alpha. The game's own uploads still go to the original texture.
 
 Settings (Renderer tab, Lighting): `RVK_Pbr` (on/off), `RVK_PbrSpec` (highlights), `RVK_PbrEnv` (reflected
 surroundings), `RVK_PbrSsr` (screen-space reflections on smooth materials, with reflections on), `RVK_PbrAo`
-(occlusion map strength), `RVK_PbrDebug` (1 albedo, 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 highlights
-only; other lit draws dimmed grey), `RVK_Albedo` (albedo maps on/off). They live in the frame block (`FL.pbr`,
+(occlusion map strength), `RVK_PbrDebug` (7 which surfaces have maps: the scene tinted green where a PBR
+material lights it, blue for a normal map only, magenta for an albedo map; 1 albedo, 2 roughness, 3 metallic,
+4 occlusion, 5 normal, 6 highlights only - other lit draws dimmed grey), `RVK_Albedo` (albedo maps on/off).
+Hotkeys: Ctrl+Shift+K steps through the debug views (7 first; switches PBR on), Ctrl+Shift+B toggles `RVK_Pbr`. They live in the frame block (`FL.pbr`,
 `FL.pbr2`), which every lit 3D draw now writes.
 
 ## Tests
