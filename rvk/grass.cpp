@@ -1669,7 +1669,10 @@ void Device::UpdateGrassTrail()
                     continue;
                 const float q = d / reach, amount = 1.0f - q * q * q * q;   // flat across most of the lane
                 const bool walking = mx != 0.0f || mz != 0.0f;
-                const float splay = walking ? 0.15f + 0.35f * q : 1.0f;     // outwards: more towards the edges
+                // Outwards as well as forwards: parted like a bow wave, the two halves lying different ways - so the
+                // lane shows from behind too (grass lying straight away from the camera hardly does). More towards
+                // the edges.
+                const float splay = walking ? 0.5f + 0.5f * q : 1.0f;
                 float wx = splay * (d > 1e-3f ? dx / d : 0.0f) + mx, wz = splay * (d > 1e-3f ? dz / d : 0.0f) + mz;
                 const float wl = std::sqrt(wx * wx + wz * wz);
                 if (wl < 1e-3f)

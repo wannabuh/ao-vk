@@ -1206,8 +1206,11 @@ private:
     // Trails: pushed grass lying down behind the characters (RVK_GrassTrail) - a world-anchored grid around the camera,
     // wrapping (cell gx lives at gx mod kTrailN): per cell how far its grass is pushed over and which way, stamped
     // where a character stands and recovering over a few seconds. Uploaded with the frame (grass.vert Trail).
-    static constexpr int kTrailN = 128;          // cells along a side (a power of two)
-    static constexpr float kTrailCell = 0.25f;   // world units a cell
+    // The window follows the camera and drops what leaves it: it covers the grass's whole range (the longest
+    // RVK_GrassDist), so trodden grass comes back up by time, not by how far the camera went (at 128 x 0.25 it reached
+    // only 16 units around the camera).
+    static constexpr int kTrailN = 256;          // cells along a side (a power of two)
+    static constexpr float kTrailCell = 0.4f;    // world units a cell
     std::vector<float> m_trail;                  // kTrailN^2 x (direction x, z scaled by the amount)
     int32_t m_trailOrigin[2] = {0, 0};           // the window's first cell (world cell coordinates)
     bool m_trailValid = false;                   // the window holds something

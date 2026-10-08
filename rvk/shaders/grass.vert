@@ -300,13 +300,14 @@ void main()
         float sheen = pow(max(1.0 - th * th, 0.0), 20.0) * t;
         extra += FL.sunColor.rgb * (0.07 * sheen * sunlit);
     }
-    // Trodden grass as lawn stripes: blades lying away from the camera show their lighter, sky-lit backs, those lying
-    // towards it their shaded faces - the path stands out even where it is only partly flattened.
+    // Trodden grass: darker as it lies in the shade of the grass standing around it, whichever way it is seen; and as
+    // lawn stripes - blades lying away from the camera show their lighter, sky-lit backs, those lying towards it their
+    // shaded faces - so the path stands out even where it is only partly flattened.
     if (layAmount > 0.0 && GF.trail2.x > 0.0) {
         vec2 away = root.xz - GF.camera.xz;
         float al = length(away);
-        if (al > 1e-3)
-            lit *= 1.0 + 0.3 * GF.trail2.x * layAmount * dot(layDir, away / al) * (0.5 + 0.5 * t);
+        float facing = al > 1e-3 ? dot(layDir, away / al) : 0.0;
+        lit *= 1.0 + GF.trail2.x * layAmount * (0.22 * facing - 0.14) * (0.5 + 0.5 * t);
     }
     // A gust bends the blades over, showing more of their lighter faces: the sweep shows as a brighter band.
     lit *= 1.0 + 0.45 * (gust - kGustMean * GF.look.w) * t;   // (around the gusts' mean: the brightness stays)
