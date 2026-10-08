@@ -270,10 +270,13 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
         if (!tex || !tex->m_thumbValid)
             return;                              // no lightmap to read (an unsupported format): the shader's fallback
         tex->m_lightmap = true;
-    } else if (m_grassTex && (!tex || !tex->m_thumbValid)) {
+    } else if (m_grassTex && (!tex || !tex->m_thumbValid || tex->Width() * tex->Height() <= 32u * 32u)) {
         // The base pass without a texture we can read: the game draws ground whose texture is still loading (walking
         // into an area) untextured or with a stand-in, and classifying that would take all of it as grass, of one
-        // colour - for good, a cell only ever takes a finer triangle. Wait for the texture.
+        // colour - for good, a cell only ever takes a finer triangle. Wait for the texture. A ground texture of 32 x 32
+        // or less is such a stand-in too (its lowest quality level, 16 x 16: after an AI mission the game drew all of
+        // a playfield's ground with those - a few blurred green texels, taken as grass everywhere, an even carpet
+        // over its paths).
         return;
     }
     if (m_grassTiles.empty())
