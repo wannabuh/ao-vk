@@ -1766,6 +1766,7 @@ private:
     static constexpr VkDeviceSize kRingMaxSize = 256ull << 20;  // ... at most (a 32-bit process: address space)
     VkDeviceSize m_ringWanted = kRingSize;       // after a mid-frame flush: the next frames' ring size
     VkDeviceSize m_ringPeak = 0;                 // the most a frame used (logged with the flushes)
+    uint32_t m_ringQuietWindows = 0;             // 600-frame windows in a row that used under a quarter of the ring
     uint32_t m_ringFlushesLogged = 0;
     // The draw arenas' reserve targets (entries), grown between frames when one overflows.
     static constexpr uint32_t kDrawConstCapacity = 2048, kDrawRecordCapacity = 16384;

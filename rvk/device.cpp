@@ -1306,12 +1306,13 @@ void Device::BeginFrame()
     CollectGarbage();
     ApplyShadowResolution();
     if (!uploadsPending) {
-        if (f.ringSize < m_ringWanted) {         // the slot is idle (waited for): a bigger ring
+        if (f.ringSize != m_ringWanted) {        // the slot is idle (waited for): a bigger (or again smaller) ring
             std::string error;
             VkDeviceSize old = f.ringSize;
             if (CreateRing(f, m_ringWanted, &error))
-                Log("ring buffer: %llu -> %llu MB (frames overflowed it)", (unsigned long long)(old >> 20),
-                    (unsigned long long)(m_ringWanted >> 20));
+                Log("ring buffer: %llu -> %llu MB (%s)", (unsigned long long)(old >> 20),
+                    (unsigned long long)(m_ringWanted >> 20),
+                    m_ringWanted > old ? "frames overflowed it" : "frames have used little of it for a while");
             else if (!CreateRing(f, old, &error))
                 Log("ring buffer: %s", error.c_str());
             else
@@ -1323,6 +1324,20 @@ void Device::BeginFrame()
     if (m_frameNumber % 600 == 599) {            // how full frames get (logged with the profiler's numbers)
         Log("ring buffer: peak %.1f of %llu MB a frame, %u mid-frame flushes (last 600 frames)",
             double(m_ringPeak) / 1048576.0, (unsigned long long)(f.ringSize >> 20), m_midFrameFlushes);
+        // The rings are mapped into the game's (32-bit) address space, two of them: grown for a burst (a zone's
+        // uploads), they give it back once frames have used under a quarter of them for three windows (~30 s), so
+        // a long session doesn't keep 512 MB of it - the game, short of address space, falls back to its smallest
+        // ground textures.
+        m_ringQuietWindows = m_ringPeak < f.ringSize / 4 && m_midFrameFlushes == 0 ? m_ringQuietWindows + 1 : 0;
+        if (m_ringQuietWindows >= 3 && m_ringWanted > kRingSize) {
+            m_ringWanted = std::max(kRingSize, m_ringWanted / 2);
+            m_ringQuietWindows = 0;
+        }
+        MEMORYSTATUSEX mem{};
+        mem.dwLength = sizeof(mem);
+        if (GlobalMemoryStatusEx(&mem))
+            Log("address space: %llu of %llu MB free (the game's process)", (unsigned long long)(mem.ullAvailVirtual >> 20),
+                (unsigned long long)(mem.ullTotalVirtual >> 20));
         Log("opaque static fast path: %llu draws (last 600 frames)", (unsigned long long)m_opaqueDraws);
         Log("foliage: %llu draws, %llu of them far (LOD) (last 600 frames)", (unsigned long long)m_foliageDraws,
             (unsigned long long)m_foliageLodDraws);
