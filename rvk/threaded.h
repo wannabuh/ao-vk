@@ -104,6 +104,7 @@ public:
     void SetGrassWidth(float width);
     void SetGrassBrightness(float brightness);
     void SetGrassStyle(float variety, float flowers, float glow, float gusts, bool trails);
+    void SetGrassTrailLook(float seconds, float shade);
     void SetGrassEven(float even);
     void SetGrassShadows(bool on);
     void SetDepthPrepass(bool on);

@@ -876,6 +876,8 @@ bool g_hideUi = false;            // --hide-ui: the interface hidden (SetHideInt
 float g_grassStyle[5] = {1, 1, 1, 1, 1};   // --grass-style V,F,G,U,T: variety, flowers, glow, gusts, trails (SetGrassStyle)
 float g_grassBenchYaw = 0.0f;  // --grass-bench-yaw R: the bench's camera turned R radians (pi: into the sun)
 bool g_grassBenchWalker = false;  // --grass-bench-walker: a "character" walking through the grass ahead of the camera
+bool g_grassBenchCross = false;   // --grass-bench-cross: ... crossing the view from left to right over the run (with
+                                  // --grass-bench-still: the trail it leaves lies across the screenshot)
 bool g_grassBenchNight = false;   // --grass-bench-night: a dim lightmap and ambient, a faint bluish moon
 int g_grassBenchLoading = 0;      // --grass-bench-loading N: the ground's texture a plain green stand-in until frame N
 bool g_grassBenchLoadingNull = false;   // --grass-bench-loading-null: ... drawn untextured instead
@@ -1026,7 +1028,12 @@ void RunGrassBench(D& dev, int frames, const std::string& shot)
         dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 0);
         dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
         if (g_grassBenchWalker) {   // a lit column a few units ahead, its vertices moving each frame (CPU-skinned)
-            const float wx = ex + 4.0f * std::cos(yaw) + 1.5f * std::sin(t * 0.02f), wz = ez + 4.0f * std::sin(yaw);
+            float wx = ex + 4.0f * std::cos(yaw) + 1.5f * std::sin(t * 0.02f), wz = ez + 4.0f * std::sin(yaw);
+            if (g_grassBenchCross) {     // from 4 units left of the view's centre to 1 right, 4 ahead
+                const float s = -4.0f + 5.0f * float(frame) / float(std::max(frames - 1, 1));   // ends right of centre
+                wx = ex + 4.0f * std::cos(yaw) + s * std::sin(yaw);
+                wz = ez + 4.0f * std::sin(yaw) - s * std::cos(yaw);
+            }
             const float wy = height(wx, wz);
             std::vector<VtxMesh> cv;
             std::vector<uint16_t> ci;
@@ -2248,6 +2255,7 @@ int main(int argc, char** argv)
         else if (a == "--grass-field-dist" && i + 1 < argc) g_grassFieldDist = float(std::atof(argv[++i]));
         else if (a == "--grass-bench-yaw" && i + 1 < argc) g_grassBenchYaw = float(std::atof(argv[++i]));
         else if (a == "--grass-bench-walker") g_grassBenchWalker = true;
+        else if (a == "--grass-bench-cross") { g_grassBenchCross = true; g_grassBenchWalker = true; }
         else if (a == "--grass-bench-night") g_grassBenchNight = true;
         else if (a == "--grass-bench-still") g_grassBenchStill = true;
         else if (a == "--grass-bench-storm") g_grassBenchStorm = true;

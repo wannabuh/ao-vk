@@ -277,6 +277,13 @@ public:
         m_grassGusts = gusts;
         m_grassTrails = trails;
     }
+    // RVK_TrailTime / RVK_TrailShade: how long trodden grass stays down (seconds; it springs back over the
+    // last third or so) and how strongly it shows as lawn stripes (lighter lying away from the camera, darker towards).
+    void SetGrassTrailLook(float seconds, float shade)
+    {
+        m_trailSeconds = seconds < 1.0f ? 1.0f : seconds;
+        m_trailShade = shade < 0.0f ? 0.0f : shade;
+    }
     // RVK_GrassShadow: the blades cast the sun's shadow (into its nearest cascade: onto the ground and each other).
     void SetGrassShadows(bool on) { m_grassShadows = on; }
     // RVK_GrassEven: the blades' colour from one green (1) rather than the ground texel under each (0); baked.
@@ -1140,6 +1147,7 @@ private:
     float m_grassGlow = 1.0f;                    // RVK_GrassGlow: backlit tips, the sheen, rounded shading
     float m_grassGusts = 1.0f;                   // RVK_GrassGusts: gusts sweeping the field
     bool m_grassTrails = true;                   // RVK_GrassTrail: pushed grass stays down behind a character
+    float m_trailSeconds = 12.0f, m_trailShade = 1.0f;   // SetGrassTrailLook
     float m_grassEven = 1.0f;
     bool m_grassShadows = true;                  // RVK_GrassShadow: the blades cast the sun's shadow                    // RVK_GrassEven: the blades' colour from one green, not the texel
     // The ground under one tile and its baked blades. A cell is written by the finest terrain triangle seen there
