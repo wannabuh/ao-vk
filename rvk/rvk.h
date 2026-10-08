@@ -1003,6 +1003,7 @@ private:
         uint64_t indexHash;
         uint64_t firstFrame, lastFrame;
         bool diffuseAlphaOne = true, specularAlphaOne = true;   // every vertex colour's alpha byte is 255 (pre-pass)
+        mutable int8_t flatShape = -1;           // SwayParams: 1 = one plane (a sign, a card), 0 = not, -1 = not looked at
     };
     std::unordered_map<uint64_t, MeshInfo> m_meshInfo;
     const MeshInfo* m_drawMesh = nullptr;        // the current draw's (null: external geometry, pre-transformed)
@@ -1111,7 +1112,8 @@ private:
     bool m_drawMeshStatic = false;               // ... seen in an earlier frame with the same vertices
     void DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, const uint16_t* indices,
                       uint32_t indexCount);
-    bool SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, float out[4]);
+    bool SwayParams(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
+                    const uint16_t* indices, uint32_t indexCount, float out[4]);
     // Plants' big triangles split for smooth bending (draw.cpp SubdividePlant), by mesh cache key and split.
     struct PlantMesh { std::vector<uint8_t> vertices; std::vector<uint16_t> indices; uint64_t lastFrame = 0; };
     std::unordered_map<uint64_t, PlantMesh> m_plantMeshes;

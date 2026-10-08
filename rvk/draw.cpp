@@ -390,10 +390,69 @@ bool Device::IsInterfaceDraw(uint32_t fvf) const
     return (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW && !IsWater(fvf);
 }
 
-// Plants that sway in the wind: small (0.2 - 3 units tall), lit, drawn into the scene with a cut-out texture (the
-// vertex shader keeps those whose texture is mostly holes - leaves, grass), and static: their vertices are the same as
-// last frame (a character's hair or cloak is CPU-skinned, its vertices change every frame). out: DrawTransform sway.
-bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, float out[4])
+// Whether a mesh is one plane: 95% of its triangles' area faces one way (either side) and its vertices lie within 6%
+// of its size from that plane - a sign, a banner, a poster, a window's frame. Positions first in the vertex (FVF_XYZ).
+static bool OnePlane(uint32_t primitive, uint32_t stride, const void* vertices, uint32_t vertexCount,
+                     const uint16_t* indices, uint32_t indexCount)
+{
+    const auto* base = static_cast<const uint8_t*>(vertices);
+    auto pos = [&](uint32_t i, float p[3]) { std::memcpy(p, base + size_t(i) * stride, 12); };
+    const uint32_t n = indices ? indexCount : vertexCount;
+    const uint32_t triangles = primitive == d3d::TriangleList ? n / 3 : n >= 3 ? n - 2 : 0;
+    if ((primitive != d3d::TriangleList && primitive != d3d::TriangleStrip && primitive != d3d::TriangleFan) || !triangles)
+        return false;
+    auto corner = [&](uint32_t t, int k) {
+        uint32_t j = primitive == d3d::TriangleList ? t * 3 + k : primitive == d3d::TriangleStrip ? t + k : k == 0 ? 0 : t + k;
+        return indices ? uint32_t(indices[j]) : j;
+    };
+    // The normal of the largest triangle, then the share of the area facing the same way.
+    float axis[3] = {}, best = 0.0f, total = 0.0f;
+    std::vector<float> normals(size_t(triangles) * 4, 0.0f);
+    for (uint32_t t = 0; t < triangles; ++t) {
+        uint32_t i0 = corner(t, 0), i1 = corner(t, 1), i2 = corner(t, 2);
+        if (i0 >= vertexCount || i1 >= vertexCount || i2 >= vertexCount)
+            continue;
+        float a[3], b[3], c[3];
+        pos(i0, a); pos(i1, b); pos(i2, c);
+        const float e1[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, e2[3] = {c[0] - a[0], c[1] - a[1], c[2] - a[2]};
+        float nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
+        const float area = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (area <= 1e-12f)
+            continue;
+        float* o = &normals[size_t(t) * 4];
+        o[0] = nx / area; o[1] = ny / area; o[2] = nz / area; o[3] = area;
+        total += area;
+        if (area > best) { best = area; axis[0] = o[0]; axis[1] = o[1]; axis[2] = o[2]; }
+    }
+    if (total <= 0.0f)
+        return false;
+    float facing = 0.0f;
+    for (uint32_t t = 0; t < triangles; ++t) {
+        const float* o = &normals[size_t(t) * 4];
+        if (std::fabs(o[0] * axis[0] + o[1] * axis[1] + o[2] * axis[2]) > 0.9f) facing += o[3];
+    }
+    if (facing < 0.95f * total)
+        return false;
+    float lo = 1e30f, hi = -1e30f, mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
+    for (uint32_t i = 0; i < vertexCount; ++i) {
+        float p[3];
+        pos(i, p);
+        const float d = p[0] * axis[0] + p[1] * axis[1] + p[2] * axis[2];
+        lo = std::min(lo, d); hi = std::max(hi, d);
+        for (int k = 0; k < 3; ++k) { mn[k] = std::min(mn[k], p[k]); mx[k] = std::max(mx[k], p[k]); }
+    }
+    const float size = std::sqrt((mx[0] - mn[0]) * (mx[0] - mn[0]) + (mx[1] - mn[1]) * (mx[1] - mn[1]) +
+                                 (mx[2] - mn[2]) * (mx[2] - mn[2]));
+    return hi - lo < 0.06f * size;
+}
+
+// Plants that sway in the wind: small (0.2 - 3 units tall, at most 6 across), lit, drawn into the scene with a
+// cut-out texture (the vertex shader keeps those whose texture is mostly holes - leaves, grass), not one flat plane
+// (signs, banners, posters - from a survey of the game's 10,600 static meshes: a third of the non-plants that passed
+// the rest, a few single-card plants), and static: their vertices are the same as last frame (a character's hair or
+// cloak is CPU-skinned, its vertices change every frame). out: DrawTransform sway.
+bool Device::SwayParams(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
+                        const uint16_t* indices, uint32_t indexCount, float out[4])
 {
     if ((m_sway <= 0.0f && m_grassPush <= 0.0f) || m_target != m_scene || !m_textures[0] || !m_rs[d3d::RS_LIGHTING] || m_drawIsLabel ||
         (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || IsTerrain(fvf) || !m_rs[d3d::RS_ZWRITEENABLE] ||
@@ -401,7 +460,7 @@ bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uin
         !m_drawMesh)
         return false;
     // A texture with no transparent texel never moves: the shaders scale sway and push by its holes (ffp.vert
-    // smoothstep(0.92, 0.7, mean alpha) = 0). Most blended statics of plant size are such props - not split, kept on
+    // SwayHoles(mean alpha) = 0). Most blended statics of plant size are such props - not split, kept on
     // the GPU and in the depth pre-pass.
     if (m_textures[0]->m_opaque)
         return false;
@@ -422,6 +481,19 @@ bool Device::SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uin
     float lo = m_drawMesh->boundsMin[axis], hi = m_drawMesh->boundsMax[axis];
     float height = (hi - lo) * scale;
     if (height < 0.2f || height > 3.0f)
+        return false;
+    // Across (the other two model axes, scaled): a plant this short isn't 6 units wide - a bridge, a railing, a rope
+    // between posts is.
+    for (int i = 0; i < 3; ++i) {
+        if (i == axis)
+            continue;
+        const float len = std::sqrt(w[i][0] * w[i][0] + w[i][1] * w[i][1] + w[i][2] * w[i][2]);
+        if ((m_drawMesh->boundsMax[i] - m_drawMesh->boundsMin[i]) * len > 6.0f)
+            return false;
+    }
+    if (m_drawMesh->flatShape < 0)
+        m_drawMesh->flatShape = OnePlane(primitive, stride, vertices, vertexCount, indices, indexCount) ? 1 : 0;
+    if (m_drawMesh->flatShape == 1)
         return false;
     bool down = w[axis][1] < 0.0f;
     out[0] = down ? hi : lo;
@@ -1959,7 +2031,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     PushCandidateDraw(fvf);
     // A swaying plant: its big quads split into small ones (cached), so they bend rather than tilt as a whole.
     float sway[4] = {};
-    bool swaying = !m_external && SwayParams(fvf, layout.stride, vertices, vertexCount, sway);
+    bool swaying = !m_external && SwayParams(primitive, fvf, layout.stride, vertices, vertexCount, indices, indexCount, sway);
     if (swaying) {
         const void* before = vertices;
         const uint16_t* indicesBefore = indices;
