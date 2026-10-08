@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Dump a character model (.cir) and animation (.ani) from the client's rdb.db as the raw streams randy31's
 CATMesh_t / CATKeyframeAnimData_t constructors read (DisplaySystem's wrapper in front stripped), for
-tests/randy_harness.cpp --character. Uses ~/repos/ao-assets (AO_ASSETS) for the database and formats.
+tests/randy_harness.cpp --character. Uses ~/projects/ao-mods/ao-assets (AO_ASSETS) for the database and formats.
 
 Usage: tools/extract-character.py <cir id> <ani id> <out dir>      e.g. 5900 9386 build/characters
 Writes <out>/<cir id>.catmesh and <out>/<ani id>.catanim, and per material slot of the model its skin texture as
@@ -12,7 +12,7 @@ import pathlib
 import struct
 import sys
 
-sys.path.insert(0, os.environ.get("AO_ASSETS", str(pathlib.Path.home() / "repos/ao-assets")))
+sys.path.insert(0, os.environ.get("AO_ASSETS", str(pathlib.Path.home() / "projects/ao-mods/ao-assets")))
 from aoassets import rdb  # noqa: E402
 from aoassets.formats.cir import TEXDATA_KEY, Cir  # noqa: E402
 from aoassets.textures import image_bytes  # noqa: E402
