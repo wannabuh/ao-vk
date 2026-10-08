@@ -203,6 +203,9 @@ public:
     // image), used instead of the generated normals when it is drawn in stage 0. The device owns `normal` and
     // frees it with the texture; null removes it.
     void SetNormalMap(Texture* texture, Texture* normal);
+    // The draws that follow are of vertices the proxy's ProcessVertices wrote (the scene's: water, floating text)
+    // or not (pre-transformed draws of the game's own: interface). See IsWater.
+    void SetDrawProcessed(bool processed) { m_drawProcessed = processed; }
     void SetNormalMaps(bool enable, float strength) { if (m_normalMaps != enable || m_normalStrength != strength) { m_normalMaps = enable; m_normalStrength = strength; m_constantsDirty = true; } }
     void SetBump(float strength) { strength = strength < 0.0f ? 0.0f : strength; if (m_bump != strength) { m_bump = strength; m_constantsDirty = true; } }
     float Bump() const { return m_bump; }
@@ -1337,8 +1340,11 @@ private:
     bool m_glowCleared = false;                  // this frame
     uint32_t m_glowDraws = 0;                    // this frame's draws feeding the glow (frame dumps)
     bool GlowDraw(uint32_t fvf) const;
-    static bool IsInterfaceDraw(uint32_t fvf);
-    static bool IsWater(uint32_t fvf);           // VisualLiquid_t: pre-transformed, with specular (FVF 0x1C4)
+    bool IsInterfaceDraw(uint32_t fvf) const;
+    // The scene's pre-transformed draws (FVF 0x1C4, out of ProcessVertices: the game's water, floating text) - not
+    // the game's screen sprites in the same format (the timer bars): the proxy says which (SetDrawProcessed).
+    bool IsWater(uint32_t fvf) const;
+    bool m_drawProcessed = false;
     bool WaterWritesDepth(uint32_t fvf) const;   // ... and depth-tested (floating text isn't): forced depth writes
     VkDescriptorSetLayout m_bloomSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_bloomLayout = VK_NULL_HANDLE;

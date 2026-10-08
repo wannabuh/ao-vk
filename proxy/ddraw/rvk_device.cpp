@@ -451,6 +451,20 @@ void RDevice::ApplyStates(const rnative::device::StateChange* changes, uint32_t 
 
 void NoteVisual(rvk::ThreadedDevice* dev);          // below
 
+// A draw of vertices ProcessVertices wrote this frame (the scene's water, floating text) in the pre-transformed format
+// the game's screen sprites share: the device is told for the draw's length (RVertexBuffer::processed).
+struct ProcessedDraw {
+    rvk::ThreadedDevice* dev;
+    bool on;
+    ProcessedDraw(rvk::ThreadedDevice* d, const RVertexBuffer* vb, DWORD start, DWORD count)
+        : dev(d), on(vb->desc.dwFVF == (D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX1) &&
+                     vb->Processed(start, count))
+    {
+        if (on) dev->SetDrawProcessed(true);
+    }
+    ~ProcessedDraw() { if (on) dev->SetDrawProcessed(false); }
+};
+
 HRESULT RDevice::DrawIndexedVBRetained(D3DPRIMITIVETYPE type, RVertexBuffer* vb, DWORD start, DWORD vcount,
                                        const WORD* idx, DWORD icount, uint64_t indexGeneration)
 {
@@ -467,6 +481,7 @@ HRESULT RDevice::DrawIndexedVBRetained(D3DPRIMITIVETYPE type, RVertexBuffer* vb,
         return D3D_OK;
     g_rvk.Frame();
     NoteVisual(dev);
+    ProcessedDraw processedDraw(dev, vb, start, vcount);
     if (vb->skin) {
         dev->DrawIndexedPrimitiveSkinned(type, vb->desc.dwFVF, vb->skin, start, vcount, idx, icount);
         return D3D_OK;
@@ -747,6 +762,7 @@ HRESULT RDevice::DoDrawPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTEXBUFFER
     if (!dev || !vb || start + count > vb->desc.dwNumVertices) return DDERR_INVALIDPARAMS;
     g_rvk.Frame();
     NoteVisual(dev);
+    ProcessedDraw processedDraw(dev, vb, start, count);
     if (vb->skin)
         dev->DrawPrimitiveSkinned(type, vb->desc.dwFVF, vb->skin, start, count);
     else if (auto* shared = vb->StaticShared())
@@ -796,6 +812,7 @@ HRESULT RDevice::DoDrawIndexedPrimitiveVB(D3DPRIMITIVETYPE type, LPDIRECT3DVERTE
         return D3D_OK;
     g_rvk.Frame();
     NoteVisual(dev);
+    ProcessedDraw processedDraw(dev, vb, start, vcount);
     if (vb->skin)
         dev->DrawIndexedPrimitiveSkinned(type, vb->desc.dwFVF, vb->skin, start, vcount, idx, icount);
     else if (auto* shared = vb->StaticShared())
@@ -872,9 +889,21 @@ const std::shared_ptr<const std::vector<uint8_t>>* RVertexBuffer::StaticShared()
     return &shared;
 }
 
+bool RVertexBuffer::Processed(DWORD start, DWORD count) const
+{
+    if (processedFrame != g_rvk.presentCount)
+        return false;
+    for (const auto& [first, end] : processed)
+        if (start >= first && start + count <= end)
+            return true;
+    return false;
+}
+
 HRESULT RVertexBuffer::DoLock(DWORD flags, LPVOID* out, LPDWORD size)
 {
     if (!out) return DDERR_INVALIDPARAMS;
+    if (flags & DDLOCK_DISCARDCONTENTS)
+        processed.clear();
     if (flags & DDLOCK_READONLY)                 // reading (picking, native verify) leaves it unchanged
         Materialize();
     else
@@ -1042,6 +1071,11 @@ HRESULT RDevice::ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, D
         }
 
     dst->Written();                              // its shared copy (StaticSnapshot) is out of date
+    if (dst->processedFrame != g_rvk.presentCount) {
+        dst->processed.clear();
+        dst->processedFrame = g_rvk.presentCount;
+    }
+    dst->processed.emplace_back(dstIndex, dstIndex + count);
     // The game's water mesh going to the screen (VisualLiquid_t): its world-space vertices kept for our water.
     const bool water = sf.diffuse >= 0 && src->desc.dwFVF == (D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX1) &&
                        dst->desc.dwFVF == (D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX1) &&

@@ -1131,6 +1131,10 @@ bool g_waterOff = false;          // --water-off: the game's way instead (no Dra
 bool g_waterNight = false;        // --water-night
 float g_waterZ = -1e6f;           // --water-z Z: the camera's z (default per scene)
 bool g_waterNoPrepass = false;    // --water-noprepass
+bool g_hudSprite = false;         // --hud-sprite: after the 3D, a screen sprite as the game's timer bars draw it (the
+                                  // pre-transformed 0x1C4 format, not out of ProcessVertices): interface, so its colour
+                                  // must come out exactly (0x30C050 at the top left), untouched by the HDR passes
+                                  // (with --grade 0.3 1.3 0.5 0 0.8 --dof 1 a scene draw would come out grey and blurred)
 bool g_waterWall = false;         // --water-wall: a steep sheet of the water mesh standing in the lake (a fall)
 
 template <typename D>
@@ -1338,6 +1342,24 @@ void RunWaterScene(D& dev, int frames, const std::string& shot)
         dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
         dev.SetRenderState(RS_ZWRITEENABLE, 1);
         dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        if (g_hudSprite) {
+            struct VtxSprite { float x, y, z, rhw; uint32_t diffuse, specular; float u, v; };
+            const uint32_t kFvfSprite = FVF_XYZRHW | FVF_DIFFUSE | FVF_SPECULAR | (1 << 8);
+            const uint32_t c = 0xFF30C050;
+            VtxSprite bar[4] = {{20, 20, 0, 1, c, 0, 0, 0}, {220, 20, 0, 1, c, 0, 1, 0},
+                                {20, 40, 0, 1, c, 0, 0, 1}, {220, 40, 0, 1, c, 0, 1, 1}};
+            dev.SetRenderState(RS_ZENABLE, 0);
+            dev.SetRenderState(RS_LIGHTING, 0);
+            dev.SetTexture(0, nullptr);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+            dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+            dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG2);
+            dev.SetTextureStageState(0, TSS_ALPHAARG2, TA_DIFFUSE);
+            dev.DrawPrimitive(TriangleStrip, kFvfSprite, bar, 4);
+            dev.SetRenderState(RS_ZENABLE, 1);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+            dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        }
         dev.EndFrame();
     }
 }
@@ -2205,6 +2227,7 @@ int main(int argc, char** argv)
         else if (a == "--water-noshadow") shadows = false;
         else if (a == "--water-nohdr") hdr = false;
         else if (a == "--water-noprepass") g_waterNoPrepass = true;
+        else if (a == "--hud-sprite") g_hudSprite = true;
         else if (a == "--grass-field-any") g_grassFieldTex = false;
         else if (a == "--grass-field-tan") g_grassFieldTan = true;
         else if (a == "--grass-field-dist" && i + 1 < argc) g_grassFieldDist = float(std::atof(argv[++i]));

@@ -385,7 +385,7 @@ uint64_t Device::MotionKey(uint32_t primitive, uint32_t fvf, uint32_t vertexCoun
 // A pre-transformed draw that belongs to the interface, not the 3D scene. The water (VisualLiquid_t) is drawn from
 // vertices the game transforms with ProcessVertices: pre-transformed too, but with a specular colour (FVF 0x1C4), in the
 // middle of the scene - taking it for the interface ended the scene early wherever water was in view.
-bool Device::IsInterfaceDraw(uint32_t fvf)
+bool Device::IsInterfaceDraw(uint32_t fvf) const
 {
     return (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZRHW && !IsWater(fvf);
 }
@@ -1203,9 +1203,10 @@ void Device::DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, u
     if (m_drawSlot && m_drawStaticBuffer) { m_drawSlot->mesh = placed; m_drawSlot->meshKey = key; }
 }
 
-bool Device::IsWater(uint32_t fvf)
+bool Device::IsWater(uint32_t fvf) const
 {
-    return fvf == (d3d::FVF_XYZRHW | d3d::FVF_DIFFUSE | d3d::FVF_SPECULAR | (1u << d3d::FVF_TEXCOUNT_SHIFT));
+    return m_drawProcessed &&
+           fvf == (d3d::FVF_XYZRHW | d3d::FVF_DIFFUSE | d3d::FVF_SPECULAR | (1u << d3d::FVF_TEXCOUNT_SHIFT));
 }
 
 bool Device::GlowDraw(uint32_t fvf) const
