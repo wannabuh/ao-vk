@@ -312,4 +312,13 @@ void Attach(Dev& dev, Texture* texture, const Decoded& d)
         dev.SetEmissiveMap(texture, emissive);
 }
 
+// As Attach, but the texture ends up with exactly these maps: one it had that d lacks is removed (hot reload).
+template <typename Dev>
+void Replace(Dev& dev, Texture* texture, const Decoded& d)
+{
+    dev.SetNormalMap(texture, Upload(dev, d.normal));
+    dev.SetMaterialMaps(texture, Upload(dev, d.orm), Upload(dev, d.albedo));
+    dev.SetEmissiveMap(texture, Upload(dev, d.emissive));
+}
+
 }  // namespace rvk::maps

@@ -10,6 +10,11 @@
 //   <id>_<suffix>        any of these for any type (fallback)
 // ao-assets writes these names (python -m aoassets material-template / import).
 //
+// Hot reload (RANDYVK_HOTRELOAD=1): both materials\ and live\ (the ao-assets workbench's previews of checked-out
+// assets) are watched; when a texture's files change, its maps are decoded again and replace what every surface of it
+// had (a map that's gone is removed). A texture id with any file in live\ takes its maps from there only;
+// <type>_<id>_live.png alone means "previewed, no maps".
+//
 // Identity (see HOOKED_EXPORTS in tools/gen_interface.py; the hooks call the original, then record the identity on the
 // surface_t's IDirectDrawSurface7 when it is one of ours):
 // - World textures: DisplaySystem's RDBTexture_t hands randy an AnarchyTexCreator_t {+0x40 type, +0x44 id}, whose
@@ -25,6 +30,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <list>
@@ -103,15 +109,67 @@ bool IsGroundMaker(const void* p)
     return (type == 1010006 || type == 1010021 || type == 1010022) && U32(p, 0x20) == 0;
 }
 
-// ---------------------------------------------------------------- material folder
-std::string g_dir;
-std::unordered_set<std::string> g_files;   // lower-case names in the folder
+// The lower texture quality levels are other tables with the same ids: the ground's 1010021/22 for 1010006, the
+// world's 1010016/17 for 1010004. A map is named after the full-quality table and serves every level.
+uint32_t FullQualityType(uint32_t type)
+{
+    switch (type) {
+    case 1010021: case 1010022: return 1010006;
+    case 1010016: case 1010017: return 1010004;
+    case 1010019: case 1010020: return 1010011;
+    default: return type;
+    }
+}
+
+uint64_t KeyOf(uint32_t type, uint32_t id) { return uint64_t(FullQualityType(type)) << 32 | id; }
+
+// ---------------------------------------------------------------- material folders
+struct Folder {
+    std::string dir;
+    std::unordered_map<std::string, uint64_t> files;   // lower-case name -> last write time ^ size (hot reload)
+};
+Folder g_mat, g_live;                         // materials\ (applied maps), live\ (workbench previews, hot reload only)
+std::unordered_set<uint64_t> g_liveKeys;      // texture ids with any file in live\ (their maps come from there only)
 bool g_scanned = false;
+bool g_hot = false;                           // RANDYVK_HOTRELOAD=1
 
 std::string Lower(std::string s)
 {
     for (char& c : s) c = char(tolower(static_cast<unsigned char>(c)));
     return s;
+}
+
+void ScanFolder(Folder& f)
+{
+    f.files.clear();
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA((f.dir + "*.png").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+    do {
+        uint64_t stamp = (uint64_t(fd.ftLastWriteTime.dwHighDateTime) << 32 | fd.ftLastWriteTime.dwLowDateTime)
+                         ^ (uint64_t(fd.nFileSizeHigh) << 32 | fd.nFileSizeLow);
+        f.files.emplace(Lower(fd.cFileName), stamp);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+}
+
+// "<type>_<id>_..." -> its texture key (0 for other names).
+uint64_t KeyOfName(const std::string& name)
+{
+    unsigned type = 0, id = 0;
+    char sep = 0;
+    if (std::sscanf(name.c_str(), "%u_%u%c", &type, &id, &sep) == 3 && sep == '_' && type >= 1000000)
+        return KeyOf(type, id);
+    return 0;
+}
+
+void RebuildLiveKeys()
+{
+    g_liveKeys.clear();
+    for (auto& [name, stamp] : g_live.files)
+        if (uint64_t key = KeyOfName(name))
+            g_liveKeys.insert(key);
 }
 
 void Scan()
@@ -126,38 +184,30 @@ void Scan()
     GetModuleFileNameA(self, path, MAX_PATH);
     char* slash = std::strrchr(path, '\\');
     if (slash) slash[1] = 0; else path[0] = 0;
-    g_dir = std::string(path) + "randy-vk\\materials\\";
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA((g_dir + "*.png").c_str(), &fd);
-    if (h != INVALID_HANDLE_VALUE) {
-        do g_files.insert(Lower(fd.cFileName));
-        while (FindNextFileA(h, &fd));
-        FindClose(h);
+    g_mat.dir = std::string(path) + "randy-vk\\materials\\";
+    g_live.dir = std::string(path) + "randy-vk\\live\\";
+    char hot[8] = {};
+    g_hot = GetEnvironmentVariableA("RANDYVK_HOTRELOAD", hot, sizeof(hot)) && hot[0] == '1';
+    ScanFolder(g_mat);
+    if (g_hot) {
+        CreateDirectoryA(g_live.dir.c_str(), nullptr);
+        ScanFolder(g_live);
+        RebuildLiveKeys();
     }
-    RvkLog("materials: %u files in %s", unsigned(g_files.size()), g_dir.c_str());
-}
-
-// The lower texture quality levels are other tables with the same ids: the ground's 1010021/22 for 1010006, the
-// world's 1010016/17 for 1010004. A map is named after the full-quality table and serves every level.
-uint32_t FullQualityType(uint32_t type)
-{
-    switch (type) {
-    case 1010021: case 1010022: return 1010006;
-    case 1010016: case 1010017: return 1010004;
-    case 1010019: case 1010020: return 1010011;
-    default: return type;
-    }
+    RvkLog("materials: %u files in %s%s", unsigned(g_mat.files.size()), g_mat.dir.c_str(),
+           g_hot ? "; hot reload on (watching it and live\\)" : "");
 }
 
 std::string FindMap(uint32_t type, uint32_t id, const char* suffix)
 {
     Scan();
+    const Folder& f = g_liveKeys.count(KeyOf(type, id)) ? g_live : g_mat;
     for (uint32_t t : {FullQualityType(type), type}) {
         std::string a = std::to_string(t) + "_" + std::to_string(id) + suffix;
-        if (g_files.count(a)) return g_dir + a;
+        if (f.files.count(a)) return f.dir + a;
     }
     std::string b = std::to_string(id) + suffix;
-    if (g_files.count(b)) return g_dir + b;
+    if (f.files.count(b)) return f.dir + b;
     return {};
 }
 
@@ -169,8 +219,6 @@ std::string FindMap(uint32_t type, uint32_t id, const char* suffix)
 // follow soon after.
 constexpr size_t kCacheBytes = 96u << 20;          // decoded maps kept (the client is a 32-bit process)
 constexpr size_t kUploadBytesPerFrame = 48u << 20; // uploads spread over frames past this
-
-uint64_t KeyOf(uint32_t type, uint32_t id) { return uint64_t(FullQualityType(type)) << 32 | id; }
 
 rvk::maps::MaterialFiles FilesFor(uint32_t type, uint32_t id)
 {
@@ -191,24 +239,26 @@ using DecodedPtr = std::shared_ptr<const rvk::maps::Decoded>;
 struct Worker {
     std::mutex mutex;
     std::condition_variable wake;
-    std::deque<std::pair<uint64_t, rvk::maps::MaterialFiles>> jobs;
-    std::vector<std::pair<uint64_t, DecodedPtr>> done;
+    struct Job { uint64_t key; uint32_t gen; rvk::maps::MaterialFiles files; };
+    struct Done { uint64_t key; uint32_t gen; DecodedPtr decoded; };
+    std::deque<Job> jobs;
+    std::vector<Done> done;
 };
 Worker* g_worker = nullptr;
 
 void WorkerLoop(Worker* w)
 {
     for (;;) {
-        std::pair<uint64_t, rvk::maps::MaterialFiles> job;
+        Worker::Job job;
         {
             std::unique_lock<std::mutex> lock(w->mutex);
             w->wake.wait(lock, [w] { return !w->jobs.empty(); });
             job = std::move(w->jobs.front());
             w->jobs.pop_front();
         }
-        auto decoded = std::make_shared<rvk::maps::Decoded>(rvk::maps::Decode(job.second));
+        auto decoded = std::make_shared<rvk::maps::Decoded>(rvk::maps::Decode(job.files));
         std::lock_guard<std::mutex> lock(w->mutex);
-        w->done.emplace_back(job.first, std::move(decoded));
+        w->done.push_back({job.key, job.gen, std::move(decoded)});
     }
 }
 
@@ -222,6 +272,7 @@ std::list<std::pair<uint64_t, DecodedPtr>> g_cache;            // most recently 
 std::unordered_map<uint64_t, std::list<std::pair<uint64_t, DecodedPtr>>::iterator> g_cacheIndex;
 size_t g_cacheBytes = 0;
 std::deque<std::pair<Waiter, DecodedPtr>> g_uploads;           // decoded, not yet uploaded (kUploadBytesPerFrame)
+std::unordered_map<uint64_t, uint32_t> g_gen;                  // bumped by a hot reload: older decodes are dropped
 
 DecodedPtr CacheGet(uint64_t key)
 {
@@ -230,6 +281,16 @@ DecodedPtr CacheGet(uint64_t key)
         return nullptr;
     g_cache.splice(g_cache.begin(), g_cache, it->second);
     return it->second->second;
+}
+
+void CacheErase(uint64_t key)
+{
+    auto it = g_cacheIndex.find(key);
+    if (it == g_cacheIndex.end())
+        return;
+    g_cacheBytes -= it->second->second->Bytes();
+    g_cache.erase(it->second);
+    g_cacheIndex.erase(it);
 }
 
 void CachePut(uint64_t key, DecodedPtr d)
@@ -253,7 +314,7 @@ void Upload(const Waiter& w, const rvk::maps::Decoded& d)
     if (w.top->texture != w.texture || !g_rvk.device)
         return;                                    // made again since: that one asks for itself
     RSurface* top = w.top;
-    rvk::maps::Attach(*g_rvk.device, w.texture, d);
+    rvk::maps::Replace(*g_rvk.device, w.texture, d);   // exactly these maps (a hot reload may have removed some)
     ++g_attached;
     if (g_attached <= 64 || (g_attached & (g_attached - 1)) == 0)
         RvkLog("materials: RDB texture %u:%u gets%s%s%s%s%s%s (%u attached)", top->rdbType, top->rdbId,
@@ -264,15 +325,20 @@ void Upload(const Waiter& w, const rvk::maps::Decoded& d)
 
 }  // namespace
 
+void HotReload();
+
 void PollMaterialMaps()
 {
+    HotReload();
     if (g_worker) {
-        std::vector<std::pair<uint64_t, DecodedPtr>> done;
+        std::vector<Worker::Done> done;
         {
             std::lock_guard<std::mutex> lock(g_worker->mutex);
             done.swap(g_worker->done);
         }
-        for (auto& [key, decoded] : done) {
+        for (auto& [key, gen, decoded] : done) {
+            if (gen != g_gen[key])
+                continue;                          // decoded from files a hot reload replaced since
             if (!decoded->errors.empty())
                 RvkLog("materials: %s", decoded->errors.c_str());
             CachePut(key, decoded);
@@ -425,9 +491,96 @@ void AttachMaterialMaps(RSurface* top)
     }
     {
         std::lock_guard<std::mutex> lock(g_worker->mutex);
-        g_worker->jobs.emplace_back(key, std::move(files));
+        g_worker->jobs.push_back({key, g_gen[key], std::move(files)});
     }
     g_worker->wake.notify_one();
+}
+
+// ---------------------------------------------------------------- hot reload
+namespace {
+HANDLE g_watch[2] = {};
+bool g_watchTried = false;
+DWORD g_lastCheck = 0, g_changedAt = 0;
+bool g_changed = false;
+
+void Changed(const std::unordered_map<std::string, uint64_t>& before, const std::unordered_map<std::string, uint64_t>& now,
+             std::unordered_set<uint64_t>* keys)
+{
+    for (auto& [name, stamp] : now) {
+        auto it = before.find(name);
+        if (it == before.end() || it->second != stamp)
+            if (uint64_t key = KeyOfName(name)) keys->insert(key);
+    }
+    for (auto& [name, stamp] : before)
+        if (!now.count(name))
+            if (uint64_t key = KeyOfName(name)) keys->insert(key);
+}
+
+void Reload(uint64_t key)
+{
+    ++g_gen[key];
+    CacheErase(key);
+    g_waiting.erase(key);
+    g_uploads.erase(std::remove_if(g_uploads.begin(), g_uploads.end(),
+                                   [key](const auto& u) { return KeyOf(u.first.top->rdbType, u.first.top->rdbId) == key; }),
+                    g_uploads.end());
+    const uint32_t type = uint32_t(key >> 32), id = uint32_t(key);
+    const bool any = FilesFor(type, id).Any();
+    unsigned surfaces = 0;
+    for (RSurface* top : g_identified) {
+        if (!top->texture || KeyOf(top->rdbType, top->rdbId) != key)
+            continue;
+        ++surfaces;
+        top->materialsFor = nullptr;
+        if (any)
+            AttachMaterialMaps(top);
+        else if (g_rvk.device)
+            rvk::maps::Replace(*g_rvk.device, top->texture, rvk::maps::Decoded{});   // its maps are gone
+    }
+    RvkLog("hot reload: RDB texture %u:%u from %s, %u surface(s) in use", type, id,
+           !any ? "nothing (maps removed)" : g_liveKeys.count(key) ? "live\\ (preview)" : "materials\\", surfaces);
+}
+}  // namespace
+
+void HotReload()
+{
+    Scan();
+    if (!g_hot)
+        return;
+    const DWORD now = GetTickCount();
+    if (now - g_lastCheck < 200)
+        return;
+    g_lastCheck = now;
+    if (!g_watchTried) {
+        g_watchTried = true;
+        const Folder* folders[2] = {&g_mat, &g_live};
+        for (int i = 0; i < 2; ++i) {
+            HANDLE h = FindFirstChangeNotificationA(folders[i]->dir.c_str(), FALSE,
+                                                    FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE |
+                                                    FILE_NOTIFY_CHANGE_SIZE);
+            g_watch[i] = h == INVALID_HANDLE_VALUE ? nullptr : h;
+            if (!g_watch[i])
+                RvkLog("hot reload: can't watch %s (error %lu)", folders[i]->dir.c_str(), GetLastError());
+        }
+    }
+    for (HANDLE& h : g_watch)
+        if (h && WaitForSingleObject(h, 0) == WAIT_OBJECT_0) {
+            FindNextChangeNotification(h);
+            g_changed = true;
+            g_changedAt = now;
+        }
+    if (!g_changed || now - g_changedAt < 300)       // files may still be being written
+        return;
+    g_changed = false;
+    auto mat = std::move(g_mat.files), live = std::move(g_live.files);
+    ScanFolder(g_mat);
+    ScanFolder(g_live);
+    RebuildLiveKeys();
+    std::unordered_set<uint64_t> keys;
+    Changed(mat, g_mat.files, &keys);
+    Changed(live, g_live.files, &keys);
+    for (uint64_t key : keys)
+        Reload(key);
 }
 
 }  // namespace rvkproxy
