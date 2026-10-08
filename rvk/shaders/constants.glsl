@@ -16,7 +16,7 @@ struct DrawTransform {
     uvec4 sampIdx;              // bindless (set 1): sampler slots for stage 0, stage 1, bump, normal
     uvec4 mat;                  // PBR material: occlusion/roughness/metallic image slot, its sampler slot, MAT_* bits
 };
-const uint MAT_PBR = 1u, MAT_BASE = 2u;   // D.mat.z: the draw has an ORM map; it is the ground base texture's
+const uint MAT_PBR = 1u, MAT_BASE = 2u, MAT_ALBEDO = 4u;   // D.mat.z: the draw has an ORM map; it is the ground base texture's
 
 struct DrawConstants {
     mat4 view, proj;

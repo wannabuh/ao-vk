@@ -2577,6 +2577,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         dt.mat[0] = dt.texIdx[3];               // a valid slot even unused
         dt.mat[1] = dt.sampIdx[3];
     }
+    if (m_textures[0] && texStage0 == m_textures[0]->m_albedoMap) dt.mat[2] |= kMatAlbedo;   // (debug view 7)
     // GPU-driven M2: this draw's record, and the frame's two arrays (bindings 0 = constants, 12 = records) pushed
     // once per frame's command buffer. The record index travels in firstInstance (gl_InstanceIndex).
     uint32_t recordIndex = AppendRecord(constIndex, dt);

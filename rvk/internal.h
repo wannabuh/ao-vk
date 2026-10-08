@@ -48,7 +48,8 @@ struct DrawTransform {
     uint32_t sampIdx[4];           // bindless (M1): sampler slots for stage 0, stage 1, bump, normal
     uint32_t mat[4];               // PBR material: occlusion/roughness/metallic image slot, its sampler slot, kMat* bits
 };
-enum : uint32_t { kMatPbr = 1, kMatBase = 2 };   // DrawTransform mat[2]: has an ORM map; it is the ground base's
+enum : uint32_t { kMatPbr = 1, kMatBase = 2, kMatAlbedo = 4 };   // DrawTransform mat[2]: has an ORM map; it is the
+                                                                 // ground base's; stage 0 draws an albedo map
 // GPU-driven M2: one record a draw (binding 12). `constIndex` selects the shared DrawConstants it draws with; the
 // record is picked by a push constant until M3 replaces that with gl_DrawID.
 struct DrawRecord {

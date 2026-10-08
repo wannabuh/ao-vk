@@ -198,7 +198,7 @@ void RvkState::Present()
         {VK_F10, "RVK_PixelLight"}, {VK_F7, "RVK_SunShadow"}, {VK_F5, "RVK_Hdr"}, {VK_F8, "RVK_LightOver"},
         {'N', "RVK_MBlurObj"}, {'D', "RVK_Dof"}, {'P', "RVK_Particles"}, {'T', "RVK_Taa"},
         {'E', "RVK_Enhance"}, {'M', "RVK_MBlurOn"}, {VK_F2, "RVK_BumpOn"}, {VK_F3, "RVK_AoOn"}, {VK_F4, "RVK_BloomOn"},
-        {VK_F6, "RVK_PtOn"}, {'G', "RVK_GiOn"}, {'V', "RVK_VolOn"}, {'R', "RVK_SsrOn"},
+        {VK_F6, "RVK_PtOn"}, {'G', "RVK_GiOn"}, {'V', "RVK_VolOn"}, {'R', "RVK_SsrOn"}, {'B', "RVK_Pbr"},
     };
     for (const Toggle& t : kToggles)
         if (pressed(t.key))
@@ -230,6 +230,20 @@ void RvkState::Present()
         bool dn = pressed(s.down), upKey = pressed(s.up);
         if (dn || upKey)
             rvk_settings::Set(s.setting, rvk_settings::Get(s.setting) + (upKey ? s.step : -s.step));
+    }
+    // Ctrl+Shift+K: the PBR debug views in turn - which surfaces have maps (7), roughness, metallic, occlusion, albedo,
+    // normals, highlights only, off. Switches PBR materials on.
+    if (pressed('K')) {
+        static const int kOrder[] = {0, 7, 2, 3, 4, 1, 5, 6};
+        int now = int(rvk_settings::Get("RVK_PbrDebug") + 0.5f), next = 7;
+        for (int i = 0; i < 8; ++i)
+            if (kOrder[i] == now) next = kOrder[(i + 1) % 8];
+        if (rvk_settings::Get("RVK_Pbr") == 0.0f)
+            rvk_settings::Set("RVK_Pbr", 1.0f);
+        rvk_settings::Set("RVK_PbrDebug", float(next));
+        static const char* const kNames[] = {"off", "albedo", "roughness", "metallic", "occlusion", "normals",
+                                             "highlights only", "which surfaces have maps"};
+        RvkLog("PBR debug view: %s", kNames[next]);
     }
     rvk_settings::PollIni(device);              // randy-vk.ini edited while the game runs
     // Ctrl+Shift+L: reload the colour lookup tables (randy-vk-day/night.cube).

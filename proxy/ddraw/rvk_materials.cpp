@@ -255,8 +255,8 @@ void Upload(const Waiter& w, const rvk::maps::Decoded& d)
     ++g_attached;
     if (g_attached <= 64 || (g_attached & (g_attached - 1)) == 0)
         RvkLog("materials: RDB texture %u:%u gets%s%s%s%s%s (%u attached)", top->rdbType, top->rdbId,
-               d.normal.Empty() ? "" : " a normal map", d.orm.Empty() ? "" : " a PBR material from ",
-               d.orm.Empty() ? "" : d.ormFrom.c_str(), d.albedo.Empty() ? "" : " an albedo map",
+               d.normal.Empty() ? "" : " [normal map]", d.orm.Empty() ? "" : " [PBR material ",
+               d.orm.Empty() ? "" : (d.ormFrom + "]").c_str(), d.albedo.Empty() ? "" : " [albedo map]",
                d.Bytes() ? "" : " nothing", g_attached);
 }
 

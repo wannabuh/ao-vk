@@ -644,9 +644,15 @@ void main()
                   : vec3(0.1, 1.0, 0.2);
         current.rgb = mix(current.rgb, tint, 0.45);
     }
-    // PBR debug views (RVK_PbrDebug): the material of lit 3D draws; others dimmed grey.
+    // PBR debug views (RVK_PbrDebug). 7: the scene, tinted where surfaces have maps - green a PBR material (lit with
+    // it), blue only a normal map, magenta an albedo map (any draw).
     uint pbrDebug = uint(FL.pbr2.x + 0.5);
-    if (pbrDebug != 0u && (C.flags.x & F_LIGHTING) != 0u && (C.vtx.x & 0xEu) != 4u) {
+    if (pbrDebug == 7u && (C.vtx.x & 0xEu) != 4u) {
+        vec3 tint = gPbrOn ? vec3(0.1, 1.0, 0.2) : (C.flags.x & F_NORMALMAP) != 0u ? vec3(0.15, 0.4, 1.0)
+                  : (D.mat.z & MAT_ALBEDO) != 0u ? vec3(1.0, 0.15, 0.9) : vec3(-1.0);
+        if (tint.x >= 0.0)
+            current.rgb = mix(current.rgb, tint * max(dot(current.rgb, vec3(0.3, 0.59, 0.11)), 0.25) * 1.6, 0.6);
+    } else if (pbrDebug != 0u && (C.flags.x & F_LIGHTING) != 0u && (C.vtx.x & 0xEu) != 4u) {
         vec3 v = pbrDebug == 1u ? gPbrAlbedo : pbrDebug == 2u ? vec3(gPbrRough) : pbrDebug == 3u ? vec3(gPbrMetal)
                : pbrDebug == 4u ? vec3(gPbrAo) : pbrDebug == 5u ? gPbrNormal * 0.5 + 0.5 : gPbrSpec;
         current.rgb = gPbrOn ? v : vec3(dot(current.rgb, vec3(0.3, 0.59, 0.11)) * 0.25);
