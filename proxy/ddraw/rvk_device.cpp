@@ -1075,7 +1075,18 @@ HRESULT RDevice::ProcessVertices(DWORD op, RVertexBuffer* dst, DWORD dstIndex, D
         dst->processed.clear();
         dst->processedFrame = g_rvk.presentCount;
     }
-    dst->processed.emplace_back(dstIndex, dstIndex + count);
+    // (Ranges that meet or overlap become one: a draw may span two calls' vertices.)
+    DWORD first = dstIndex, end = dstIndex + count;
+    for (auto it = dst->processed.begin(); it != dst->processed.end();) {
+        if (it->first <= end && first <= it->second) {
+            first = std::min(first, it->first);
+            end = std::max(end, it->second);
+            it = dst->processed.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    dst->processed.emplace_back(first, end);
     // The game's water mesh going to the screen (VisualLiquid_t): its world-space vertices kept for our water.
     const bool water = sf.diffuse >= 0 && src->desc.dwFVF == (D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX1) &&
                        dst->desc.dwFVF == (D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX1) &&
