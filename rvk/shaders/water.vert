@@ -14,6 +14,7 @@ layout(location = 3) out vec4 vPrevClip;
 layout(location = 4) out vec3 vRest;        // where the surface is at rest (xz on the map; y its height)
 layout(location = 5) out float vFold;       // the waves' compression (foam on the crests)
 layout(location = 6) out float vSpacing;    // the grid's spacing here (world)
+layout(location = 7) out float vAlpha;      // mesh mode: the game's vertex alpha (its shore fade); grid: 1
 
 // How much the waves calm down where the water is shallow - judged from the scene's depth (behind the water, at the
 // rest point) where it is on the screen; elsewhere not at all.
@@ -42,9 +43,11 @@ void main()
     if (W.time.z > 0.5) {
         MeshVertex m = meshVertices[gl_VertexIndex];
         p = vec3(m.x, m.y, m.z);
+        vAlpha = float(m.colour >> 24u) / 255.0;
         prevP = p;
         vRest = p;
     } else {
+        vAlpha = 1.0;
         uint segments = uint(W.grid.x);
         uint ring = uint(gl_VertexIndex) / segments, seg = uint(gl_VertexIndex) % segments;
         float r = ring == 0u ? 0.0 : W.grid.z * pow(W.grid.w, float(ring - 1u));

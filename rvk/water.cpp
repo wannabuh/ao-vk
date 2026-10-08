@@ -507,9 +507,15 @@ Device::WaterMap* Device::WaterMapFor(const WaterVertex* v, uint32_t count, cons
         return nullptr;
     UpdateTexture(m.texture, 0, 0, 0, w, h, pixels.data(), w * 8);
     m_waterMaps.push_back(m);
-    WaterLog("water map %016llx: %u flat + %u steep triangles, %.0f x %.0f units at y %.1f, %u x %u texels of %.2f",
+    // (The vertex alphas, flat and steep: the game fades its water's shore edges out by them.)
+    uint32_t flatLo = 255, flatHi = 0, steepLo = 255, steepHi = 0;
+    for (const Tri& t : flat)
+        for (uint32_t i : {t.a, t.b, t.c}) { uint32_t a = v[i].colour >> 24; flatLo = std::min(flatLo, a); flatHi = std::max(flatHi, a); }
+    for (uint32_t i : steep) { uint32_t a = v[i].colour >> 24; steepLo = std::min(steepLo, a); steepHi = std::max(steepHi, a); }
+    WaterLog("water map %016llx: %u flat + %u steep triangles, %.0f x %.0f units at y %.1f, %u x %u texels of %.2f; "
+             "vertex alpha flat %u..%u, steep %u..%u",
              (unsigned long long)key, m.flatTriangles, uint32_t(steep.size() / 3), double(ex), double(ez),
-             double(m.base), w, h, double(texel));
+             double(m.base), w, h, double(texel), flatLo, flatHi, steep.empty() ? 0u : steepLo, steepHi);
     return &m_waterMaps.back();
 }
 

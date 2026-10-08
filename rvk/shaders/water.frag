@@ -23,6 +23,7 @@ layout(location = 3) in vec4 vPrevClip;
 layout(location = 4) in vec3 vRest;
 layout(location = 5) in float vFold;
 layout(location = 6) in float vSpacing;
+layout(location = 7) in float vAlpha;       // mesh mode: the game's vertex alpha (its shore fade)
 
 layout(location = 0) out vec4 outScene;
 layout(location = 1) out vec4 outGlow;
@@ -291,6 +292,10 @@ void main()
     // Where the surface meets the shore: fade over to what is behind, so the water has no hard line along the land.
     float edge = dR >= 1.0 ? 1.0 : smoothstep(0.0, 0.12, path);
     colour = mix(behindRaw, colour, edge);
+    // A steep sheet (mesh mode) fades out as the game's vertex alpha does: the sides of a body of water, where its
+    // surface steps down to the shore, are see-through at their far edge (drawn opaque, they stood as blue walls).
+    if (mesh)
+        colour = mix(behindRaw, colour, clamp(vAlpha / max(W.tint.a, 0.05), 0.0, 1.0));
 
     // The game's fog, by the view distance.
     float fog = FogFactor(dist);
