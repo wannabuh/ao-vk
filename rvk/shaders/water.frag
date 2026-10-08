@@ -200,13 +200,20 @@ void main()
     float zR = dR >= 1.0 ? 1e5 : ViewZ(dR);
     if (zR < zWater) { uvR = uv; zR = zScene; dR = dScene; }
     float path = dist * max(zR / zWater - 1.0, 0.0);             // world length of the ray under the water
+    // A steep triangle (a fall, or the side of a pool where the game's water steps down) is a sheet, not a body of
+    // water: what is behind it is not under it. As thick as the game's alpha is meant for (two units: as opaque as the
+    // game drew it), or the gap behind it if less; refraction then none.
+    if (mesh) {
+        path = min(path, 2.0);
+        uvR = uv;
+    }
     vec3 bottom = eye - V * (dist * zR / zWater);                 // what the ray reaches
     float depthBelow = dR >= 1.0 ? 1e4 : max(vRest.y - bottom.y, 0.0);
     vec3 behind = texture(sceneCopy, uvR).rgb;
     vec3 behindRaw = texture(sceneCopy, uv).rgb;
 
     // Caustics on the bottom: sunlit, fading with depth and gone where the bottom is in shadow.
-    if (dR < 1.0 && W.look2.y > 0.0 && !under) {
+    if (dR < 1.0 && W.look2.y > 0.0 && !under && !mesh) {
         float c = Caustics(bottom.xz, t) * smoothstep(0.0, 0.4, depthBelow) * exp(-depthBelow * 0.35);
         float sunOn = clamp(dot(sun, kLuma) * 2.0, 0.0, 1.0) * SunShadow(bottom + vec3(0.0, 0.05, 0.0));
         behind *= 1.0 + c * sunOn * W.look2.y * 1.1;

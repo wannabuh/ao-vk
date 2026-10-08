@@ -528,6 +528,7 @@ void Device::CaptureTerrain(uint32_t primitive, const FvfLayout& layout, const v
 namespace {
 constexpr float kCoverBelow = 0.5f, kCoverAbove = 2.5f;
 constexpr double kCoverBudgetMs = 0.3;
+constexpr uint64_t kCoverSettleFrames = 120;   // frames an object must be seen in the same place first
 }
 
 void Device::CaptureCover(uint32_t primitive, const FvfLayout& layout, const void* vertices, uint32_t vertexCount,
@@ -544,7 +545,13 @@ void Device::CaptureCover(uint32_t primitive, const FvfLayout& layout, const voi
     for (int i = 0; i < 16; ++i)
         key = (key ^ wb[i]) * 0x100000001B3ull;
     GrassChunk& seen = m_grassCovers[key];
+    if (seen.lastSeen + 1 < m_frameNumber)
+        seen.firstSeen = m_frameNumber;          // new, or back after a gap: its still run starts again
     seen.lastSeen = m_frameNumber;
+    // Only an object that stays where it is: one that moves (a weapon or armour piece on a walking character, a
+    // vehicle) is a new key every frame, and taking it would leave a trail of bare ground behind it.
+    if (m_frameNumber - seen.firstSeen < kCoverSettleFrames)
+        return;
     if (seen.processed && seen.processed > m_grassTileEpoch)
         return;                                  // no tile anywhere is newer than its last capture
     if (m_grassCoverMs > kCoverBudgetMs)
