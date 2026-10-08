@@ -270,15 +270,32 @@ void RvkState::Present()
             picking = false;
             std::string reference;
             RvkLog("pick: %s", DescribeTexture(result.texture, &reference).c_str());
+            bool copied = false;
             if (!reference.empty() && OpenClipboard(window)) {
                 EmptyClipboard();
                 if (HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, reference.size() + 1)) {
                     std::memcpy(GlobalLock(h), reference.c_str(), reference.size() + 1);
                     GlobalUnlock(h);
-                    if (!SetClipboardData(CF_TEXT, h))
+                    copied = SetClipboardData(CF_TEXT, h) != nullptr;
+                    if (!copied)
                         GlobalFree(h);
                 }
                 CloseClipboard();
+            }
+            // ... and into last-pick.txt next to the log: Wine's Wayland driver doesn't hand the Windows clipboard to
+            // the desktop's, so ao-wine.sh copies the file with wl-copy when it changes.
+            if (!reference.empty()) {
+                char path[MAX_PATH] = "randy-vk.log";
+                GetEnvironmentVariableA("RANDYVK_LOG", path, sizeof(path));
+                std::string pick(path);
+                const size_t slash = pick.find_last_of("\\/");
+                pick = (slash == std::string::npos ? std::string() : pick.substr(0, slash + 1)) + "last-pick.txt";
+                if (FILE* f = std::fopen(pick.c_str(), "w")) {
+                    std::fputs(reference.c_str(), f);
+                    std::fclose(f);
+                }
+                RvkLog("pick: %s %s, written to %s", reference.c_str(),
+                       copied ? "copied to the Windows clipboard" : "not copied to the clipboard", pick.c_str());
             }
             device->SetPickHighlight(result.texture);
             highlightUntil = result.texture ? GetTickCount64() + 3000 : 0;
