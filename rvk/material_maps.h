@@ -265,6 +265,24 @@ struct Decoded {
 };
 
 // Reads and mips every map of a material. Thread-safe (no device calls).
+// Side-loaded maps larger than this on a side keep only their mip levels from this size down (the client is a 32-bit
+// process: a 4096 x 4096 map's chain is 85 MB of memory per map before it is uploaded).
+constexpr uint32_t kMaxMapSize = 2048;
+
+inline void CapChain(MipChain& c, std::string* note)
+{
+    uint32_t dropped = 0;
+    while ((c.w > kMaxMapSize || c.h > kMaxMapSize) && c.levels.size() > 1) {
+        c.levels.erase(c.levels.begin());
+        c.w = std::max(c.w / 2, 1u);
+        c.h = std::max(c.h / 2, 1u);
+        ++dropped;
+    }
+    if (dropped && note)
+        *note += "a map was larger than " + std::to_string(kMaxMapSize) + " and is used at " + std::to_string(c.w) +
+                 "x" + std::to_string(c.h) + "; ";
+}
+
 inline Decoded Decode(const MaterialFiles& f)
 {
     Decoded d;
@@ -278,6 +296,8 @@ inline Decoded Decode(const MaterialFiles& f)
         d.errors += error + "; ";
     if (!f.emissive.empty() && !DecodeAlbedoMap(f.emissive, &d.emissive, &error))   // (a colour map, filtered the same)
         d.errors += error + "; ";
+    for (MipChain* c : {&d.normal, &d.orm, &d.albedo, &d.emissive})
+        CapChain(*c, &d.errors);
     return d;
 }
 
