@@ -231,18 +231,19 @@ void RvkState::Present()
         if (dn || upKey)
             rvk_settings::Set(s.setting, rvk_settings::Get(s.setting) + (upKey ? s.step : -s.step));
     }
-    // Ctrl+Shift+K: the PBR debug views in turn - which surfaces have maps (7), roughness, metallic, occlusion, albedo,
-    // normals, highlights only, off. Switches PBR materials on.
+    // Ctrl+Shift+K: the PBR debug views in turn - which surfaces have maps (7), emitted light (8), roughness, metallic,
+    // occlusion, albedo, normals, highlights only, off. Switches PBR materials on.
     if (pressed('K')) {
-        static const int kOrder[] = {0, 7, 2, 3, 4, 1, 5, 6};
+        static const int kOrder[] = {0, 7, 8, 2, 3, 4, 1, 5, 6};
+        constexpr int kViews = int(sizeof(kOrder) / sizeof(kOrder[0]));
         int now = int(rvk_settings::Get("RVK_PbrDebug") + 0.5f), next = 7;
-        for (int i = 0; i < 8; ++i)
-            if (kOrder[i] == now) next = kOrder[(i + 1) % 8];
+        for (int i = 0; i < kViews; ++i)
+            if (kOrder[i] == now) next = kOrder[(i + 1) % kViews];
         if (rvk_settings::Get("RVK_Pbr") == 0.0f)
             rvk_settings::Set("RVK_Pbr", 1.0f);
         rvk_settings::Set("RVK_PbrDebug", float(next));
         static const char* const kNames[] = {"off", "albedo", "roughness", "metallic", "occlusion", "normals",
-                                             "highlights only", "which surfaces have maps"};
+                                             "highlights only", "which surfaces have maps", "emitted light only"};
         RvkLog("PBR debug view: %s", kNames[next]);
     }
     rvk_settings::PollIni(device);              // randy-vk.ini edited while the game runs

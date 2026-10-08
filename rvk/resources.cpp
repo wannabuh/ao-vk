@@ -443,7 +443,7 @@ void Device::DestroyTexture(Texture* texture)
     if (m_target == texture)
         SetRenderTarget(nullptr);
     ForgetCasterTexture(texture);
-    for (Texture** map : {&texture->m_normalMap, &texture->m_ormMap, &texture->m_albedoMap})
+    for (Texture** map : {&texture->m_normalMap, &texture->m_ormMap, &texture->m_albedoMap, &texture->m_emissiveMap})
         if (*map) {
             DestroyTexture(*map);
             *map = nullptr;
@@ -472,6 +472,16 @@ void Device::SetMaterialMaps(Texture* texture, Texture* orm, Texture* albedo)
             if (*map) DestroyTexture(*map);
             *map = now;
         }
+    m_constantsDirty = true;
+}
+
+void Device::SetEmissiveMap(Texture* texture, Texture* emissive)
+{
+    if (!texture || texture->m_emissiveMap == emissive)
+        return;
+    if (texture->m_emissiveMap)
+        DestroyTexture(texture->m_emissiveMap);
+    texture->m_emissiveMap = emissive;
     m_constantsDirty = true;
 }
 

@@ -858,7 +858,8 @@ void RunNormalMapTest(D& dev, int frames, const std::string& shot, float bump)
 // PBR test (--pbr-test [--hdr] [--ssr 1] [--pbr-debug N]): a grid of spheres, roughness rising to the right
 // (0.05 .. 1), lit by a warm sun from the upper left and a blue point light at the lower right, over a floor.
 //   row 0: the game's own lighting (no material; Blinn-Phong specular, power 20) on red; last: a grey texture
-//          whose albedo map is a checker (SetMaterialMaps albedo, must show the checker)
+//          whose albedo map is a checker (SetMaterialMaps albedo, must show the checker); middle: glowing cyan
+//          bands (an emissive map, SetEmissiveMap)
 //   row 1: red non-metal      row 2: gold metal      row 3: silver metal (last column: occlusion map stripes)
 // The floor has a material too: a checker, smooth-ish non-metal (roughness 0.3), reflecting the spheres with --ssr.
 uint32_t g_pbrDebug = 0;      // --pbr-debug N: RVK_PbrDebug's views
@@ -885,11 +886,13 @@ void AttachFileMaps(D& dev, Texture* tex, const std::string& stem)
     f.parts[1] = file("_r.png");
     f.parts[2] = file("_m.png");
     f.albedo = file("_d.png");
+    f.emissive = file("_e.png");
     maps::Decoded d = maps::Decode(f);
     maps::Attach(dev, tex, d);
     QueryPerformanceCounter(&t1);
-    std::printf("pbr maps: %s: orm from %s, albedo %s (%.1f ms)%s%s\n", stem.c_str(),
+    std::printf("pbr maps: %s: orm from %s, albedo %s, emissive %s (%.1f ms)%s%s\n", stem.c_str(),
                 d.ormFrom.empty() ? "(none)" : d.ormFrom.c_str(), d.albedo.Empty() ? "no" : "yes",
+                d.emissive.Empty() ? "no" : "yes",
                 double(t1.QuadPart - t0.QuadPart) * 1000.0 / double(freq.QuadPart), d.errors.empty() ? "" : " errors: ",
                 d.errors.c_str());
 }
@@ -939,6 +942,11 @@ void RunPbrTest(D& dev, int frames, const std::string& shot)
     {   // row 0, last: the albedo map replaces the grey texture
         auto checker = Checker(64, 8, 0xFFF0F0F0, 0xFF2040C0);
         dev.SetMaterialMaps(tex[0][4], nullptr, dev.CreateTexture(64, 64, checker.data()));
+        std::vector<uint32_t> bands(64 * 64);  // row 0, middle: cyan bands glowing, black between
+        for (uint32_t y = 0; y < 64; ++y)
+            for (uint32_t x = 0; x < 64; ++x)
+                bands[y * 64 + x] = (y / 4) % 4 == 0 ? 0xFF40E0FFu : 0xFF000000u;
+        dev.SetEmissiveMap(tex[0][2], dev.CreateTexture(64, 64, bands.data()));
     }
     auto floorPixels = Checker(64, 8, 0xFF909090, 0xFF505050);
     Texture* floor = dev.CreateTexture(64, 64, floorPixels.data());

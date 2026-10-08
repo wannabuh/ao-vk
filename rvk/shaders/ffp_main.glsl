@@ -594,6 +594,14 @@ void main()
         if ((C.flags.x & F_LIGHTING) != 0u) current.rgb += t0.rgb * vMatEmissive * glow;
         else current.rgb *= 1.0 + glow;
     }
+    // Emissive map (D.mat.z & MAT_EMISSIVE): the light the surface gives off, added whatever lights it - beyond white
+    // with HDR, for the bloom.
+    vec3 emitted = vec3(0.0);
+    if ((D.mat.z & MAT_EMISSIVE) != 0u && FL.pbr2.z > 0.0) {
+        emitted = texture(EMISSIVETEX, vTex0.xy).rgb * FL.pbr2.z;
+        current.rgb += emitted;
+        if ((C.flags.x & F_HDR) == 0u) current.rgb = min(current.rgb, vec3(1.0));
+    }
     if (C.vtx.y != 0u) {
         // GPU particles' brightness: a hot core. Where in the particle a pixel is comes from its texture (a sparkle is
         // bright and opaque in the middle, fading out to the edge; shape in alpha or in intensity). Brighter settings
@@ -645,13 +653,18 @@ void main()
         current.rgb = mix(current.rgb, tint, 0.45);
     }
     // PBR debug views (RVK_PbrDebug). 7: the scene, tinted where surfaces have maps - green a PBR material (lit with
-    // it), blue only a normal map, magenta an albedo map (any draw).
+    // it), blue only a normal map, magenta an albedo map (any draw), orange where an emissive map gives off light.
+    // 8: only the emitted light (everything else dark grey).
     uint pbrDebug = uint(FL.pbr2.x + 0.5);
     if (pbrDebug == 7u && (C.vtx.x & 0xEu) != 4u) {
         vec3 tint = gPbrOn ? vec3(0.1, 1.0, 0.2) : (C.flags.x & F_NORMALMAP) != 0u ? vec3(0.15, 0.4, 1.0)
                   : (D.mat.z & MAT_ALBEDO) != 0u ? vec3(1.0, 0.15, 0.9) : vec3(-1.0);
+        if (dot(emitted, emitted) > 1e-4)
+            tint = vec3(1.0, 0.5, 0.05);
         if (tint.x >= 0.0)
             current.rgb = mix(current.rgb, tint * max(dot(current.rgb, vec3(0.3, 0.59, 0.11)), 0.25) * 1.6, 0.6);
+    } else if (pbrDebug == 8u && (C.vtx.x & 0xEu) != 4u) {
+        current.rgb = emitted + vec3(dot(current.rgb - emitted, vec3(0.3, 0.59, 0.11)) * 0.15);
     } else if (pbrDebug != 0u && (C.flags.x & F_LIGHTING) != 0u && (C.vtx.x & 0xEu) != 4u) {
         vec3 v = pbrDebug == 1u ? gPbrAlbedo : pbrDebug == 2u ? vec3(gPbrRough) : pbrDebug == 3u ? vec3(gPbrMetal)
                : pbrDebug == 4u ? vec3(gPbrAo) : pbrDebug == 5u ? gPbrNormal * 0.5 + 0.5 : gPbrSpec;

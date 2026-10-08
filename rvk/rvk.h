@@ -85,6 +85,7 @@ private:
     Texture* m_normalMap = nullptr;    // tangent-space normal map drawn with this texture (owned; SetNormalMap)
     Texture* m_ormMap = nullptr;       // PBR material: R occlusion, G roughness, B metallic (owned; SetMaterialMaps)
     Texture* m_albedoMap = nullptr;    // drawn instead of this texture's own pixels (owned; SetMaterialMaps)
+    Texture* m_emissiveMap = nullptr;  // light the surface gives off, added to it (owned; SetEmissiveMap)
     uint32_t m_bindless = ~0u;         // its slot in the bindless image array (M1)
     // Layout as of the end of the commands recorded so far (main command buffer for render targets;
     // plain textures only change layout in the upload command buffer, which runs first).
@@ -211,12 +212,16 @@ public:
     // `albedo` is drawn instead of the texture's own pixels wherever the texture is used (a higher resolution
     // replacement; its alpha is used too). The device owns both and frees them with the texture; null removes one.
     void SetMaterialMaps(Texture* texture, Texture* orm, Texture* albedo);
+    // `emissive`: the light a texture's surface gives off (its colour, any resolution), added after the lighting and
+    // as bright as PbrSettings::emissive - into the bloom with HDR. Owned by the device as above; null removes it.
+    void SetEmissiveMap(Texture* texture, Texture* emissive);
     // PBR lighting: on/off, direct specular strength, ambient (environment) specular strength, how much smooth
     // surfaces feed the screen-space reflections, the occlusion map's strength, debug view (0 off, 1 albedo,
-    // 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 specular only); whether albedo maps replace their textures.
+    // 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 specular only, 7 which surfaces have maps, 8 emission);
+    // whether albedo maps replace their textures; emissive maps' brightness (0 = off).
     struct PbrSettings {
         bool enabled = true, albedoMaps = true;
-        float specular = 1.0f, ambient = 1.0f, reflections = 1.0f, occlusion = 1.0f;
+        float specular = 1.0f, ambient = 1.0f, reflections = 1.0f, occlusion = 1.0f, emissive = 2.0f;
         uint32_t debug = 0;
     };
     void SetPbr(const PbrSettings& s);
@@ -606,6 +611,7 @@ private:
     Texture* m_drawBumpBase = nullptr;           // the current draw's (Draw)
     Texture* m_drawOrm = nullptr;                // the current draw's PBR material map (Draw)
     bool m_drawOrmBase = false;                  // ... from the ground's base texture
+    Texture* m_drawEmissive = nullptr;           // the draw's emissive map (stage 0's), or null
     Texture* m_constantsBumpBase = nullptr;
     bool m_drawTerrainBase = false;              // the current draw is the ground's unlit base pass (Draw)
     bool m_drawTerrainLight = false;             // ... or its multiplying lightmap pass

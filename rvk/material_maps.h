@@ -1,4 +1,4 @@
-// Side-loaded material maps (normal, occlusion/roughness/metallic, albedo): decoded into mip chains in memory
+// Side-loaded material maps (normal, occlusion/roughness/metallic, albedo, emissive): decoded into mip chains in memory
 // (Decode: thread-safe, the proxy runs it on a worker thread) and uploaded as rvk textures (Upload / Attach, on the
 // device's thread). Shared by the proxy (proxy/ddraw/rvk_materials.cpp, which finds the files) and rvk_demo
 // --pbr-maps. Dev is rvk::Device or rvk::ThreadedDevice. Needs stb_image (its implementation compiled once elsewhere).
@@ -252,16 +252,16 @@ inline bool DecodeAlbedoMap(const std::string& path, MipChain* out, std::string*
 
 // The files of one texture's material (empty = none).
 struct MaterialFiles {
-    std::string normal, packed, parts[3], albedo;   // parts: occlusion, roughness, metallic
-    bool Any() const { return !normal.empty() || !packed.empty() || HasParts() || !albedo.empty(); }
+    std::string normal, packed, parts[3], albedo, emissive;   // parts: occlusion, roughness, metallic
+    bool Any() const { return !normal.empty() || !packed.empty() || HasParts() || !albedo.empty() || !emissive.empty(); }
     bool HasParts() const { return !parts[0].empty() || !parts[1].empty() || !parts[2].empty(); }
 };
 
 // A texture's maps, decoded (Decode) and ready to upload.
 struct Decoded {
-    MipChain normal, orm, albedo;
+    MipChain normal, orm, albedo, emissive;
     std::string ormFrom, errors;               // what the material was read from; what couldn't be read
-    size_t Bytes() const { return normal.Bytes() + orm.Bytes() + albedo.Bytes(); }
+    size_t Bytes() const { return normal.Bytes() + orm.Bytes() + albedo.Bytes() + emissive.Bytes(); }
 };
 
 // Reads and mips every map of a material. Thread-safe (no device calls).
@@ -275,6 +275,8 @@ inline Decoded Decode(const MaterialFiles& f)
     if ((!f.packed.empty() || f.HasParts()) && !DecodeOrmMap(f.packed, f.parts, spread, &d.orm, &d.ormFrom, &error))
         d.errors += error + "; ";
     if (!f.albedo.empty() && !DecodeAlbedoMap(f.albedo, &d.albedo, &error))
+        d.errors += error + "; ";
+    if (!f.emissive.empty() && !DecodeAlbedoMap(f.emissive, &d.emissive, &error))   // (a colour map, filtered the same)
         d.errors += error + "; ";
     return d;
 }
@@ -306,6 +308,8 @@ void Attach(Dev& dev, Texture* texture, const Decoded& d)
     Texture* albedo = Upload(dev, d.albedo);
     if (orm || albedo)
         dev.SetMaterialMaps(texture, orm, albedo);
+    if (Texture* emissive = Upload(dev, d.emissive))
+        dev.SetEmissiveMap(texture, emissive);
 }
 
 }  // namespace rvk::maps

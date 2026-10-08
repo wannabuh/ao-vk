@@ -22,7 +22,7 @@ layout(set = 0, binding = 4, std140) uniform FrameLights {
     vec4 sunDir;                // direction the sunlight travels; w = light headroom (F_OVERBRIGHT)
     vec4 sunColor;              // the sun's colour (shadow-casting sun; 0 = none)
     vec4 pbr;                   // PBR materials: direct specular, ambient specular, reflections, occlusion map strength
-    vec4 pbr2;                  // x: debug view (0 = off), y: 1 = PBR on
+    vec4 pbr2;                  // x: debug view (0 = off), y: 1 = PBR on, z: emissive maps' brightness
     mat4 prevView, prevProj;    // the world camera last frame (motion vectors; raw D3DMATRIX memory)
     vec4 pushers[16];           // what plants bend away from (characters and their trails): world xyz, seconds since
     vec4 pusherBorn[4];         // ... and seconds since each point was made (4 a vector)

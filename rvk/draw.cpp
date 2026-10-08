@@ -309,7 +309,8 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->pbr[3] = m_pbr.occlusion;
     fl->pbr2[0] = float(m_pbr.debug);
     fl->pbr2[1] = m_pbr.enabled ? 1.0f : 0.0f;
-    fl->pbr2[2] = fl->pbr2[3] = 0.0f;
+    fl->pbr2[2] = m_pbr.enabled ? m_pbr.emissive : 0.0f;
+    fl->pbr2[3] = 0.0f;
     fl->prevView = m_prevView;                   // the world camera last frame (motion vectors)
     fl->prevProj = m_prevProj;
     m_frameLightIndices.clear();
@@ -2038,7 +2039,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     bool needLights = ((m_lightOverride || m_pbr.enabled) && m_pixelLighting && m_rs[d3d::RS_LIGHTING] &&
                        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW) || ShadowReceiver(fvf) ||
                       ShadowCompensated(fvf) || motion ||
-                      (m_target->m_format == Format::RGBA16F && (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW);
+                      ((m_target->m_format == Format::RGBA16F || (m_textures[0] && m_textures[0]->m_emissiveMap)) &&
+                       (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW);
     VkDeviceSize frameLightsOffset = m_frameLightsGeneration == m_ringGeneration ? m_frameLightsOffset : 0;
     if (needLights && (m_frameLightsDirty || m_frameLightsGeneration != m_ringGeneration))   // once per frame
         frameLightsOffset = WriteFrameLights();
@@ -2187,6 +2189,13 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         m_drawOrm = m_drawBumpBase->m_ormMap;
         m_drawOrmBase = true;
     }
+    // Its emissive map: stage 0's, wherever that texture is drawn as the surface (lit or not; not the ground's passes).
+    m_drawEmissive = nullptr;
+    if (m_pbr.enabled && m_pbr.emissive > 0.0f && m_textures[0] && m_textures[0]->m_emissiveMap && !terrain &&
+        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZRHW &&
+        m_tss[0][d3d::TSS_COLOROP] != d3d::TOP_DISABLE && !(m_tss[0][d3d::TSS_TEXTURETRANSFORMFLAGS] & 256u) &&
+        (m_tss[0][d3d::TSS_TEXCOORDINDEX] & 0xFFFF0000u) == 0)
+        m_drawEmissive = m_textures[0]->m_emissiveMap;
     // The foliage level of detail depends on the draw's distance, not the render state: part of the block's key, or
     // a run of plants with the same state would all get the first one's (flickering as the camera moves).
     uint32_t foliageLod = FoliageFar() ? (m_drawSway[3] > 0.5f ? 2u : 1u) : 0u;
@@ -2578,6 +2587,12 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         dt.mat[1] = dt.sampIdx[3];
     }
     if (m_textures[0] && texStage0 == m_textures[0]->m_albedoMap) dt.mat[2] |= kMatAlbedo;   // (debug view 7)
+    if (m_drawEmissive) {                        // (sampled with the ORM map's sampler, set either way)
+        dt.mat[3] = BindlessImage(m_drawEmissive);
+        dt.mat[2] |= kMatEmissive;
+    } else {
+        dt.mat[3] = dt.mat[0];
+    }
     // GPU-driven M2: this draw's record, and the frame's two arrays (bindings 0 = constants, 12 = records) pushed
     // once per frame's command buffer. The record index travels in firstInstance (gl_InstanceIndex).
     uint32_t recordIndex = AppendRecord(constIndex, dt);

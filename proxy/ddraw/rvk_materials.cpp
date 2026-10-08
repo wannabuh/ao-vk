@@ -6,6 +6,7 @@
 //   <type>_<id>_r.png, _m.png, _ao.png   ... or separate greyscale roughness / metallic / occlusion maps (packed here;
 //                        a missing one is roughness 1, metallic 0, occlusion 1). Ignored when there is an _orm.png.
 //   <type>_<id>_d.png    albedo (diffuse colour): drawn instead of the game's texture, alpha included
+//   <type>_<id>_e.png    emissive: the light the surface gives off (black = none), added after its lighting
 //   <id>_<suffix>        any of these for any type (fallback)
 // ao-assets writes these names (python -m aoassets material-template / import).
 //
@@ -180,6 +181,7 @@ rvk::maps::MaterialFiles FilesFor(uint32_t type, uint32_t id)
     f.parts[1] = FindMap(type, id, "_r.png");
     f.parts[2] = FindMap(type, id, "_m.png");
     f.albedo = FindMap(type, id, "_d.png");
+    f.emissive = FindMap(type, id, "_e.png");
     return f;
 }
 
@@ -254,10 +256,10 @@ void Upload(const Waiter& w, const rvk::maps::Decoded& d)
     rvk::maps::Attach(*g_rvk.device, w.texture, d);
     ++g_attached;
     if (g_attached <= 64 || (g_attached & (g_attached - 1)) == 0)
-        RvkLog("materials: RDB texture %u:%u gets%s%s%s%s%s (%u attached)", top->rdbType, top->rdbId,
+        RvkLog("materials: RDB texture %u:%u gets%s%s%s%s%s%s (%u attached)", top->rdbType, top->rdbId,
                d.normal.Empty() ? "" : " [normal map]", d.orm.Empty() ? "" : " [PBR material ",
                d.orm.Empty() ? "" : (d.ormFrom + "]").c_str(), d.albedo.Empty() ? "" : " [albedo map]",
-               d.Bytes() ? "" : " nothing", g_attached);
+               d.emissive.Empty() ? "" : " [emissive map]", d.Bytes() ? "" : " nothing", g_attached);
 }
 
 }  // namespace
