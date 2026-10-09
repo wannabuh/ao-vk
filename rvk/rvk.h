@@ -301,6 +301,7 @@ public:
         float wind = 1.0f;             // trunk and branches swaying
         float flutter = 1.0f;          // each sprig fluttering
         bool trees = true, shrubs = true, palms = true;
+        bool shadows = true;           // the leaves cast the sun's shadow (dappled light under the trees)
     };
     void SetLeaves(const LeafSettings& s)
     {
@@ -700,6 +701,7 @@ private:
         bool animated;                           // its vertices changed since last frame (a character's body)
         uint32_t owner;                          // the character it belongs to (SetDrawVisual), 0: unknown
         uint32_t kind;                           // VisualKind of the visual that drew it (m_drawVisualKind)
+        uint64_t leafKey;                        // a canopy with leaves: its leaf set (m_leafSets), 0 = none
     };
     // One caster as the shadow passes draw it: from this frame's ring or from the caster cache (own buffer).
     struct ShadowItem {
@@ -718,6 +720,7 @@ private:
         bool animated;                           // ShadowCaster animated
         uint32_t owner;                          // ShadowCaster owner
         uint32_t kind;                           // ShadowCaster kind (VisualKind)
+        uint64_t leafKey = 0;                    // ShadowCaster leafKey
         // Made at its first draw this frame and shared by every cascade and cube face it is drawn into (the pass's
         // light matrix is a push constant): its record (kNoShadowRecord: the arena was full) and its group key.
         uint32_t record = ~0u;
@@ -810,6 +813,7 @@ private:
         double lastSwaySample;
         float plantSway[4];                      // a plant's wind sway (as ShadowCaster sway)
         uint32_t kind;                           // ShadowCaster kind (VisualKind)
+        uint64_t leafKey;                        // ShadowCaster leafKey
     };
     static constexpr double kSwayStep = 0.05;
     static constexpr size_t kSwaySamples = 80;
@@ -1358,6 +1362,10 @@ private:
     uint64_t m_leafDraws = 0, m_leafDrawn = 0;   // leaf draws and leaves drawn (the log's 600 frames)
     uint64_t m_canopyCount[4] = {};              // canopy draws by kind (the log's 600 frames)
     LeafSet* m_drawLeaves = nullptr;             // the current draw's leaf set, ready to draw (CanopyParams)
+    uint64_t m_drawLeafKey = 0;                  // ... its key in m_leafSets
+    VkPipeline m_leafShadowPipeline = VK_NULL_HANDLE;   // leaf_shadow.vert + shadow.frag
+    uint64_t m_leafShadowLeaves = 0;             // leaves drawn into the sun's cascades (the log's 600 frames)
+    void DrawLeafShadows(VkCommandBuffer cmd);   // the current cascade's canopies' leaves (shadow.cpp RenderShadowMap)
     uint32_t m_drawLeafCount = 0;                // ... how many of its leaves at this distance
     Canopy CanopyKind(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
                       const uint16_t* indices, uint32_t indexCount);

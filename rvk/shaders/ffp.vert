@@ -114,18 +114,7 @@ vec3 PushOffset(vec3 posW, vec3 modelPos, vec4 sway, float plantHeight, vec2 ori
 // a slow swing with the wind and a little bob; world units, at the wind's `time`, gusts at the object's position.
 vec3 BranchSway(vec3 modelPos, float time, vec2 originXZ)
 {
-    float amount = FL.leaves.x;
-    if (D.leaf.w <= 0.0 || amount <= 0.0) return vec3(0.0);
-    vec3 d = (modelPos - D.leaf.xyz) / D.leaf.w;
-    float r = min(length(d), 1.3);
-    vec3 n = d / max(r, 1e-3);
-    float phase = dot(n, vec3(2.3, 1.7, 3.1)) + dot(originXZ, vec2(0.31, 0.23));
-    vec2 wd = FL.wind.xy;
-    float gust = Gust(originXZ, wd, time) * FL.leaves.z;
-    float swing = 0.55 * sin(time * 1.3 + phase) + 0.3 * sin(time * 2.9 + phase * 1.9) + 0.6 * gust;
-    float bob = 0.4 * sin(time * 2.1 + phase * 2.7);
-    float amp = 0.035 * D.leaf.w * amount * r * r * FL.wind.w;
-    return vec3(wd.x * swing, bob, wd.y * swing) * amp;
+    return BranchSwayAt(modelPos, D.leaf, originXZ, FL.wind.xy, time, FL.leaves.x * FL.wind.w, FL.leaves.z);
 }
 
 // A canopy with leaves: how much of it the leaves stand for at this distance - all of it up to half the leaves'
@@ -282,9 +271,9 @@ void main()
             float keep = LeafKeep();
             crownShade = mix(1.0, CrownShade(modelPos), keep);
 #ifndef RVK_LEAF
-            modelPos = mix(modelPos, D.leaf.xyz, 0.12 * FL.leaves.w * keep);
+            modelPos = mix(modelPos, D.leaf.xyz, CoreShrink(FL.leaves.w, keep));
             crownShade *= 1.0 - 0.1 * FL.leaves.w * keep;
-            leafThin = 0.35 * FL.leaves.w * keep;
+            leafThin = CoreThin(FL.leaves.w, keep);
 #endif
         }
         vec4 posW = D.world * vec4(modelPos, 1.0);

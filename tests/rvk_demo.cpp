@@ -2415,6 +2415,7 @@ int main(int argc, char** argv)
         else if (a == "--grass-bench") { g_grassFieldOn = g_grassBench = true; hdr = true; }
         else if (a == "--leaf-tree" && i + 1 < argc) g_leafTrees = argv[++i];
         else if (a == "--leaf-off") g_leafSettings.on = false;
+        else if (a == "--leaf-shadow-off") g_leafSettings.shadows = false;
         else if (a == "--leaf-density" && i + 1 < argc) g_leafSettings.density = float(std::atof(argv[++i]));
         else if (a == "--leaf-size" && i + 1 < argc) g_leafSettings.size = float(std::atof(argv[++i]));
         else if (a == "--leaf-dist" && i + 1 < argc) g_leafSettings.distance = float(std::atof(argv[++i]));

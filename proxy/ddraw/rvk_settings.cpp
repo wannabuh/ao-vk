@@ -93,6 +93,7 @@ Setting g_settings[] = {
     {"RVK_LeafTrees",  "Leaves on trees",                                           "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
     {"RVK_LeafShrubs", "Leaves on shrubs and bushes",                               "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
     {"RVK_LeafPalms",  "Palm fronds bending in the wind",                           "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafShadow", "Leaves cast the sun's shadow (dappled light under trees)",  "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
 
     {"RVK_WaterOn",    "New water (waves, reflections, refraction, foam; needs HDR)", "Water",          Bool,  0, 1, 1, 1, nullptr, 0},
     {"RVK_WaterStyle", "Look (0 = the game's water made richer, 1 = realistic)",  "Water",            Float, 0, 1, 0.05f, 0.5f, nullptr, 0, "RVK_WaterOn"},
@@ -363,6 +364,7 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
         l.trees = V("RVK_LeafTrees") != 0.0f;
         l.shrubs = V("RVK_LeafShrubs") != 0.0f;
         l.palms = V("RVK_LeafPalms") != 0.0f;
+        l.shadows = V("RVK_LeafShadow") != 0.0f;
         d->SetLeaves(l);
     }
     else if (is("RVK_Taa") || is("RVK_Sharpen")) d->SetTaa(V("RVK_Taa") != 0.0f, V("RVK_Sharpen"));

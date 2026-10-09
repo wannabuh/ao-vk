@@ -40,6 +40,7 @@ float PointShadow(Light l, vec3 posW, vec3 n, float nl)
 }
 
 #include "lighting.glsl"
+#include "wind.glsl"
 
 layout(location = 0) in vec4 vDiffuse;
 layout(location = 1) in vec4 vSpecular;
@@ -361,12 +362,7 @@ const float kFoliageCore = 0.95;
 // leaves around them making up the crown.
 float LeafMask()
 {
-    if (D.leaf.w <= 0.0) return 1.0;
-    if (vSet0.y < 1.5) return smoothstep(1.0, 0.6, length(vSet0));
-    if (vSet0.x <= 0.0) return 1.0;
-    vec2 cell = floor(vTex0.xy * vec2(textureSize(TEX0, 0)) * 0.25);
-    float h = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
-    return h < vSet0.x ? 0.0 : 1.0;
+    return D.leaf.w > 0.0 ? LeafMaskAt(vSet0, vTex0.xy * vec2(textureSize(TEX0, 0))) : 1.0;
 }
 
 void main()

@@ -56,7 +56,7 @@ foreach(shader ffp.vert ffp.tesc ffp.tese ffp.frag ffp_glow.frag ffp_nocut.frag 
 endforeach()
 
 # Variants built from another shader with a define: output name, source, define.
-foreach(entry "leaf.vert|ffp.vert|RVK_LEAF")
+foreach(entry "leaf.vert|ffp.vert|RVK_LEAF" "leaf_shadow.vert|shadow.vert|RVK_LEAF")
     string(REPLACE "|" ";" variant "${entry}")
     list(GET variant 0 name)
     list(GET variant 1 shader)

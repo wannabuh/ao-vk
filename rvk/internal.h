@@ -65,9 +65,11 @@ struct ShadowRecord {
     float alpha[4];
     float sway[4];       // plants: model y of the base, 1 / model height, tip sway, on
     float windModel[4];  // the wind in model space
-    float origin[4];     // world x, z of the object; wind time
+    float origin[4];     // world x, z of the object; wind time; RVK_LeafCore (a canopy with leaves)
+    float leaf[4];       // a canopy with leaves (leaves.cpp): its crown's centre (model space), radius (0 = none)
+    float leafWind[4];   // ... the wind's direction (world x, z), branch sway amount, gusts
 };
-static_assert(sizeof(ShadowRecord) == 128, "shadow record");
+static_assert(sizeof(ShadowRecord) == 160, "shadow record");
 
 enum : uint32_t { F_LIGHTING = 1, F_COLORVERTEX = 2, F_SPECULAR = 4, F_NORMALIZE = 8, F_FOG = 16, F_RANGEFOG = 32,
                   F_LOCALVIEWER = 64, F_TEX0 = 128, F_TEX1 = 256, F_ALPHATEST = 512,

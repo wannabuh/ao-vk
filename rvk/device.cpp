@@ -1402,14 +1402,16 @@ void Device::BeginFrame()
                 double(m_grassShadowBlades) / 600.0);
         if (m_leaf.on)
             Log("leaves: canopy draws a frame %.1f shrubs, %.1f trees, %.1f palms; %.1f leaf draws a frame, %.0f leaves a "
-                "frame; %zu sets, %u baked (%.2f ms each, %.0f leaves each) (last 600 frames)",
+                "frame; %zu sets, %u baked (%.2f ms each, %.0f leaves each); %.0f leaves a frame cast the sun's shadow "
+                "(last 600 frames)",
                 double(m_canopyCount[1]) / 600.0, double(m_canopyCount[2]) / 600.0, double(m_canopyCount[3]) / 600.0,
                 double(m_leafDraws) / 600.0, double(m_leafDrawn) / 600.0, m_leafSets.size(), m_leafBakes,
                 m_leafBakeMs / double(std::max<uint32_t>(m_leafBakes, 1)),
-                double(m_leafBakedLeaves) / double(std::max<uint32_t>(m_leafBakes, 1)));
+                double(m_leafBakedLeaves) / double(std::max<uint32_t>(m_leafBakes, 1)),
+                double(m_leafShadowLeaves) / 600.0);
         for (uint64_t& n : m_canopyCount)
             n = 0;
-        m_leafDraws = m_leafDrawn = 0;
+        m_leafDraws = m_leafDrawn = m_leafShadowLeaves = 0;
         m_leafBakes = m_leafBakedLeaves = 0;
         m_leafBakeMs = 0.0;
         m_grassShadowBlades = 0;

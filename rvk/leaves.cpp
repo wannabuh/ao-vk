@@ -160,6 +160,7 @@ void Device::CanopyParams(uint32_t primitive, uint32_t fvf, const FvfLayout& lay
                           uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount)
 {
     m_drawLeaves = nullptr;
+    m_drawLeafKey = 0;
     m_drawLeafCount = 0;
     if (!m_leaf.on || m_external || m_drawGpu || !m_drawMesh || !m_leafPipelines[0] || !m_drawMeshStatic ||
         m_drawMesh->firstFrame + 2 > m_frameNumber || m_target != m_scene)
@@ -202,6 +203,7 @@ void Device::CanopyParams(uint32_t primitive, uint32_t fvf, const FvfLayout& lay
     const float dist = std::sqrt(d2), reach = std::max(m_leaf.distance, 1.0f);
     const float keep = std::clamp((reach - dist) / (0.5f * reach), 0.0f, 1.0f);
     m_drawLeaves = &set;
+    m_drawLeafKey = key;
     m_drawLeafCount = uint32_t(float(set.count) * keep * keep);
 }
 
@@ -496,6 +498,58 @@ void Device::DrawLeaves(VkCommandBuffer cmd, uint32_t recordIndex, uint32_t prim
     c.cull = ~0u;
     ApplyDynamicState(primitive, fvf, stride);
     PushDrawSet(cmd, frameLightsOffset, prevBuffer, prevOffset, prevBytes, smoothBuffer, smoothOffset, smoothBytes);
+}
+
+// The current sun cascade's canopies' leaves (RenderShadowMap, after the cascade's casters, with its rendering open and
+// its light matrix pushed): each visible caster with a leaf set, with its record (drawn in already: the crown and the
+// wind), through leaf_shadow.vert - as many leaves as the scene draws at its distance. Rebinds what it changes; the
+// cascade's rendering ends right after.
+void Device::DrawLeafShadows(VkCommandBuffer cmd)
+{
+    if (!m_leaf.on || !m_leaf.shadows || !m_leafShadowPipeline || !m_leafPool)
+        return;
+    bool bound = false;
+    const float reach = std::max(m_leaf.distance, 1.0f);
+    for (uint32_t i : m_cascadeVisible) {
+        const ShadowItem& item = m_shadowItems[i];
+        if (!item.leafKey || !item.texture || item.record >= kNoShadowRecord)
+            continue;
+        auto it = m_leafSets.find(item.leafKey);
+        if (it == m_leafSets.end() || !it->second.count)
+            continue;
+        const LeafSet& set = it->second;
+        float d2 = 0.0f;
+        for (int j = 0; j < 3; ++j) {
+            float d = std::max(std::max(item.boundsMin[j] - m_frameEye[j], m_frameEye[j] - item.boundsMax[j]), 0.0f);
+            d2 += d * d;
+        }
+        const float keep = std::clamp((reach - std::sqrt(d2)) / (0.5f * reach), 0.0f, 1.0f);
+        const uint32_t count = uint32_t(float(set.count) * keep * keep);
+        if (!count)
+            continue;
+        if (!bound) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_leafShadowPipeline);
+            vkCmdSetPrimitiveTopology(cmd, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+            vkCmdSetVertexInputEXT(cmd, 0, nullptr, 0, nullptr);
+            VkDescriptorBufferInfo pool{m_leafPool, 0, VkDeviceSize(m_leafPoolLeaves) * sizeof(LeafRecord)};
+            VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            w.dstBinding = 2;
+            w.descriptorCount = 1;
+            w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            w.pBufferInfo = &pool;
+            vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelineLayout, 0, 1, &w);
+            bound = true;
+        }
+        VkDescriptorImageInfo image{SamplerFor(0), item.texture->m_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        w.dstBinding = 0;
+        w.descriptorCount = 1;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        w.pImageInfo = &image;
+        vkCmdPushDescriptorSetKHR(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelineLayout, 0, 1, &w);
+        vkCmdDraw(cmd, count * 6u, 1, set.first * 6u, item.record);
+        m_leafShadowLeaves += count;
+    }
 }
 
 void Device::DestroyLeafResources()
