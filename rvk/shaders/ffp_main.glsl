@@ -355,11 +355,26 @@ bool AlphaPass(float a)
 // later, over the finished scene, its soft edges - below it, without depth (D.motion.w: 1 core, 2 edges, 0 whole).
 const float kFoliageCore = 0.95;
 
+// Leaves (leaves.cpp; ffp.vert passes vSet0 for a canopy with leaves, D.leaf.w > 0): a leaf is a round sprig - its card
+// fades out towards the rim (vSet0 = where on the card, -1 .. 1), not a square cut through the painted cluster; the
+// canopy's own cards are thinned out in place (vSet0 = (how much, 2)): blocks of texels dropped by a stable hash, the
+// leaves around them making up the crown.
+float LeafMask()
+{
+    if (D.leaf.w <= 0.0) return 1.0;
+    if (vSet0.y < 1.5) return smoothstep(1.0, 0.6, length(vSet0));
+    if (vSet0.x <= 0.0) return 1.0;
+    vec2 cell = floor(vTex0.xy * vec2(textureSize(TEX0, 0)) * 0.25);
+    float h = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
+    return h < vSet0.x ? 0.0 : 1.0;
+}
+
 void main()
 {
     gRecord = vRecord;
     gDiffuse = vDiffuse;
     gSpecular = vSpecular;
+    const float leafMask = LeafMask();
 #ifdef RVK_PREPASS_CUTOUT
     // Depth only where the pixel is fully opaque in the end (prepass_cutout.frag): the same alpha as the cut-out test
     // below (texture stages; the lit diffuse keeps the vertex alpha).
@@ -379,7 +394,7 @@ void main()
     bool drop = false;
     if ((C.flags.x & (F_ALPHATEST | F_CUTOUT)) != 0u) {
         vec4 e0 = Sample(0u), e1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
-        float a = Cascade(e0, e1, 1.0).a;
+        float a = Cascade(e0, e1, 1.0).a * leafMask;
         drop = ((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(a)) || ((C.flags.x & F_CUTOUT) != 0u && a < vCutout);
         uint split = uint(D.motion.w + 0.5);             // two-pass foliage: the core or the edges only
         if (split == 1u) drop = drop || a < kFoliageCore;
@@ -579,6 +594,7 @@ void main()
                   : vec3(0.1, 1.0, 0.2);
         current.rgb = mix(current.rgb, tint, 0.45);
     }
+    current.a *= leafMask;
 #ifndef RVK_NO_CUTOUT
     if ((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(current.a))
         discard;

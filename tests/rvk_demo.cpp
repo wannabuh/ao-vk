@@ -1979,6 +1979,7 @@ float g_leafCamDist = -1.0f;       // --leaf-cam-dist D: the camera this far fro
 float g_leafCamHeight = -1.0f;     // --leaf-cam-height H: ... this high (default: a third of the tallest tree)
 float g_leafCamYaw = 0.0f;         // --leaf-cam-yaw R: ... turned R radians about the row's middle
 int g_leafFilm = 0;                // --leaf-film N: ~60 frames a second, a screenshot every N frames (film_NNN.bmp)
+int g_leafForest = 0;              // --leaf-forest N: an N x N grid of the trees (12 units apart), seen from eye height
 
 struct TreePart {
     uint32_t flags = 0, alphaRef = 128;
@@ -2046,18 +2047,29 @@ void RunLeafScene(D& dev, int frames, const std::string& shot, const std::string
         start = comma == std::string::npos ? g_leafTrees.size() : comma + 1;
     }
     if (trees.empty()) return;
-    // In a row along x, each on the ground (y 0) at its own box's middle.
-    std::vector<float> at(trees.size());
+    // In a row along x, each on the ground (y 0) at its own box's middle; or (--leaf-forest) a grid of them.
+    struct Placed { size_t tree; float x, z, turn; };
+    std::vector<Placed> placed;
     float x = 0.0f, tallest = 0.0f;
-    for (size_t i = 0; i < trees.size(); ++i) {
-        const float width = trees[i].hi[0] - trees[i].lo[0];
-        at[i] = x + 0.5f * width;
-        x += width * 0.9f;
+    for (size_t i = 0; i < trees.size(); ++i)
         tallest = std::max(tallest, trees[i].hi[1] - trees[i].lo[1]);
+    if (g_leafForest > 0) {
+        for (int gz = 0; gz < g_leafForest; ++gz)
+            for (int gx = 0; gx < g_leafForest; ++gx)
+                placed.push_back({size_t(gx * 7 + gz * 3) % trees.size(), 12.0f * float(gx) + 3.0f * float(gz % 2),
+                                  12.0f * float(gz), 1.3f * float(gx + 5 * gz)});
+        x = 12.0f * float(g_leafForest - 1);
+    } else {
+        for (size_t i = 0; i < trees.size(); ++i) {
+            const float width = trees[i].hi[0] - trees[i].lo[0];
+            placed.push_back({i, x + 0.5f * width, 0.0f, 0.0f});
+            x += width * 0.9f;
+        }
     }
     const float mid = 0.5f * x;
-    const float dist = g_leafCamDist > 0.0f ? g_leafCamDist : std::max(1.1f * tallest, 0.75f * x);
-    const float camY = g_leafCamHeight >= 0.0f ? g_leafCamHeight : tallest / 3.0f;
+    const float dist = g_leafCamDist > 0.0f ? g_leafCamDist
+                       : g_leafForest > 0 ? 14.0f : std::max(1.1f * tallest, 0.75f * x);
+    const float camY = g_leafCamHeight >= 0.0f ? g_leafCamHeight : g_leafForest > 0 ? 2.0f : tallest / 3.0f;
     auto groundPixels = Checker(64, 8, 0xFF4A6A30, 0xFF42602A);
     Texture* ground = dev.CreateTexture(64, 64, groundPixels.data());
     dev.SetLeaves(g_leafSettings);
@@ -2076,7 +2088,9 @@ void RunLeafScene(D& dev, int frames, const std::string& shot, const std::string
         dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
         dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF8AB0D8, 1.0f);
         const float ex = mid + dist * std::sin(g_leafCamYaw), ez = -dist * std::cos(g_leafCamYaw);
-        dev.SetTransform(View, LookAtLH({ex, camY, ez}, {mid, tallest * 0.45f, 0.0f}, {0, 1, 0}));
+        const float lookY = g_leafForest > 0 ? camY + 3.0f : tallest * 0.45f;
+        const float lookZ = g_leafForest > 0 ? 30.0f : 0.0f;
+        dev.SetTransform(View, LookAtLH({ex, camY, ez}, {mid, lookY, lookZ}, {0, 1, 0}));
         dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 500.0f));
         dev.SetTransform(World, Identity());
         dev.SetRenderState(RS_ZENABLE, 1);
@@ -2109,10 +2123,12 @@ void RunLeafScene(D& dev, int frames, const std::string& shot, const std::string
             dev.DrawPrimitive(TriangleFan, kFvfMesh, q, 4);
         }
         const uint32_t kFvfTree = FVF_XYZ | FVF_NORMAL | (1 << 8);   // 0x112, as the game's statics
-        for (size_t i = 0; i < trees.size(); ++i) {
-            Matrix w = Translate(at[i] - 0.5f * (trees[i].lo[0] + trees[i].hi[0]), -trees[i].lo[1], 0.0f);
+        for (const Placed& pl : placed) {
+            const Tree& tree = trees[pl.tree];
+            Matrix w = Mul(Translate(-0.5f * (tree.lo[0] + tree.hi[0]), -tree.lo[1], -0.5f * (tree.lo[2] + tree.hi[2])),
+                           Mul(RotateY(pl.turn), Translate(pl.x, 0.0f, pl.z)));
             dev.SetTransform(World, w);
-            for (const TreePart& part : trees[i].parts) {
+            for (const TreePart& part : tree.parts) {
                 dev.SetTexture(0, part.texture);
                 dev.SetRenderState(RS_ALPHABLENDENABLE, (part.flags & 1) ? 1 : 0);
                 dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
@@ -2409,6 +2425,7 @@ int main(int argc, char** argv)
         else if (a == "--leaf-cam-height" && i + 1 < argc) g_leafCamHeight = float(std::atof(argv[++i]));
         else if (a == "--leaf-cam-yaw" && i + 1 < argc) g_leafCamYaw = float(std::atof(argv[++i]));
         else if (a == "--leaf-film" && i + 1 < argc) g_leafFilm = std::atoi(argv[++i]);
+        else if (a == "--leaf-forest" && i + 1 < argc) g_leafForest = std::atoi(argv[++i]);
         else if (a == "--water-lake") { g_waterScene = 1; hdr = true; }
         else if (a == "--water-coast") { g_waterScene = 2; hdr = true; }
         else if (a == "--water-wall") g_waterWall = true;

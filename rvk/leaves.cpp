@@ -235,7 +235,7 @@ bool Device::BakeLeaves(LeafSet& set, uint32_t primitive, const FvfLayout& layou
     set.radius = 0.5f * std::max(hi.x - lo.x, std::max(hi.y - lo.y, hi.z - lo.z));
 
     const float win = 0.0625f * std::clamp(m_leaf.size, 0.25f, 3.5f);   // a sprig's half size in the texture
-    const float perArea = 1.5f * std::clamp(m_leaf.density, 0.1f, 4.0f) / (4.0f * win * win);
+    const float perArea = 2.2f * std::clamp(m_leaf.density, 0.1f, 4.0f) / (4.0f * win * win);
     std::vector<LeafRecord> leaves;
     Rng rng(m_drawMeshKey ^ 0x5EEDull);
     const uint32_t count = indices ? indexCount : vertexCount;

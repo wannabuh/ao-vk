@@ -146,13 +146,14 @@ float CrownShade(vec3 modelPos)
 {
     vec3 d = (modelPos - D.leaf.xyz) / D.leaf.w;
     float r = length(d);
-    return mix(0.55, 1.0, smoothstep(0.15, 0.95, r)) * (1.0 + 0.08 * clamp(d.y, -1.0, 1.0));
+    return mix(0.72, 1.0, smoothstep(0.15, 0.95, r)) * (1.0 + 0.06 * clamp(d.y, -1.0, 1.0));
 }
 
 #ifdef RVK_LEAF
 const vec2 kLeafCorner[6] = vec2[6](vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(1.0, 1.0),
                                     vec2(-1.0, -1.0), vec2(1.0, 1.0), vec2(-1.0, 1.0));
 vec3 gLeafPrev;                                  // the vertex's model position last frame (its flutter then)
+vec2 gLeafCorner;                                // where on the card (-1 .. 1)
 
 // A leaf's flutter: its card flapping about its middle, the far edge most (model units, along the card's normal).
 float LeafFlutter(float phase, float corner, float time, float gust)
@@ -164,6 +165,7 @@ void LeafVertex(vec2 originXZ)
 {
     uint leaf = uint(gl_VertexIndex) / 6u;
     vec2 corner = kLeafCorner[uint(gl_VertexIndex) % 6u];
+    gLeafCorner = corner;
     uvec4 a = LV.words[2u * leaf], b = LV.words[2u * leaf + 1u];
     vec3 centre = uintBitsToFloat(a.xyz);
     vec2 h0 = unpackHalf2x16(a.w), h1 = unpackHalf2x16(b.x), h2 = unpackHalf2x16(b.y);
@@ -257,6 +259,7 @@ void main()
     vPrevClip = vClip;
     vCutout = 0.02;
     vSmoothN = vec3(0.0);
+    float leafThin = 0.0;                        // a canopy's core: how much it is thinned out
     if (rhw) {
         // Screen-space vertex. The Vulkan viewport is the D3D one shifted by half a pixel (D3D pixel
         // centres are at integer coordinates), so position relative to it.
@@ -271,15 +274,17 @@ void main()
     } else {
         // A canopy with leaves: its own cards drawn as an inner core - drawn in towards the crown's centre (by RVK_LeafCore,
         // as much as its leaves stand for at this distance), so the leaves around it make the crown's outside.
+        // ... a little only (a wide, flat crown's tips would leave its leaves behind), and thinned out in place (vSet0:
+        // ffp_main.glsl LeafMask).
         vec3 modelPos = inPos.xyz;
         float crownShade = 1.0;
         if (D.leaf.w > 0.0 && FL.leafView.y > 0.0) {
             float keep = LeafKeep();
             crownShade = mix(1.0, CrownShade(modelPos), keep);
 #ifndef RVK_LEAF
-            float shrink = 0.4 * FL.leaves.w * keep;
-            modelPos = mix(modelPos, D.leaf.xyz, shrink);
-            crownShade *= 1.0 - 0.2 * FL.leaves.w * keep;
+            modelPos = mix(modelPos, D.leaf.xyz, 0.12 * FL.leaves.w * keep);
+            crownShade *= 1.0 - 0.1 * FL.leaves.w * keep;
+            leafThin = 0.35 * FL.leaves.w * keep;
 #endif
         }
         vec4 posW = D.world * vec4(modelPos, 1.0);
@@ -387,5 +392,11 @@ void main()
     }
     vTex0 = TexCoord(0u, fvf, posV, normalV);
     vSet0 = inTex0.xy;
+#ifdef RVK_LEAF
+    vSet0 = gLeafCorner;                         // where on the leaf's card (ffp_main.glsl LeafMask)
+#else
+    if (D.leaf.w > 0.0 && (fvf & 0xEu) != 4u)
+        vSet0 = vec2(leafThin, 2.0);                 // the canopy's core: how much it is thinned out
+#endif
     vTex1 = TexCoord(1u, fvf, posV, normalV);
 }
