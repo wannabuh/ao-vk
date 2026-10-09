@@ -80,6 +80,11 @@ private:
     std::vector<uint8_t> m_thumb;
     uint32_t m_thumbW = 0, m_thumbH = 0;
     bool m_thumbValid = false;
+    // Not fully opaque: the mean alpha (0..255) on a grid of up to 64 x 64 cells over level 0, for the leaves
+    // (leaves.cpp: where a canopy card is leaf and where it is hole). Empty until a full level-0 upload.
+    std::vector<uint8_t> m_alphaMask;
+    uint32_t m_alphaW = 0, m_alphaH = 0;
+    uint32_t m_alphaVersion = 0;       // counts the uploads that changed the mask (a canopy's leaves are rebaked)
     bool m_lightmap = false;           // captured as a terrain lightmap (a re-upload recaptures the grass's light)
     bool m_groundBase = false;         // captured as a terrain base texture (a re-upload recaptures the grass's ground)
     Texture* m_normalMap = nullptr;    // tangent-space normal map drawn with this texture (owned; SetNormalMap)
@@ -283,6 +288,26 @@ public:
     {
         m_trailSeconds = seconds < 1.0f ? 1.0f : seconds;
         m_trailShade = shade < 0.0f ? 0.0f : shade;
+    }
+    // Leaves on trees, shrubs and palms (leaves.cpp; RVK_Leaf*): sprigs cut from the canopy's own texture, each its
+    // own card, swaying with the branches and fluttering; the canopy itself thinned to an inner core. Baked per
+    // canopy mesh (density, size: a change rebakes); the rest applies per frame.
+    struct LeafSettings {
+        bool on = false;
+        float density = 1.0f;          // sprigs over a card's leafy area (1 = covered about once and a half)
+        float size = 1.0f;             // a sprig's share of the leaf texture (1 = an eighth of its width)
+        float distance = 60.0f;        // full leaves up to half of it, thinning out to none at it
+        float core = 0.6f;             // the canopy's own cards cut back to an inner core (0 = left as they are)
+        float wind = 1.0f;             // trunk and branches swaying
+        float flutter = 1.0f;          // each sprig fluttering
+        bool trees = true, shrubs = true, palms = true;
+    };
+    void SetLeaves(const LeafSettings& s)
+    {
+        if (s.density != m_leaf.density || s.size != m_leaf.size)
+            m_leafDirty = true;
+        m_leaf = s;
+        m_frameLightsDirty = true;
     }
     // RVK_GrassShadow: the blades cast the sun's shadow (into its nearest cascade: onto the ground and each other).
     void SetGrassShadows(bool on) { m_grassShadows = on; }
@@ -1304,6 +1329,50 @@ private:
     VkBuffer m_grassIndex = VK_NULL_HANDLE;
     VmaAllocation_T* m_grassIndexAllocation = nullptr;
     uint32_t m_grassIndexBlades = 0;
+    // Leaves (leaves.cpp). A canopy - a lit, static, cut-out mesh with a leaf texture - gets a leaf set: its sprigs
+    // baked once (model space) into one pool, drawn after the canopy's own draw with its record's state.
+    enum class Canopy : uint8_t { None, Shrub, Tree, Palm };
+    struct LeafSet {
+        Canopy kind = Canopy::None;
+        uint64_t alloc = 0;                      // its range in m_leafPool (VmaVirtualAllocation), 0 = none
+        uint32_t first = 0, count = 0;           // in leaves
+        uint32_t texVersion = 0;                 // the texture's m_alphaVersion it was baked from
+        uint32_t settingsVersion = 0;            // m_leafVersion it was baked with
+        uint64_t lastFrame = 0;
+        float centre[3] = {}, radius = 0.0f;     // the crown (model space)
+        bool baked = false;
+    };
+    std::unordered_map<uint64_t, LeafSet> m_leafSets;   // by mesh key and texture
+    LeafSettings m_leaf;
+    bool m_leafDirty = false;                    // density / size changed: every set is baked again
+    uint32_t m_leafVersion = 1;
+    VkBuffer m_leafPool = VK_NULL_HANDLE;
+    VmaAllocation_T* m_leafPoolAllocation = nullptr;
+    VmaVirtualBlock_T* m_leafPoolBlock = nullptr;
+    uint32_t m_leafPoolLeaves = 0;
+    struct LeafTrash { uint64_t alloc; VkBuffer buffer; VmaAllocation_T* allocation; uint64_t frame; };
+    std::vector<LeafTrash> m_leafTrash;
+    VkPipeline m_leafPipelines[2] = {};          // 8-bit target, HDR scene (leaf.vert + ffp.frag)
+    uint32_t m_leafBakes = 0, m_leafBakedLeaves = 0;   // counters (logged with the foliage line)
+    double m_leafBakeMs = 0.0;
+    uint64_t m_leafDraws = 0, m_leafDrawn = 0;   // leaf draws and leaves drawn (the log's 600 frames)
+    uint64_t m_canopyCount[4] = {};              // canopy draws by kind (the log's 600 frames)
+    LeafSet* m_drawLeaves = nullptr;             // the current draw's leaf set, ready to draw (CanopyParams)
+    uint32_t m_drawLeafCount = 0;                // ... how many of its leaves at this distance
+    Canopy CanopyKind(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
+                      const uint16_t* indices, uint32_t indexCount);
+    void CanopyParams(uint32_t primitive, uint32_t fvf, const detail::FvfLayout& layout, const void* vertices,
+                      uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount);
+    bool BakeLeaves(LeafSet& set, uint32_t primitive, const detail::FvfLayout& layout, const void* vertices,
+                    uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount);
+    bool GrowLeafPool(uint32_t minLeaves);
+    void FreeLeaves(LeafSet& set);
+    void UpdateLeaves();                         // once a frame: trash, unused sets, settings
+    void DrawLeaves(VkCommandBuffer cmd, uint32_t recordIndex, uint32_t primitive, uint32_t fvf, uint32_t stride,
+                    VkDeviceSize frameLightsOffset, VkBuffer prevBuffer, VkDeviceSize prevOffset,
+                    VkDeviceSize prevBytes, VkBuffer smoothBuffer, VkDeviceSize smoothOffset, VkDeviceSize smoothBytes);
+    uint32_t m_leafBakesThisFrame = 0;
+    void DestroyLeafResources();
     float m_pointLightScale = 1.0f, m_charLightScale = 1.0f;   // SetPointLightIntensity
     float LightScale(const d3d::Light& l) const;
     bool FoliageFar() const;                  // pieces per 0.3 world units (0 = plants drawn as the game gives them)

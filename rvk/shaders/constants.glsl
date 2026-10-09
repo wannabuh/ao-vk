@@ -14,6 +14,7 @@ struct DrawTransform {
     vec4 tess;                  // characters' Phong tessellation: level (0 = off), shape (0..1), base vertex (binding 10)
     uvec4 texIdx;               // bindless (set 1): image slots for stage 0, stage 1, bump base, normal map
     uvec4 sampIdx;              // bindless (set 1): sampler slots for stage 0, stage 1, bump, normal
+    vec4 leaf;                  // a canopy with leaves (leaves.cpp): its crown's centre (model space), radius (0 = none)
 };
 
 struct DrawConstants {

@@ -106,6 +106,7 @@ public:
     void SetGrassStyle(float variety, float flowers, float glow, float gusts, bool trails);
     void SetGrassTrailLook(float seconds, float shade);
     void SetGrassEven(float even);
+    void SetLeaves(const Device::LeafSettings& s);
     void SetGrassShadows(bool on);
     void SetDepthPrepass(bool on);
     void SetFoliageEdges(bool on);

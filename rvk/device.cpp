@@ -40,6 +40,9 @@ namespace {
 const uint32_t kVertSpirv[] = {
 #include "ffp.vert.inc"
 };
+const uint32_t kLeafVertSpirv[] = {             // ffp.vert built with RVK_LEAF: a canopy's leaves (leaves.cpp)
+#include "leaf.vert.inc"
+};
 const uint32_t kTescSpirv[] = {                 // characters' Phong tessellation
 #include "ffp.tesc.inc"
 };
@@ -199,6 +202,7 @@ Device::~Device()
     DestroyParticleResources();
     DestroySkinResources();
     DestroyGrassResources();
+    DestroyLeafResources();
     DestroyWaterResources();
     DestroyStaticGeometry();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
@@ -848,6 +852,41 @@ bool Device::CreatePipelines(std::string* error)
     }
     if (tesc) vkDestroyShaderModule(m_device, tesc, nullptr);
     if (tese) vkDestroyShaderModule(m_device, tese, nullptr);
+    // A canopy's leaves (leaves.cpp): triangles through leaf.vert, cut out (both targets). Not fatal.
+    VkShaderModule leafVert = VK_NULL_HANDLE;
+    if (ok && module(kLeafVertSpirv, sizeof(kLeafVertSpirv), &leafVert)) {
+        VkPipelineShaderStageCreateInfo lstages[2] = {stages[0], stages[1]};
+        lstages[0].module = leafVert;
+        for (int set = 0; set < 2; ++set) {
+            colorFormats[0] = set ? GetFormatInfo(Format::RGBA16F).vk : kColorFormat;
+            rendering.colorAttachmentCount = cb.attachmentCount = set ? 5 : 1;
+            lstages[1].module = set ? fragGlow : frag;
+            VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+            ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            VkGraphicsPipelineCreateInfo ci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+            ci.pNext = &rendering;
+            ci.stageCount = 2;
+            ci.pStages = lstages;
+            ci.pInputAssemblyState = &ia;
+            ci.pViewportState = &vp;
+            ci.pRasterizationState = &rs;
+            ci.pMultisampleState = &ms;
+            ci.pDepthStencilState = &dss;
+            ci.pColorBlendState = &cb;
+            ci.pDynamicState = &ds;
+            ci.layout = m_pipelineLayout;
+            std::string leafError;
+            if (!Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &ci, nullptr, &m_leafPipelines[set]),
+                       "leaf pipeline", &leafError))
+                m_leafPipelines[set] = VK_NULL_HANDLE;
+        }
+        if (!m_leafPipelines[0] || !m_leafPipelines[1])
+            for (VkPipeline& p : m_leafPipelines) {
+                if (p) vkDestroyPipeline(m_device, p, nullptr);
+                p = VK_NULL_HANDLE;
+            }
+        vkDestroyShaderModule(m_device, leafVert, nullptr);
+    }
     if (ok)
         CreatePrepassPipeline(vert);             // not fatal: without it the scene draws as before
     vkDestroyShaderModule(m_device, vert, nullptr);
@@ -1361,6 +1400,18 @@ void Device::BeginFrame()
                 (unsigned long long)m_grassLeftOut[1], (unsigned long long)m_grassLeftOut[2],
                 (unsigned long long)m_grassLeftOut[3], (unsigned long long)GrassTilesWaiting(),
                 double(m_grassShadowBlades) / 600.0);
+        if (m_leaf.on)
+            Log("leaves: canopy draws a frame %.1f shrubs, %.1f trees, %.1f palms; %.1f leaf draws a frame, %.0f leaves a "
+                "frame; %zu sets, %u baked (%.2f ms each, %.0f leaves each) (last 600 frames)",
+                double(m_canopyCount[1]) / 600.0, double(m_canopyCount[2]) / 600.0, double(m_canopyCount[3]) / 600.0,
+                double(m_leafDraws) / 600.0, double(m_leafDrawn) / 600.0, m_leafSets.size(), m_leafBakes,
+                m_leafBakeMs / double(std::max<uint32_t>(m_leafBakes, 1)),
+                double(m_leafBakedLeaves) / double(std::max<uint32_t>(m_leafBakes, 1)));
+        for (uint64_t& n : m_canopyCount)
+            n = 0;
+        m_leafDraws = m_leafDrawn = 0;
+        m_leafBakes = m_leafBakedLeaves = 0;
+        m_leafBakeMs = 0.0;
         m_grassShadowBlades = 0;
         m_grassLitBlades = m_grassBuiltBlades = 0;
         for (uint64_t& n : m_grassLeftOut)
@@ -1390,6 +1441,7 @@ void Device::BeginFrame()
     ProfileBeginFrame(f.main);
     ProfileCpuAddMs("wait for the GPU (frame slot)", waitMs);
     UpdatePushTrail();
+    UpdateLeaves();
     m_tessCharsPrev.swap(m_tessChars);           // characters drawn last frame (their rigid parts: TessellateDraw)
     m_tessChars.clear();
     m_windTimePrev = m_windTime;

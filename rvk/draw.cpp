@@ -289,6 +289,13 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->effects[3] = m_grassPush;
     Wind(fl->wind);
     FillPushers(fl, eye);
+    fl->leaves[0] = m_leaf.on ? m_leaf.wind : 0.0f;
+    fl->leaves[1] = m_leaf.on ? m_leaf.flutter : 0.0f;
+    fl->leaves[2] = std::max(m_grassGusts, 0.0f);
+    fl->leaves[3] = m_leaf.on ? m_leaf.core : 0.0f;
+    fl->leafView[0] = std::max(m_leaf.distance, 1.0f);
+    fl->leafView[1] = m_leaf.on ? 1.0f : 0.0f;
+    fl->leafView[2] = fl->leafView[3] = 0.0f;
     fl->taa[0] = TaaActive() ? m_taaJitter[0] : 0.0f;
     fl->taa[1] = TaaActive() ? m_taaJitter[1] : 0.0f;
     fl->taa[2] = FrameNoise();                   // noise patterns move on each frame (averaged by the TAA)
@@ -392,8 +399,8 @@ bool Device::IsInterfaceDraw(uint32_t fvf) const
 
 // Whether a mesh is one plane: 95% of its triangles' area faces one way (either side) and its vertices lie within 6%
 // of its size from that plane - a sign, a banner, a poster, a window's frame. Positions first in the vertex (FVF_XYZ).
-static bool OnePlane(uint32_t primitive, uint32_t stride, const void* vertices, uint32_t vertexCount,
-                     const uint16_t* indices, uint32_t indexCount)
+bool detail::OnePlane(uint32_t primitive, uint32_t stride, const void* vertices, uint32_t vertexCount,
+                      const uint16_t* indices, uint32_t indexCount)
 {
     const auto* base = static_cast<const uint8_t*>(vertices);
     auto pos = [&](uint32_t i, float p[3]) { std::memcpy(p, base + size_t(i) * stride, 12); };
@@ -2029,6 +2036,8 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             CaptureCover(primitive, layout, vertices, vertexCount, indices, indexCount);
     }
     PushCandidateDraw(fvf);
+    // A canopy (leaves.cpp): its leaves, baked the first time it is seen, drawn just before it (DrawLeaves).
+    CanopyParams(primitive, fvf, layout, vertices, vertexCount, indices, indexCount);
     // A swaying plant: its big quads split into small ones (cached), so they bend rather than tilt as a whole.
     float sway[4] = {};
     bool swaying = !m_external && SwayParams(primitive, fvf, layout.stride, vertices, vertexCount, indices, indexCount, sway);
@@ -2112,6 +2121,12 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     // Per-draw world matrix: written into this draw's record.
     void* cpu;
     DrawTransform dt{};
+    if (m_drawLeaves) {                          // a canopy with leaves: its branches sway (ffp.vert BranchSway)
+        dt.leaf[0] = m_drawLeaves->centre[0];
+        dt.leaf[1] = m_drawLeaves->centre[1];
+        dt.leaf[2] = m_drawLeaves->centre[2];
+        dt.leaf[3] = m_drawLeaves->radius;
+    }
     VkDeviceSize prevPositionsOffset = 0, prevPositionsBytes = 0;   // binding 8 (animated meshes' last positions)
     VkBuffer prevPositionsBuffer = f.ring;
     dt.world = m_world;
@@ -2129,6 +2144,12 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
                      m_drawMesh->boundsMin[0], m_drawMesh->boundsMin[1], m_drawMesh->boundsMin[2],
                      m_drawMesh->boundsMax[0], m_drawMesh->boundsMax[1], m_drawMesh->boundsMax[2], w[0][0], w[0][1],
                      w[0][2], w[1][0], w[1][1], w[1][2], w[2][0], w[2][1], w[2][2]);
+    }
+    if (m_dumpFile && m_drawLeaves) {            // frame dump: the canopy's leaves (after its D line)
+        static const char* const kKinds[] = {"none", "shrub", "tree", "palm"};
+        std::fprintf(m_dumpFile, "  leaves: %s, %u baked, %u drawn | crown (%.2f %.2f %.2f) r %.2f\n",
+                     kKinds[uint32_t(m_drawLeaves->kind)], m_drawLeaves->count, m_drawLeafCount,
+                     m_drawLeaves->centre[0], m_drawLeaves->centre[1], m_drawLeaves->centre[2], m_drawLeaves->radius);
     }
     ProfileDrawSection("draw: sway", since);
     FrameLightMask(fvf, layout.stride, vertices, vertexCount, dt.lightMask);
@@ -2583,7 +2604,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         ShadeClass(shade);
     }
     uint64_t groupKey = 0;
-    if (m_groupIndirect && indices && !m_external && !(m_particlePending && fvf == kParticleFvf)) {
+    if (m_groupIndirect && indices && !m_external && !(m_particlePending && fvf == kParticleFvf) && !m_drawLeafCount) {
         bool hdr = m_target->m_format == Format::RGBA16F;
         uint32_t pipelineClass = m_drawTess ? 6u + (hdr ? 1u : 0u)
                                             : TopologyClass(primitive) + (hdr ? 3u : 0u);
@@ -2719,6 +2740,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         m_bindlessBound = true;
     }
     }
+
+    // A canopy's leaves (leaves.cpp), before the canopy itself: its state is set up now; DrawLeaves puts it back.
+    if (m_drawLeafCount)
+        DrawLeaves(cmd, recordIndex, primitive, fvf, layout.stride, frameLightsOffset, prevPositionsBuffer,
+                   prevPositionsOffset, prevPositionsBytes, smoothBuffer, smoothOffset, smoothBytes);
 
     // Would an instanced batch cover this draw together with the one before it? Only static snapshots share their
     // vertex data across draws; ring copies are unique per draw, so those never merge.

@@ -362,6 +362,87 @@ static bool PixelsThumbnail(Format fmt, const void* data, uint32_t width, uint32
     return true;
 }
 
+// One texel's alpha (0..255), for the leaves' alpha mask below; false for a format it can't read.
+static bool TexelAlpha(Format fmt, const uint8_t* base, uint32_t pitch, uint32_t x, uint32_t y, uint8_t* out)
+{
+    switch (fmt) {
+    case Format::A8R8G8B8:
+        *out = base[size_t(y) * pitch + size_t(x) * 4 + 3];
+        return true;
+    case Format::A1R5G5B5: {
+        uint16_t v;
+        std::memcpy(&v, base + size_t(y) * pitch + size_t(x) * 2, 2);
+        *out = (v & 0x8000u) ? 255 : 0;
+        return true;
+    }
+    case Format::A4R4G4B4: {
+        uint16_t v;
+        std::memcpy(&v, base + size_t(y) * pitch + size_t(x) * 2, 2);
+        *out = uint8_t((v >> 12) * 17);
+        return true;
+    }
+    case Format::A8:
+        *out = base[size_t(y) * pitch + x];
+        return true;
+    case Format::A8L8:
+        *out = base[size_t(y) * pitch + size_t(x) * 2 + 1];
+        return true;
+    case Format::DXT1: {
+        const uint8_t* blk = base + size_t(y / 4) * pitch + size_t(x / 4) * 8;
+        uint16_t c0 = uint16_t(blk[0] | blk[1] << 8), c1 = uint16_t(blk[2] | blk[3] << 8);
+        uint32_t bits;
+        std::memcpy(&bits, blk + 4, 4);
+        *out = c0 <= c1 && ((bits >> (2 * ((y % 4) * 4 + (x % 4)))) & 3u) == 3u ? 0 : 255;
+        return true;
+    }
+    case Format::DXT2: case Format::DXT3: {
+        const uint8_t* blk = base + size_t(y / 4) * pitch + size_t(x / 4) * 16;
+        const uint32_t p = (y % 4) * 4 + (x % 4);
+        *out = uint8_t(((blk[p / 2] >> (4 * (p & 1))) & 0xF) * 17);
+        return true;
+    }
+    case Format::DXT4: case Format::DXT5: {
+        const uint8_t* blk = base + size_t(y / 4) * pitch + size_t(x / 4) * 16;
+        const uint32_t a0 = blk[0], a1 = blk[1], p = (y % 4) * 4 + (x % 4);
+        uint64_t bits = 0;
+        for (int i = 0; i < 6; ++i) bits |= uint64_t(blk[2 + i]) << (8 * i);
+        const uint32_t ci = uint32_t(bits >> (3 * p)) & 7u;
+        uint32_t a;
+        if (ci == 0) a = a0;
+        else if (ci == 1) a = a1;
+        else if (a0 > a1) a = ((8 - ci) * a0 + (ci - 1) * a1) / 7;
+        else if (ci == 6) a = 0;
+        else if (ci == 7) a = 255;
+        else a = ((6 - ci) * a0 + (ci - 1) * a1) / 5;
+        *out = uint8_t(a);
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+// The mean alpha on a grid of nw x nh cells (each from four texels spread over it), for the leaves (leaves.cpp).
+static bool PixelsAlphaMask(Format fmt, const void* data, uint32_t width, uint32_t height, uint32_t pitch,
+                            uint8_t* out, uint32_t nw, uint32_t nh)
+{
+    const uint8_t* base = static_cast<const uint8_t*>(data);
+    for (uint32_t j = 0; j < nh; ++j)
+        for (uint32_t i = 0; i < nw; ++i) {
+            uint32_t sum = 0;
+            for (uint32_t k = 0; k < 4; ++k) {
+                uint32_t x = ((4 * i + 1 + 2 * (k & 1)) * width) / (4 * nw);
+                uint32_t y = ((4 * j + 1 + (k & 2)) * height) / (4 * nh);
+                uint8_t a;
+                if (!TexelAlpha(fmt, base, pitch, std::min(x, width - 1), std::min(y, height - 1), &a))
+                    return false;
+                sum += a;
+            }
+            out[size_t(j) * nw + i] = uint8_t(sum / 4);
+        }
+    return true;
+}
+
 void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                            const void* data, uint32_t pitch)
 {
@@ -400,6 +481,20 @@ void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, u
                 m_groundTexUploaded.push_back(t);
             if (t->m_lightmap && m_grassOn)
                 m_lightmapsUploaded.push_back(t);   // the grass's light baked from it is stale
+            // Where it is leaf and where hole (leaves.cpp): textures with transparency, up to 64 x 64 cells.
+            std::vector<uint8_t> mask;
+            uint32_t mw = std::min<uint32_t>(t->m_width, 64), mh = std::min<uint32_t>(t->m_height, 64);
+            if (!t->m_opaque && t->m_width >= 16 && t->m_height >= 16) {
+                mask.resize(size_t(mw) * mh);
+                if (!PixelsAlphaMask(t->m_format, data, t->m_width, t->m_height, pitch, mask.data(), mw, mh))
+                    mask.clear();
+            }
+            if (mask != t->m_alphaMask) {
+                t->m_alphaMask.swap(mask);
+                t->m_alphaW = t->m_alphaMask.empty() ? 0 : mw;
+                t->m_alphaH = t->m_alphaMask.empty() ? 0 : mh;
+                ++t->m_alphaVersion;
+            }
         }
     }
 

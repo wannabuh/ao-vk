@@ -936,6 +936,11 @@ void ThreadedDevice::SetGrassEven(float even)
     Enqueue([this, even](const uint8_t*) { m_device.SetGrassEven(even); });
 }
 
+void ThreadedDevice::SetLeaves(const Device::LeafSettings& s)
+{
+    Enqueue([this, s](const uint8_t*) { m_device.SetLeaves(s); });
+}
+
 void ThreadedDevice::SetShadowResolution(uint32_t sun, uint32_t point)
 {
     Enqueue([this, sun, point](const uint8_t*) { m_device.SetShadowResolution(sun, point); });

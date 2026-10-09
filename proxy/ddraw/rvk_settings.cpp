@@ -83,6 +83,16 @@ Setting g_settings[] = {
     {"RVK_TrailShade", "Trodden grass shows as lawn stripes (lighter / darker by the way it lies)", "Plants", Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
     {"RVK_GrassShadow","Grass blades cast the sun's shadow (near the camera)",       "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_GrassOn"},
     {"RVK_GrassEven",  "Even grass colour (1 = one green, 0 = the ground's colours)", "Plants",          Float, 0, 1, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
+    {"RVK_LeafOn",     "Leaves on trees and shrubs (sprigs that sway and flutter)",  "Plants",           Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_LeafDensity","Leaf density (1 = each crown covered about once and a half)", "Plants",          Float, 0.25f, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafSize",   "Sprig size (1 = an eighth of the leaf texture)",            "Plants",           Float, 0.5f, 2.5f, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafDist",   "Leaves up to this distance (thinning out from half of it)", "Plants",           Int,   15, 150, 5, 60, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafCore",   "The game's own canopy cut back to an inner core (0 = left as it is)", "Plants", Float, 0, 1, 0.1f, 0.6f, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafWind",   "Branches swaying in the wind",                              "Plants",           Float, 0, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafFlutter","Leaves fluttering",                                         "Plants",           Float, 0, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafTrees",  "Leaves on trees",                                           "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafShrubs", "Leaves on shrubs and bushes",                               "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafPalms",  "Palm fronds bending in the wind",                           "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
 
     {"RVK_WaterOn",    "New water (waves, reflections, refraction, foam; needs HDR)", "Water",          Bool,  0, 1, 1, 1, nullptr, 0},
     {"RVK_WaterStyle", "Look (0 = the game's water made richer, 1 = realistic)",  "Water",            Float, 0, 1, 0.05f, 0.5f, nullptr, 0, "RVK_WaterOn"},
@@ -209,7 +219,7 @@ Setting* Find(const char* name)
 struct Vanilla { const char* name; float value; };
 const Vanilla kVanilla[] = {
     {"RVK_PixelLight", 0}, {"RVK_LightOver", 0}, {"RVK_Bump", 0}, {"RVK_NormalMaps", 0}, {"RVK_LeafLight", 0}, {"RVK_Headroom", 1},
-    {"RVK_Sway", 0}, {"RVK_FolEdges", 0}, {"RVK_GrassPush", 0}, {"RVK_GrassOn", 0}, {"RVK_PlantDetail", 0}, {"RVK_FoliageLod", 0}, {"RVK_PtLight", 1}, {"RVK_CharLight", 1}, {"RVK_Tess", 0}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
+    {"RVK_Sway", 0}, {"RVK_FolEdges", 0}, {"RVK_GrassPush", 0}, {"RVK_GrassOn", 0}, {"RVK_LeafOn", 0}, {"RVK_PlantDetail", 0}, {"RVK_FoliageLod", 0}, {"RVK_PtLight", 1}, {"RVK_CharLight", 1}, {"RVK_Tess", 0}, {"RVK_Aniso", 1}, {"RVK_SunShadow", 0}, {"RVK_Contact", 0}, {"RVK_PtShadows", 0},
     {"RVK_Hdr", 0}, {"RVK_Bloom", 0}, {"RVK_BloomFx", 0}, {"RVK_NightGlow", 0}, {"RVK_Ao", 0}, {"RVK_Gi", 0},
     {"RVK_Volume", 0}, {"RVK_Ssr", 0}, {"RVK_MBlur", 0}, {"RVK_Taa", 0}, {"RVK_Saturation", 1}, {"RVK_Contrast", 1},
     {"RVK_Warmth", 0}, {"RVK_NightTint", 0}, {"RVK_Vignette", 0}, {"RVK_LutAmount", 0}, {"RVK_Dof", 0},
@@ -341,6 +351,20 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
         d->SetGrassShadows(V("RVK_GrassShadow") != 0.0f);
     else if (is("RVK_GrassEven"))
         d->SetGrassEven(V("RVK_GrassEven"));
+    else if (std::strncmp(n, "RVK_Leaf", 8) == 0 && std::strcmp(n, "RVK_LeafLight") != 0) {
+        rvk::Device::LeafSettings l;
+        l.on = V("RVK_LeafOn") != 0.0f;
+        l.density = V("RVK_LeafDensity");
+        l.size = V("RVK_LeafSize");
+        l.distance = V("RVK_LeafDist");
+        l.core = V("RVK_LeafCore");
+        l.wind = V("RVK_LeafWind");
+        l.flutter = V("RVK_LeafFlutter");
+        l.trees = V("RVK_LeafTrees") != 0.0f;
+        l.shrubs = V("RVK_LeafShrubs") != 0.0f;
+        l.palms = V("RVK_LeafPalms") != 0.0f;
+        d->SetLeaves(l);
+    }
     else if (is("RVK_Taa") || is("RVK_Sharpen")) d->SetTaa(V("RVK_Taa") != 0.0f, V("RVK_Sharpen"));
     else if (is("RVK_Saturation") || is("RVK_Contrast") || is("RVK_Warmth") || is("RVK_NightTint") ||
              is("RVK_Vignette") || is("RVK_LutAmount"))
@@ -613,13 +637,13 @@ namespace {
 
 struct PresetValue { const char* name; float value; };
 const PresetValue kClassicPlus[] = {
-    {"RVK_Bump", 0.75f}, {"RVK_Tess", 0.5f}, {"RVK_GrassOn", 0}, {"RVK_WaterStyle", 0}, {"RVK_WaterQual", 2},
+    {"RVK_Bump", 0.75f}, {"RVK_Tess", 0.5f}, {"RVK_GrassOn", 0}, {"RVK_LeafOn", 0}, {"RVK_WaterStyle", 0}, {"RVK_WaterQual", 2},
     {"RVK_SunStrength", 0.5f}, {"RVK_PtShadows", 4}, {"RVK_Contact", 0.4f}, {"RVK_Bloom", 0.5f},
     {"RVK_NightGlow", 0.35f}, {"RVK_Ao", 0.75f}, {"RVK_GiOn", 0}, {"RVK_VolOn", 0}, {"RVK_SsrGloss", 0.15f},
     {"RVK_MBlurOn", 0}, {"RVK_Warmth", 0}, {"RVK_Dof", 0}, {"RVK_Particles", 0},
 };
 const PresetValue kUltra[] = {
-    {"RVK_GrassDist", 80}, {"RVK_GrassBlades", 12}, {"RVK_WaterQual", 3}, {"RVK_PtShadows", 16}, {"RVK_Ao", 2},
+    {"RVK_GrassDist", 80}, {"RVK_GrassBlades", 12}, {"RVK_LeafDist", 100}, {"RVK_WaterQual", 3}, {"RVK_PtShadows", 16}, {"RVK_Ao", 2},
 };
 const char* const kPresetNames[] = {"Original", "Classic+", "Modern", "Ultra"};
 constexpr uint32_t kPresetCount = 4;

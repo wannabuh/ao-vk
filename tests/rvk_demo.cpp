@@ -1970,6 +1970,171 @@ void RunPointShadowTest(D& dev, int frames, const std::string& shot, const std::
     dev.DestroyTexture(windows);
 }
 
+// --leaf-tree A.tree[,B.tree...]: real trees (tools/extract-tree.py: each part in the game's space, its texture, how
+// it blends) standing in a row on a lit ground, drawn as the game draws them - the canopy blended with depth writes,
+// the trunk opaque - for the leaves (leaves.cpp). The camera stands back to see them whole.
+std::string g_leafTrees;           // --leaf-tree: the files, comma-separated
+Device::LeafSettings g_leafSettings{true};   // --leaf-off, --leaf-density, --leaf-size, --leaf-dist, --leaf-core, --leaf-wind, --leaf-flutter
+float g_leafCamDist = -1.0f;       // --leaf-cam-dist D: the camera this far from the row (default: from the trees' size)
+float g_leafCamHeight = -1.0f;     // --leaf-cam-height H: ... this high (default: a third of the tallest tree)
+float g_leafCamYaw = 0.0f;         // --leaf-cam-yaw R: ... turned R radians about the row's middle
+int g_leafFilm = 0;                // --leaf-film N: ~60 frames a second, a screenshot every N frames (film_NNN.bmp)
+
+struct TreePart {
+    uint32_t flags = 0, alphaRef = 128;
+    Texture* texture = nullptr;
+    std::vector<float> vertices;   // x y z, nx ny nz, u v
+    std::vector<uint16_t> indices;
+};
+struct Tree {
+    std::vector<TreePart> parts;
+    float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
+};
+
+template <typename D>
+bool LoadTree(D& dev, const std::string& path, Tree& tree)
+{
+    FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) { std::printf("leaf tree: can't open %s\n", path.c_str()); return false; }
+    std::vector<uint8_t> data;
+    uint8_t buf[65536];
+    size_t n;
+    while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) data.insert(data.end(), buf, buf + n);
+    std::fclose(f);
+    size_t off = 0;
+    auto u32 = [&]() { uint32_t v = 0; if (off + 4 <= data.size()) std::memcpy(&v, &data[off], 4); off += 4; return v; };
+    if (data.size() < 12 || std::memcmp(data.data(), "RVKT", 4) != 0) { std::printf("leaf tree: %s is no tree\n", path.c_str()); return false; }
+    off = 4;
+    u32();
+    const uint32_t parts = u32();
+    for (uint32_t p = 0; p < parts; ++p) {
+        TreePart part;
+        part.flags = u32();
+        part.alphaRef = u32();
+        const uint32_t w = u32(), h = u32();
+        if (off + size_t(w) * h * 4 > data.size()) return false;
+        part.texture = dev.CreateTexture(w, h, reinterpret_cast<const uint32_t*>(&data[off]));
+        off += size_t(w) * h * 4;
+        const uint32_t nv = u32();
+        part.vertices.resize(size_t(nv) * 8);
+        std::memcpy(part.vertices.data(), &data[off], size_t(nv) * 32);
+        off += size_t(nv) * 32;
+        const uint32_t ni = u32();
+        part.indices.resize(ni);
+        std::memcpy(part.indices.data(), &data[off], size_t(ni) * 2);
+        off += size_t(ni) * 2 + (ni % 2 ? 2 : 0);
+        for (uint32_t v = 0; v < nv; ++v)
+            for (int k = 0; k < 3; ++k) {
+                tree.lo[k] = std::min(tree.lo[k], part.vertices[size_t(v) * 8 + k]);
+                tree.hi[k] = std::max(tree.hi[k], part.vertices[size_t(v) * 8 + k]);
+            }
+        tree.parts.push_back(std::move(part));
+    }
+    std::printf("leaf tree: %s, %u parts, %.1f units tall\n", path.c_str(), parts, tree.hi[1] - tree.lo[1]);
+    return true;
+}
+
+template <typename D>
+void RunLeafScene(D& dev, int frames, const std::string& shot, const std::string& dump)
+{
+    std::vector<Tree> trees;
+    for (size_t start = 0; start < g_leafTrees.size();) {
+        size_t comma = g_leafTrees.find(',', start);
+        std::string path = g_leafTrees.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+        Tree t;
+        if (!path.empty() && LoadTree(dev, path, t)) trees.push_back(std::move(t));
+        start = comma == std::string::npos ? g_leafTrees.size() : comma + 1;
+    }
+    if (trees.empty()) return;
+    // In a row along x, each on the ground (y 0) at its own box's middle.
+    std::vector<float> at(trees.size());
+    float x = 0.0f, tallest = 0.0f;
+    for (size_t i = 0; i < trees.size(); ++i) {
+        const float width = trees[i].hi[0] - trees[i].lo[0];
+        at[i] = x + 0.5f * width;
+        x += width * 0.9f;
+        tallest = std::max(tallest, trees[i].hi[1] - trees[i].lo[1]);
+    }
+    const float mid = 0.5f * x;
+    const float dist = g_leafCamDist > 0.0f ? g_leafCamDist : std::max(1.1f * tallest, 0.75f * x);
+    const float camY = g_leafCamHeight >= 0.0f ? g_leafCamHeight : tallest / 3.0f;
+    auto groundPixels = Checker(64, 8, 0xFF4A6A30, 0xFF42602A);
+    Texture* ground = dev.CreateTexture(64, 64, groundPixels.data());
+    dev.SetLeaves(g_leafSettings);
+    for (int frame = 0; frame < frames; ++frame) {
+        if (frame == frames - 1) {
+            dev.RequestScreenshot(shot);
+            if (!dump.empty()) dev.RequestFrameDump(dump);   // the last frame: the leaves are baked by then
+        } else if (g_leafFilm > 0 && frame >= 30 && frame % g_leafFilm == 0) {
+            char name[32];
+            std::snprintf(name, sizeof(name), "film_%03d.bmp", (frame - 30) / g_leafFilm);
+            dev.RequestScreenshot(name);
+        }
+        if (g_leafFilm > 0)
+            Sleep(16);
+        dev.BeginFrame();
+        dev.SetViewport({0, 0, kWidth, kHeight, 0.0f, 1.0f});
+        dev.Clear(CLEAR_TARGET | CLEAR_ZBUFFER, 0xFF8AB0D8, 1.0f);
+        const float ex = mid + dist * std::sin(g_leafCamYaw), ez = -dist * std::cos(g_leafCamYaw);
+        dev.SetTransform(View, LookAtLH({ex, camY, ez}, {mid, tallest * 0.45f, 0.0f}, {0, 1, 0}));
+        dev.SetTransform(Projection, PerspectiveLH(kPi / 3, float(kWidth) / kHeight, 0.5f, 500.0f));
+        dev.SetTransform(World, Identity());
+        dev.SetRenderState(RS_ZENABLE, 1);
+        dev.SetRenderState(RS_ZWRITEENABLE, 1);
+        dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+        dev.SetRenderState(RS_CULLMODE, CULL_NONE);
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        dev.SetRenderState(RS_ALPHATESTENABLE, 0);
+        dev.SetRenderState(RS_AMBIENT, 0xFF606060);
+        dev.SetRenderState(RS_LIGHTING, 1);
+        dev.SetRenderState(RS_DIFFUSEMATERIALSOURCE, MCS_MATERIAL);
+        Material mat{{1, 1, 1, 1}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}, 0.0f};
+        dev.SetMaterial(mat);
+        Light sun{};
+        sun.type = LIGHT_DIRECTIONAL;
+        sun.diffuse = {0.9f, 0.85f, 0.75f, 1};
+        sun.direction = {0.45f, -0.75f, 0.5f};
+        dev.SetLight(0, sun);
+        dev.LightEnable(0, true);
+        dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+        dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+        dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+        dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
+        dev.SetTexture(0, ground);
+        {
+            const float r = 200.0f;
+            VtxMesh q[4] = {{-r + mid, 0, -r, 0, 1, 0, 0xFFFFFFFF, 0, 0}, {r + mid, 0, -r, 0, 1, 0, 0xFFFFFFFF, 40, 0},
+                            {r + mid, 0, r, 0, 1, 0, 0xFFFFFFFF, 40, 40}, {-r + mid, 0, r, 0, 1, 0, 0xFFFFFFFF, 0, 40}};
+            dev.DrawPrimitive(TriangleFan, kFvfMesh, q, 4);
+        }
+        const uint32_t kFvfTree = FVF_XYZ | FVF_NORMAL | (1 << 8);   // 0x112, as the game's statics
+        for (size_t i = 0; i < trees.size(); ++i) {
+            Matrix w = Translate(at[i] - 0.5f * (trees[i].lo[0] + trees[i].hi[0]), -trees[i].lo[1], 0.0f);
+            dev.SetTransform(World, w);
+            for (const TreePart& part : trees[i].parts) {
+                dev.SetTexture(0, part.texture);
+                dev.SetRenderState(RS_ALPHABLENDENABLE, (part.flags & 1) ? 1 : 0);
+                dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+                dev.SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
+                dev.SetRenderState(RS_ALPHATESTENABLE, (part.flags & 2) ? 1 : 0);
+                dev.SetRenderState(RS_ALPHAREF, part.alphaRef);
+                dev.SetRenderState(RS_ALPHAFUNC, CMP_GREATEREQUAL);
+                dev.DrawIndexedPrimitive(TriangleList, kFvfTree, part.vertices.data(),
+                                         uint32_t(part.vertices.size() / 8), part.indices.data(),
+                                         uint32_t(part.indices.size()));
+            }
+        }
+        dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        dev.SetRenderState(RS_ALPHATESTENABLE, 0);
+        dev.SetTransform(World, Identity());
+        dev.EndFrame();
+    }
+    for (Tree& t : trees)
+        for (TreePart& part : t.parts) dev.DestroyTexture(part.texture);
+    dev.DestroyTexture(ground);
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 {
     if (msg == WM_DESTROY) { PostQuitMessage(0); return 0; }
@@ -2232,6 +2397,18 @@ int main(int argc, char** argv)
         else if (a == "--grass-flip") g_grassFlip = true;
         else if (a == "--grass-field") { g_grassFieldOn = true; hdr = true; }
         else if (a == "--grass-bench") { g_grassFieldOn = g_grassBench = true; hdr = true; }
+        else if (a == "--leaf-tree" && i + 1 < argc) g_leafTrees = argv[++i];
+        else if (a == "--leaf-off") g_leafSettings.on = false;
+        else if (a == "--leaf-density" && i + 1 < argc) g_leafSettings.density = float(std::atof(argv[++i]));
+        else if (a == "--leaf-size" && i + 1 < argc) g_leafSettings.size = float(std::atof(argv[++i]));
+        else if (a == "--leaf-dist" && i + 1 < argc) g_leafSettings.distance = float(std::atof(argv[++i]));
+        else if (a == "--leaf-core" && i + 1 < argc) g_leafSettings.core = float(std::atof(argv[++i]));
+        else if (a == "--leaf-wind" && i + 1 < argc) g_leafSettings.wind = float(std::atof(argv[++i]));
+        else if (a == "--leaf-flutter" && i + 1 < argc) g_leafSettings.flutter = float(std::atof(argv[++i]));
+        else if (a == "--leaf-cam-dist" && i + 1 < argc) g_leafCamDist = float(std::atof(argv[++i]));
+        else if (a == "--leaf-cam-height" && i + 1 < argc) g_leafCamHeight = float(std::atof(argv[++i]));
+        else if (a == "--leaf-cam-yaw" && i + 1 < argc) g_leafCamYaw = float(std::atof(argv[++i]));
+        else if (a == "--leaf-film" && i + 1 < argc) g_leafFilm = std::atoi(argv[++i]);
         else if (a == "--water-lake") { g_waterScene = 1; hdr = true; }
         else if (a == "--water-coast") { g_waterScene = 2; hdr = true; }
         else if (a == "--water-wall") g_waterWall = true;
@@ -2441,7 +2618,7 @@ int main(int argc, char** argv)
         std::printf("rendered; screenshot %s\n", shot.c_str());
         return 0;
     }
-    if (!dump.empty() && !shadowTest) dev.RequestFrameDump(dump);
+    if (!dump.empty() && !shadowTest && g_leafTrees.empty()) dev.RequestFrameDump(dump);
     std::printf("GPU: %s (Vulkan %u.%u), driver %s\n", dev.Info().gpu.c_str(), VK_API_VERSION_MAJOR(dev.Info().apiVersion),
                 VK_API_VERSION_MINOR(dev.Info().apiVersion), dev.Info().driver.c_str());
 
@@ -2472,6 +2649,8 @@ int main(int argc, char** argv)
         if (!dump.empty() && !shadowTest) tdev.RequestFrameDump(dump);
         if (shadowTest) RunShadowTest(tdev, frames, shot, cacheTest, frameMs, dump);
         else RunDemo(tdev, windowed, stress, frames, shot);
+    } else if (!g_leafTrees.empty()) {
+        RunLeafScene(dev, frames, shot, dump);
     } else if (g_grassBench) {
         RunGrassBench(dev, frames, shot);
     } else if (g_waterScene) {
