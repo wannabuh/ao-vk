@@ -456,10 +456,10 @@ std::string DescribeTexture(const rvk::Texture* texture, std::string* reference)
         for (const char* suffix : {"_n.png", "_orm.png", "_r.png", "_m.png", "_ao.png", "_d.png", "_e.png"})
             if (!FindMap(top->rdbType, top->rdbId, suffix).empty())
                 maps += std::string(" ") + suffix;
-        std::snprintf(buf, sizeof(buf), "RDB texture %u:%u%s%s%s, %lux%lu; maps:%s", full, top->rdbId,
-                      it != g_names.end() ? " '" : "", it != g_names.end() ? it->second.c_str() : "",
-                      it != g_names.end() ? "'" : "", top->desc.dwWidth, top->desc.dwHeight,
-                      maps.empty() ? " none" : maps.c_str());
+        // (No name: what the game hands CreateTexture as one isn't the texture's - "a.?", "" - the workbench has them.)
+        (void)it;
+        std::snprintf(buf, sizeof(buf), "RDB texture %u:%u, %lux%lu; maps:%s", full, top->rdbId, top->desc.dwWidth,
+                      top->desc.dwHeight, maps.empty() ? " none" : maps.c_str());
         if (reference) {
             char ref[32];
             std::snprintf(ref, sizeof(ref), "%u:%u", full, top->rdbId);
@@ -593,17 +593,21 @@ void HotReload()
 // ---------------------------------------------------------------- mesh identity (mesh picking)
 // Which RDB resource a visual was made from, for Ctrl+Shift+J. DisplaySystem loads meshes as DbObject_ts - RDBMesh_t
 // (static meshes 1010001 / their variants 1010026) and RDBCATMesh_t (characters 1010002 / towers 1010027), +0x08 type,
-// +0x0C id - and builds the visuals from them with randy's exported constructors RTriMesh_t(data, parent, animation)
-// (GenericMeshObject_t's base) and RCATMesh_t(parent). The hooks below find the DbObject_t being loaded on the
-// caller's stack (as RTextureFromCreator finds an RDBGroundTexture_t) and remember the visual's identity; a mesh made
-// again from the same RTriMeshData_t later (the DbObject_t gone) gets its data's.
+// +0x0C id; the hooks below find the one being loaded on the caller's stack (as RTextureFromCreator finds an
+// RDBGroundTexture_t).
+// - Characters: DisplaySystem builds them with randy's exported RCATMesh_t(parent) constructor: the visual is known.
+// - Static meshes are read from the .abiff's object archive; DisplaySystem's mesh classes call the exported base
+//   RTriMesh_t::Archive on each mesh there. The meshes placed in the world are clones of those (their virtual Clone,
+//   no export), which share the loaded mesh's data (RTriMesh_t +0x184, RVisualData_t; CloneMeshData un-shares it):
+//   the loaded mesh's data is remembered, and a picked mesh is looked up by its data.
 namespace {
 
 // visual (RTriMesh_t / RCATMesh_t, by the address its constructor got) -> type << 32 | id. Ordered: the renderer
 // sees a visual through the base class it draws with, a few bytes into the object (RCATMesh_t: +0x3C).
 std::map<uintptr_t, uint64_t> g_meshIds;
 constexpr uintptr_t kInsideObject = 0x200;
-std::unordered_map<const void*, uint64_t> g_meshDataIds; // RTriMeshData_t -> the same
+std::unordered_map<uint32_t, uint64_t> g_visualDataIds;  // RVisualData_t of a loaded static mesh -> its id
+constexpr uint32_t kVisualData = 0x184;                  // RTriMesh_t: its RVisualData_t
 unsigned g_meshFound = 0, g_meshMissed = 0;
 
 // Reads another object's memory without faulting (ReadProcessMemory on ourselves fails cleanly where a plain read
@@ -630,9 +634,9 @@ std::string SafeClassName(const void* object)
 uint64_t FindLoading(const void* returnAddress, bool character)
 {
     static std::unordered_map<uint32_t, Kind> byVtable;   // vtable -> class (only these two matter)
-    uint32_t words[512];
+    static uint32_t words[4096];                          // (game thread only) up to 16 KB of stack: archives nest
     const auto* sp = reinterpret_cast<const uint32_t*>(returnAddress) - 8;
-    size_t count = 512;
+    size_t count = 4096;
     while (count && !SafeCopy(sp, words, count * 4))      // (near the top of the stack: fewer)
         count /= 2;
     for (size_t i = 0; i < count; ++i) {
@@ -658,15 +662,11 @@ uint64_t FindLoading(const void* returnAddress, bool character)
     return 0;
 }
 
-void Remember(const void* visual, const void* data, uint64_t id, const char* what)
+void Remember(const void* visual, uint32_t data, uint64_t id, const char* what)
 {
-    if (!id && data) {
-        auto it = g_meshDataIds.find(data);
-        if (it != g_meshDataIds.end()) id = it->second;
-    }
     if (id) {
         g_meshIds[uintptr_t(visual)] = id;
-        if (data) g_meshDataIds[data] = id;
+        if (data) g_visualDataIds[data] = id;
         ++g_meshFound;
     } else {
         g_meshIds.erase(uintptr_t(visual));          // (a new object where an identified one was)
@@ -680,9 +680,9 @@ void Remember(const void* visual, const void* data, uint64_t id, const char* wha
 
 extern "C" void rvk_ensure_init();          // trace.cpp: the native install, before the rva registry is used
 extern "C" int rvk_exports_ready;
-using RTriMeshCtor = void*(__thiscall*)(void* self, const void* data, void* parent, void* animation);
+using RTriMeshArchive = void(__thiscall*)(const void* self, void* archive);
 using RCATMeshCtor = void*(__thiscall*)(void* self, void* parent);
-constexpr uint32_t kRTriMeshCtorRva = 0x490E3, kRCATMeshCtorRva = 0x57FE0;   // interface/exports.tsv
+constexpr uint32_t kRTriMeshArchiveRva = 0x48F85, kRCATMeshCtorRva = 0x57FE0;   // interface/exports.tsv
 
 }  // namespace
 
@@ -700,6 +700,18 @@ std::string DescribeMesh(uint32_t visual, uint32_t owner, uint32_t kind, std::st
     // A character's own body (kind 1) is its RCATMesh_t; a piece attached to it (2) is a mesh of its own.
     uint64_t id = find(visual);
     if (!id && kind == 1u) id = find(owner);
+    if (!id) {
+        // A static mesh: a clone of a loaded one, sharing its data. The renderer has the visual through the base it
+        // draws with; the complete object (RTTI: the vtable's locator +4 is this base's offset in it) is the mesh.
+        uint32_t vtable = 0, col = 0, offset = 0, data = 0;
+        if (SafeCopy(reinterpret_cast<const void*>(uintptr_t(visual)), &vtable, 4) &&
+            SafeCopy(reinterpret_cast<const void*>(uintptr_t(vtable) - 4), &col, 4) &&
+            SafeCopy(reinterpret_cast<const void*>(uintptr_t(col) + 4), &offset, 4) &&
+            SafeCopy(reinterpret_cast<const void*>(uintptr_t(visual - offset + kVisualData)), &data, 4)) {
+            auto it = g_visualDataIds.find(data);
+            if (it != g_visualDataIds.end()) id = it->second;
+        }
+    }
     const uint64_t character = owner && owner != visual ? find(owner) : 0;
     if (!id) {
         std::snprintf(buf, sizeof(buf), "a visual %p not identified (made before randy-vk saw it, or not from an RDB "
@@ -730,19 +742,20 @@ std::string DescribeMesh(uint32_t visual, uint32_t owner, uint32_t kind, std::st
 
 using namespace rvkproxy;
 
-// RTriMesh_t::RTriMesh_t(RTriMeshData_t const*, RRefFrame_t*, RAnimation_t*) and RCATMesh_t::RCATMesh_t(RRefFrame_t*):
-// the visuals DisplaySystem makes from loaded meshes (mesh identity, above).
-extern "C" void* __fastcall rvk_RTriMeshCtor(void* self, void*, const void* data, void* parent, void* animation)
+// RTriMesh_t::Archive(ObjectArchive_c*) const - a static mesh read from its .abiff - and RCATMesh_t::RCATMesh_t(RRefFrame_t*)
+// - a character being built: mesh identity (above).
+extern "C" void __fastcall rvk_RTriMeshArchive(const void* self, void*, void* archive)
 {
     const uint64_t id = FindLoading(_AddressOfReturnAddress(), false);
-    // Through the rva registry, as the export's own thunk would go: the native port's constructor where it has one.
     if (!rvk_exports_ready) rvk_ensure_init();      // (the exports' thunks do this on their first call)
-    static auto original = reinterpret_cast<RTriMeshCtor>(rnative::AddressFor(kRTriMeshCtorRva));
-    void* r = original(self, data, parent, animation);
+    // Through the rva registry, as the export's own thunk would go: the native port's version where it has one.
+    static auto original = reinterpret_cast<RTriMeshArchive>(rnative::AddressFor(kRTriMeshArchiveRva));
+    original(self, archive);
+    uint32_t data = 0;
+    SafeCopy(static_cast<const uint8_t*>(self) + kVisualData, &data, 4);
     static const unsigned index = ComIndex("rvk::Meshes");
     ComScope scope(index);
     Remember(self, data, id, "static");
-    return r;
 }
 
 extern "C" void* __fastcall rvk_RCATMeshCtor(void* self, void*, void* parent)
@@ -753,7 +766,7 @@ extern "C" void* __fastcall rvk_RCATMeshCtor(void* self, void*, void* parent)
     void* r = original(self, parent);
     static const unsigned index = ComIndex("rvk::Meshes");
     ComScope scope(index);
-    Remember(self, nullptr, id, "character");
+    Remember(self, 0, id, "character");
     return r;
 }
 
