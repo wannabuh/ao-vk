@@ -27,8 +27,14 @@ ao-assets makes and collects these files (its `docs/blender-workflow.md`):
 (rvk `Device::RequestPick` / `PickDraw`: the triangles in clip space, nearest depth wins), and the log says what the
 nearest one's texture is - `pick: RDB texture 1010004:55900 'brown_clan_teleporterside2', 256x256; maps: _n.png
 _orm.png _e.png` - its `type:id` goes to the clipboard (paste it into `material-template`), and every surface drawn
-with it flashes yellow for three seconds (`MAT_PICKED`). GPU-skinned characters are drawn from their unskinned
-vertices on the CPU side, so they can't be picked. rvk_demo `--pbr-test --pick X Y` tests it.
+with it flashes yellow for three seconds (`MAT_PICKED`). GPU-skinned characters are skinned on the CPU too in the
+pick frame, so they are hit like anything else. rvk_demo `--pbr-test --pick X Y` tests it.
+
+**Ctrl+Shift+J**: the same for the mesh under the cursor - `pick: RDB mesh 1010001:3545` (a character: `RDB character
+model 1010002:5900`; a piece a character wears names it too). randy-vk learns a visual's id when DisplaySystem builds
+it: the exported RTriMesh_t / RCATMesh_t constructors are hooked and find the RDBMesh_t / RDBCATMesh_t being loaded on
+the caller's stack (the log's `meshes:` lines). Both picks also go to `logs/last-pick.txt`, which the ao-assets workbench
+follows (it jumps to the asset). `RANDYVK_PICK_AT=frame,x,y,I|J` picks without the keys (tests).
 
 ## How a surface learns its texture id
 
