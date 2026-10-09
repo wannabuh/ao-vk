@@ -295,7 +295,8 @@ void Device::FillFrameLights(FrameLights* fl, bool dump)
     fl->leaves[3] = m_leaf.on ? m_leaf.core : 0.0f;
     fl->leafView[0] = std::max(m_leaf.distance, 1.0f);
     fl->leafView[1] = m_leaf.on ? 1.0f : 0.0f;
-    fl->leafView[2] = fl->leafView[3] = 0.0f;
+    fl->leafView[2] = m_leaf.on ? m_leaf.fall : 0.0f;
+    fl->leafView[3] = 0.0f;
     fl->taa[0] = TaaActive() ? m_taaJitter[0] : 0.0f;
     fl->taa[1] = TaaActive() ? m_taaJitter[1] : 0.0f;
     fl->taa[2] = FrameNoise();                   // noise patterns move on each frame (averaged by the TAA)
@@ -2126,6 +2127,10 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         dt.leaf[1] = m_drawLeaves->centre[1];
         dt.leaf[2] = m_drawLeaves->centre[2];
         dt.leaf[3] = m_drawLeaves->kind == Canopy::Palm ? -m_drawLeaves->radius : m_drawLeaves->radius;
+        dt.leafSet[0] = m_drawLeaves->first;
+        dt.leafSet[1] = m_drawLeafCount;
+        dt.leafSet[2] = m_drawLeaves->count;
+        dt.leafSet[3] = m_drawLeafFall;
     }
     VkDeviceSize prevPositionsOffset = 0, prevPositionsBytes = 0;   // binding 8 (animated meshes' last positions)
     VkBuffer prevPositionsBuffer = f.ring;

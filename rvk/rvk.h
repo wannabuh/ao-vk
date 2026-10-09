@@ -302,6 +302,7 @@ public:
         float flutter = 1.0f;          // each sprig fluttering
         bool trees = true, shrubs = true, palms = true;
         bool shadows = true;           // the leaves cast the sun's shadow (dappled light under the trees)
+        float fall = 1.0f;             // leaves coming off and drifting down (more in gusts), lying a while (0 = none)
     };
     void SetLeaves(const LeafSettings& s)
     {
@@ -1367,6 +1368,7 @@ private:
     uint64_t m_leafShadowLeaves = 0;             // leaves drawn into the sun's cascades (the log's 600 frames)
     void DrawLeafShadows(VkCommandBuffer cmd);   // the current cascade's canopies' leaves (shadow.cpp RenderShadowMap)
     uint32_t m_drawLeafCount = 0;                // ... how many of its leaves at this distance
+    uint32_t m_drawLeafFall = 0;                 // ... its falling-leaf slots (ffp.vert FallingLeaf)
     Canopy CanopyKind(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
                       const uint16_t* indices, uint32_t indexCount);
     void CanopyParams(uint32_t primitive, uint32_t fvf, const detail::FvfLayout& layout, const void* vertices,

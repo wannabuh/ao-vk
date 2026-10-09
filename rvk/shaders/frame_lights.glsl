@@ -25,6 +25,6 @@ layout(set = 0, binding = 4, std140) uniform FrameLights {
     vec4 pushers[16];           // what plants bend away from (characters and their trails): world xyz, seconds since
     vec4 pusherBorn[4];         // ... and seconds since each point was made (4 a vector)
     vec4 leaves;                // leaves (leaves.cpp): branch sway, sprig flutter, gusts, canopy core cut
-    vec4 leafView;              // ... their distance (none beyond; thinning out from half of it), crown shading
+    vec4 leafView;              // ... their distance (none beyond; thinning out from half of it), on, falling leaves
     Light lights[64];
 } FL;

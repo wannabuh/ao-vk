@@ -47,6 +47,7 @@ struct DrawTransform {
     uint32_t texIdx[4];            // bindless (M1): image slots for stage 0, stage 1, bump base, normal map
     uint32_t sampIdx[4];           // bindless (M1): sampler slots for stage 0, stage 1, bump, normal
     float leaf[4];                 // a canopy with leaves (leaves.cpp): its crown's centre (model space), radius (0 = none)
+    uint32_t leafSet[4];           // ... its leaves in the pool: first, drawn now, all; falling-leaf slots
 };
 // GPU-driven M2: one record a draw (binding 12). `constIndex` selects the shared DrawConstants it draws with; the
 // record is picked by a push constant until M3 replaces that with gl_DrawID.
@@ -102,7 +103,7 @@ struct FrameLights {               // binding 4: per-frame data (constants.glsl 
                                    // since a character was there
     float pusherBorn[kPushers];    // seconds since each point was made (a character walking on makes new ones)
     float leaves[4];               // leaves (leaves.cpp): branch sway, sprig flutter, gusts, canopy core cut
-    float leafView[4];             // ... their distance (none beyond; thinning out from half of it), crown shading
+    float leafView[4];             // ... their distance (none beyond; thinning out from half of it), on, falling leaves
     GpuLight lights[kFrameLights];
 };
 

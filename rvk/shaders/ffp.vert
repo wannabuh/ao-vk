@@ -150,11 +150,88 @@ float LeafFlutter(float phase, float corner, float time, float gust)
     return sin(time * (6.0 + 2.0 * fract(phase * 7.0)) + phase * 6.2831853) * (0.15 + 0.45 * gust) * corner;
 }
 
+uint LeafHash(uint x)
+{
+    x ^= x >> 16; x *= 0x7FEB352Du; x ^= x >> 15; x *= 0x846CA68Bu; x ^= x >> 16;
+    return x;
+}
+float LeafHashU(uint x) { return float(LeafHash(x) >> 8) / 16777216.0; }
+
+// A falling leaf (FL.leafView.z, RVK_LeafFall): each of a canopy's slots (D.leafSet.w) now and then - likelier in a
+// gust - takes one of its leaves, which drifts down with the wind, tumbling and spiralling, lies on the ground (at the
+// object's origin height) a few seconds and shrinks away. A function of the time only, so its motion last frame is the
+// same function a frame earlier. Its card's corner in model space, its normal and texture coordinate; false: no leaf
+// in the slot now (the card collapses).
+bool FallingLeaf(uint slot, vec2 corner, float time, out vec3 pos, out vec3 normal, out vec2 uv)
+{
+    pos = vec3(0.0);
+    normal = vec3(0.0, 1.0, 0.0);
+    uv = vec2(0.0);
+    if (D.leafSet.z == 0u || FL.leafView.z <= 0.0) return false;
+    const float kCycle = 9.0, kLie = 5.0;
+    uint seed = LeafHash(slot * 0x9E3779B9u ^ floatBitsToUint(D.world[3].x) ^ (floatBitsToUint(D.world[3].z) << 1u));
+    float t = time + LeafHashU(seed) * kCycle;
+    float cycle = floor(t / kCycle), age = t - cycle * kCycle;
+    uint cs = LeafHash(seed ^ (uint(cycle) * 0x85EBCA6Bu));
+    vec2 wd = FL.wind.xy;
+    float gust = Gust(D.world[3].xz, wd, time - age) * FL.leaves.z;
+    if (LeafHashU(cs) >= clamp(FL.leafView.z * (0.3 + 1.2 * gust), 0.0, 1.0)) return false;
+    uint src = D.leafSet.x + LeafHash(cs ^ 0x51ED27u) % D.leafSet.z;
+    uvec4 a = LV.words[2u * src], b = LV.words[2u * src + 1u];
+    vec2 h0 = unpackHalf2x16(a.w), h1 = unpackHalf2x16(b.x), h2 = unpackHalf2x16(b.y);
+    mat3 W = mat3(D.world), invW = inverse(W);
+    vec3 start = (D.world * vec4(uintBitsToFloat(a.xyz), 1.0)).xyz;
+    vec3 u = W * vec3(h0, h1.x), v = W * vec3(h1.y, h2);
+    float height = max(start.y - D.world[3].y, 0.0);
+    float speed = 0.7 + 0.5 * LeafHashU(cs ^ 7u);    // world units a second
+    float fallTime = height / speed;
+    if (age >= fallTime + kLie) return false;
+    float flying = min(age, fallTime), drift = 0.5 + 0.9 * gust;
+    float spin = flying * (2.0 + 2.0 * LeafHashU(cs ^ 11u)) + 6.2831853 * LeafHashU(cs ^ 23u);
+    vec3 off = vec3(wd.x, 0.0, wd.y) * drift * flying + vec3(cos(spin), 0.0, sin(spin)) * 0.35 * min(flying, 1.0);
+    off.y = -speed * flying;
+    if (age < fallTime) {                        // tumbling as it falls
+        vec3 k = normalize(vec3(LeafHashU(cs ^ 17u) - 0.5, 0.35, LeafHashU(cs ^ 19u) - 0.5));
+        float angle = age * (2.5 + 3.0 * LeafHashU(cs ^ 13u));
+        float c = cos(angle), s = sin(angle);
+        u = u * c + cross(k, u) * s + k * dot(k, u) * (1.0 - c);
+        v = v * c + cross(k, v) * s + k * dot(k, v) * (1.0 - c);
+    } else {                                     // lying flat on the ground, shrinking away over its last second
+        float lu = length(u), lv = length(v);
+        vec3 flat_ = vec3(u.x, 0.0, u.z);
+        flat_ = dot(flat_, flat_) > 1e-8 ? normalize(flat_) : vec3(1.0, 0.0, 0.0);
+        float fade = clamp(fallTime + kLie - age, 0.0, 1.0);
+        u = flat_ * lu * fade;
+        v = normalize(cross(vec3(0.0, 1.0, 0.0), flat_)) * lv * fade;
+        off.y += 0.03;
+    }
+    vec3 world = start + off + corner.x * u + corner.y * v;
+    pos = invW * (world - D.world[3].xyz);
+    vec3 n = cross(u, v);
+    n = dot(n, n) > 0.0 ? normalize(n) : vec3(0.0, 1.0, 0.0);
+    normal = normalize(invW * (n.y < 0.0 ? -n : n));
+    vec2 uvHalf = vec2(float(b.w & 0xFFFu), float((b.w >> 12u) & 0xFFFu)) * (0.25 / 4095.0);
+    uv = unpackUnorm2x16(b.z) + corner * uvHalf;
+    return true;
+}
+
 void LeafVertex(vec2 originXZ)
 {
     uint leaf = uint(gl_VertexIndex) / 6u;
     vec2 corner = kLeafCorner[uint(gl_VertexIndex) % 6u];
     gLeafCorner = corner;
+    uint local = leaf - D.leafSet.x;
+    if (local >= D.leafSet.y) {                  // past the drawn leaves: the falling-leaf slots
+        vec3 now, prev, n, nPrev;
+        vec2 uv, uvPrev;
+        bool on = FallingLeaf(local - D.leafSet.y, corner, FL.wind.z, now, n, uv);
+        bool wasOn = FallingLeaf(local - D.leafSet.y, corner, FL.taa.w, prev, nPrev, uvPrev);
+        inPos = vec4(on ? now : D.leaf.xyz, 1.0);
+        gLeafPrev = wasOn && on ? prev : inPos.xyz;
+        inNormal = n;
+        inTex0 = vec4(uv, 0.0, 1.0);
+        return;
+    }
     uvec4 a = LV.words[2u * leaf], b = LV.words[2u * leaf + 1u];
     vec3 centre = uintBitsToFloat(a.xyz);
     vec2 h0 = unpackHalf2x16(a.w), h1 = unpackHalf2x16(b.x), h2 = unpackHalf2x16(b.y);

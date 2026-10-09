@@ -2125,7 +2125,8 @@ void RunLeafScene(D& dev, int frames, const std::string& shot, const std::string
         const uint32_t kFvfTree = FVF_XYZ | FVF_NORMAL | (1 << 8);   // 0x112, as the game's statics
         for (const Placed& pl : placed) {
             const Tree& tree = trees[pl.tree];
-            Matrix w = Mul(Translate(-0.5f * (tree.lo[0] + tree.hi[0]), -tree.lo[1], -0.5f * (tree.lo[2] + tree.hi[2])),
+            // (The model's origin is its foot on the ground, as the game places it; the trunk reaches a little below.)
+            Matrix w = Mul(Translate(-0.5f * (tree.lo[0] + tree.hi[0]), 0.0f, -0.5f * (tree.lo[2] + tree.hi[2])),
                            Mul(RotateY(pl.turn), Translate(pl.x, 0.0f, pl.z)));
             dev.SetTransform(World, w);
             for (const TreePart& part : tree.parts) {
@@ -2416,6 +2417,7 @@ int main(int argc, char** argv)
         else if (a == "--leaf-tree" && i + 1 < argc) g_leafTrees = argv[++i];
         else if (a == "--leaf-off") g_leafSettings.on = false;
         else if (a == "--leaf-shadow-off") g_leafSettings.shadows = false;
+        else if (a == "--leaf-fall" && i + 1 < argc) g_leafSettings.fall = float(std::atof(argv[++i]));
         else if (a == "--leaf-density" && i + 1 < argc) g_leafSettings.density = float(std::atof(argv[++i]));
         else if (a == "--leaf-size" && i + 1 < argc) g_leafSettings.size = float(std::atof(argv[++i]));
         else if (a == "--leaf-dist" && i + 1 < argc) g_leafSettings.distance = float(std::atof(argv[++i]));

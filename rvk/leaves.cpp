@@ -166,6 +166,7 @@ void Device::CanopyParams(uint32_t primitive, uint32_t fvf, const FvfLayout& lay
     m_drawLeaves = nullptr;
     m_drawLeafKey = 0;
     m_drawLeafCount = 0;
+    m_drawLeafFall = 0;
     if (!m_leaf.on || m_external || m_drawGpu || !m_drawMesh || !m_leafPipelines[0] || !m_drawMeshStatic ||
         m_drawMesh->firstFrame + 2 > m_frameNumber || m_target != m_scene)
         return;
@@ -218,6 +219,9 @@ void Device::CanopyParams(uint32_t primitive, uint32_t fvf, const FvfLayout& lay
     m_drawLeaves = &set;
     m_drawLeafKey = key;
     m_drawLeafCount = uint32_t(float(set.count) * keep * keep);
+    // Falling leaves: a few slots a tree (one a shrub), each now and then a leaf drifting down (ffp.vert FallingLeaf).
+    if (m_drawLeafCount && m_leaf.fall > 0.0f)
+        m_drawLeafFall = uint32_t(std::lround((set.kind == Canopy::Shrub ? 1.0f : 5.0f) * m_leaf.fall * keep));
 }
 
 // The crown: the canopy's box, its centre and half its largest extent (model space).
@@ -506,7 +510,7 @@ void Device::DrawLeaves(VkCommandBuffer cmd, uint32_t recordIndex, uint32_t prim
     vkCmdSetPrimitiveTopology(cmd, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     PushDrawSet(cmd, frameLightsOffset, prevBuffer, prevOffset, prevBytes, m_leafPool, 0,
                 VkDeviceSize(m_leafPoolLeaves) * sizeof(LeafRecord));
-    vkCmdDraw(cmd, m_drawLeafCount * 6u, 1, set.first * 6u, recordIndex);
+    vkCmdDraw(cmd, (m_drawLeafCount + m_drawLeafFall) * 6u, 1, set.first * 6u, recordIndex);
     ++m_leafDraws;
     m_leafDrawn += m_drawLeafCount;
     // The canopy's own state again.
