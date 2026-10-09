@@ -294,7 +294,7 @@ public:
     // canopy mesh (density, size: a change rebakes); the rest applies per frame.
     struct LeafSettings {
         bool on = false;
-        float density = 1.0f;          // sprigs over a card's leafy area (1 = covered about once and a half)
+        float density = 1.0f;          // sprigs over a card's leafy area (1 = covered about twice)
         float size = 1.0f;             // a sprig's share of the leaf texture (1 = an eighth of its width)
         float distance = 60.0f;        // full leaves up to half of it, thinning out to none at it
         float core = 0.6f;             // the canopy's own cards cut back to an inner core (0 = left as they are)

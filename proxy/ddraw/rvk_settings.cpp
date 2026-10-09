@@ -84,7 +84,7 @@ Setting g_settings[] = {
     {"RVK_GrassShadow","Grass blades cast the sun's shadow (near the camera)",       "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_GrassOn"},
     {"RVK_GrassEven",  "Even grass colour (1 = one green, 0 = the ground's colours)", "Plants",          Float, 0, 1, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
     {"RVK_LeafOn",     "Leaves on trees and shrubs (sprigs that sway and flutter)",  "Plants",           Bool,  0, 1, 1, 1, nullptr, 0},
-    {"RVK_LeafDensity","Leaf density (1 = each crown covered about once and a half)", "Plants",          Float, 0.25f, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafDensity","Leaf density (1 = each card's leafy area covered about twice)", "Plants",      Float, 0.25f, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
     {"RVK_LeafSize",   "Sprig size (1 = an eighth of the leaf texture)",            "Plants",           Float, 0.5f, 2.5f, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
     {"RVK_LeafDist",   "Leaves up to this distance (thinning out from half of it)", "Plants",           Int,   15, 150, 5, 60, nullptr, 0, "RVK_LeafOn"},
     {"RVK_LeafCore",   "The game's own canopy cut back to an inner core (0 = left as it is)", "Plants", Float, 0, 1, 0.1f, 0.6f, nullptr, 0, "RVK_LeafOn"},
