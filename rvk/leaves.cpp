@@ -151,6 +151,10 @@ Device::Canopy Device::CanopyKind(uint32_t primitive, uint32_t fvf, uint32_t str
         m_drawMesh->flatShape = OnePlane(primitive, stride, vertices, vertexCount, indices, indexCount) ? 1 : 0;
     if (m_drawMesh->flatShape == 1)
         return Canopy::None;
+    // A palm's (or a fern's) fronds: each card one long frond, its texture at least 2.5 times as long as wide.
+    const uint32_t lo = std::min(tex->m_width, tex->m_height), hi = std::max(tex->m_width, tex->m_height);
+    if (height > 1.0f && hi >= 5 * lo / 2)
+        return Canopy::Palm;
     return height <= 3.0f ? Canopy::Shrub : Canopy::Tree;
 }
 
@@ -183,6 +187,15 @@ void Device::CanopyParams(uint32_t primitive, uint32_t fvf, const FvfLayout& lay
     if ((set.kind == Canopy::Tree && !m_leaf.trees) || (set.kind == Canopy::Shrub && !m_leaf.shrubs) ||
         (set.kind == Canopy::Palm && !m_leaf.palms))
         return;
+    if (set.kind == Canopy::Palm) {              // no leaves: its fronds bend (ffp.vert BranchSway, D.leaf.w < 0)
+        if (!set.baked) {
+            CrownOf(set);
+            set.baked = true;
+        }
+        m_drawLeaves = &set;
+        m_drawLeafKey = key;
+        return;
+    }
     if (!set.baked || set.texVersion != tex->m_alphaVersion || set.settingsVersion != m_leafVersion) {
         if (m_leafBakesThisFrame >= kBakesPerFrame)
             return;                              // next frame
@@ -207,6 +220,16 @@ void Device::CanopyParams(uint32_t primitive, uint32_t fvf, const FvfLayout& lay
     m_drawLeafCount = uint32_t(float(set.count) * keep * keep);
 }
 
+// The crown: the canopy's box, its centre and half its largest extent (model space).
+void Device::CrownOf(LeafSet& set) const
+{
+    const float* lo = m_drawMesh->boundsMin;
+    const float* hi = m_drawMesh->boundsMax;
+    for (int i = 0; i < 3; ++i)
+        set.centre[i] = 0.5f * (lo[i] + hi[i]);
+    set.radius = 0.5f * std::max(hi[0] - lo[0], std::max(hi[1] - lo[1], hi[2] - lo[2]));
+}
+
 // Bakes a canopy's leaves (see the top of the file) into the pool.
 bool Device::BakeLeaves(LeafSet& set, uint32_t primitive, const FvfLayout& layout, const void* vertices,
                         uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount)
@@ -227,14 +250,8 @@ bool Device::BakeLeaves(LeafSet& set, uint32_t primitive, const FvfLayout& layou
         return V3{p[0], p[1], p[2]};
     };
     auto uvAt = [&](uint32_t i, float out[2]) { std::memcpy(out, base + size_t(i) * stride + uvOffset, 8); };
-    // The crown: the canopy's box.
-    V3 lo{m_drawMesh->boundsMin[0], m_drawMesh->boundsMin[1], m_drawMesh->boundsMin[2]};
-    V3 hi{m_drawMesh->boundsMax[0], m_drawMesh->boundsMax[1], m_drawMesh->boundsMax[2]};
-    V3 centre = (lo + hi) * 0.5f;
-    set.centre[0] = centre.x;
-    set.centre[1] = centre.y;
-    set.centre[2] = centre.z;
-    set.radius = 0.5f * std::max(hi.x - lo.x, std::max(hi.y - lo.y, hi.z - lo.z));
+    CrownOf(set);
+    const V3 centre{set.centre[0], set.centre[1], set.centre[2]};
 
     const float win = 0.0625f * std::clamp(m_leaf.size, 0.25f, 3.5f);   // a sprig's half size in the texture
     const float perArea = 2.2f * std::clamp(m_leaf.density, 0.1f, 4.0f) / (4.0f * win * win);

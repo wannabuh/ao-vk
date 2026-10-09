@@ -267,7 +267,7 @@ void main()
         // ffp_main.glsl LeafMask).
         vec3 modelPos = inPos.xyz;
         float crownShade = 1.0;
-        if (D.leaf.w > 0.0 && FL.leafView.y > 0.0) {
+        if (D.leaf.w > 0.0 && FL.leafView.y > 0.0) {   // (a palm, D.leaf.w < 0, only sways: its fronds are whole)
             float keep = LeafKeep();
             crownShade = mix(1.0, CrownShade(modelPos), keep);
 #ifndef RVK_LEAF
@@ -291,7 +291,7 @@ void main()
             // motion where it is see-through (the ambient occlusion, motion blur and TAA read those).
             if (meanAlpha < 0.92) vCutout = 0.35;
         }
-        if (D.leaf.w > 0.0) {                    // a canopy with leaves: its branches sway (its cards and its leaves)
+        if (D.leaf.w != 0.0) {                   // a canopy with leaves: its branches sway (its cards and its leaves)
             vec3 now = BranchSway(inPos.xyz, FL.wind.z, D.world[3].xz);
             posW.xyz += now;
 #ifdef RVK_LEAF

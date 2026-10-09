@@ -2125,7 +2125,7 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         dt.leaf[0] = m_drawLeaves->centre[0];
         dt.leaf[1] = m_drawLeaves->centre[1];
         dt.leaf[2] = m_drawLeaves->centre[2];
-        dt.leaf[3] = m_drawLeaves->radius;
+        dt.leaf[3] = m_drawLeaves->kind == Canopy::Palm ? -m_drawLeaves->radius : m_drawLeaves->radius;
     }
     VkDeviceSize prevPositionsOffset = 0, prevPositionsBytes = 0;   // binding 8 (animated meshes' last positions)
     VkBuffer prevPositionsBuffer = f.ring;

@@ -1374,6 +1374,7 @@ private:
     bool BakeLeaves(LeafSet& set, uint32_t primitive, const detail::FvfLayout& layout, const void* vertices,
                     uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount);
     bool GrowLeafPool(uint32_t minLeaves);
+    void CrownOf(LeafSet& set) const;
     void FreeLeaves(LeafSet& set);
     void UpdateLeaves();                         // once a frame: trash, unused sets, settings
     void DrawLeaves(VkCommandBuffer cmd, uint32_t recordIndex, uint32_t primitive, uint32_t fvf, uint32_t stride,

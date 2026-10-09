@@ -1111,7 +1111,7 @@ void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, ShadowItem& i
                 float wind[4];
                 Wind(wind);
                 std::memcpy(r.leaf, set->second.centre, sizeof(set->second.centre));
-                r.leaf[3] = set->second.radius;
+                r.leaf[3] = set->second.kind == Canopy::Palm ? -set->second.radius : set->second.radius;
                 r.origin[0] = item.world.m[3][0];
                 r.origin[1] = item.world.m[3][2];
                 r.origin[2] = wind[2];
