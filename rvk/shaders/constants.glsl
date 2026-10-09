@@ -16,6 +16,9 @@ struct DrawTransform {
     uvec4 sampIdx;              // bindless (set 1): sampler slots for stage 0, stage 1, bump, normal
     uvec4 mat;                  // PBR material: occlusion/roughness/metallic image slot, the maps' sampler slot, MAT_* bits,
                                 // emissive image slot
+    vec4 leaf;                  // a canopy with leaves (leaves.cpp): its crown's centre (model space), radius (0 = none)
+    uvec4 leafSet;              // ... its leaves in the pool: first, drawn now | falling-leaf slots << 16, all; the
+                                // ground under it (world y, float bits: where its fallen leaves lie)
 };
 const uint MAT_PBR = 1u, MAT_BASE = 2u, MAT_ALBEDO = 4u, MAT_EMISSIVE = 8u, MAT_PICKED = 16u;   // D.mat.z: the draw has an
                                 // ORM map; it is the ground base texture's; stage 0 draws an albedo map; it has an

@@ -35,9 +35,69 @@ void Device::BeginFrameDump()
                  eye[0], eye[1], eye[2], m_pixelLighting ? 1 : 0);
 }
 
+// GPU memory in one line: each memory heap's usage against the driver's budget for it (with VK_EXT_memory_budget the
+// driver's own figures for this process; else what rvk has allocated there), then what rvk's allocations are for - the
+// game's textures, render targets (rvk's own and the game's), the frame rings, the static-geometry and shadow-caster
+// arenas, the grass and leaf pools - and the rest (shadow maps, the HDR scene's targets, particles, skinning, water...).
+std::string Device::GpuMemoryReport() const
+{
+    if (!m_allocator)
+        return "gpu memory: no allocator";
+    constexpr double kMB = 1.0 / (1024.0 * 1024.0);
+    const VkPhysicalDeviceMemoryProperties* memory = nullptr;
+    vmaGetMemoryProperties(m_allocator, &memory);
+    const VkPhysicalDeviceMemoryProperties& props = *memory;
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS] = {};
+    vmaGetHeapBudgets(m_allocator, budgets);
+    std::string out = m_memoryBudget ? "gpu memory (driver's figures):" : "gpu memory (rvk's allocations only):";
+    char buf[512];
+    VkDeviceSize total = 0;
+    for (uint32_t h = 0; h < props.memoryHeapCount; ++h) {
+        const bool local = (props.memoryHeaps[h].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0;
+        total += budgets[h].statistics.allocationBytes;
+        if (!budgets[h].usage && !budgets[h].statistics.blockBytes)
+            continue;
+        std::snprintf(buf, sizeof(buf), " heap %u (%s, %.0f MB): used %.0f MB of %.0f MB budget, rvk %.0f MB in %.0f MB "
+                      "of blocks |", h, local ? "GPU" : "system", double(props.memoryHeaps[h].size) * kMB,
+                      double(budgets[h].usage) * kMB, double(budgets[h].budget) * kMB,
+                      double(budgets[h].statistics.allocationBytes) * kMB, double(budgets[h].statistics.blockBytes) * kMB);
+        out += buf;
+    }
+    VkDeviceSize rings = 0, staticArena = 0, casterArena = 0;
+    for (const Frame& f : m_frames) rings += f.ringSize;
+    for (const auto& c : m_staticArena) staticArena += c->size;
+    for (const auto& c : m_casterArena) casterArena += c->size;
+    const VkDeviceSize grass = VkDeviceSize(m_grassPoolBlades) * 48, leaves = VkDeviceSize(m_leafPoolLeaves) * 32;
+    auto bytesOf = [&](VmaAllocation_T* a) -> VkDeviceSize {
+        if (!a) return 0;
+        VmaAllocationInfo info;
+        vmaGetAllocationInfo(m_allocator, a, &info);
+        return info.size;
+    };
+    const VkDeviceSize sunShadow = bytesOf(m_shadowAllocation), pointShadow = bytesOf(m_cubeAllocation),
+                       depth = bytesOf(m_depthAllocation);
+    VkDeviceSize skin = 0, particles = bytesOf(m_particleStateAllocation) + bytesOf(m_particleIndicesAllocation);
+    for (const Frame& f : m_frames) skin += f.skinArenaSize;
+    for (VmaAllocation_T* a : m_particleQuadsAllocation) particles += bytesOf(a);
+    const VkDeviceSize listed = m_textureBytes[0] + m_textureBytes[1] + rings + staticArena + casterArena + grass + leaves +
+                                sunShadow + pointShadow + depth + skin + particles;
+    std::snprintf(buf, sizeof(buf),
+                  " rvk: textures %.0f MB (%u), render targets %.0f MB (%u), depth %.0f MB, sun shadow map %.0f MB, point "
+                  "shadow maps %.0f MB, rings %.0f MB, static arena %.0f MB, caster arena %.0f MB, skinning %.0f MB, "
+                  "particles %.0f MB, grass %.1f MB, leaves %.1f MB, other %.0f MB",
+                  double(m_textureBytes[0]) * kMB, m_textureCount[0], double(m_textureBytes[1]) * kMB, m_textureCount[1],
+                  double(depth) * kMB, double(sunShadow) * kMB, double(pointShadow) * kMB,
+                  double(rings) * kMB, double(staticArena) * kMB, double(casterArena) * kMB, double(skin) * kMB,
+                  double(particles) * kMB, double(grass) * kMB,
+                  double(leaves) * kMB, double(total > listed ? total - listed : 0) * kMB);
+    out += buf;
+    return out;
+}
+
 void Device::EndFrameDump()
 {
     if (!m_dumpFile) return;
+    std::fprintf(m_dumpFile, "# %s\n", GpuMemoryReport().c_str());
     std::fprintf(m_dumpFile, "# end: %u draws; %zu casters this frame, %zu remembered (%u drawn out of view last frame);"
                              " forgotten since start: %u in view but not drawn, %u far away\n",
                  m_dumpDraw, m_casters.size(), m_casterCache.size(), m_cachedCastersDrawn, m_forgottenInView, m_forgottenFar);

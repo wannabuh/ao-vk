@@ -18,18 +18,7 @@ const vec4 kSectionT[4] = vec4[4](vec4(0.0, 0.3333, 0.6667, 1.0), vec4(0.0, 0.33
 const vec4 kSectionW[4] = vec4[4](vec4(1.0, 0.6667, 0.3333, 0.0), vec4(1.0, 0.92, 0.62, 0.0),
                                   vec4(0.4, 0.32, 1.0, 0.0), vec4(0.45, 0.4, 1.25, 0.95));
 
-// A gust of wind: bands of stronger wind sweeping across the field along the wind, their fronts wavering. 0 .. 1.
-float Gust(vec2 xz, vec2 wd, float time)
-{
-    float along = dot(xz, wd), across = dot(xz, vec2(-wd.y, wd.x));
-    // ~16 units between fronts, moving ~6 units a second; the fronts bend and break up across the wind.
-    float s = along * 0.39 - time * 2.3 + 1.6 * sin(across * 0.07 + time * 0.11) + 0.9 * sin(across * 0.21 - along * 0.05);
-    float g = 0.5 + 0.5 * sin(s);
-    float strength = 0.55 + 0.45 * sin(across * 0.043 + along * 0.021 - time * 0.21);   // some gusts weaker
-    g *= g;
-    return g * g * strength;                     // narrow fronts, calm between (mean ~0.15)
-}
-const float kGustMean = 0.15;
+#include "wind.glsl"
 
 // The steady wind: waves running through the field along it - each row of grass sways a moment after the one upwind,
 // as wind over a meadow does - a slower cross wave, and each blade's own flutter (stronger in a gust). Around a lean

@@ -23,6 +23,9 @@ namespace {
 const uint32_t kShadowVertSpirv[] = {
 #include "shadow.vert.inc"
 };
+const uint32_t kLeafShadowVertSpirv[] = {       // shadow.vert built with RVK_LEAF: a canopy's leaves (leaves.cpp)
+#include "leaf_shadow.vert.inc"
+};
 const uint32_t kShadowFragSpirv[] = {
 #include "shadow.frag.inc"
 };
@@ -238,13 +241,14 @@ bool Device::CreateShadowResources(std::string* error)
         return false;
 
     // Pass pipelines: depth only (opaque casters) and with an alpha-testing fragment shader.
-    VkDescriptorSetLayoutBinding bindings[2] = {
+    VkDescriptorSetLayoutBinding bindings[3] = {
         {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},   // M4: the caster records
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},   // the leaf pool (leaves.cpp)
     };
     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     sl.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    sl.bindingCount = 2;
+    sl.bindingCount = 3;
     sl.pBindings = bindings;
     if (!Check(vkCreateDescriptorSetLayout(m_device, &sl, nullptr, &m_shadowSetLayout), "shadow set layout", error))
         return false;
@@ -310,6 +314,32 @@ bool Device::CreateShadowResources(std::string* error)
         ok = Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &gi, nullptr, &m_shadowPipelines[alphaTest]),
                    "shadow pipeline", error);
     }
+    // A canopy's leaves (leaves.cpp): leaf_shadow.vert, cut out by shadow.frag. Not fatal.
+    VkShaderModule leafVert = VK_NULL_HANDLE;
+    std::string leafError;
+    VkShaderModuleCreateInfo lm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    lm.codeSize = sizeof(kLeafShadowVertSpirv);
+    lm.pCode = kLeafShadowVertSpirv;
+    if (ok && vkCreateShaderModule(m_device, &lm, nullptr, &leafVert) == VK_SUCCESS) {
+        VkPipelineShaderStageCreateInfo lstages[2] = {stages[0], stages[1]};
+        lstages[0].module = leafVert;
+        VkGraphicsPipelineCreateInfo gi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        gi.pNext = &rendering;
+        gi.stageCount = 2;
+        gi.pStages = lstages;
+        gi.pInputAssemblyState = &ia;
+        gi.pViewportState = &vp;
+        gi.pRasterizationState = &rs;
+        gi.pMultisampleState = &ms;
+        gi.pDepthStencilState = &dss;
+        gi.pColorBlendState = &cb;
+        gi.pDynamicState = &ds;
+        gi.layout = m_shadowPipelineLayout;
+        if (!Check(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &gi, nullptr, &m_leafShadowPipeline),
+                   "leaf shadow pipeline", &leafError))
+            m_leafShadowPipeline = VK_NULL_HANDLE;
+        vkDestroyShaderModule(m_device, leafVert, nullptr);
+    }
     vkDestroyShaderModule(m_device, vert, nullptr);
     vkDestroyShaderModule(m_device, frag, nullptr);
     return ok;
@@ -321,6 +351,8 @@ void Device::DestroyShadowResources()
     for (auto& [tag, b] : m_deadBuffers) vmaDestroyBuffer(m_allocator, b.first, b.second);
     m_deadBuffers.clear();
     for (VkPipeline& p : m_shadowPipelines) if (p) { vkDestroyPipeline(m_device, p, nullptr); p = VK_NULL_HANDLE; }
+    if (m_leafShadowPipeline) vkDestroyPipeline(m_device, m_leafShadowPipeline, nullptr);
+    m_leafShadowPipeline = VK_NULL_HANDLE;
     if (m_shadowPipelineLayout) vkDestroyPipelineLayout(m_device, m_shadowPipelineLayout, nullptr);
     if (m_shadowSetLayout) vkDestroyDescriptorSetLayout(m_device, m_shadowSetLayout, nullptr);
     if (m_shadowSampler) vkDestroySampler(m_device, m_shadowSampler, nullptr);
@@ -440,6 +472,7 @@ void Device::RecordShadowCaster(uint32_t primitive, uint32_t fvf, uint32_t strid
     c.animated = m_drawMesh && !m_drawMeshStatic;
     c.owner = m_drawOwner;
     c.kind = m_drawVisualKind;
+    c.leafKey = m_drawLeaves ? m_drawLeafKey : 0;
     m_casters.push_back(c);
     auto cached = m_casterCache.find(key);
     if (cached != m_casterCache.end()) {
@@ -540,6 +573,7 @@ void Device::CacheCaster(uint64_t key, const ShadowCaster& c, const void* vertic
     e.texOffset = c.texOffset;
     e.alphaRef = c.alphaRef;
     e.kind = c.kind;
+    e.leafKey = c.leafKey;
     std::memcpy(e.plantSway, c.sway, sizeof(e.plantSway));
     e.lastSeen = m_frameNumber;
     e.lastSeenTime = m_frameClock;
@@ -777,6 +811,7 @@ void Device::CollectShadowItems()
         it.animated = c.animated;
         it.owner = c.owner;
         it.kind = c.kind;
+        it.leafKey = c.leafKey;
         std::memcpy(it.sway, c.sway, sizeof(it.sway));
         m_shadowItems.push_back(it);
         drawOf.push_back(c.draw);
@@ -805,6 +840,7 @@ void Device::CollectShadowItems()
         it.animated = false;
         it.group = ~0u;
         it.kind = e.kind;
+        it.leafKey = e.leafKey;
         std::memcpy(it.sway, e.plantSway, sizeof(it.sway));
         m_shadowItems.push_back(it);
     }
@@ -1051,7 +1087,7 @@ void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, ShadowItem& i
         FlushShadowGroup(cmd);
     BindShadowItem(cmd, bind, item);
     if (item.record == ~0u) {
-        ShadowRecord r;
+        ShadowRecord r{};
         r.world = item.world;
         r.alpha[0] = item.alphaRef;
         r.alpha[1] = r.alpha[2] = r.alpha[3] = 0.0f;
@@ -1067,6 +1103,24 @@ void Device::DrawShadowItem(VkCommandBuffer cmd, ShadowBind& bind, ShadowItem& i
             r.origin[0] = item.world.m[3][0];
             r.origin[1] = item.world.m[3][2];
             r.origin[2] = wind[2];
+        }
+        // A canopy with leaves (leaves.cpp): its cards drawn in and thinned, its branches swaying, as in the scene.
+        if (item.leafKey && m_leaf.on) {
+            auto set = m_leafSets.find(item.leafKey);
+            if (set != m_leafSets.end() && set->second.baked) {
+                float wind[4];
+                Wind(wind);
+                std::memcpy(r.leaf, set->second.centre, sizeof(set->second.centre));
+                r.leaf[3] = set->second.kind == Canopy::Palm ? -set->second.radius : set->second.radius;
+                r.origin[0] = item.world.m[3][0];
+                r.origin[1] = item.world.m[3][2];
+                r.origin[2] = wind[2];
+                r.origin[3] = m_leaf.core;
+                r.leafWind[0] = wind[0];
+                r.leafWind[1] = wind[1];
+                r.leafWind[2] = m_leaf.wind * wind[3];
+                r.leafWind[3] = std::max(m_grassGusts, 0.0f);
+            }
         }
         item.record = AppendShadowRecord(r);
         if (item.record == ~0u) {                // the arena is full: skip (very rare; the maps lose this caster)
@@ -1221,6 +1275,7 @@ void Device::RenderShadowMap(VkCommandBuffer cmd)
             DrawShadowItem(cmd, bind, item);
         }
         FlushShadowGroup(cmd);                   // the cascade's last batch (M4)
+        DrawLeafShadows(cmd);                    // the canopies' leaves (leaves.cpp)
         m_shadowDrawMs += ProfileCpu() - drawStart;
         ProfileCpuAdd("shadow draw", drawStart);
         vkCmdEndRendering(cmd);

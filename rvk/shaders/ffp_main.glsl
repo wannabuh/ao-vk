@@ -41,6 +41,7 @@ float PointShadow(Light l, vec3 posW, vec3 n, float nl)
 
 #include "lighting.glsl"
 #include "env_common.glsl"
+#include "wind.glsl"
 
 layout(location = 0) in vec4 vDiffuse;
 layout(location = 1) in vec4 vSpecular;
@@ -394,11 +395,21 @@ bool AlphaPass(float a)
 // later, over the finished scene, its soft edges - below it, without depth (D.motion.w: 1 core, 2 edges, 0 whole).
 const float kFoliageCore = 0.95;
 
+// Leaves (leaves.cpp; ffp.vert passes vSet0 for a canopy with leaves, D.leaf.w > 0): a leaf is a round sprig - its card
+// fades out towards the rim (vSet0 = where on the card, -1 .. 1), not a square cut through the painted cluster; the
+// canopy's own cards are thinned out in place (vSet0 = (how much, 2)): blocks of texels dropped by a stable hash, the
+// leaves around them making up the crown.
+float LeafMask()
+{
+    return D.leaf.w > 0.0 ? LeafMaskAt(vSet0, vTex0.xy * vec2(textureSize(TEX0, 0))) : 1.0;
+}
+
 void main()
 {
     gRecord = vRecord;
     gDiffuse = vDiffuse;
     gSpecular = vSpecular;
+    const float leafMask = LeafMask();
 #ifdef RVK_PREPASS_CUTOUT
     // Depth only where the pixel is fully opaque in the end (prepass_cutout.frag): the same alpha as the cut-out test
     // below (texture stages; the lit diffuse keeps the vertex alpha).
@@ -418,7 +429,7 @@ void main()
     bool drop = false;
     if ((C.flags.x & (F_ALPHATEST | F_CUTOUT)) != 0u) {
         vec4 e0 = Sample(0u), e1 = C.stageA[0].x != 1u ? Sample(1u) : vec4(0.0);
-        float a = Cascade(e0, e1, 1.0).a;
+        float a = Cascade(e0, e1, 1.0).a * leafMask;
         drop = ((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(a)) || ((C.flags.x & F_CUTOUT) != 0u && a < vCutout);
         uint split = uint(D.motion.w + 0.5);             // two-pass foliage: the core or the edges only
         if (split == 1u) drop = drop || a < kFoliageCore;
@@ -704,6 +715,7 @@ void main()
                : pbrDebug == 4u ? vec3(gPbrAo) : pbrDebug == 5u ? gPbrNormal * 0.5 + 0.5 : gPbrSpec;
         current.rgb = gPbrOn ? v : vec3(dot(current.rgb, vec3(0.3, 0.59, 0.11)) * 0.25);
     }
+    current.a *= leafMask;
 #ifndef RVK_NO_CUTOUT
     if ((C.flags.x & F_ALPHATEST) != 0u && !AlphaPass(current.a))
         discard;
