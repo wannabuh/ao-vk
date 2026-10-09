@@ -24,6 +24,7 @@ layout(set = 0, binding = 0) uniform GrassFrame {
     vec4 sunDir;        // xyz: the direction it travels
     vec4 lod;           // x: pixels per world unit at view depth 1; y: the least width a blade is drawn at (pixels)
     vec4 trail;         // xy: the trail window's first cell (world cells); z: its cell size; w: cells a side (0 = none)
+    vec4 trail2;        // x: the trodden grass's lawn-stripe shading (RVK_TrailShade)
 } GF;
 
 layout(set = 0, binding = 2, std430) readonly buffer Blades { Blade blades[]; };
@@ -52,8 +53,11 @@ float PushSpring(float age)
 // FL.pusherBorn; built by Device::FillPushers, the same the game's plants use), and lying over where the trail grid
 // says a character went through a little while ago. h: how far up the blade (0 root, 1 tip), plantHeight its height
 // in world units - the top bends most and the base stays.
-vec3 PusherOffset(vec3 posW, float h, float plantHeight, vec2 trailPush)
+// layDir / layAmount: which way and how far (0..1) the trail lays it (the lawn-stripe shading).
+vec3 PusherOffset(vec3 posW, float h, float plantHeight, vec2 trailPush, out vec2 layDir, out float layAmount)
 {
+    layDir = vec2(0.0);
+    layAmount = 0.0;
     float amount = FL.effects.w;
     if (amount <= 0.0 || h <= 0.0)
         return vec3(0.0);
@@ -83,15 +87,21 @@ vec3 PusherOffset(vec3 posW, float h, float plantHeight, vec2 trailPush)
     float above = h * plantHeight;               // the vertex's height above the base
     float most = min(0.45 * amount, 0.7 * plantHeight);   // the top's furthest lean
     float live = most * min(len, 1.0);
-    // A trail lays the grass further over than a passing foot (it is trodden down), easing back up as it fades.
-    float trodden = min(0.75 * amount, 0.9 * plantHeight) * smoothstep(0.0, 1.0, min(trailLen, 1.0));
+    // A trail lays the grass nearly flat (trodden down), further than a passing foot, and keeps it down until the last
+    // third of its time, then lets it spring back.
+    float lay = smoothstep(0.0, 0.35, min(trailLen, 1.0));
+    float trodden = min(0.95 * amount, 0.97 * plantHeight) * lay;
+    if (trailLen > 1e-3) {
+        layDir = trailPush / trailLen;
+        layAmount = lay;
+    }
     vec2 dirSum = (len > 1e-4 ? v / len * live : vec2(0.0)) + (trailLen > 1e-3 ? trailPush / trailLen * trodden : vec2(0.0));
     float dl = length(dirSum);
     if (dl <= 1e-5)
         return vec3(0.0);
     vec2 dir = dirSum / dl;
     float lean = max(live, trodden) * h * sqrt(h);   // bends most up top
-    lean = min(lean, 0.9 * above);
+    lean = min(lean, 0.97 * above);
     return vec3(dir.x * lean, -(above - sqrt(max(above * above - lean * lean, 0.0))), dir.y * lean);
 }
 
@@ -214,7 +224,9 @@ void main()
     float dist = length(root.xz - GF.camera.xz);
     // The pusher offset is the same now and last frame: its own motion is fast and springs back, and putting it in
     // the motion vectors would smear it.
-    vec3 axis = pos + bendNow + PusherOffset(pos, t, height, TrailAt(root.xz));
+    vec2 layDir;
+    float layAmount;
+    vec3 axis = pos + bendNow + PusherOffset(pos, t, height, TrailAt(root.xz), layDir, layAmount);
     vec3 Vd = normalize(axis - GF.camera.xyz);
     // Billboard about the blade's own axis: the width is spread square to it and to the view, so a blade is never
     // edge-on (about the vertical when it is seen straight along its axis).
@@ -259,7 +271,14 @@ void main()
     // (Its mean over the area is a little under 1: in a full field more of the lighter upper blades is seen.)
     float grad = mix(0.85, 1.19, t);
     float ao = (1.0 - 0.55 * canopy * (1.0 - t) * (1.0 - t)) / (1.0 - 0.275 * canopy);
-    vec3 albedo = head ? headColour : mix(tint, groundAlbedo, 0.55 * (1.0 - smoothstep(0.0, 0.4, t))) * (grad * ao);
+    // Trodden blades (layAmount: how far the trail lays them) keep their own colour to the root - lying flat, a root
+    // gone over to the ground's colour would make the lane look like bare ground - and turn a darker, deeper green
+    // (crushed blades), so the path shows against both the ground and the standing grass.
+    float trodden = layAmount * min(GF.trail2.x, 1.0);
+    float toSoil = 0.55 * (1.0 - smoothstep(0.0, 0.4, t)) * (1.0 - trodden);
+    vec3 albedo = head ? headColour : mix(tint, groundAlbedo, toSoil) * (grad * ao);
+    if (!head && layAmount > 0.0)
+        albedo = mix(albedo, albedo * vec3(0.55, 0.72, 0.5), clamp(layAmount * GF.trail2.x, 0.0, 1.0));
     // The sun on the blade itself (GF.look.z, RVK_GrassGlow; FL.sunColor: none at night): a rounded blade, lit on the
     // side towards the sun and darker on the other (around the ground's light: the mean stays); the light shining
     // through its thin upper part when the camera looks towards the sun; a glint along it (a hair's sheen). In a dense
@@ -287,6 +306,15 @@ void main()
         float th = dot(T, H);
         float sheen = pow(max(1.0 - th * th, 0.0), 20.0) * t;
         extra += FL.sunColor.rgb * (0.07 * sheen * sunlit);
+    }
+    // Trodden grass: darker as it lies in the shade of the grass standing around it, whichever way it is seen; and as
+    // lawn stripes - blades lying away from the camera show their lighter, sky-lit backs, those lying towards it their
+    // shaded faces - so the path stands out even where it is only partly flattened.
+    if (layAmount > 0.0 && GF.trail2.x > 0.0) {
+        vec2 away = root.xz - GF.camera.xz;
+        float al = length(away);
+        float facing = al > 1e-3 ? dot(layDir, away / al) : 0.0;
+        lit *= 1.0 + GF.trail2.x * layAmount * (0.22 * facing - 0.14) * (0.5 + 0.5 * t);
     }
     // A gust bends the blades over, showing more of their lighter faces: the sweep shows as a brighter band.
     lit *= 1.0 + 0.45 * (gust - kGustMean * GF.look.w) * t;   // (around the gusts' mean: the brightness stays)

@@ -203,6 +203,9 @@ public:
     // image), used instead of the generated normals when it is drawn in stage 0. The device owns `normal` and
     // frees it with the texture; null removes it.
     void SetNormalMap(Texture* texture, Texture* normal);
+    // The draws that follow are of vertices the proxy's ProcessVertices wrote (the scene's: water, floating text)
+    // or not (pre-transformed draws of the game's own: interface). See IsWater.
+    void SetDrawProcessed(bool processed) { m_drawProcessed = processed; }
     void SetNormalMaps(bool enable, float strength) { if (m_normalMaps != enable || m_normalStrength != strength) { m_normalMaps = enable; m_normalStrength = strength; m_constantsDirty = true; } }
     void SetBump(float strength) { strength = strength < 0.0f ? 0.0f : strength; if (m_bump != strength) { m_bump = strength; m_constantsDirty = true; } }
     float Bump() const { return m_bump; }
@@ -273,6 +276,13 @@ public:
         m_grassGlow = glow;
         m_grassGusts = gusts;
         m_grassTrails = trails;
+    }
+    // RVK_TrailTime / RVK_TrailShade: how long trodden grass stays down (seconds; it springs back over the
+    // last third or so) and how strongly it shows as lawn stripes (lighter lying away from the camera, darker towards).
+    void SetGrassTrailLook(float seconds, float shade)
+    {
+        m_trailSeconds = seconds < 1.0f ? 1.0f : seconds;
+        m_trailShade = shade < 0.0f ? 0.0f : shade;
     }
     // RVK_GrassShadow: the blades cast the sun's shadow (into its nearest cascade: onto the ground and each other).
     void SetGrassShadows(bool on) { m_grassShadows = on; }
@@ -1000,6 +1010,7 @@ private:
         uint64_t indexHash;
         uint64_t firstFrame, lastFrame;
         bool diffuseAlphaOne = true, specularAlphaOne = true;   // every vertex colour's alpha byte is 255 (pre-pass)
+        mutable int8_t flatShape = -1;           // SwayParams: 1 = one plane (a sign, a card), 0 = not, -1 = not looked at
     };
     std::unordered_map<uint64_t, MeshInfo> m_meshInfo;
     const MeshInfo* m_drawMesh = nullptr;        // the current draw's (null: external geometry, pre-transformed)
@@ -1108,7 +1119,8 @@ private:
     bool m_drawMeshStatic = false;               // ... seen in an earlier frame with the same vertices
     void DrawMeshInfo(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, const uint16_t* indices,
                       uint32_t indexCount);
-    bool SwayParams(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, float out[4]);
+    bool SwayParams(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
+                    const uint16_t* indices, uint32_t indexCount, float out[4]);
     // Plants' big triangles split for smooth bending (draw.cpp SubdividePlant), by mesh cache key and split.
     struct PlantMesh { std::vector<uint8_t> vertices; std::vector<uint16_t> indices; uint64_t lastFrame = 0; };
     std::unordered_map<uint64_t, PlantMesh> m_plantMeshes;
@@ -1135,6 +1147,7 @@ private:
     float m_grassGlow = 1.0f;                    // RVK_GrassGlow: backlit tips, the sheen, rounded shading
     float m_grassGusts = 1.0f;                   // RVK_GrassGusts: gusts sweeping the field
     bool m_grassTrails = true;                   // RVK_GrassTrail: pushed grass stays down behind a character
+    float m_trailSeconds = 12.0f, m_trailShade = 1.0f;   // SetGrassTrailLook
     float m_grassEven = 1.0f;
     bool m_grassShadows = true;                  // RVK_GrassShadow: the blades cast the sun's shadow                    // RVK_GrassEven: the blades' colour from one green, not the texel
     // The ground under one tile and its baked blades. A cell is written by the finest terrain triangle seen there
@@ -1175,7 +1188,7 @@ private:
     GrassTile* GrassTileAt(int32_t tx, int32_t tz) const;
     // The terrain chunks seen (by contents, pass and texture): their ground box and when they were last captured, so
     // an unchanged chunk over tiles that already have it is skipped whole.
-    struct GrassChunk { float box[4] = {}; bool boxed = false; uint64_t processed = 0, lastSeen = 0; };
+    struct GrassChunk { float box[4] = {}; bool boxed = false; uint64_t processed = 0, lastSeen = 0, firstSeen = 0; };
     std::unordered_map<uint64_t, GrassChunk> m_grassChunks;
     std::vector<GrassTile*> m_grassChunkGrid;    // CaptureTerrain's scratch: the tiles under a chunk
     uint64_t m_grassTileEpoch = 0;               // the latest tile made or light reset (the chunks' clock)
@@ -1193,8 +1206,11 @@ private:
     // Trails: pushed grass lying down behind the characters (RVK_GrassTrail) - a world-anchored grid around the camera,
     // wrapping (cell gx lives at gx mod kTrailN): per cell how far its grass is pushed over and which way, stamped
     // where a character stands and recovering over a few seconds. Uploaded with the frame (grass.vert Trail).
-    static constexpr int kTrailN = 128;          // cells along a side (a power of two)
-    static constexpr float kTrailCell = 0.25f;   // world units a cell
+    // The window follows the camera and drops what leaves it: it covers the grass's whole range (the longest
+    // RVK_GrassDist), so trodden grass comes back up by time, not by how far the camera went (at 128 x 0.25 it reached
+    // only 16 units around the camera).
+    static constexpr int kTrailN = 256;          // cells along a side (a power of two)
+    static constexpr float kTrailCell = 0.4f;    // world units a cell
     std::vector<float> m_trail;                  // kTrailN^2 x (direction x, z scaled by the amount)
     int32_t m_trailOrigin[2] = {0, 0};           // the window's first cell (world cell coordinates)
     bool m_trailValid = false;                   // the window holds something
@@ -1337,8 +1353,11 @@ private:
     bool m_glowCleared = false;                  // this frame
     uint32_t m_glowDraws = 0;                    // this frame's draws feeding the glow (frame dumps)
     bool GlowDraw(uint32_t fvf) const;
-    static bool IsInterfaceDraw(uint32_t fvf);
-    static bool IsWater(uint32_t fvf);           // VisualLiquid_t: pre-transformed, with specular (FVF 0x1C4)
+    bool IsInterfaceDraw(uint32_t fvf) const;
+    // The scene's pre-transformed draws (FVF 0x1C4, out of ProcessVertices: the game's water, floating text) - not
+    // the game's screen sprites in the same format (the timer bars): the proxy says which (SetDrawProcessed).
+    bool IsWater(uint32_t fvf) const;
+    bool m_drawProcessed = false;
     bool WaterWritesDepth(uint32_t fvf) const;   // ... and depth-tested (floating text isn't): forced depth writes
     VkDescriptorSetLayout m_bloomSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_bloomLayout = VK_NULL_HANDLE;
@@ -1747,6 +1766,7 @@ private:
     static constexpr VkDeviceSize kRingMaxSize = 256ull << 20;  // ... at most (a 32-bit process: address space)
     VkDeviceSize m_ringWanted = kRingSize;       // after a mid-frame flush: the next frames' ring size
     VkDeviceSize m_ringPeak = 0;                 // the most a frame used (logged with the flushes)
+    uint32_t m_ringQuietWindows = 0;             // 600-frame windows in a row that used under a quarter of the ring
     uint32_t m_ringFlushesLogged = 0;
     // The draw arenas' reserve targets (entries), grown between frames when one overflows.
     static constexpr uint32_t kDrawConstCapacity = 2048, kDrawRecordCapacity = 16384;

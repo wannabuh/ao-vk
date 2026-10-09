@@ -876,6 +876,8 @@ bool g_hideUi = false;            // --hide-ui: the interface hidden (SetHideInt
 float g_grassStyle[5] = {1, 1, 1, 1, 1};   // --grass-style V,F,G,U,T: variety, flowers, glow, gusts, trails (SetGrassStyle)
 float g_grassBenchYaw = 0.0f;  // --grass-bench-yaw R: the bench's camera turned R radians (pi: into the sun)
 bool g_grassBenchWalker = false;  // --grass-bench-walker: a "character" walking through the grass ahead of the camera
+bool g_grassBenchCross = false;   // --grass-bench-cross: ... crossing the view from left to right over the run (with
+                                  // --grass-bench-still: the trail it leaves lies across the screenshot)
 bool g_grassBenchNight = false;   // --grass-bench-night: a dim lightmap and ambient, a faint bluish moon
 int g_grassBenchLoading = 0;      // --grass-bench-loading N: the ground's texture a plain green stand-in until frame N
 bool g_grassBenchLoadingNull = false;   // --grass-bench-loading-null: ... drawn untextured instead
@@ -1026,7 +1028,12 @@ void RunGrassBench(D& dev, int frames, const std::string& shot)
         dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 0);
         dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
         if (g_grassBenchWalker) {   // a lit column a few units ahead, its vertices moving each frame (CPU-skinned)
-            const float wx = ex + 4.0f * std::cos(yaw) + 1.5f * std::sin(t * 0.02f), wz = ez + 4.0f * std::sin(yaw);
+            float wx = ex + 4.0f * std::cos(yaw) + 1.5f * std::sin(t * 0.02f), wz = ez + 4.0f * std::sin(yaw);
+            if (g_grassBenchCross) {     // from 4 units left of the view's centre to 1 right, 4 ahead
+                const float s = -4.0f + 5.0f * float(frame) / float(std::max(frames - 1, 1));   // ends right of centre
+                wx = ex + 4.0f * std::cos(yaw) + s * std::sin(yaw);
+                wz = ez + 4.0f * std::sin(yaw) - s * std::cos(yaw);
+            }
             const float wy = height(wx, wz);
             std::vector<VtxMesh> cv;
             std::vector<uint16_t> ci;
@@ -1131,6 +1138,14 @@ bool g_waterOff = false;          // --water-off: the game's way instead (no Dra
 bool g_waterNight = false;        // --water-night
 float g_waterZ = -1e6f;           // --water-z Z: the camera's z (default per scene)
 bool g_waterNoPrepass = false;    // --water-noprepass
+bool g_hudSprite = false;         // --hud-sprite: after the 3D, a screen sprite as the game's timer bars draw it (the
+                                  // pre-transformed 0x1C4 format, not out of ProcessVertices): interface, so its colour
+                                  // must come out exactly (0x30C050 at the top left), untouched by the HDR passes
+                                  // (with --grade 0.3 1.3 0.5 0 0.8 --dof 1 a scene draw would come out grey and blurred);
+                                  // and an untextured MODULATE(TEXTURE, DIFFUSE) bar below it: 0x8040C0, not black
+bool g_waterPool = false;         // --water-pool: the lake's water only a 6 x 6 pool in front (Jobe's harbour: no water
+                                  // may spread beyond it - the rest of the bowl stays dry)
+bool g_waterWall = false;         // --water-wall: a steep sheet of the water mesh standing in the lake (a fall)
 
 template <typename D>
 void RunWaterScene(D& dev, int frames, const std::string& shot)
@@ -1213,6 +1228,8 @@ void RunWaterScene(D& dev, int frames, const std::string& shot)
     } else {
         box(8.0f, 0.5f, 28.0f, 1.2f, 9.0f, 1.2f, 0xFFB0A898);                                          // a pillar
         box(-15.0f, -0.5f, 45.0f, 5.0f, 3.0f, 4.0f, 0xFF707068);                                       // a rock
+        if (g_waterWall)
+            box(0.0f, 4.0f, 71.0f, 70.0f, 12.0f, 2.0f, 0xFF7A7468);                                    // a cliff behind
         box(25.0f, -2.0f, 70.0f, 8.0f, 6.0f, 3.0f, 0xFF606060);
         box(-6.0f, 1.2f, 15.0f, 1.0f, 1.0f, 1.0f, 0xFFC04030);                                         // a red crate
     }
@@ -1223,7 +1240,13 @@ void RunWaterScene(D& dev, int frames, const std::string& shot)
         water = {{{-3000, 0, 5}, tint}, {{3000, 0, 5}, tint}, {{3000, 0, 4000}, tint}, {{-3000, 0, 4000}, tint}};
     else
         water = {{{-90, 0, -40}, tint}, {{90, 0, -40}, tint}, {{90, 0, 130}, tint}, {{-90, 0, 130}, tint}};
-    const uint16_t waterIdx[6] = {0, 1, 2, 0, 2, 3};
+    if (g_waterPool)
+        water = {{{-3, 0, 17}, tint}, {{3, 0, 17}, tint}, {{3, 0, 23}, tint}, {{-3, 0, 23}, tint}};
+    std::vector<uint16_t> waterIdx = {0, 1, 2, 0, 2, 3};
+    if (g_waterWall) {                    // upright, 8 units tall, with the rock behind it 10 units further back
+        water.insert(water.end(), {{{-30, 0, 60}, tint}, {{30, 0, 60}, tint}, {{30, 8, 60}, tint}, {{-30, 8, 60}, tint}});
+        waterIdx.insert(waterIdx.end(), {4, 5, 6, 4, 6, 7});
+    }
 
     Device::WaterParams wp;
     wp.style = g_waterStyle;
@@ -1326,11 +1349,38 @@ void RunWaterScene(D& dev, int frames, const std::string& shot)
             }
             dev.DrawPrimitive(TriangleList, kFvfMesh, flat.data(), uint32_t(flat.size()));
         } else {
-            dev.DrawWater(water.data(), uint32_t(water.size()), waterIdx, 6);
+            dev.DrawWater(water.data(), uint32_t(water.size()), waterIdx.data(), uint32_t(waterIdx.size()));
         }
         dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
         dev.SetRenderState(RS_ZWRITEENABLE, 1);
         dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+        if (g_hudSprite) {
+            struct VtxSprite { float x, y, z, rhw; uint32_t diffuse, specular; float u, v; };
+            const uint32_t kFvfSprite = FVF_XYZRHW | FVF_DIFFUSE | FVF_SPECULAR | (1 << 8);
+            const uint32_t c = 0xFF30C050;
+            VtxSprite bar[4] = {{20, 20, 0, 1, c, 0, 0, 0}, {220, 20, 0, 1, c, 0, 1, 0},
+                                {20, 40, 0, 1, c, 0, 0, 1}, {220, 40, 0, 1, c, 0, 1, 1}};
+            dev.SetRenderState(RS_ZENABLE, 0);
+            dev.SetRenderState(RS_LIGHTING, 0);
+            dev.SetTexture(0, nullptr);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG2);
+            dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+            dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG2);
+            dev.SetTextureStageState(0, TSS_ALPHAARG2, TA_DIFFUSE);
+            dev.DrawPrimitive(TriangleStrip, kFvfSprite, bar, 4);
+            // ... and one as the PF map's wash: no texture, MODULATE(TEXTURE, DIFFUSE) - native Direct3D disables a
+            // textureless stage that reads its texture, so it must come out its vertex colour (0x8040C0 at y 60).
+            const uint32_t c2 = 0xFF8040C0;
+            VtxSprite wash[4] = {{20, 50, 0, 1, c2, 0, 0, 0}, {220, 50, 0, 1, c2, 0, 1, 0},
+                                 {20, 70, 0, 1, c2, 0, 0, 1}, {220, 70, 0, 1, c2, 0, 1, 1}};
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+            dev.SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+            dev.SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+            dev.DrawPrimitive(TriangleStrip, kFvfSprite, wash, 4);
+            dev.SetRenderState(RS_ZENABLE, 1);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_MODULATE);
+            dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
+        }
         dev.EndFrame();
     }
 }
@@ -2184,6 +2234,8 @@ int main(int argc, char** argv)
         else if (a == "--grass-bench") { g_grassFieldOn = g_grassBench = true; hdr = true; }
         else if (a == "--water-lake") { g_waterScene = 1; hdr = true; }
         else if (a == "--water-coast") { g_waterScene = 2; hdr = true; }
+        else if (a == "--water-wall") g_waterWall = true;
+        else if (a == "--water-pool") g_waterPool = true;
         else if (a == "--water-shadows") shadows = true;   // (the coast's camera then goes wrong from frame 2: not the water's)
         else if (a == "--water-style" && i + 1 < argc) g_waterStyle = float(std::atof(argv[++i]));
         else if (a == "--water-yaw" && i + 1 < argc) g_waterYaw = float(std::atof(argv[++i]));
@@ -2197,11 +2249,13 @@ int main(int argc, char** argv)
         else if (a == "--water-noshadow") shadows = false;
         else if (a == "--water-nohdr") hdr = false;
         else if (a == "--water-noprepass") g_waterNoPrepass = true;
+        else if (a == "--hud-sprite") g_hudSprite = true;
         else if (a == "--grass-field-any") g_grassFieldTex = false;
         else if (a == "--grass-field-tan") g_grassFieldTan = true;
         else if (a == "--grass-field-dist" && i + 1 < argc) g_grassFieldDist = float(std::atof(argv[++i]));
         else if (a == "--grass-bench-yaw" && i + 1 < argc) g_grassBenchYaw = float(std::atof(argv[++i]));
         else if (a == "--grass-bench-walker") g_grassBenchWalker = true;
+        else if (a == "--grass-bench-cross") { g_grassBenchCross = true; g_grassBenchWalker = true; }
         else if (a == "--grass-bench-night") g_grassBenchNight = true;
         else if (a == "--grass-bench-still") g_grassBenchStill = true;
         else if (a == "--grass-bench-storm") g_grassBenchStorm = true;

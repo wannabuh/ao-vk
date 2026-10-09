@@ -13,6 +13,10 @@ float SwayMeanAlpha()
     return sum / 16.0;
 }
 
+// How much a texture's holes let it sway (1 = fully): leaves and grass are mostly holes (mean alpha ~0.1 - 0.45 in a
+// survey of the game's plants); signs, lamps and trims with a cut-out edge are mostly not (0.6 and up).
+float SwayHoles(float meanAlpha) { return smoothstep(0.8, 0.6, meanAlpha); }
+
 // How high up the plant a vertex is (0 at the base, 1 at the top), along the model axis that points up in the world
 // (sway.w - 1: not always y; sway.y is negative when the axis points down).
 float SwayHeight(vec3 modelPos, vec4 sway)
@@ -25,7 +29,7 @@ float SwayHeight(vec3 modelPos, vec4 sway)
 // - two waves and a slow gust, their phase travelling across the world (from the object's position and the vertex's)
 // so neighbouring plants move a little apart. sway: model base along the up axis, 1 / model height (signed), tip
 // sway, 1 + up axis (0 = off).
-// ... with the texture's holes factor already known (smoothstep(0.92, 0.7, SwayMeanAlpha())).
+// ... with the texture's holes factor already known (SwayHoles(SwayMeanAlpha())).
 float SwayDistanceHoles(vec3 modelPos, vec4 sway, vec2 originXZ, float time, float holes)
 {
     float h = SwayHeight(modelPos, sway);
@@ -39,5 +43,5 @@ float SwayDistanceHoles(vec3 modelPos, vec4 sway, vec2 originXZ, float time, flo
 float SwayDistance(vec3 modelPos, vec4 sway, vec2 originXZ, float time)
 {
     return SwayHeight(modelPos, sway) > 0.0
-               ? SwayDistanceHoles(modelPos, sway, originXZ, time, smoothstep(0.92, 0.7, SwayMeanAlpha())) : 0.0;
+               ? SwayDistanceHoles(modelPos, sway, originXZ, time, SwayHoles(SwayMeanAlpha())) : 0.0;
 }

@@ -173,7 +173,7 @@ void main()
         vec3 swayPrev = vec3(0.0);               // the sway last frame (motion vectors)
         if (D.sway.w > 0.5) {
             int axis = clamp(int(D.sway.w + 0.5) - 1, 0, 2);
-            float meanAlpha = SwayMeanAlpha(), holes = smoothstep(0.92, 0.7, meanAlpha);   // once a vertex
+            float meanAlpha = SwayMeanAlpha(), holes = SwayHoles(meanAlpha);   // once a vertex
             vec3 push = PushOffset(posW.xyz, inPos.xyz, D.sway, length(D.world[axis].xyz) / abs(D.sway.y),
                                    D.world[3].xz, holes);
             posW.xz += FL.wind.xy * SwayDistanceHoles(inPos.xyz, D.sway, D.world[3].xz, FL.wind.z, holes);
