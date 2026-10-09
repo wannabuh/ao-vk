@@ -1,6 +1,7 @@
 #include "threaded.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <chrono>
 #include <iterator>
 
@@ -73,8 +74,10 @@ uint8_t* ThreadedDevice::Reserve(uint32_t bytes)
 {
     uint32_t total = Align16(sizeof(Header) + bytes);
     if (total >= kQueueBytes / 2) {
+        // Callers split what can be split (UpdateTexture); the caller would write past this record, so stop here
+        // with a message instead of corrupting the ring.
         Log("record of %u bytes is too large for the queue", bytes);
-        total = kQueueBytes / 2 - 16;                  // the caller's data is truncated; better than a hang
+        std::abort();
     }
     uint32_t w = m_localWrite;                         // after the unpublished records too
     // The worker's read position as last seen: free space only grows as it reads, so an old copy is safe, and the
@@ -1294,6 +1297,18 @@ void ThreadedDevice::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint3
         return;
     // Copy tightly packed rows into the record (the caller may reuse its buffer right away).
     uint32_t rowBytes = FormatRowBytes(t->GetFormat(), width), rows = FormatRows(t->GetFormat(), height);
+    // An update bigger than a record may be (a 2048 x 4096 side-loaded map: 32 MB) goes in strips of rows. Only those:
+    // a whole level-0 upload in one record keeps its opaque / thumbnail bookkeeping (Device::UpdateTexture).
+    constexpr uint32_t kMaxRecordBytes = kQueueBytes / 2 - (1u << 20);
+    if (uint64_t(rowBytes) * rows > kMaxRecordBytes && rows > 1) {
+        const uint32_t blockRows = FormatRows(t->GetFormat(), 4) == 1 ? 4 : 1;   // pixel rows per row of blocks
+        const uint32_t per = std::max(1u, kMaxRecordBytes / rowBytes);
+        for (uint32_t r0 = 0; r0 < rows; r0 += per) {
+            const uint32_t py = r0 * blockRows, ph = std::min(height - py, std::min(per, rows - r0) * blockRows);
+            UpdateTexture(t, level, x, y + py, width, ph, static_cast<const uint8_t*>(data) + size_t(r0) * pitch, pitch);
+        }
+        return;
+    }
     auto run = [this, t, level, x, y, width, height, rowBytes](const uint8_t* p) {
         m_device.UpdateTexture(t, level, x, y, width, height, p, rowBytes);
     };
