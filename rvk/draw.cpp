@@ -1359,11 +1359,12 @@ uint32_t Device::CarriedLight(uint32_t fvf, const void* vertices, uint32_t verte
     return 0;
 }
 
-void Device::SetDrawVisual(uint32_t kind, const char* className, uint32_t owner)
+void Device::SetDrawVisual(uint32_t kind, const char* className, uint32_t owner, uint32_t visual)
 {
     m_drawVisualKind = kind;
     m_drawVisualName = className ? className : "";
     m_drawOwner = owner;
+    m_drawVisual = visual;
 }
 
 void Device::SetSceneLights(const SceneLight* lights, uint32_t count)
@@ -1501,7 +1502,10 @@ void Device::DrawSkinned(uint32_t primitive, uint32_t fvf, skin::Job& job, uint3
         m_drawGpu = SkinOnGpu(job);
     if (m_drawGpu) {
         ProfileDrawSection("draw: skinning", since);
+        if (m_pickActive)                            // picking: this frame only, the piece skinned on the CPU too
+            m_pickSkinned = job.Skinned() + startVertex;
         Draw(primitive, fvf, nullptr, vertexCount, indices, indexCount);
+        m_pickSkinned = nullptr;
     } else {
         const skin::Vertex* vertices = job.Skinned();
         m_drawSkinBase = vertices;
@@ -2033,10 +2037,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     if (m_grassOn && !m_external && vertices && IsTerrain(fvf))
         CaptureTerrain(primitive, layout, vertices, vertexCount, indices, indexCount);
     DrawMeshInfo(fvf, layout.stride, vertices, vertexCount, indices, indexCount);
-    if (m_pickActive && !m_external && vertices && !m_drawGpu && m_textures[0] &&
+    // (A GPU-skinned character has no vertices here: DrawSkinned hands the pick its CPU-skinned ones.)
+    if (m_pickActive && !m_external && (vertices || m_pickSkinned) && (m_textures[0] || m_drawVisual) &&
         (m_target == m_scene || m_target == m_main) && (fvf & d3d::FVF_POSITION_MASK) == d3d::FVF_XYZ &&
         m_rs[d3d::RS_ZENABLE])
-        PickDraw(primitive, layout, vertices, vertexCount, indices, indexCount);
+        PickDraw(primitive, layout, vertices ? vertices : m_pickSkinned, vertexCount, indices, indexCount);
     // ... and solid objects lying on the ground keep it off where they are (not characters, effects, the sky, plants
     // or anything see-through; grass.cpp CaptureCover).
     if (m_grassOn && !m_external && vertices && !IsTerrain(fvf) && m_target == m_scene &&
@@ -2897,6 +2902,9 @@ void Device::PickDraw(uint32_t primitive, const detail::FvfLayout& layout, const
             continue;
         m_pickDepth = z;
         m_pickBest = m_textures[0];
+        m_pickBestVisual = m_drawVisual;
+        m_pickBestOwner = m_drawOwner;
+        m_pickBestKind = m_drawVisualKind;
     }
 }
 

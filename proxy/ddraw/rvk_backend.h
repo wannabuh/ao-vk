@@ -43,6 +43,8 @@ void PollMaterialMaps();                          // each present: uploads maps 
 void ForgetMaterialMaps(RSurface* top);           // the surface is going: it no longer waits for maps
 // What an rvk texture is, for texture picking: "RDB texture T:ID 'name', WxH; maps: _n.png ..." (reference: "T:ID").
 std::string DescribeTexture(const rvk::Texture* texture, std::string* reference = nullptr);
+// What a picked visual was made from: "RDB mesh 1010001:3545" (reference: "T:ID"), see rvk_materials.cpp.
+std::string DescribeMesh(uint32_t visual, uint32_t owner, uint32_t kind, std::string* reference = nullptr);
 
 // One lock around every call into the rvk backend: the game may use DirectDraw from more than one thread
 // (D3D serialises internally too). Recursive, since methods call each other. Logs each new thread once.

@@ -215,17 +215,21 @@ public:
     // `emissive`: the light a texture's surface gives off (its colour, any resolution), added after the lighting and
     // as bright as PbrSettings::emissive - into the bloom with HDR. Owned by the device as above; null removes it.
     void SetEmissiveMap(Texture* texture, Texture* emissive);
-    // Texture picking (the proxy's Ctrl+Shift+I): the next frame's 3D scene draws are tested on the CPU against the
-    // point (x, y: 0..1 across the target, y down) and the nearest one's stage 0 texture is kept; LastPick gives it once
-    // that frame has ended (serial: one more each result; thread-safe). SetPickHighlight: draws with that texture
-    // flash yellow (null: none).
+    // Picking (the proxy's Ctrl+Shift+I textures, Ctrl+Shift+M meshes): the next frame's 3D scene draws are tested on
+    // the CPU against the point (x, y: 0..1 across the target, y down) - GPU-skinned characters with their skinned
+    // vertices - and the nearest one's stage 0 texture, visual and owning character (SetDrawVisual) are kept; LastPick
+    // gives them once that frame has ended (serial: one more each result; thread-safe). SetPickHighlight: draws with
+    // that texture flash yellow (null: none).
     void RequestPick(float x, float y) { m_pickX = x; m_pickY = y; m_pickArmed = true; }
-    struct PickResult { Texture* texture = nullptr; uint32_t serial = 0; };
+    struct PickResult { Texture* texture = nullptr; uint32_t serial = 0, visual = 0, owner = 0, kind = 0; };
     PickResult LastPick() const
     {
         PickResult r;
         r.serial = m_pickSerial.load(std::memory_order_acquire);
         r.texture = m_pickPublished.load(std::memory_order_relaxed);
+        r.visual = m_pickPublishedVisual.load(std::memory_order_relaxed);
+        r.owner = m_pickPublishedOwner.load(std::memory_order_relaxed);
+        r.kind = m_pickPublishedKind.load(std::memory_order_relaxed);
         return r;
     }
     void SetPickHighlight(Texture* t) { if (m_pickHighlight != t) { m_pickHighlight = t; m_constantsDirty = true; } }
@@ -462,7 +466,7 @@ public:
     void SetTexture(uint32_t stage, Texture* texture);
     // The game's visual issuing the next draws (rnative::scene): its kind (VisualKind) and class name - for exact
     // decisions where the draw alone needs heuristics. 0 / "": not known.
-    void SetDrawVisual(uint32_t kind, const char* className, uint32_t owner = 0);
+    void SetDrawVisual(uint32_t kind, const char* className, uint32_t owner = 0, uint32_t visual = 0);
     // The game's lights of this frame (rnative::scene), each with its carrier's owner id (SetDrawVisual's) or 0: who
     // carries which light, exactly (FindCarriers).
     struct SceneLight { d3d::Light light; uint32_t owner; };
@@ -643,6 +647,9 @@ private:
     Texture* m_pickBest = nullptr;
     float m_pickDepth = 2.0f;
     std::atomic<Texture*> m_pickPublished{nullptr};
+    uint32_t m_pickBestVisual = 0, m_pickBestOwner = 0, m_pickBestKind = 0;
+    std::atomic<uint32_t> m_pickPublishedVisual{0}, m_pickPublishedOwner{0}, m_pickPublishedKind{0};
+    const void* m_pickSkinned = nullptr;         // a GPU-skinned draw's CPU-skinned vertices, for the pick (DrawSkinned)
     std::atomic<uint32_t> m_pickSerial{0};
     Texture* m_pickHighlight = nullptr;
     void PickDraw(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
@@ -1068,6 +1075,7 @@ private:
     const skin::Job* m_drawSkin = nullptr;       // the current draw is this skinned character piece (DrawSkinned)
     uint32_t m_drawVisualKind = 0;               // SetDrawVisual (VisualKind)
     uint32_t m_drawOwner = 0;                    // ... the character it belongs to (0: none / unknown)
+    uint32_t m_drawVisual = 0;                   // ... the visual object itself (the game's; for picking)
     std::vector<SceneLight> m_sceneLights;       // SetSceneLights, of frame m_sceneLightsFrame
     uint64_t m_sceneLightsFrame = 0;
     const char* m_drawVisualName = "";

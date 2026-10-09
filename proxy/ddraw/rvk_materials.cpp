@@ -34,6 +34,7 @@
 #include <cstring>
 #include <deque>
 #include <list>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -43,6 +44,7 @@
 #include <vector>
 
 #include "rvk_backend.h"
+#include "native/native.h"
 
 #include "material_maps.h"
 
@@ -65,7 +67,7 @@ bool Readable(const void* p, size_t n)
     return static_cast<const uint8_t*>(p) + n <= end;
 }
 
-enum class Kind { Other, AnarchyTexCreator, RDBGroundTexture };
+enum class Kind { Other, AnarchyTexCreator, RDBGroundTexture, RDBMesh, RDBCATMesh };
 
 // Class of a polymorphic object from its vtable's complete object locator (x86: vtable[-1] -> COL, COL+12 -> type
 // descriptor, name at +8, e.g. ".?AVAnarchyTexCreator_t@@").
@@ -85,10 +87,15 @@ Kind ClassOf(const void* object)
         if (Readable(col, 16)) {
             const uint8_t* td = *reinterpret_cast<const uint8_t* const*>(col + 12);
             static const char kTex[] = ".?AVAnarchyTexCreator_t@@", kGround[] = ".?AVRDBGroundTexture_t@@";
+            static const char kMesh[] = ".?AVRDBMesh_t@@", kCat[] = ".?AVRDBCATMesh_t@@";
             if (Readable(td + 8, sizeof(kTex)) && std::memcmp(td + 8, kTex, sizeof(kTex)) == 0)
                 kind = Kind::AnarchyTexCreator;
             else if (Readable(td + 8, sizeof(kGround)) && std::memcmp(td + 8, kGround, sizeof(kGround)) == 0)
                 kind = Kind::RDBGroundTexture;
+            else if (Readable(td + 8, sizeof(kMesh)) && std::memcmp(td + 8, kMesh, sizeof(kMesh)) == 0)
+                kind = Kind::RDBMesh;
+            else if (Readable(td + 8, sizeof(kCat)) && std::memcmp(td + 8, kCat, sizeof(kCat)) == 0)
+                kind = Kind::RDBCATMesh;
         }
     }
     cache.emplace(vtable, kind);
@@ -583,9 +590,172 @@ void HotReload()
         Reload(key);
 }
 
+// ---------------------------------------------------------------- mesh identity (mesh picking)
+// Which RDB resource a visual was made from, for Ctrl+Shift+J. DisplaySystem loads meshes as DbObject_ts - RDBMesh_t
+// (static meshes 1010001 / their variants 1010026) and RDBCATMesh_t (characters 1010002 / towers 1010027), +0x08 type,
+// +0x0C id - and builds the visuals from them with randy's exported constructors RTriMesh_t(data, parent, animation)
+// (GenericMeshObject_t's base) and RCATMesh_t(parent). The hooks below find the DbObject_t being loaded on the
+// caller's stack (as RTextureFromCreator finds an RDBGroundTexture_t) and remember the visual's identity; a mesh made
+// again from the same RTriMeshData_t later (the DbObject_t gone) gets its data's.
+namespace {
+
+// visual (RTriMesh_t / RCATMesh_t, by the address its constructor got) -> type << 32 | id. Ordered: the renderer
+// sees a visual through the base class it draws with, a few bytes into the object (RCATMesh_t: +0x3C).
+std::map<uintptr_t, uint64_t> g_meshIds;
+constexpr uintptr_t kInsideObject = 0x200;
+std::unordered_map<const void*, uint64_t> g_meshDataIds; // RTriMeshData_t -> the same
+unsigned g_meshFound = 0, g_meshMissed = 0;
+
+// Reads another object's memory without faulting (ReadProcessMemory on ourselves fails cleanly where a plain read
+// would crash: the stack holds every kind of value, and VirtualQuery's protection doesn't tell all unreadable pages).
+bool SafeCopy(const void* p, void* out, size_t n)
+{
+    SIZE_T got = 0;
+    return p && ReadProcessMemory(GetCurrentProcess(), p, out, n, &got) && got == n;
+}
+
+// The RTTI class name of a polymorphic object (".?AVName@@"), or "" - without ever faulting.
+std::string SafeClassName(const void* object)
+{
+    uint32_t vtable = 0, col = 0, td = 0;
+    char name[48] = {};
+    if (!SafeCopy(object, &vtable, 4) || !vtable || !SafeCopy(reinterpret_cast<const void*>(uintptr_t(vtable) - 4), &col, 4) ||
+        !SafeCopy(reinterpret_cast<const void*>(uintptr_t(col) + 12), &td, 4) ||
+        !SafeCopy(reinterpret_cast<const void*>(uintptr_t(td) + 8), name, sizeof(name) - 1))
+        return {};
+    return std::string(name, strnlen(name, sizeof(name) - 1));
+}
+
+// The RDBMesh_t (character: RDBCATMesh_t) being loaded, from the caller's saved registers and stack. -> type << 32 | id
+uint64_t FindLoading(const void* returnAddress, bool character)
+{
+    static std::unordered_map<uint32_t, Kind> byVtable;   // vtable -> class (only these two matter)
+    uint32_t words[512];
+    const auto* sp = reinterpret_cast<const uint32_t*>(returnAddress) - 8;
+    size_t count = 512;
+    while (count && !SafeCopy(sp, words, count * 4))      // (near the top of the stack: fewer)
+        count /= 2;
+    for (size_t i = 0; i < count; ++i) {
+        const uint32_t v = words[i];
+        if (!v || (v & 3) || v < 0x10000)
+            continue;
+        uint32_t head[4];                                 // vtable, ..., type (+8), id (+0xC)
+        if (!SafeCopy(reinterpret_cast<const void*>(uintptr_t(v)), head, sizeof(head)) || !head[0])
+            continue;
+        auto it = byVtable.find(head[0]);
+        if (it == byVtable.end()) {
+            const std::string name = SafeClassName(reinterpret_cast<const void*>(uintptr_t(v)));
+            it = byVtable.emplace(head[0], name == ".?AVRDBMesh_t@@" ? Kind::RDBMesh
+                                           : name == ".?AVRDBCATMesh_t@@" ? Kind::RDBCATMesh : Kind::Other).first;
+        }
+        if (it->second != (character ? Kind::RDBCATMesh : Kind::RDBMesh))
+            continue;
+        const uint32_t type = head[2], id = head[3];
+        const bool ok = character ? (type == 1010002 || type == 1010027) : (type == 1010001 || type == 1010026);
+        if (ok && id)
+            return uint64_t(type) << 32 | id;
+    }
+    return 0;
+}
+
+void Remember(const void* visual, const void* data, uint64_t id, const char* what)
+{
+    if (!id && data) {
+        auto it = g_meshDataIds.find(data);
+        if (it != g_meshDataIds.end()) id = it->second;
+    }
+    if (id) {
+        g_meshIds[uintptr_t(visual)] = id;
+        if (data) g_meshDataIds[data] = id;
+        ++g_meshFound;
+    } else {
+        g_meshIds.erase(uintptr_t(visual));          // (a new object where an identified one was)
+        ++g_meshMissed;
+    }
+    const unsigned n = g_meshFound + g_meshMissed;
+    if (n <= 6 || (n & (n - 1)) == 0)
+        RvkLog("meshes: %s %p %s%u:%u (%u identified, %u not)", what, visual, id ? "is RDB mesh " : "not identified ",
+               unsigned(id >> 32), unsigned(id), g_meshFound, g_meshMissed);
+}
+
+extern "C" void rvk_ensure_init();          // trace.cpp: the native install, before the rva registry is used
+extern "C" int rvk_exports_ready;
+using RTriMeshCtor = void*(__thiscall*)(void* self, const void* data, void* parent, void* animation);
+using RCATMeshCtor = void*(__thiscall*)(void* self, void* parent);
+constexpr uint32_t kRTriMeshCtorRva = 0x490E3, kRCATMeshCtorRva = 0x57FE0;   // interface/exports.tsv
+
+}  // namespace
+
+std::string DescribeMesh(uint32_t visual, uint32_t owner, uint32_t kind, std::string* reference)
+{
+    auto find = [](uint32_t p) -> uint64_t {                // the object p points into, if identified
+        auto it = g_meshIds.upper_bound(uintptr_t(p));
+        if (it == g_meshIds.begin()) return 0;
+        --it;
+        return uintptr_t(p) - it->first < kInsideObject ? it->second : 0;
+    };
+    char buf[256];
+    if (!visual)
+        return "nothing (no 3D object there)";
+    // A character's own body (kind 1) is its RCATMesh_t; a piece attached to it (2) is a mesh of its own.
+    uint64_t id = find(visual);
+    if (!id && kind == 1u) id = find(owner);
+    const uint64_t character = owner && owner != visual ? find(owner) : 0;
+    if (!id) {
+        std::snprintf(buf, sizeof(buf), "a visual %p not identified (made before randy-vk saw it, or not from an RDB "
+                      "mesh)%s", reinterpret_cast<void*>(uintptr_t(visual)), character ? "; on a character" : "");
+        if (character && reference) {
+            std::snprintf(buf + std::strlen(buf), sizeof(buf) - std::strlen(buf), " %u:%u", unsigned(character >> 32),
+                          unsigned(character));
+            char ref[32];
+            std::snprintf(ref, sizeof(ref), "%u:%u", unsigned(character >> 32), unsigned(character));
+            *reference = ref;
+        }
+        return buf;
+    }
+    std::snprintf(buf, sizeof(buf), "RDB %s %u:%u", (id >> 32) == 1010002 || (id >> 32) == 1010027 ? "character model"
+                  : "mesh", unsigned(id >> 32), unsigned(id));
+    if (character && character != id)
+        std::snprintf(buf + std::strlen(buf), sizeof(buf) - std::strlen(buf), " (worn by character model %u:%u)",
+                      unsigned(character >> 32), unsigned(character));
+    if (reference) {
+        char ref[32];
+        std::snprintf(ref, sizeof(ref), "%u:%u", unsigned(id >> 32), unsigned(id));
+        *reference = ref;
+    }
+    return buf;
+}
+
 }  // namespace rvkproxy
 
 using namespace rvkproxy;
+
+// RTriMesh_t::RTriMesh_t(RTriMeshData_t const*, RRefFrame_t*, RAnimation_t*) and RCATMesh_t::RCATMesh_t(RRefFrame_t*):
+// the visuals DisplaySystem makes from loaded meshes (mesh identity, above).
+extern "C" void* __fastcall rvk_RTriMeshCtor(void* self, void*, const void* data, void* parent, void* animation)
+{
+    const uint64_t id = FindLoading(_AddressOfReturnAddress(), false);
+    // Through the rva registry, as the export's own thunk would go: the native port's constructor where it has one.
+    if (!rvk_exports_ready) rvk_ensure_init();      // (the exports' thunks do this on their first call)
+    static auto original = reinterpret_cast<RTriMeshCtor>(rnative::AddressFor(kRTriMeshCtorRva));
+    void* r = original(self, data, parent, animation);
+    static const unsigned index = ComIndex("rvk::Meshes");
+    ComScope scope(index);
+    Remember(self, data, id, "static");
+    return r;
+}
+
+extern "C" void* __fastcall rvk_RCATMeshCtor(void* self, void*, void* parent)
+{
+    const uint64_t id = FindLoading(_AddressOfReturnAddress(), true);
+    if (!rvk_exports_ready) rvk_ensure_init();      // (the exports' thunks do this on their first call)
+    static auto original = reinterpret_cast<RCATMeshCtor>(rnative::AddressFor(kRCATMeshCtorRva));
+    void* r = original(self, parent);
+    static const unsigned index = ComIndex("rvk::Meshes");
+    ComScope scope(index);
+    Remember(self, nullptr, id, "character");
+    return r;
+}
 
 // The hooked exports (thiscall: `this` in ecx; __fastcall's unused edx keeps the stack arguments in place).
 extern "C" void* __fastcall rvk_CreateTextureBitmap(void* self, void*, void* bitmap, const char* name)

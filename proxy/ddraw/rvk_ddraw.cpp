@@ -251,25 +251,48 @@ void RvkState::Present()
     rvk_settings::PollIni(device);              // randy-vk.ini edited while the game runs
     // Ctrl+Shift+I: which texture is under the mouse (texture picking, for making material maps): the next frame's
     // nearest 3D surface there - logged ("pick: RDB texture 1010004:55900 'name', 256x256; maps: ..."), its "type:id"
-    // copied to the clipboard, and its surfaces flash yellow for three seconds.
-    static bool picking = false;
+    // copied to the clipboard, and its surfaces flash yellow for three seconds. Ctrl+Shift+J: the same for the mesh
+    // there ("pick: RDB mesh 1010001:3545"; characters: their model) - the ao-assets workbench follows last-pick.txt.
+    static int picking = 0;                       // 0 no, 'I' texture, 'J' mesh
     static uint32_t pickBefore = 0;
     static ULONGLONG highlightUntil = 0;
-    if (pressed('I') && window) {
-        POINT p;
-        RECT r;
-        if (GetCursorPos(&p) && ScreenToClient(window, &p) && GetClientRect(window, &r) && r.right > 0 && r.bottom > 0) {
-            pickBefore = device->LastPick().serial;
-            device->RequestPick(float(p.x) / float(r.right), float(p.y) / float(r.bottom));
-            picking = true;
-        }
+    // RANDYVK_PICK_AT=frame,x,y,I|J (x, y 0..1): a pick as if the key were pressed then (tests without the game).
+    static int pickAtFrame = -2, pickAtKey = 0;
+    static float pickAtX = 0.5f, pickAtY = 0.5f;
+    static int frameCount = 0;
+    ++frameCount;
+    if (pickAtFrame == -2) {
+        char v[64] = {};
+        char key = 0;
+        pickAtFrame = GetEnvironmentVariableA("RANDYVK_PICK_AT", v, sizeof(v)) &&
+                              std::sscanf(v, "%d,%f,%f,%c", &pickAtFrame, &pickAtX, &pickAtY, &key) == 4
+                          ? pickAtFrame : -1;
+        pickAtKey = key == 'J' || key == 'j' ? 'J' : 'I';
     }
+    if (frameCount == pickAtFrame) {
+        pickBefore = device->LastPick().serial;
+        device->RequestPick(pickAtX, pickAtY);
+        picking = pickAtKey;
+    }
+    for (int key : {'I', 'J'})
+        if (pressed(key) && window) {
+            POINT p;
+            RECT r;
+            if (GetCursorPos(&p) && ScreenToClient(window, &p) && GetClientRect(window, &r) && r.right > 0 &&
+                r.bottom > 0) {
+                pickBefore = device->LastPick().serial;
+                device->RequestPick(float(p.x) / float(r.right), float(p.y) / float(r.bottom));
+                picking = key;
+            }
+        }
     if (picking) {
         rvk::Device::PickResult result = device->LastPick();
         if (result.serial != pickBefore) {
-            picking = false;
+            const bool mesh = picking == 'J';
+            picking = 0;
             std::string reference;
-            RvkLog("pick: %s", DescribeTexture(result.texture, &reference).c_str());
+            RvkLog("pick: %s", mesh ? DescribeMesh(result.visual, result.owner, result.kind, &reference).c_str()
+                                    : DescribeTexture(result.texture, &reference).c_str());
             bool copied = false;
             if (!reference.empty() && OpenClipboard(window)) {
                 EmptyClipboard();

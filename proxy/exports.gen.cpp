@@ -10,7 +10,7 @@ extern "C" {
 
 void rvk_ensure_init();                         // trace.cpp: runs rnative::Install once, then fills these
 extern int rvk_exports_ready;
-void* rvk_export_targets[666];
+void* rvk_export_targets[664];
 
 __declspec(naked) void rvk_export_common()
 {
@@ -7332,30 +7332,8 @@ __declspec(naked) void rvk_export_663()
         jmp rvk_export_common
     }
 }
-__declspec(naked) void rvk_export_664()
-{
-    __asm {
-        cmp rvk_exports_ready, 0
-        je slow
-        jmp dword ptr [rvk_export_targets + 2656]
-    slow:
-        push 664
-        jmp rvk_export_common
-    }
-}
-__declspec(naked) void rvk_export_665()
-{
-    __asm {
-        cmp rvk_exports_ready, 0
-        je slow
-        jmp dword ptr [rvk_export_targets + 2660]
-    slow:
-        push 665
-        jmp rvk_export_common
-    }
-}
 
-static const uint32_t rvk_export_rvas[666] = {
+static const uint32_t rvk_export_rvas[664] = {
     0x508D3,
     0x53E97,
     0x1228D,
@@ -7376,7 +7354,6 @@ static const uint32_t rvk_export_rvas[666] = {
     0x2BCF9,
     0x17504,
     0x1FD01,
-    0x57FE0,
     0x2A68A,
     0x2D26F,
     0x2F44E,
@@ -7399,7 +7376,6 @@ static const uint32_t rvk_export_rvas[666] = {
     0x47900,
     0x4AB7A,
     0x4AB57,
-    0x490E3,
     0x4B9A4,
     0x4D5E5,
     0x4D544,
@@ -8026,7 +8002,7 @@ static const uint32_t rvk_export_rvas[666] = {
 
 void rvk_install_exports()
 {
-    for (unsigned i = 0; i < 666; ++i) rvk_export_targets[i] = rnative::AddressFor(rvk_export_rvas[i]);
+    for (unsigned i = 0; i < 664; ++i) rvk_export_targets[i] = rnative::AddressFor(rvk_export_rvas[i]);
 }
 
 }  // extern "C"
