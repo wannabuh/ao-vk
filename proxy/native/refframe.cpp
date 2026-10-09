@@ -10,11 +10,13 @@
 // connector, +0x9C changes this frame, +0x9D last frame's, +0x9E world matrix out of date (bits), +0xA0 group mask.
 #include "native/refframe.h"
 #include "native/orig_api.gen.h"
+#include "native/popin.h"
 #include "native/serialize.h"
 #include "native/vc10.h"
 #include "native/xmath.h"
 
 #include <cmath>
+#include <intrin.h>
 #include <cstring>
 #include <initializer_list>
 
@@ -136,6 +138,7 @@ void __fastcall SetConnector(Frame* f, void*, void* connector)
 
 void __fastcall AddChild(Frame* f, void*, Frame* child)
 {
+    popin::Attached(child, true, _ReturnAddress());
     if (Frame* old = Parent(child)) Virtual(old, 5, static_cast<void*>(child));
     Field<Frame*>(child, kParent) = f;
     Field<Frame*>(child, kNext) = FirstChild(f);
@@ -150,6 +153,7 @@ void __fastcall RemoveChild(Frame* f, void*, Frame* child)
     while (*link && *link != child) link = &Field<Frame*>(*link, kNext);
     Frame* found = *link;
     if (found) {
+        popin::Attached(found, false, _ReturnAddress());
         *link = Next(found);
         Field<Frame*>(found, kParent) = nullptr;
         Field<Frame*>(found, kNext) = nullptr;
@@ -291,7 +295,11 @@ const float* __fastcall GetAnimMatrix(Frame* f)
 void __fastcall SetVisible(Frame* f, void*, bool visible, bool children)
 {
     if (children)
-        for (Frame* c = FirstChild(f); c; c = Next(c)) Field<uint8_t>(c, kVisible) = visible;   // one level, as Randy
+        for (Frame* c = FirstChild(f); c; c = Next(c)) {
+            popin::VisibleSet(c, visible, _ReturnAddress());
+            Field<uint8_t>(c, kVisible) = visible;   // one level, as Randy
+        }
+    popin::VisibleSet(f, visible, _ReturnAddress());
     f[kVisible] = visible;
 }
 

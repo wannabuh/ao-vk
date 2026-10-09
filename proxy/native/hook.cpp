@@ -252,6 +252,8 @@ LONG CALLBACK CrashLogger(EXCEPTION_POINTERS* e)
 
 }  // namespace
 
+void DescribeAddress(uintptr_t address, char* out, size_t size) { Where(address, out, size); }
+
 void InstallCrashLog()
 {
     static bool done;
