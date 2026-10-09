@@ -2905,6 +2905,8 @@ void Device::PickDraw(uint32_t primitive, const detail::FvfLayout& layout, const
         m_pickBestVisual = m_drawVisual;
         m_pickBestOwner = m_drawOwner;
         m_pickBestKind = m_drawVisualKind;
+        m_pickBestVertices = vertexCount;
+        m_pickBestIndices = indexCount;
     }
 }
 

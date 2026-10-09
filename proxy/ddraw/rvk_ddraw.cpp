@@ -293,6 +293,18 @@ void RvkState::Present()
             std::string reference;
             RvkLog("pick: %s", mesh ? DescribeMesh(result.visual, result.owner, result.kind, &reference).c_str()
                                     : DescribeTexture(result.texture, &reference).c_str());
+            // A mesh randy-vk can't name (static meshes: read from their .abiff where no hook sees it): what was drawn
+            // - its texture and vertex / index counts - for the ao-assets workbench, whose index matches it to a mesh.
+            if (mesh && reference.empty() && result.visual) {
+                std::string texture;
+                DescribeTexture(result.texture, &texture);
+                if (!texture.empty()) {
+                    reference = "geometry " + texture + " " + std::to_string(result.vertices) + " " +
+                                std::to_string(result.indices);
+                    RvkLog("pick: drawn with RDB texture %s, %u vertices, %u indices (the workbench looks it up)",
+                           texture.c_str(), result.vertices, result.indices);
+                }
+            }
             bool copied = false;
             if (!reference.empty() && OpenClipboard(window)) {
                 EmptyClipboard();

@@ -221,7 +221,8 @@ public:
     // gives them once that frame has ended (serial: one more each result; thread-safe). SetPickHighlight: draws with
     // that texture flash yellow (null: none).
     void RequestPick(float x, float y) { m_pickX = x; m_pickY = y; m_pickArmed = true; }
-    struct PickResult { Texture* texture = nullptr; uint32_t serial = 0, visual = 0, owner = 0, kind = 0; };
+    struct PickResult { Texture* texture = nullptr; uint32_t serial = 0, visual = 0, owner = 0, kind = 0, vertices = 0,
+                        indices = 0; };
     PickResult LastPick() const
     {
         PickResult r;
@@ -230,6 +231,8 @@ public:
         r.visual = m_pickPublishedVisual.load(std::memory_order_relaxed);
         r.owner = m_pickPublishedOwner.load(std::memory_order_relaxed);
         r.kind = m_pickPublishedKind.load(std::memory_order_relaxed);
+        r.vertices = m_pickPublishedVertices.load(std::memory_order_relaxed);
+        r.indices = m_pickPublishedIndices.load(std::memory_order_relaxed);
         return r;
     }
     void SetPickHighlight(Texture* t) { if (m_pickHighlight != t) { m_pickHighlight = t; m_constantsDirty = true; } }
@@ -647,8 +650,9 @@ private:
     Texture* m_pickBest = nullptr;
     float m_pickDepth = 2.0f;
     std::atomic<Texture*> m_pickPublished{nullptr};
-    uint32_t m_pickBestVisual = 0, m_pickBestOwner = 0, m_pickBestKind = 0;
-    std::atomic<uint32_t> m_pickPublishedVisual{0}, m_pickPublishedOwner{0}, m_pickPublishedKind{0};
+    uint32_t m_pickBestVisual = 0, m_pickBestOwner = 0, m_pickBestKind = 0, m_pickBestVertices = 0, m_pickBestIndices = 0;
+    std::atomic<uint32_t> m_pickPublishedVisual{0}, m_pickPublishedOwner{0}, m_pickPublishedKind{0},
+        m_pickPublishedVertices{0}, m_pickPublishedIndices{0};   // the draw's counts (the workbench matches meshes by them)
     const void* m_pickSkinned = nullptr;         // a GPU-skinned draw's CPU-skinned vertices, for the pick (DrawSkinned)
     std::atomic<uint32_t> m_pickSerial{0};
     Texture* m_pickHighlight = nullptr;

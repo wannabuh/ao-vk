@@ -1284,7 +1284,7 @@ void Device::BeginFrame()
     m_pickActive = m_pickArmed;                  // texture picking (RequestPick): this frame's draws
     m_pickArmed = false;
     m_pickBest = nullptr;
-    m_pickBestVisual = m_pickBestOwner = m_pickBestKind = 0;
+    m_pickBestVisual = m_pickBestOwner = m_pickBestKind = m_pickBestVertices = m_pickBestIndices = 0;
     m_pickDepth = 2.0f;
     m_batchRuns = m_batchMerged = m_batchMaxRun = 0;
     m_batchKey = 0;
@@ -1448,6 +1448,8 @@ void Device::EndFrame()
         m_pickPublishedVisual.store(m_pickBestVisual, std::memory_order_relaxed);
         m_pickPublishedOwner.store(m_pickBestOwner, std::memory_order_relaxed);
         m_pickPublishedKind.store(m_pickBestKind, std::memory_order_relaxed);
+        m_pickPublishedVertices.store(m_pickBestVertices, std::memory_order_relaxed);
+        m_pickPublishedIndices.store(m_pickBestIndices, std::memory_order_relaxed);
         m_pickSerial.fetch_add(1, std::memory_order_release);
     }
     if (m_rendering && !m_particleOrphansDone) {
