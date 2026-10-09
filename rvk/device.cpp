@@ -461,7 +461,7 @@ bool Device::CreateMainTargets(std::string* error)
     m_scene = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);
     m_glow = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);
     m_localFraction = CreateImage(m_width, m_height, Format::RGBA8, 1, true);
-    m_motionVectors = CreateImage(m_width, m_height, Format::RG16F, 1, true);
+    m_motionVectors = CreateImage(m_width, m_height, Format::RGBA16F, 1, true);   // zw: PBR shading normal (ssr.frag)
     m_albedo = CreateImage(m_width, m_height, Format::A8R8G8B8, 1, true);
     if (!m_ldrMain || !m_scene || !m_glow || !m_localFraction || !m_motionVectors || !m_albedo) {
         if (error) *error = "main colour target";
@@ -769,7 +769,7 @@ bool Device::CreatePipelines(std::string* error)
     // 8-bit targets: one colour attachment. HDR scene: the float scene, the glow (additive effects, for the bloom) and
     // the local-light fraction (for the ambient occlusion), the motion vectors and the surface colour (indirect light).
     VkFormat colorFormats[5] = {kColorFormat, GetFormatInfo(Format::RGBA16F).vk, GetFormatInfo(Format::RGBA8).vk,
-                                GetFormatInfo(Format::RG16F).vk, GetFormatInfo(Format::A8R8G8B8).vk};
+                                GetFormatInfo(Format::RGBA16F).vk, GetFormatInfo(Format::A8R8G8B8).vk};
     VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     rendering.colorAttachmentCount = 1;
     rendering.pColorAttachmentFormats = colorFormats;
@@ -1281,6 +1281,11 @@ void Device::SetRenderTarget(Texture* target)
 
 void Device::BeginFrame()
 {
+    m_pickActive = m_pickArmed;                  // texture picking (RequestPick): this frame's draws
+    m_pickArmed = false;
+    m_pickBest = nullptr;
+    m_pickBestVisual = m_pickBestOwner = m_pickBestKind = m_pickBestVertices = m_pickBestIndices = 0;
+    m_pickDepth = 2.0f;
     m_batchRuns = m_batchMerged = m_batchMaxRun = 0;
     m_batchKey = 0;
     m_batchRun = 0;
@@ -1437,6 +1442,16 @@ void Device::BeginFrame()
 
 void Device::EndFrame()
 {
+    if (m_pickActive) {                          // texture picking: the nearest draw's texture, for LastPick
+        m_pickActive = false;
+        m_pickPublished.store(m_pickBest, std::memory_order_relaxed);
+        m_pickPublishedVisual.store(m_pickBestVisual, std::memory_order_relaxed);
+        m_pickPublishedOwner.store(m_pickBestOwner, std::memory_order_relaxed);
+        m_pickPublishedKind.store(m_pickBestKind, std::memory_order_relaxed);
+        m_pickPublishedVertices.store(m_pickBestVertices, std::memory_order_relaxed);
+        m_pickPublishedIndices.store(m_pickBestIndices, std::memory_order_relaxed);
+        m_pickSerial.fetch_add(1, std::memory_order_release);
+    }
     if (m_rendering && !m_particleOrphansDone) {
         m_particleOrphanTrigger = "end of the frame";   // no interface draw after the 3D
         DrawOrphanParticles();

@@ -46,7 +46,12 @@ struct DrawTransform {
     float tess[4];                 // Phong tessellation (characters): level (0 = off), shape, base vertex of binding 10
     uint32_t texIdx[4];            // bindless (M1): image slots for stage 0, stage 1, bump base, normal map
     uint32_t sampIdx[4];           // bindless (M1): sampler slots for stage 0, stage 1, bump, normal
+    uint32_t mat[4];               // PBR material: occlusion/roughness/metallic image slot, the maps' sampler slot,
+                                   // kMat* bits, emissive image slot
 };
+enum : uint32_t { kMatPbr = 1, kMatBase = 2, kMatAlbedo = 4, kMatEmissive = 8, kMatPicked = 16 };   // DrawTransform
+                                                 // mat[2]: has an ORM map; it is the ground base's; stage 0 draws an
+                                                 // albedo map; has an emissive map; its texture was picked
 // GPU-driven M2: one record a draw (binding 12). `constIndex` selects the shared DrawConstants it draws with; the
 // record is picked by a push constant until M3 replaces that with gl_DrawID.
 struct DrawRecord {
@@ -93,6 +98,9 @@ struct FrameLights {               // binding 4: per-frame data (constants.glsl 
     float shadowParams[4];         // enabled, strength, cascade count, point light shadow strength
     float sunDir[4];               // w: light headroom (F_OVERBRIGHT)
     float sunColor[4];             // the shadow-casting sun's colour (0 = none)
+    float pbr[4];                  // PBR materials: direct specular, ambient specular, reflections, occlusion map strength
+    float pbr2[4];                 // x: debug view (0 = off), y: 1 = PBR on, z: emissive maps' brightness, w: the
+                                   // environment probe (bits: draw.cpp FillFrameLights)
     d3d::Matrix prevView, prevProj; // motion vectors: the world camera last frame (applied like view and proj, so a
                                    // still camera's motion is exactly zero)
     float pushers[kPushers][4];    // what plants bend away from (characters' feet and trails): world x, y, z, seconds

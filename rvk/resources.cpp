@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <utility>
 
 namespace rvk {
 
@@ -442,10 +443,11 @@ void Device::DestroyTexture(Texture* texture)
     if (m_target == texture)
         SetRenderTarget(nullptr);
     ForgetCasterTexture(texture);
-    if (texture->m_normalMap) {
-        DestroyTexture(texture->m_normalMap);
-        texture->m_normalMap = nullptr;
-    }
+    for (Texture** map : {&texture->m_normalMap, &texture->m_ormMap, &texture->m_albedoMap, &texture->m_emissiveMap})
+        if (*map) {
+            DestroyTexture(*map);
+            *map = nullptr;
+        }
     if (HoldParticleTexture(texture))
         return;                                  // freed once the particles drawn with it have faded out
     m_deadTextures.push_back({DeathTag(), texture});   // freed once every submission that may use it is done
@@ -459,6 +461,35 @@ void Device::SetNormalMap(Texture* texture, Texture* normal)
         DestroyTexture(texture->m_normalMap);
     texture->m_normalMap = normal;
     m_constantsDirty = true;
+}
+
+void Device::SetMaterialMaps(Texture* texture, Texture* orm, Texture* albedo)
+{
+    if (!texture)
+        return;
+    for (auto [map, now] : {std::pair{&texture->m_ormMap, orm}, std::pair{&texture->m_albedoMap, albedo}})
+        if (*map != now) {
+            if (*map) DestroyTexture(*map);
+            *map = now;
+        }
+    m_constantsDirty = true;
+}
+
+void Device::SetEmissiveMap(Texture* texture, Texture* emissive)
+{
+    if (!texture || texture->m_emissiveMap == emissive)
+        return;
+    if (texture->m_emissiveMap)
+        DestroyTexture(texture->m_emissiveMap);
+    texture->m_emissiveMap = emissive;
+    m_constantsDirty = true;
+}
+
+void Device::SetPbr(const PbrSettings& s)
+{
+    m_pbr = s;
+    m_constantsDirty = true;
+    m_frameLightsDirty = true;
 }
 
 void Device::DestroyTextureNow(Texture* t)

@@ -1,6 +1,43 @@
 // Direct3D 7 lighting equation, shared by the per-vertex (ffp.vert) and per-pixel (ffp.frag) paths.
 // Requires constants.glsl and a function float PointShadow(Light l, vec3 posW, vec3 normalW, float nl) (visibility of
 // a frame light with a cube shadow map). Accumulates the light terms; the caller combines them with the material colours.
+
+// PBR materials (ffp.frag, D.mat.z & MAT_PBR): set before AccumulateLights. The diffuse terms stay the game's
+// (the caller weighs them by 1 - metallic); the specular term is GGX with the material's roughness and F0 instead of
+// D3D's Blinn-Phong, lit by each light's diffuse colour (the game's specular colours are mostly black).
+bool gPbr = false;
+float gPbrAlpha = 0.25;          // GGX alpha (roughness squared, widened by the normal's variance)
+vec3 gPbrF0 = vec3(0.04);        // reflectance facing the surface: 4% for non-metals, the albedo for metals
+float gPbrSunVisibility = 1.0;   // how much of the sun reaches the pixel, fully (the sun's highlight, see below)
+
+const float kPbrPi = 3.14159265;
+
+// GGX / height-correlated Smith / Schlick, times nl, in the game's light units: its Lambert term is albedo x nl
+// (no 1 / pi), so the specular BRDF is scaled by pi to match.
+vec3 PbrSpecular(vec3 n, vec3 L, vec3 V)
+{
+    float nl = max(dot(n, L), 0.0);
+    if (nl <= 0.0) return vec3(0.0);
+    vec3 H = normalize(L + V);
+    float nh = max(dot(n, H), 0.0), nv = max(dot(n, V), 1e-4), vh = max(dot(V, H), 0.0);
+    float a2 = gPbrAlpha * gPbrAlpha;
+    float d = nh * nh * (a2 - 1.0) + 1.0;
+    float ndf = a2 / (kPbrPi * d * d);
+    float vis = 0.5 / (nl * sqrt(nv * nv * (1.0 - a2) + a2) + nv * sqrt(nl * nl * (1.0 - a2) + a2) + 1e-5);
+    float f = pow(1.0 - vh, 5.0);
+    vec3 F = gPbrF0 + (1.0 - gPbrF0) * f;
+    return F * (ndf * vis * nl * kPbrPi);
+}
+
+// The split-sum environment term without its lookup table (Karis, "Physically Based Shading on Mobile").
+vec3 EnvBrdfApprox(vec3 f0, float roughness, float nv)
+{
+    const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022), c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+    vec4 r = roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
+    vec2 ab = vec2(-1.04, 1.04) * a004 + r.zw;
+    return f0 * ab.x + ab.y;
+}
 void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScale, float localScale, inout vec3 ambient,
                      inout vec3 diff, inout vec3 spec)
 {
@@ -36,7 +73,14 @@ void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScal
     if (l.spot.z > 0.0 && nl > 0.0 && att > 0.0)
         att *= PointShadow(l, posW, normalW, nl);   // shadows take the light's diffuse and specular, not its ambient
     diff += att * nl * l.diffuse.rgb;
-    if ((C.flags.x & F_SPECULAR) != 0u && nl > 0.0) {
+    if (gPbr) {
+        // The sun's highlight is shadowed fully (sunScale keeps part of the sunlight in full shadow - baked-looking
+        // shade - but a highlight has none to keep) and fades as the sun nears the horizon: a low sun's highlight at
+        // grazing angles is the brightest there is, on surfaces its long shadows (beyond the cascades) should cover.
+        float a = type == 3u ? gPbrSunVisibility * smoothstep(0.03, 0.25, L.y) : att;
+        if (nl > 0.0 && a > 0.0)
+            spec += a * l.diffuse.rgb * PbrSpecular(normalize(normalW), L, toEye);
+    } else if ((C.flags.x & F_SPECULAR) != 0u && nl > 0.0) {
         float nh = max(dot(normalW, normalize(L + toEye)), 0.0);
         spec += att * pow(nh, C.misc.x) * l.specular.rgb;
     }
@@ -46,7 +90,7 @@ void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScal
 void AccumulateLights(vec3 posW, vec3 normalW, float sunScale, float localScale, inout vec3 ambient, inout vec3 diff,
                       inout vec3 spec, inout vec3 diffLocal, inout vec3 specLocal)
 {
-    vec3 toEye = (C.flags.x & F_LOCALVIEWER) != 0u ? normalize(C.eyePos.xyz - posW) : -C.eyeDir.xyz;
+    vec3 toEye = (C.flags.x & F_LOCALVIEWER) != 0u || gPbr ? normalize(C.eyePos.xyz - posW) : -C.eyeDir.xyz;
     for (uint i = 0u; i < C.lightInfo.x; ++i)
         AccumulateLight(C.lights[i], posW, normalW, toEye, sunScale, localScale, ambient, diff, spec);
     // Only the frame lights whose range reaches the draw's bounding box (the CPU's mask): most draws have none or a

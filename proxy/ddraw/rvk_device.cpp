@@ -710,7 +710,8 @@ void NoteVisual(rvk::ThreadedDevice* dev)
     using Kind = rnative::scene::Kind;
     if (visual && list == 0 && info.kind != Kind::Character && info.kind != Kind::CharacterPart)
         info.kind = Kind::Sky;
-    dev->SetDrawVisual(uint32_t(info.kind), info.className, uint32_t(reinterpret_cast<uintptr_t>(info.owner)));
+    dev->SetDrawVisual(uint32_t(info.kind), info.className, uint32_t(reinterpret_cast<uintptr_t>(info.owner)),
+                       uint32_t(reinterpret_cast<uintptr_t>(visual)));
 }
 
 // The game's lights after its scene update (native scene tracking), to the renderer.

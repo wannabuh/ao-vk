@@ -130,6 +130,12 @@ public:
     void SetBump(float strength);
     void SetNormalMaps(bool enable, float strength);
     void SetNormalMap(Texture* texture, Texture* normal);   // the device owns `normal` from here on
+    void SetMaterialMaps(Texture* texture, Texture* orm, Texture* albedo);   // ... and these
+    void SetEmissiveMap(Texture* texture, Texture* emissive);               // ... and this
+    void RequestPick(float x, float y);
+    Device::PickResult LastPick() const { return m_device.LastPick(); }   // (thread-safe)
+    void SetPickHighlight(Texture* t);
+    void SetPbr(const Device::PbrSettings& s);
     void SetDrawProcessed(bool processed);
     void SetAnisotropy(uint32_t level);
     void SetMotionBlur(float strength, float focusNear);
@@ -155,7 +161,7 @@ public:
     void DrawWater(const Device::WaterVertex* vertices, uint32_t vertexCount, const uint16_t* indices, uint32_t indexCount);
     bool WaterReady() const { return m_device.WaterReady(); }
     void SetTexture(uint32_t stage, Texture* texture);
-    void SetDrawVisual(uint32_t kind, const char* className, uint32_t owner = 0);   // className: stays valid (RTTI)
+    void SetDrawVisual(uint32_t kind, const char* className, uint32_t owner = 0, uint32_t visual = 0);   // className: stays valid (RTTI)
     void SetSceneLights(const Device::SceneLight* lights, uint32_t count);   // copied
     void SetRenderTarget(Texture* target);
     Texture* GetRenderTarget() const { return m_target; }
@@ -269,14 +275,14 @@ private:
         d3d::Light light;
     };
     struct PendingHead {                               // a draw record's prefix: this, `states` StateItems, `lights` LightOps
-        uint32_t states, lights, hasWorld, hasMaterial, hasVisual, visualKind, visualOwner;
+        uint32_t states, lights, hasWorld, hasMaterial, hasVisual, visualKind, visualOwner, visual;
         const char* visualName;
         d3d::Matrix world;
         d3d::Material material;
     };
     std::vector<LightOp> m_pendingLights;
     bool m_hasPendingVisual = false;
-    uint32_t m_pendingVisualKind = 0, m_pendingVisualOwner = 0;
+    uint32_t m_pendingVisualKind = 0, m_pendingVisualOwner = 0, m_pendingVisual = 0;
     const char* m_pendingVisualName = nullptr;
     bool m_coalesce = true;
     bool m_hasPendingWorld = false, m_hasPendingMaterial = false;

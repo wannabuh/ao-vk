@@ -556,6 +556,7 @@ void ThreadedDevice::WritePending(uint8_t* out)
     head.hasVisual = m_hasPendingVisual ? 1u : 0u;
     head.visualKind = m_pendingVisualKind;
     head.visualOwner = m_pendingVisualOwner;
+    head.visual = m_pendingVisual;
     head.visualName = m_pendingVisualName;
     std::memcpy(out, &head, sizeof(head));
     out += sizeof(head);
@@ -584,7 +585,7 @@ void ThreadedDevice::ApplyPending(const uint8_t* in)
             m_device.SetLight(op.index, op.light);
     }
     if (head.hasVisual)
-        m_device.SetDrawVisual(head.visualKind, head.visualName, head.visualOwner);
+        m_device.SetDrawVisual(head.visualKind, head.visualName, head.visualOwner, head.visual);
     if (head.hasWorld)
         m_device.SetTransform(d3d::World, head.world);
     if (head.hasMaterial)
@@ -784,6 +785,31 @@ void ThreadedDevice::SetDrawProcessed(bool processed)
 void ThreadedDevice::SetNormalMap(Texture* texture, Texture* normal)
 {
     Enqueue([this, texture, normal](const uint8_t*) { m_device.SetNormalMap(texture, normal); });
+}
+
+void ThreadedDevice::SetMaterialMaps(Texture* texture, Texture* orm, Texture* albedo)
+{
+    Enqueue([this, texture, orm, albedo](const uint8_t*) { m_device.SetMaterialMaps(texture, orm, albedo); });
+}
+
+void ThreadedDevice::SetEmissiveMap(Texture* texture, Texture* emissive)
+{
+    Enqueue([this, texture, emissive](const uint8_t*) { m_device.SetEmissiveMap(texture, emissive); });
+}
+
+void ThreadedDevice::RequestPick(float x, float y)
+{
+    Enqueue([this, x, y](const uint8_t*) { m_device.RequestPick(x, y); });
+}
+
+void ThreadedDevice::SetPickHighlight(Texture* t)
+{
+    Enqueue([this, t](const uint8_t*) { m_device.SetPickHighlight(t); });
+}
+
+void ThreadedDevice::SetPbr(const Device::PbrSettings& s)
+{
+    Enqueue([this, s](const uint8_t*) { m_device.SetPbr(s); });
 }
 
 void ThreadedDevice::SetAo(float strength, float radius)
@@ -1166,7 +1192,7 @@ void ThreadedDevice::DrawIndexedPrimitiveSharedRetained(uint32_t primitive, uint
     });
 }
 
-void ThreadedDevice::SetDrawVisual(uint32_t kind, const char* className, uint32_t owner)
+void ThreadedDevice::SetDrawVisual(uint32_t kind, const char* className, uint32_t owner, uint32_t visual)
 {
     m_curVisualName = className;
     m_curVisualKind = kind;
@@ -1175,9 +1201,12 @@ void ThreadedDevice::SetDrawVisual(uint32_t kind, const char* className, uint32_
         m_pendingVisualKind = kind;
         m_pendingVisualName = className;
         m_pendingVisualOwner = owner;
+        m_pendingVisual = visual;
         return;
     }
-    Enqueue([this, kind, className, owner](const uint8_t*) { m_device.SetDrawVisual(kind, className, owner); });
+    Enqueue([this, kind, className, owner, visual](const uint8_t*) {
+        m_device.SetDrawVisual(kind, className, owner, visual);
+    });
 }
 
 void ThreadedDevice::SetSceneLights(const Device::SceneLight* lights, uint32_t count)

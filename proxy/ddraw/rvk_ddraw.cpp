@@ -181,6 +181,7 @@ void RvkState::Present()
         rnative::gui::Install();   // GUI.dll's interface drawing (RVK_UiRate), once it is loaded
     Frame();                  // a present without any rendering still shows a frame
     device->EndFrame();
+    PollMaterialMaps();       // material maps decoded in the background, uploaded between frames
     ParticleFrame();
     // Hotkeys (Ctrl+Shift+...). Those for options change the setting (saved, shown in the settings window).
     bool chord = (GetAsyncKeyState(VK_CONTROL) & 0x8000) && (GetAsyncKeyState(VK_SHIFT) & 0x8000);
@@ -197,7 +198,7 @@ void RvkState::Present()
         {VK_F10, "RVK_PixelLight"}, {VK_F7, "RVK_SunShadow"}, {VK_F5, "RVK_Hdr"}, {VK_F8, "RVK_LightOver"},
         {'N', "RVK_MBlurObj"}, {'D', "RVK_Dof"}, {'P', "RVK_Particles"}, {'T', "RVK_Taa"},
         {'E', "RVK_Enhance"}, {'M', "RVK_MBlurOn"}, {VK_F2, "RVK_BumpOn"}, {VK_F3, "RVK_AoOn"}, {VK_F4, "RVK_BloomOn"},
-        {VK_F6, "RVK_PtOn"}, {'G', "RVK_GiOn"}, {'V', "RVK_VolOn"}, {'R', "RVK_SsrOn"},
+        {VK_F6, "RVK_PtOn"}, {'G', "RVK_GiOn"}, {'V', "RVK_VolOn"}, {'R', "RVK_SsrOn"}, {'B', "RVK_Pbr"},
     };
     for (const Toggle& t : kToggles)
         if (pressed(t.key))
@@ -230,7 +231,115 @@ void RvkState::Present()
         if (dn || upKey)
             rvk_settings::Set(s.setting, rvk_settings::Get(s.setting) + (upKey ? s.step : -s.step));
     }
+    // Ctrl+Shift+K: the PBR debug views in turn - which surfaces have maps (7), emitted light (8), reflected
+    // surroundings (9), roughness, metallic,
+    // occlusion, albedo, normals, highlights only, off. Switches PBR materials on.
+    if (pressed('K')) {
+        static const int kOrder[] = {0, 7, 8, 9, 2, 3, 4, 1, 5, 6};
+        constexpr int kViews = int(sizeof(kOrder) / sizeof(kOrder[0]));
+        int now = int(rvk_settings::Get("RVK_PbrDebug") + 0.5f), next = 7;
+        for (int i = 0; i < kViews; ++i)
+            if (kOrder[i] == now) next = kOrder[(i + 1) % kViews];
+        if (rvk_settings::Get("RVK_Pbr") == 0.0f)
+            rvk_settings::Set("RVK_Pbr", 1.0f);
+        rvk_settings::Set("RVK_PbrDebug", float(next));
+        static const char* const kNames[] = {"off", "albedo", "roughness", "metallic", "occlusion", "normals",
+                                             "highlights only", "which surfaces have maps", "emitted light only",
+                                             "reflected surroundings"};
+        RvkLog("PBR debug view: %s", kNames[next]);
+    }
     rvk_settings::PollIni(device);              // randy-vk.ini edited while the game runs
+    // Ctrl+Shift+I: which texture is under the mouse (texture picking, for making material maps): the next frame's
+    // nearest 3D surface there - logged ("pick: RDB texture 1010004:55900 'name', 256x256; maps: ..."), its "type:id"
+    // copied to the clipboard, and its surfaces flash yellow for three seconds. Ctrl+Shift+J: the same for the mesh
+    // there ("pick: RDB mesh 1010001:3545"; characters: their model) - the ao-assets workbench follows last-pick.txt.
+    static int picking = 0;                       // 0 no, 'I' texture, 'J' mesh
+    static uint32_t pickBefore = 0;
+    static ULONGLONG highlightUntil = 0;
+    // RANDYVK_PICK_AT=frame,x,y,I|J (x, y 0..1): a pick as if the key were pressed then (tests without the game).
+    static int pickAtFrame = -2, pickAtKey = 0;
+    static float pickAtX = 0.5f, pickAtY = 0.5f;
+    static int frameCount = 0;
+    ++frameCount;
+    if (pickAtFrame == -2) {
+        char v[64] = {};
+        char key = 0;
+        pickAtFrame = GetEnvironmentVariableA("RANDYVK_PICK_AT", v, sizeof(v)) &&
+                              std::sscanf(v, "%d,%f,%f,%c", &pickAtFrame, &pickAtX, &pickAtY, &key) == 4
+                          ? pickAtFrame : -1;
+        pickAtKey = key == 'J' || key == 'j' ? 'J' : 'I';
+    }
+    if (frameCount == pickAtFrame) {
+        pickBefore = device->LastPick().serial;
+        device->RequestPick(pickAtX, pickAtY);
+        picking = pickAtKey;
+    }
+    for (int key : {'I', 'J'})
+        if (pressed(key) && window) {
+            POINT p;
+            RECT r;
+            if (GetCursorPos(&p) && ScreenToClient(window, &p) && GetClientRect(window, &r) && r.right > 0 &&
+                r.bottom > 0) {
+                pickBefore = device->LastPick().serial;
+                device->RequestPick(float(p.x) / float(r.right), float(p.y) / float(r.bottom));
+                picking = key;
+            }
+        }
+    if (picking) {
+        rvk::Device::PickResult result = device->LastPick();
+        if (result.serial != pickBefore) {
+            const bool mesh = picking == 'J';
+            picking = 0;
+            std::string reference;
+            RvkLog("pick: %s", mesh ? DescribeMesh(result.visual, result.owner, result.kind, &reference).c_str()
+                                    : DescribeTexture(result.texture, &reference).c_str());
+            // A mesh randy-vk can't name (static meshes: read from their .abiff where no hook sees it): what was drawn
+            // - its texture and vertex / index counts - for the ao-assets workbench, whose index matches it to a mesh.
+            if (mesh && reference.empty() && result.visual) {
+                std::string texture;
+                DescribeTexture(result.texture, &texture);
+                if (!texture.empty()) {
+                    reference = "geometry " + texture + " " + std::to_string(result.vertices) + " " +
+                                std::to_string(result.indices);
+                    RvkLog("pick: drawn with RDB texture %s, %u vertices, %u indices (the workbench looks it up)",
+                           texture.c_str(), result.vertices, result.indices);
+                }
+            }
+            bool copied = false;
+            if (!reference.empty() && OpenClipboard(window)) {
+                EmptyClipboard();
+                if (HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, reference.size() + 1)) {
+                    std::memcpy(GlobalLock(h), reference.c_str(), reference.size() + 1);
+                    GlobalUnlock(h);
+                    copied = SetClipboardData(CF_TEXT, h) != nullptr;
+                    if (!copied)
+                        GlobalFree(h);
+                }
+                CloseClipboard();
+            }
+            // ... and into last-pick.txt next to the log: Wine's Wayland driver doesn't hand the Windows clipboard to
+            // the desktop's, so ao-wine.sh copies the file with wl-copy when it changes.
+            if (!reference.empty()) {
+                char path[MAX_PATH] = "randy-vk.log";
+                GetEnvironmentVariableA("RANDYVK_LOG", path, sizeof(path));
+                std::string pick(path);
+                const size_t slash = pick.find_last_of("\\/");
+                pick = (slash == std::string::npos ? std::string() : pick.substr(0, slash + 1)) + "last-pick.txt";
+                if (FILE* f = std::fopen(pick.c_str(), "w")) {
+                    std::fputs(reference.c_str(), f);
+                    std::fclose(f);
+                }
+                RvkLog("pick: %s %s, written to %s", reference.c_str(),
+                       copied ? "copied to the Windows clipboard" : "not copied to the clipboard", pick.c_str());
+            }
+            device->SetPickHighlight(result.texture);
+            highlightUntil = result.texture ? GetTickCount64() + 3000 : 0;
+        }
+    }
+    if (highlightUntil && GetTickCount64() > highlightUntil) {
+        device->SetPickHighlight(nullptr);
+        highlightUntil = 0;
+    }
     // Ctrl+Shift+L: reload the colour lookup tables (randy-vk-day/night.cube).
     if (pressed('L'))
         rvk_settings::LoadLuts(device);

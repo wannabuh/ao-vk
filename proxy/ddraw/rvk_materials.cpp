@@ -1,8 +1,19 @@
-// Material maps for RDB textures, side-loaded from <client>\randy-vk\materials\:
-//   <type>_<id>_n.png    tangent-space normal map (OpenGL convention, as Blender bakes; any size); <type> is the
-//                        full-quality table (1010004 world, 1010006 ground), which also covers its lower levels
-//   <id>_n.png           the same, any type (fallback)
-// ao-assets writes these names (python -m aoassets material-template).
+// Material maps for RDB textures, side-loaded from <client>\randy-vk\materials\ (any size each):
+//   <type>_<id>_n.png    tangent-space normal map (OpenGL convention, as Blender bakes); <type> is the full-quality
+//                        table (1010004 world, 1010006 ground, 1010011 character skins), which also covers its lower
+//                        levels
+//   <type>_<id>_orm.png  PBR material, glTF packing: R occlusion, G roughness, B metallic
+//   <type>_<id>_r.png, _m.png, _ao.png   ... or separate greyscale roughness / metallic / occlusion maps (packed here;
+//                        a missing one is roughness 1, metallic 0, occlusion 1). Ignored when there is an _orm.png.
+//   <type>_<id>_d.png    albedo (diffuse colour): drawn instead of the game's texture, alpha included
+//   <type>_<id>_e.png    emissive: the light the surface gives off (black = none), added after its lighting
+//   <id>_<suffix>        any of these for any type (fallback)
+// ao-assets writes these names (python -m aoassets material-template / import).
+//
+// Hot reload (RANDYVK_HOTRELOAD=1): both materials\ and live\ (the ao-assets workbench's previews of checked-out
+// assets) are watched; when a texture's files change, its maps are decoded again and replace what every surface of it
+// had (a map that's gone is removed). A texture id with any file in live\ takes its maps from there only;
+// <type>_<id>_live.png alone means "previewed, no maps".
 //
 // Identity (see HOOKED_EXPORTS in tools/gen_interface.py; the hooks call the original, then record the identity on the
 // surface_t's IDirectDrawSurface7 when it is one of ours):
@@ -17,18 +28,25 @@
 
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <deque>
+#include <list>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include "rvk_backend.h"
+#include "native/native.h"
 
-#define STBI_NO_HDR
-#define STBI_NO_LINEAR
-#include "stb/stb_image.h"
+#include "material_maps.h"
 
 namespace rvkproxy {
 
@@ -49,7 +67,7 @@ bool Readable(const void* p, size_t n)
     return static_cast<const uint8_t*>(p) + n <= end;
 }
 
-enum class Kind { Other, AnarchyTexCreator, RDBGroundTexture };
+enum class Kind { Other, AnarchyTexCreator, RDBGroundTexture, RDBMesh, RDBCATMesh };
 
 // Class of a polymorphic object from its vtable's complete object locator (x86: vtable[-1] -> COL, COL+12 -> type
 // descriptor, name at +8, e.g. ".?AVAnarchyTexCreator_t@@").
@@ -69,10 +87,15 @@ Kind ClassOf(const void* object)
         if (Readable(col, 16)) {
             const uint8_t* td = *reinterpret_cast<const uint8_t* const*>(col + 12);
             static const char kTex[] = ".?AVAnarchyTexCreator_t@@", kGround[] = ".?AVRDBGroundTexture_t@@";
+            static const char kMesh[] = ".?AVRDBMesh_t@@", kCat[] = ".?AVRDBCATMesh_t@@";
             if (Readable(td + 8, sizeof(kTex)) && std::memcmp(td + 8, kTex, sizeof(kTex)) == 0)
                 kind = Kind::AnarchyTexCreator;
             else if (Readable(td + 8, sizeof(kGround)) && std::memcmp(td + 8, kGround, sizeof(kGround)) == 0)
                 kind = Kind::RDBGroundTexture;
+            else if (Readable(td + 8, sizeof(kMesh)) && std::memcmp(td + 8, kMesh, sizeof(kMesh)) == 0)
+                kind = Kind::RDBMesh;
+            else if (Readable(td + 8, sizeof(kCat)) && std::memcmp(td + 8, kCat, sizeof(kCat)) == 0)
+                kind = Kind::RDBCATMesh;
         }
     }
     cache.emplace(vtable, kind);
@@ -93,15 +116,67 @@ bool IsGroundMaker(const void* p)
     return (type == 1010006 || type == 1010021 || type == 1010022) && U32(p, 0x20) == 0;
 }
 
-// ---------------------------------------------------------------- material folder
-std::string g_dir;
-std::unordered_set<std::string> g_files;   // lower-case names in the folder
+// The lower texture quality levels are other tables with the same ids: the ground's 1010021/22 for 1010006, the
+// world's 1010016/17 for 1010004. A map is named after the full-quality table and serves every level.
+uint32_t FullQualityType(uint32_t type)
+{
+    switch (type) {
+    case 1010021: case 1010022: return 1010006;
+    case 1010016: case 1010017: return 1010004;
+    case 1010019: case 1010020: return 1010011;
+    default: return type;
+    }
+}
+
+uint64_t KeyOf(uint32_t type, uint32_t id) { return uint64_t(FullQualityType(type)) << 32 | id; }
+
+// ---------------------------------------------------------------- material folders
+struct Folder {
+    std::string dir;
+    std::unordered_map<std::string, uint64_t> files;   // lower-case name -> last write time ^ size (hot reload)
+};
+Folder g_mat, g_live;                         // materials\ (applied maps), live\ (workbench previews, hot reload only)
+std::unordered_set<uint64_t> g_liveKeys;      // texture ids with any file in live\ (their maps come from there only)
 bool g_scanned = false;
+bool g_hot = false;                           // RANDYVK_HOTRELOAD=1
 
 std::string Lower(std::string s)
 {
     for (char& c : s) c = char(tolower(static_cast<unsigned char>(c)));
     return s;
+}
+
+void ScanFolder(Folder& f)
+{
+    f.files.clear();
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA((f.dir + "*.png").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+    do {
+        uint64_t stamp = (uint64_t(fd.ftLastWriteTime.dwHighDateTime) << 32 | fd.ftLastWriteTime.dwLowDateTime)
+                         ^ (uint64_t(fd.nFileSizeHigh) << 32 | fd.nFileSizeLow);
+        f.files.emplace(Lower(fd.cFileName), stamp);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+}
+
+// "<type>_<id>_..." -> its texture key (0 for other names).
+uint64_t KeyOfName(const std::string& name)
+{
+    unsigned type = 0, id = 0;
+    char sep = 0;
+    if (std::sscanf(name.c_str(), "%u_%u%c", &type, &id, &sep) == 3 && sep == '_' && type >= 1000000)
+        return KeyOf(type, id);
+    return 0;
+}
+
+void RebuildLiveKeys()
+{
+    g_liveKeys.clear();
+    for (auto& [name, stamp] : g_live.files)
+        if (uint64_t key = KeyOfName(name))
+            g_liveKeys.insert(key);
 }
 
 void Scan()
@@ -116,96 +191,206 @@ void Scan()
     GetModuleFileNameA(self, path, MAX_PATH);
     char* slash = std::strrchr(path, '\\');
     if (slash) slash[1] = 0; else path[0] = 0;
-    g_dir = std::string(path) + "randy-vk\\materials\\";
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA((g_dir + "*.png").c_str(), &fd);
-    if (h != INVALID_HANDLE_VALUE) {
-        do g_files.insert(Lower(fd.cFileName));
-        while (FindNextFileA(h, &fd));
-        FindClose(h);
+    g_mat.dir = std::string(path) + "randy-vk\\materials\\";
+    g_live.dir = std::string(path) + "randy-vk\\live\\";
+    char hot[8] = {};
+    g_hot = GetEnvironmentVariableA("RANDYVK_HOTRELOAD", hot, sizeof(hot)) && hot[0] == '1';
+    ScanFolder(g_mat);
+    if (g_hot) {
+        CreateDirectoryA(g_live.dir.c_str(), nullptr);
+        ScanFolder(g_live);
+        RebuildLiveKeys();
     }
-    RvkLog("materials: %u files in %s", unsigned(g_files.size()), g_dir.c_str());
-}
-
-// The lower texture quality levels are other tables with the same ids: the ground's 1010021/22 for 1010006, the
-// world's 1010016/17 for 1010004. A map is named after the full-quality table and serves every level.
-uint32_t FullQualityType(uint32_t type)
-{
-    switch (type) {
-    case 1010021: case 1010022: return 1010006;
-    case 1010016: case 1010017: return 1010004;
-    default: return type;
-    }
+    RvkLog("materials: %u files in %s%s", unsigned(g_mat.files.size()), g_mat.dir.c_str(),
+           g_hot ? "; hot reload on (watching it and live\\)" : "");
 }
 
 std::string FindMap(uint32_t type, uint32_t id, const char* suffix)
 {
     Scan();
+    const Folder& f = g_liveKeys.count(KeyOf(type, id)) ? g_live : g_mat;
     for (uint32_t t : {FullQualityType(type), type}) {
         std::string a = std::to_string(t) + "_" + std::to_string(id) + suffix;
-        if (g_files.count(a)) return g_dir + a;
+        if (f.files.count(a)) return f.dir + a;
     }
     std::string b = std::to_string(id) + suffix;
-    if (g_files.count(b)) return g_dir + b;
+    if (f.files.count(b)) return f.dir + b;
     return {};
 }
 
-// ---------------------------------------------------------------- normal map loading
-// RGBA8 -> mip chain of A8R8G8B8 (BGRA bytes). Normal maps: each level averages the decoded normals of the level
-// above and renormalises them, so distant surfaces don't flatten or tilt.
-rvk::Texture* LoadNormalMap(const std::string& path, rvk::ThreadedDevice* dev)
+// ---------------------------------------------------------------- map loading (rvk/material_maps.h)
+// Decoding takes time (a 1024 x 1024 normal map and material about 100 ms), so it runs on a worker thread: a
+// texture asks for its maps (AttachMaterialMaps), the worker decodes them, and PollMaterialMaps (each present, on the
+// game's thread like every device call) uploads them to every surface still waiting for that texture id. Decoded
+// maps stay in a small cache: a texture's other quality levels, and textures made again for the same id (zoning),
+// follow soon after.
+constexpr size_t kCacheBytes = 96u << 20;          // decoded maps kept (the client is a 32-bit process)
+constexpr size_t kUploadBytesPerFrame = 48u << 20; // uploads spread over frames past this
+
+rvk::maps::MaterialFiles FilesFor(uint32_t type, uint32_t id)
 {
-    int w = 0, h = 0, n = 0;
-    stbi_uc* rgba = stbi_load(path.c_str(), &w, &h, &n, 4);
-    if (!rgba) {
-        RvkLog("materials: can't read %s (%s)", path.c_str(), stbi_failure_reason());
-        return nullptr;
-    }
-    std::vector<float> nrm(size_t(w) * h * 3);
-    for (size_t i = 0; i < size_t(w) * h; ++i)
-        for (int c = 0; c < 3; ++c)
-            nrm[i * 3 + c] = rgba[i * 4 + c] / 127.5f - 1.0f;
-    stbi_image_free(rgba);
-    uint32_t levels = 1;
-    for (int s = std::max(w, h); s > 1; s >>= 1) ++levels;
-    rvk::Texture* tex = dev->CreateTexture(uint32_t(w), uint32_t(h), rvk::Format::A8R8G8B8, levels);
-    if (!tex)
-        return nullptr;
-    std::vector<uint32_t> out;
-    for (uint32_t level = 0; level < levels; ++level) {
-        out.resize(size_t(w) * h);
-        for (size_t i = 0; i < out.size(); ++i) {
-            float x = nrm[i * 3], y = nrm[i * 3 + 1], z = nrm[i * 3 + 2];
-            float len = std::sqrt(x * x + y * y + z * z);
-            if (len < 1e-6f) { x = y = 0.0f; z = 1.0f; len = 1.0f; }
-            auto enc = [&](float v) { return uint32_t(std::lround(std::clamp((v / len) * 0.5f + 0.5f, 0.0f, 1.0f) * 255.0f)); };
-            out[i] = 0xFF000000u | enc(x) << 16 | enc(y) << 8 | enc(z);
-        }
-        dev->UpdateTexture(tex, level, 0, 0, uint32_t(w), uint32_t(h), out.data(), uint32_t(w) * 4);
-        if (level + 1 == levels)
-            break;
-        int nw = std::max(w / 2, 1), nh = std::max(h / 2, 1);
-        std::vector<float> next(size_t(nw) * nh * 3, 0.0f);
-        for (int y = 0; y < nh; ++y)
-            for (int x = 0; x < nw; ++x)
-                for (int dy = 0; dy < 2; ++dy)
-                    for (int dx = 0; dx < 2; ++dx) {
-                        int sx = std::min(x * 2 + dx, w - 1), sy = std::min(y * 2 + dy, h - 1);
-                        for (int c = 0; c < 3; ++c)
-                            next[(size_t(y) * nw + x) * 3 + c] += nrm[(size_t(sy) * w + sx) * 3 + c] * 0.25f;
-                    }
-        nrm.swap(next);
-        w = nw;
-        h = nh;
-    }
-    return tex;
+    rvk::maps::MaterialFiles f;
+    f.normal = FindMap(type, id, "_n.png");
+    f.packed = FindMap(type, id, "_orm.png");
+    f.parts[0] = FindMap(type, id, "_ao.png");
+    f.parts[1] = FindMap(type, id, "_r.png");
+    f.parts[2] = FindMap(type, id, "_m.png");
+    f.albedo = FindMap(type, id, "_d.png");
+    f.emissive = FindMap(type, id, "_e.png");
+    return f;
 }
 
-unsigned g_registered = 0, g_attached = 0;
+using DecodedPtr = std::shared_ptr<const rvk::maps::Decoded>;
+
+// Worker thread and its queues (never destroyed: the thread may still wait on them while the process exits).
+struct Worker {
+    std::mutex mutex;
+    std::condition_variable wake;
+    struct Job { uint64_t key; uint32_t gen; rvk::maps::MaterialFiles files; };
+    struct Done { uint64_t key; uint32_t gen; DecodedPtr decoded; };
+    std::deque<Job> jobs;
+    std::vector<Done> done;
+};
+Worker* g_worker = nullptr;
+
+void WorkerLoop(Worker* w)
+{
+    for (;;) {
+        Worker::Job job;
+        {
+            std::unique_lock<std::mutex> lock(w->mutex);
+            w->wake.wait(lock, [w] { return !w->jobs.empty(); });
+            job = std::move(w->jobs.front());
+            w->jobs.pop_front();
+        }
+        auto decoded = std::make_shared<rvk::maps::Decoded>(rvk::maps::Decode(job.files));
+        std::lock_guard<std::mutex> lock(w->mutex);
+        w->done.push_back({job.key, job.gen, std::move(decoded)});
+    }
+}
+
+// Game thread only from here.
+struct Waiter {
+    RSurface* top;
+    rvk::Texture* texture;                         // the texture it asked for (a re-created one asks again)
+};
+std::unordered_map<uint64_t, std::vector<Waiter>> g_waiting;   // by texture id, until its maps are decoded
+std::list<std::pair<uint64_t, DecodedPtr>> g_cache;            // most recently used first
+std::unordered_map<uint64_t, std::list<std::pair<uint64_t, DecodedPtr>>::iterator> g_cacheIndex;
+size_t g_cacheBytes = 0;
+std::deque<std::pair<Waiter, DecodedPtr>> g_uploads;           // decoded, not yet uploaded (kUploadBytesPerFrame)
+std::unordered_map<uint64_t, uint32_t> g_gen;                  // bumped by a hot reload: older decodes are dropped
+
+DecodedPtr CacheGet(uint64_t key)
+{
+    auto it = g_cacheIndex.find(key);
+    if (it == g_cacheIndex.end())
+        return nullptr;
+    g_cache.splice(g_cache.begin(), g_cache, it->second);
+    return it->second->second;
+}
+
+void CacheErase(uint64_t key)
+{
+    auto it = g_cacheIndex.find(key);
+    if (it == g_cacheIndex.end())
+        return;
+    g_cacheBytes -= it->second->second->Bytes();
+    g_cache.erase(it->second);
+    g_cacheIndex.erase(it);
+}
+
+void CachePut(uint64_t key, DecodedPtr d)
+{
+    if (g_cacheIndex.count(key) || d->Bytes() > kCacheBytes / 2)
+        return;
+    g_cache.emplace_front(key, d);
+    g_cacheIndex[key] = g_cache.begin();
+    g_cacheBytes += d->Bytes();
+    while (g_cacheBytes > kCacheBytes && !g_cache.empty()) {
+        g_cacheBytes -= g_cache.back().second->Bytes();
+        g_cacheIndex.erase(g_cache.back().first);
+        g_cache.pop_back();
+    }
+}
+
+unsigned g_attached = 0;
+
+void Upload(const Waiter& w, const rvk::maps::Decoded& d)
+{
+    if (w.top->texture != w.texture || !g_rvk.device)
+        return;                                    // made again since: that one asks for itself
+    RSurface* top = w.top;
+    rvk::maps::Replace(*g_rvk.device, w.texture, d);   // exactly these maps (a hot reload may have removed some)
+    ++g_attached;
+    if (g_attached <= 64 || (g_attached & (g_attached - 1)) == 0)
+        RvkLog("materials: RDB texture %u:%u gets%s%s%s%s%s%s (%u attached)", top->rdbType, top->rdbId,
+               d.normal.Empty() ? "" : " [normal map]", d.orm.Empty() ? "" : " [PBR material ",
+               d.orm.Empty() ? "" : (d.ormFrom + "]").c_str(), d.albedo.Empty() ? "" : " [albedo map]",
+               d.emissive.Empty() ? "" : " [emissive map]", d.Bytes() ? "" : " nothing", g_attached);
+}
+
+}  // namespace
+
+void HotReload();
+
+void PollMaterialMaps()
+{
+    HotReload();
+    if (g_worker) {
+        std::vector<Worker::Done> done;
+        {
+            std::lock_guard<std::mutex> lock(g_worker->mutex);
+            done.swap(g_worker->done);
+        }
+        for (auto& [key, gen, decoded] : done) {
+            if (gen != g_gen[key])
+                continue;                          // decoded from files a hot reload replaced since
+            if (!decoded->errors.empty())
+                RvkLog("materials: %s", decoded->errors.c_str());
+            CachePut(key, decoded);
+            auto it = g_waiting.find(key);
+            if (it == g_waiting.end())
+                continue;
+            for (const Waiter& w : it->second)
+                g_uploads.emplace_back(w, decoded);
+            g_waiting.erase(it);
+        }
+    }
+    size_t bytes = 0;
+    while (!g_uploads.empty() && bytes < kUploadBytesPerFrame) {
+        auto [w, d] = std::move(g_uploads.front());
+        g_uploads.pop_front();
+        bytes += d->Bytes();
+        Upload(w, *d);
+    }
+}
+
+namespace {
+std::unordered_set<RSurface*> g_identified;       // surfaces holding an RDB texture (for DescribeTexture)
+std::unordered_map<uint64_t, std::string> g_names;   // RDB texture -> the name the game gave it
+}  // namespace
+
+void ForgetMaterialMaps(RSurface* top)
+{
+    g_identified.erase(top);
+    if (g_waiting.empty() && g_uploads.empty())
+        return;
+    for (auto& [key, list] : g_waiting)
+        list.erase(std::remove_if(list.begin(), list.end(), [top](const Waiter& w) { return w.top == top; }),
+                   list.end());
+    g_uploads.erase(std::remove_if(g_uploads.begin(), g_uploads.end(),
+                                   [top](const auto& u) { return u.first.top == top; }),
+                    g_uploads.end());
+}
+
+namespace {
+
+unsigned g_registered = 0;
 
 unsigned g_ground = 0;
 
-void Register(void* surface_t, uint32_t type, uint32_t id)
+void Register(void* surface_t, uint32_t type, uint32_t id, const char* name)
 {
     if (!surface_t || !Readable(surface_t, 4))
         return;
@@ -218,6 +403,12 @@ void Register(void* surface_t, uint32_t type, uint32_t id)
     RSurface* top = s->top ? s->top : s;
     top->rdbType = type;
     top->rdbId = id;
+    g_identified.insert(top);
+    if (name && Readable(name, 1)) {
+        std::string& known = g_names[KeyOf(type, id)];
+        if (known.empty())
+            known.assign(name, strnlen(name, 120));
+    }
     bool ground = type == 1010006 || type == 1010021 || type == 1010022;
     g_ground += ground;
     if (++g_registered <= 8 || (g_registered & (g_registered - 1)) == 0 || (ground && g_ground <= 4))
@@ -228,13 +419,13 @@ void Register(void* surface_t, uint32_t type, uint32_t id)
     s->Release();
 }
 
-void RegisterCreator(void* surface, const void* creator)
+void RegisterCreator(void* surface, const void* creator, const char* name)
 {
     if (ClassOf(creator) != Kind::AnarchyTexCreator || !Readable(creator, 0x48))
         return;
     static const unsigned index = ComIndex("rvk::Materials");
     ComScope scope(index);
-    Register(surface, U32(creator, 0x40), U32(creator, 0x44));
+    Register(surface, U32(creator, 0x40), U32(creator, 0x44), name);
 }
 
 using CreateFromBitmap = void*(__thiscall*)(void* self, void* bitmap, const char* name);
@@ -251,32 +442,340 @@ F Original(const char* mangled)
 
 }  // namespace
 
+std::string DescribeTexture(const rvk::Texture* texture, std::string* reference)
+{
+    if (!texture)
+        return "nothing (no textured 3D surface there)";
+    char buf[512];
+    for (RSurface* top : g_identified) {
+        if (top->texture != texture)
+            continue;
+        const uint32_t full = FullQualityType(top->rdbType);
+        auto it = g_names.find(KeyOf(top->rdbType, top->rdbId));
+        std::string maps;
+        for (const char* suffix : {"_n.png", "_orm.png", "_r.png", "_m.png", "_ao.png", "_d.png", "_e.png"})
+            if (!FindMap(top->rdbType, top->rdbId, suffix).empty())
+                maps += std::string(" ") + suffix;
+        // (No name: what the game hands CreateTexture as one isn't the texture's - "a.?", "" - the workbench has them.)
+        (void)it;
+        std::snprintf(buf, sizeof(buf), "RDB texture %u:%u, %lux%lu; maps:%s", full, top->rdbId, top->desc.dwWidth,
+                      top->desc.dwHeight, maps.empty() ? " none" : maps.c_str());
+        if (reference) {
+            char ref[32];
+            std::snprintf(ref, sizeof(ref), "%u:%u", full, top->rdbId);
+            *reference = ref;
+        }
+        return buf;
+    }
+    std::snprintf(buf, sizeof(buf), "a texture that isn't an RDB texture (%ux%u; made by the game itself)",
+                  texture->Width(), texture->Height());
+    return buf;
+}
+
 void AttachMaterialMaps(RSurface* top)
 {
     if (!top || !top->rdbId || !top->texture || top->materialsFor == top->texture || !g_rvk.device)
         return;
     top->materialsFor = top->texture;
-    std::string path = FindMap(top->rdbType, top->rdbId, "_n.png");
-    if (path.empty())
+    uint64_t key = KeyOf(top->rdbType, top->rdbId);
+    Waiter waiter{top, top->texture};
+    if (DecodedPtr cached = CacheGet(key)) {
+        g_uploads.emplace_back(waiter, cached);
         return;
-    if (rvk::Texture* normal = LoadNormalMap(path, g_rvk.device)) {
-        g_rvk.device->SetNormalMap(top->texture, normal);
-        ++g_attached;
-        RvkLog("materials: normal map %s (%ux%u) on RDB texture %u:%u (%u attached)", path.c_str(),
-               normal->Width(), normal->Height(), top->rdbType, top->rdbId, g_attached);
     }
+    auto it = g_waiting.find(key);
+    if (it != g_waiting.end()) {                  // being decoded already
+        it->second.push_back(waiter);
+        return;
+    }
+    rvk::maps::MaterialFiles files = FilesFor(top->rdbType, top->rdbId);
+    if (!files.Any())
+        return;
+    g_waiting[key].push_back(waiter);
+    if (!g_worker) {
+        g_worker = new Worker;
+        std::thread(WorkerLoop, g_worker).detach();
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_worker->mutex);
+        g_worker->jobs.push_back({key, g_gen[key], std::move(files)});
+    }
+    g_worker->wake.notify_one();
+}
+
+// ---------------------------------------------------------------- hot reload
+namespace {
+HANDLE g_watch[2] = {};
+bool g_watchTried = false;
+DWORD g_lastCheck = 0, g_changedAt = 0;
+bool g_changed = false;
+
+void Changed(const std::unordered_map<std::string, uint64_t>& before, const std::unordered_map<std::string, uint64_t>& now,
+             std::unordered_set<uint64_t>* keys)
+{
+    for (auto& [name, stamp] : now) {
+        auto it = before.find(name);
+        if (it == before.end() || it->second != stamp)
+            if (uint64_t key = KeyOfName(name)) keys->insert(key);
+    }
+    for (auto& [name, stamp] : before)
+        if (!now.count(name))
+            if (uint64_t key = KeyOfName(name)) keys->insert(key);
+}
+
+void Reload(uint64_t key)
+{
+    ++g_gen[key];
+    CacheErase(key);
+    g_waiting.erase(key);
+    g_uploads.erase(std::remove_if(g_uploads.begin(), g_uploads.end(),
+                                   [key](const auto& u) { return KeyOf(u.first.top->rdbType, u.first.top->rdbId) == key; }),
+                    g_uploads.end());
+    const uint32_t type = uint32_t(key >> 32), id = uint32_t(key);
+    const bool any = FilesFor(type, id).Any();
+    unsigned surfaces = 0;
+    for (RSurface* top : g_identified) {
+        if (!top->texture || KeyOf(top->rdbType, top->rdbId) != key)
+            continue;
+        ++surfaces;
+        top->materialsFor = nullptr;
+        if (any)
+            AttachMaterialMaps(top);
+        else if (g_rvk.device)
+            rvk::maps::Replace(*g_rvk.device, top->texture, rvk::maps::Decoded{});   // its maps are gone
+    }
+    RvkLog("hot reload: RDB texture %u:%u from %s, %u surface(s) in use", type, id,
+           !any ? "nothing (maps removed)" : g_liveKeys.count(key) ? "live\\ (preview)" : "materials\\", surfaces);
+}
+}  // namespace
+
+void HotReload()
+{
+    Scan();
+    if (!g_hot)
+        return;
+    const DWORD now = GetTickCount();
+    if (now - g_lastCheck < 200)
+        return;
+    g_lastCheck = now;
+    if (!g_watchTried) {
+        g_watchTried = true;
+        const Folder* folders[2] = {&g_mat, &g_live};
+        for (int i = 0; i < 2; ++i) {
+            HANDLE h = FindFirstChangeNotificationA(folders[i]->dir.c_str(), FALSE,
+                                                    FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE |
+                                                    FILE_NOTIFY_CHANGE_SIZE);
+            g_watch[i] = h == INVALID_HANDLE_VALUE ? nullptr : h;
+            if (!g_watch[i])
+                RvkLog("hot reload: can't watch %s (error %lu)", folders[i]->dir.c_str(), GetLastError());
+        }
+    }
+    for (HANDLE& h : g_watch)
+        if (h && WaitForSingleObject(h, 0) == WAIT_OBJECT_0) {
+            FindNextChangeNotification(h);
+            g_changed = true;
+            g_changedAt = now;
+        }
+    if (!g_changed || now - g_changedAt < 300)       // files may still be being written
+        return;
+    g_changed = false;
+    auto mat = std::move(g_mat.files), live = std::move(g_live.files);
+    ScanFolder(g_mat);
+    ScanFolder(g_live);
+    RebuildLiveKeys();
+    std::unordered_set<uint64_t> keys;
+    Changed(mat, g_mat.files, &keys);
+    Changed(live, g_live.files, &keys);
+    for (uint64_t key : keys)
+        Reload(key);
+}
+
+// ---------------------------------------------------------------- mesh identity (mesh picking)
+// Which RDB resource a visual was made from, for Ctrl+Shift+J. DisplaySystem loads meshes as DbObject_ts - RDBMesh_t
+// (static meshes 1010001 / their variants 1010026) and RDBCATMesh_t (characters 1010002 / towers 1010027), +0x08 type,
+// +0x0C id; the hooks below find the one being loaded on the caller's stack (as RTextureFromCreator finds an
+// RDBGroundTexture_t).
+// - Characters: DisplaySystem builds them with randy's exported RCATMesh_t(parent) constructor: the visual is known.
+// - Static meshes are read from the .abiff's object archive; DisplaySystem's mesh classes call the exported base
+//   RTriMesh_t::Archive on each mesh there. The meshes placed in the world are clones of those (their virtual Clone,
+//   no export), which share the loaded mesh's data (RTriMesh_t +0x184, RVisualData_t; CloneMeshData un-shares it):
+//   the loaded mesh's data is remembered, and a picked mesh is looked up by its data.
+namespace {
+
+// visual (RTriMesh_t / RCATMesh_t, by the address its constructor got) -> type << 32 | id. Ordered: the renderer
+// sees a visual through the base class it draws with, a few bytes into the object (RCATMesh_t: +0x3C).
+std::map<uintptr_t, uint64_t> g_meshIds;
+constexpr uintptr_t kInsideObject = 0x200;
+std::unordered_map<uint32_t, uint64_t> g_visualDataIds;  // RVisualData_t of a loaded static mesh -> its id
+constexpr uint32_t kVisualData = 0x184;                  // RTriMesh_t: its RVisualData_t
+unsigned g_meshFound = 0, g_meshMissed = 0;
+
+// Reads another object's memory without faulting (ReadProcessMemory on ourselves fails cleanly where a plain read
+// would crash: the stack holds every kind of value, and VirtualQuery's protection doesn't tell all unreadable pages).
+bool SafeCopy(const void* p, void* out, size_t n)
+{
+    SIZE_T got = 0;
+    return p && ReadProcessMemory(GetCurrentProcess(), p, out, n, &got) && got == n;
+}
+
+// The RTTI class name of a polymorphic object (".?AVName@@"), or "" - without ever faulting.
+std::string SafeClassName(const void* object)
+{
+    uint32_t vtable = 0, col = 0, td = 0;
+    char name[48] = {};
+    if (!SafeCopy(object, &vtable, 4) || !vtable || !SafeCopy(reinterpret_cast<const void*>(uintptr_t(vtable) - 4), &col, 4) ||
+        !SafeCopy(reinterpret_cast<const void*>(uintptr_t(col) + 12), &td, 4) ||
+        !SafeCopy(reinterpret_cast<const void*>(uintptr_t(td) + 8), name, sizeof(name) - 1))
+        return {};
+    return std::string(name, strnlen(name, sizeof(name) - 1));
+}
+
+// The RDBMesh_t (character: RDBCATMesh_t) being loaded, from the caller's saved registers and stack. -> type << 32 | id
+uint64_t FindLoading(const void* returnAddress, bool character)
+{
+    static std::unordered_map<uint32_t, Kind> byVtable;   // vtable -> class (only these two matter)
+    static uint32_t words[4096];                          // (game thread only) up to 16 KB of stack: archives nest
+    const auto* sp = reinterpret_cast<const uint32_t*>(returnAddress) - 8;
+    size_t count = 4096;
+    while (count && !SafeCopy(sp, words, count * 4))      // (near the top of the stack: fewer)
+        count /= 2;
+    for (size_t i = 0; i < count; ++i) {
+        const uint32_t v = words[i];
+        if (!v || (v & 3) || v < 0x10000)
+            continue;
+        uint32_t head[4];                                 // vtable, ..., type (+8), id (+0xC)
+        if (!SafeCopy(reinterpret_cast<const void*>(uintptr_t(v)), head, sizeof(head)) || !head[0])
+            continue;
+        auto it = byVtable.find(head[0]);
+        if (it == byVtable.end()) {
+            const std::string name = SafeClassName(reinterpret_cast<const void*>(uintptr_t(v)));
+            it = byVtable.emplace(head[0], name == ".?AVRDBMesh_t@@" ? Kind::RDBMesh
+                                           : name == ".?AVRDBCATMesh_t@@" ? Kind::RDBCATMesh : Kind::Other).first;
+        }
+        if (it->second != (character ? Kind::RDBCATMesh : Kind::RDBMesh))
+            continue;
+        const uint32_t type = head[2], id = head[3];
+        const bool ok = character ? (type == 1010002 || type == 1010027) : (type == 1010001 || type == 1010026);
+        if (ok && id)
+            return uint64_t(type) << 32 | id;
+    }
+    return 0;
+}
+
+void Remember(const void* visual, uint32_t data, uint64_t id, const char* what)
+{
+    if (id) {
+        g_meshIds[uintptr_t(visual)] = id;
+        if (data) g_visualDataIds[data] = id;
+        ++g_meshFound;
+    } else {
+        g_meshIds.erase(uintptr_t(visual));          // (a new object where an identified one was)
+        ++g_meshMissed;
+    }
+    const unsigned n = g_meshFound + g_meshMissed;
+    if (n <= 6 || (n & (n - 1)) == 0)
+        RvkLog("meshes: %s %p %s%u:%u (%u identified, %u not)", what, visual, id ? "is RDB mesh " : "not identified ",
+               unsigned(id >> 32), unsigned(id), g_meshFound, g_meshMissed);
+}
+
+extern "C" void rvk_ensure_init();          // trace.cpp: the native install, before the rva registry is used
+extern "C" int rvk_exports_ready;
+using RTriMeshArchive = void(__thiscall*)(const void* self, void* archive);
+using RCATMeshCtor = void*(__thiscall*)(void* self, void* parent);
+constexpr uint32_t kRTriMeshArchiveRva = 0x48F85, kRCATMeshCtorRva = 0x57FE0;   // interface/exports.tsv
+
+}  // namespace
+
+std::string DescribeMesh(uint32_t visual, uint32_t owner, uint32_t kind, std::string* reference)
+{
+    auto find = [](uint32_t p) -> uint64_t {                // the object p points into, if identified
+        auto it = g_meshIds.upper_bound(uintptr_t(p));
+        if (it == g_meshIds.begin()) return 0;
+        --it;
+        return uintptr_t(p) - it->first < kInsideObject ? it->second : 0;
+    };
+    char buf[256];
+    if (!visual)
+        return "nothing (no 3D object there)";
+    // A character's own body (kind 1) is its RCATMesh_t; a piece attached to it (2) is a mesh of its own.
+    uint64_t id = find(visual);
+    if (!id && kind == 1u) id = find(owner);
+    if (!id) {
+        // A static mesh: a clone of a loaded one, sharing its data. The renderer has the visual through the base it
+        // draws with; the complete object (RTTI: the vtable's locator +4 is this base's offset in it) is the mesh.
+        uint32_t vtable = 0, col = 0, offset = 0, data = 0;
+        if (SafeCopy(reinterpret_cast<const void*>(uintptr_t(visual)), &vtable, 4) &&
+            SafeCopy(reinterpret_cast<const void*>(uintptr_t(vtable) - 4), &col, 4) &&
+            SafeCopy(reinterpret_cast<const void*>(uintptr_t(col) + 4), &offset, 4) &&
+            SafeCopy(reinterpret_cast<const void*>(uintptr_t(visual - offset + kVisualData)), &data, 4)) {
+            auto it = g_visualDataIds.find(data);
+            if (it != g_visualDataIds.end()) id = it->second;
+        }
+    }
+    const uint64_t character = owner && owner != visual ? find(owner) : 0;
+    if (!id) {
+        std::snprintf(buf, sizeof(buf), "a visual %p not identified (made before randy-vk saw it, or not from an RDB "
+                      "mesh)%s", reinterpret_cast<void*>(uintptr_t(visual)), character ? "; on a character" : "");
+        if (character && reference) {
+            std::snprintf(buf + std::strlen(buf), sizeof(buf) - std::strlen(buf), " %u:%u", unsigned(character >> 32),
+                          unsigned(character));
+            char ref[32];
+            std::snprintf(ref, sizeof(ref), "%u:%u", unsigned(character >> 32), unsigned(character));
+            *reference = ref;
+        }
+        return buf;
+    }
+    std::snprintf(buf, sizeof(buf), "RDB %s %u:%u", (id >> 32) == 1010002 || (id >> 32) == 1010027 ? "character model"
+                  : "mesh", unsigned(id >> 32), unsigned(id));
+    if (character && character != id)
+        std::snprintf(buf + std::strlen(buf), sizeof(buf) - std::strlen(buf), " (worn by character model %u:%u)",
+                      unsigned(character >> 32), unsigned(character));
+    if (reference) {
+        char ref[32];
+        std::snprintf(ref, sizeof(ref), "%u:%u", unsigned(id >> 32), unsigned(id));
+        *reference = ref;
+    }
+    return buf;
 }
 
 }  // namespace rvkproxy
 
 using namespace rvkproxy;
 
+// RTriMesh_t::Archive(ObjectArchive_c*) const - a static mesh read from its .abiff - and RCATMesh_t::RCATMesh_t(RRefFrame_t*)
+// - a character being built: mesh identity (above).
+extern "C" void __fastcall rvk_RTriMeshArchive(const void* self, void*, void* archive)
+{
+    const uint64_t id = FindLoading(_AddressOfReturnAddress(), false);
+    if (!rvk_exports_ready) rvk_ensure_init();      // (the exports' thunks do this on their first call)
+    // Through the rva registry, as the export's own thunk would go: the native port's version where it has one.
+    static auto original = reinterpret_cast<RTriMeshArchive>(rnative::AddressFor(kRTriMeshArchiveRva));
+    original(self, archive);
+    uint32_t data = 0;
+    SafeCopy(static_cast<const uint8_t*>(self) + kVisualData, &data, 4);
+    static const unsigned index = ComIndex("rvk::Meshes");
+    ComScope scope(index);
+    Remember(self, data, id, "static");
+}
+
+extern "C" void* __fastcall rvk_RCATMeshCtor(void* self, void*, void* parent)
+{
+    const uint64_t id = FindLoading(_AddressOfReturnAddress(), true);
+    if (!rvk_exports_ready) rvk_ensure_init();      // (the exports' thunks do this on their first call)
+    static auto original = reinterpret_cast<RCATMeshCtor>(rnative::AddressFor(kRCATMeshCtorRva));
+    void* r = original(self, parent);
+    static const unsigned index = ComIndex("rvk::Meshes");
+    ComScope scope(index);
+    Remember(self, 0, id, "character");
+    return r;
+}
+
 // The hooked exports (thiscall: `this` in ecx; __fastcall's unused edx keeps the stack arguments in place).
 extern "C" void* __fastcall rvk_CreateTextureBitmap(void* self, void*, void* bitmap, const char* name)
 {
     static auto original = Original<CreateFromBitmap>("?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVLBitmap_t@@PBD@Z");
     void* surface = original(self, bitmap, name);
-    RegisterCreator(surface, self);
+    RegisterCreator(surface, self, name);
     return surface;
 }
 
@@ -284,7 +783,7 @@ extern "C" void* __fastcall rvk_CreateTextureStream(void* self, void*, void* str
 {
     static auto original = Original<CreateFromStream>("?CreateTexture@TextureStreamCreator@@QAEPAVsurface_t@@PAVPositionIO_t@fun@@PBD@Z");
     void* surface = original(self, stream, name);
-    RegisterCreator(surface, self);
+    RegisterCreator(surface, self, name);
     return surface;
 }
 
@@ -305,7 +804,8 @@ extern "C" void* __fastcall rvk_RTextureFromCreator(void* self, void*, const cha
     if (maker && texture && Readable(static_cast<uint8_t*>(texture) + 0x30, 4)) {
         static const unsigned index = ComIndex("rvk::Materials");
         ComScope scope(index);
-        Register(*reinterpret_cast<void**>(static_cast<uint8_t*>(texture) + 0x30), U32(maker, 0x08), U32(maker, 0x0C));
+        Register(*reinterpret_cast<void**>(static_cast<uint8_t*>(texture) + 0x30), U32(maker, 0x08), U32(maker, 0x0C),
+                 name);
     }
     return texture;
 }

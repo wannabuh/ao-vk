@@ -83,6 +83,9 @@ private:
     bool m_lightmap = false;           // captured as a terrain lightmap (a re-upload recaptures the grass's light)
     bool m_groundBase = false;         // captured as a terrain base texture (a re-upload recaptures the grass's ground)
     Texture* m_normalMap = nullptr;    // tangent-space normal map drawn with this texture (owned; SetNormalMap)
+    Texture* m_ormMap = nullptr;       // PBR material: R occlusion, G roughness, B metallic (owned; SetMaterialMaps)
+    Texture* m_albedoMap = nullptr;    // drawn instead of this texture's own pixels (owned; SetMaterialMaps)
+    Texture* m_emissiveMap = nullptr;  // light the surface gives off, added to it (owned; SetEmissiveMap)
     uint32_t m_bindless = ~0u;         // its slot in the bindless image array (M1)
     // Layout as of the end of the commands recorded so far (main command buffer for render targets;
     // plain textures only change layout in the upload command buffer, which runs first).
@@ -203,6 +206,47 @@ public:
     // image), used instead of the generated normals when it is drawn in stage 0. The device owns `normal` and
     // frees it with the texture; null removes it.
     void SetNormalMap(Texture* texture, Texture* normal);
+    // PBR materials: a texture's occlusion / roughness / metallic map (glTF packing: R occlusion, G roughness,
+    // B metallic), lit with a GGX specular and metal-tinted reflections instead of the game's Blinn-Phong when it is
+    // drawn like a normal map would be (per-pixel lit, stage 0, plain coordinates; or the ground's base texture).
+    // `albedo` is drawn instead of the texture's own pixels wherever the texture is used (a higher resolution
+    // replacement; its alpha is used too). The device owns both and frees them with the texture; null removes one.
+    void SetMaterialMaps(Texture* texture, Texture* orm, Texture* albedo);
+    // `emissive`: the light a texture's surface gives off (its colour, any resolution), added after the lighting and
+    // as bright as PbrSettings::emissive - into the bloom with HDR. Owned by the device as above; null removes it.
+    void SetEmissiveMap(Texture* texture, Texture* emissive);
+    // Picking (the proxy's Ctrl+Shift+I textures, Ctrl+Shift+M meshes): the next frame's 3D scene draws are tested on
+    // the CPU against the point (x, y: 0..1 across the target, y down) - GPU-skinned characters with their skinned
+    // vertices - and the nearest one's stage 0 texture, visual and owning character (SetDrawVisual) are kept; LastPick
+    // gives them once that frame has ended (serial: one more each result; thread-safe). SetPickHighlight: draws with
+    // that texture flash yellow (null: none).
+    void RequestPick(float x, float y) { m_pickX = x; m_pickY = y; m_pickArmed = true; }
+    struct PickResult { Texture* texture = nullptr; uint32_t serial = 0, visual = 0, owner = 0, kind = 0, vertices = 0,
+                        indices = 0; };
+    PickResult LastPick() const
+    {
+        PickResult r;
+        r.serial = m_pickSerial.load(std::memory_order_acquire);
+        r.texture = m_pickPublished.load(std::memory_order_relaxed);
+        r.visual = m_pickPublishedVisual.load(std::memory_order_relaxed);
+        r.owner = m_pickPublishedOwner.load(std::memory_order_relaxed);
+        r.kind = m_pickPublishedKind.load(std::memory_order_relaxed);
+        r.vertices = m_pickPublishedVertices.load(std::memory_order_relaxed);
+        r.indices = m_pickPublishedIndices.load(std::memory_order_relaxed);
+        return r;
+    }
+    void SetPickHighlight(Texture* t) { if (m_pickHighlight != t) { m_pickHighlight = t; m_constantsDirty = true; } }
+    // PBR lighting: on/off, direct specular strength, ambient (environment) specular strength, how much smooth
+    // surfaces feed the screen-space reflections, the occlusion map's strength, debug view (0 off, 1 albedo,
+    // 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 specular only, 7 which surfaces have maps, 8 emission);
+    // whether albedo maps replace their textures; emissive maps' brightness (0 = off).
+    struct PbrSettings {
+        bool enabled = true, albedoMaps = true;
+        float specular = 1.0f, ambient = 1.0f, reflections = 1.0f, occlusion = 1.0f, emissive = 2.0f;
+        float probe = 1.0f;                      // how much the environment probe replaces the analytic sky (HDR)
+        uint32_t debug = 0;
+    };
+    void SetPbr(const PbrSettings& s);
     // The draws that follow are of vertices the proxy's ProcessVertices wrote (the scene's: water, floating text)
     // or not (pre-transformed draws of the game's own: interface). See IsWater.
     void SetDrawProcessed(bool processed) { m_drawProcessed = processed; }
@@ -425,7 +469,7 @@ public:
     void SetTexture(uint32_t stage, Texture* texture);
     // The game's visual issuing the next draws (rnative::scene): its kind (VisualKind) and class name - for exact
     // decisions where the draw alone needs heuristics. 0 / "": not known.
-    void SetDrawVisual(uint32_t kind, const char* className, uint32_t owner = 0);
+    void SetDrawVisual(uint32_t kind, const char* className, uint32_t owner = 0, uint32_t visual = 0);
     // The game's lights of this frame (rnative::scene), each with its carrier's owner id (SetDrawVisual's) or 0: who
     // carries which light, exactly (FindCarriers).
     struct SceneLight { d3d::Light light; uint32_t owner; };
@@ -590,12 +634,30 @@ private:
     Texture* m_flatNormal = nullptr;             // binding 9 when the draw has no normal map
     VkSampler m_normalSampler = VK_NULL_HANDLE;
     Texture* m_constantsNormalMap = nullptr;
+    PbrSettings m_pbr;
     uint32_t m_anisotropy = 1;
     float m_maxAnisotropy = 1.0f;               // GPU limit (0 without the feature)
     // The ground's base pass textures this frame, by chunk (TerrainChunkKey): its lighting pass, drawn later with the
     // lightmap, takes its relief from them. And the sampler they're read with (repeat, mipmapped).
     std::unordered_map<uint64_t, Texture*> m_terrainBases;
     Texture* m_drawBumpBase = nullptr;           // the current draw's (Draw)
+    Texture* m_drawOrm = nullptr;                // the current draw's PBR material map (Draw)
+    bool m_drawOrmBase = false;                  // ... from the ground's base texture
+    Texture* m_drawEmissive = nullptr;           // the draw's emissive map (stage 0's), or null
+    // Texture picking (RequestPick): armed by the proxy, active for one frame, published at its end.
+    float m_pickX = 0.0f, m_pickY = 0.0f;
+    bool m_pickArmed = false, m_pickActive = false;
+    Texture* m_pickBest = nullptr;
+    float m_pickDepth = 2.0f;
+    std::atomic<Texture*> m_pickPublished{nullptr};
+    uint32_t m_pickBestVisual = 0, m_pickBestOwner = 0, m_pickBestKind = 0, m_pickBestVertices = 0, m_pickBestIndices = 0;
+    std::atomic<uint32_t> m_pickPublishedVisual{0}, m_pickPublishedOwner{0}, m_pickPublishedKind{0},
+        m_pickPublishedVertices{0}, m_pickPublishedIndices{0};   // the draw's counts (the workbench matches meshes by them)
+    const void* m_pickSkinned = nullptr;         // a GPU-skinned draw's CPU-skinned vertices, for the pick (DrawSkinned)
+    std::atomic<uint32_t> m_pickSerial{0};
+    Texture* m_pickHighlight = nullptr;
+    void PickDraw(uint32_t primitive, const detail::FvfLayout& layout, const void* vertices, uint32_t vertexCount,
+                  const uint16_t* indices, uint32_t indexCount);
     Texture* m_constantsBumpBase = nullptr;
     bool m_drawTerrainBase = false;              // the current draw is the ground's unlit base pass (Draw)
     bool m_drawTerrainLight = false;             // ... or its multiplying lightmap pass
@@ -1017,6 +1079,7 @@ private:
     const skin::Job* m_drawSkin = nullptr;       // the current draw is this skinned character piece (DrawSkinned)
     uint32_t m_drawVisualKind = 0;               // SetDrawVisual (VisualKind)
     uint32_t m_drawOwner = 0;                    // ... the character it belongs to (0: none / unknown)
+    uint32_t m_drawVisual = 0;                   // ... the visual object itself (the game's; for picking)
     std::vector<SceneLight> m_sceneLights;       // SetSceneLights, of frame m_sceneLightsFrame
     uint64_t m_sceneLightsFrame = 0;
     const char* m_drawVisualName = "";
@@ -1376,6 +1439,17 @@ private:
     Texture* m_giTex[2] = {};                    // half resolution: indirect light + view depth (ping-pong)
     VkPipeline m_giPipeline = VK_NULL_HANDLE, m_giBlurPipeline = VK_NULL_HANDLE;
     bool RenderGi(VkCommandBuffer cmd);
+    // The environment probe (PBR materials' reflections of their surroundings): what the camera has seen around it
+    // by direction (octahedral, 128 x 128, ping-pong; a: how sure), and its prefiltered atlas (env_common.glsl) that
+    // the scene shaders sample through FL.pbr2.w. Updated after each scene, used by the next.
+    Texture* m_envProbe[2] = {};
+    Texture* m_envAtlas = nullptr;
+    uint32_t m_envCurrent = 0;                   // the m_envProbe holding the latest
+    bool m_envReady = false;                     // the atlas has been written (and is readable)
+    float m_envEye[3] = {};                      // the camera at the last update
+    bool m_envEyeValid = false;
+    VkPipeline m_envAccumPipeline = VK_NULL_HANDLE, m_envFilterPipeline = VK_NULL_HANDLE;
+    bool RenderEnvProbe(VkCommandBuffer cmd);
     // Volumetric light: sun shafts through the shadow cascades and lamp glow (hdr.cpp, volume.frag).
     float m_volume = 1.0f, m_volumeHaze = 1.0f, m_volumeShafts = 1.0f;
     Texture* m_volumeTex[2] = {};                // half resolution: scattered light + view depth (ping-pong)
@@ -1809,8 +1883,8 @@ private:
     uint32_t FixedSamplerSlot(uint32_t which, VkSampler s);
     uint64_t m_stageSamplerKey[2] = {~0ull, ~0ull};
     uint32_t m_stageSamplerSlot[2] = {};
-    VkSampler m_fixedSampler[2] = {};
-    uint32_t m_fixedSamplerSlot[2] = {};
+    VkSampler m_fixedSampler[3] = {};
+    uint32_t m_fixedSamplerSlot[3] = {};
     bool m_bindlessBound = false;                // set 1 bound in this frame's command buffer
     std::array<VkPipeline, 3> m_pipelines{};   // per topology class: points, lines, triangles
     VkBuffer m_nullBuffer = VK_NULL_HANDLE;    // zeros, bound at stride 0 for attributes a format lacks

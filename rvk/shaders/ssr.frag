@@ -7,6 +7,7 @@
 layout(set = 0, binding = 0) uniform sampler2D depthTex;
 layout(set = 0, binding = 1) uniform sampler2D scene;          // HDR scene
 layout(set = 0, binding = 2) uniform sampler2D reflectivity;   // G: how much the surface reflects
+layout(set = 0, binding = 3) uniform sampler2D normals;        // the motion vectors' zw: PBR surfaces' shading normal
 layout(push_constant) uniform Push {
     vec4 proj;          // D3D projection: m[2][2], m[3][2], m[0][0], m[1][1]
     vec4 size;          // full target width, height, steps, longest ray (world units)
@@ -40,6 +41,15 @@ void main()
     vec3 dx1 = ViewPos(pix + vec2(1, 0)) - p, dx0 = p - ViewPos(pix - vec2(1, 0));
     vec3 dy1 = ViewPos(pix + vec2(0, 1)) - p, dy0 = p - ViewPos(pix - vec2(0, 1));
     vec3 n = normalize(cross(abs(dx1.z) < abs(dx0.z) ? dx1 : dx0, abs(dy1.z) < abs(dy0.z) ? dy1 : dy0));
+    // A PBR surface's own shading normal where it gave one (ffp_main.glsl: octahedral, view space, w above 1.5):
+    // smooth over curved low-poly meshes, and with their normal maps' detail.
+    vec2 o = texelFetch(normals, ipix, 0).zw;
+    if (o.y > 1.5) {
+        o.y -= 3.0;
+        vec3 s = vec3(o, 1.0 - abs(o.x) - abs(o.y));
+        if (s.z < 0.0) s.xy = (1.0 - abs(s.yx)) * vec2(s.x >= 0.0 ? 1.0 : -1.0, s.y >= 0.0 ? 1.0 : -1.0);
+        n = normalize(s);
+    }
     if (dot(n, p) > 0.0) n = -n;
     vec3 v = normalize(p);
     vec3 dir = reflect(v, n);
