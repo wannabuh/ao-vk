@@ -138,6 +138,44 @@
     standing, `--grass-bench-film N` ~60 frames a second with a screenshot every N: film_NNN.bmp; the bench has no other
     shadow caster: add `--grass-bench-walker` for a sun shadow map), `--grass-shadow 0|1`, `--grass-style V,F,G,U,T` (variety, flowers, glow, gusts, trails). The log's `ground grass:` line every 600 frames: blades drawn, tiles, builds and their cost,
     the share of blades lit by a captured lightmap, the capture's cost, the terrain's ambient.
+- **Leaves** (setting `RVK_LeafOn`, Plants; on by default, off in Classic+): leaves on the game's trees, shrubs and palms,
+  whose canopies are a few big cards with a painted cluster of leaves and twigs each (a 20-unit jungle crown is 54
+  triangles) - an addition on top of them (leaves.cpp, `leaf.vert` = ffp.vert built with `RVK_LEAF`). Needs HDR.
+  - *Canopies* (`CanopyKind`): lit, static, upright meshes drawn into the scene with depth writes and a texture that is
+    mostly holes (mean alpha 0.05 - 0.65 from the texture's 64 x 64 alpha mask, taken at upload: `Texture::m_alphaMask`),
+    not one flat plane. 0.2 - 3 units tall: a shrub; up to 45: a tree; a texture at least 2.5 times as long as wide: a
+    palm's (or fern's) fronds. Every AO tree is two meshes - a bark trunk and its canopy - so the canopy is its own draw.
+  - *Leaves* (`BakeLeaves`, once per mesh and texture, ~4 a frame at most): sprigs scattered over the canopy's cards
+    where its alpha mask is leafy (and leafy around), each a card of its own cut from the same texture - a window an
+    eighth of it wide (`RVK_LeafSize`), keeping the painted proportions - turned, tilted up to ~40 degrees, lifted off
+    the card and a little out of the crown; `RVK_LeafDensity` (1 = each card's leafy area covered about twice). 32-byte
+    records in one pool, shuffled so any first part is an even thinning: up to half of `RVK_LeafDist` all are drawn,
+    then fewer, none at it. Palms get none: their fronds stay whole and bend.
+  - *Drawing* (`DrawLeaves`): just before the canopy's own draw, with its record (`firstInstance`) - the same world
+    matrix, lights, fog, shadows and texture - six vertices a leaf from binding 10, both faces. A sprig fades out
+    towards its card's rim (`ffp_main.glsl` `LeafMask`): no square cut through the painted cluster.
+  - *The canopy's own cards* become an inner core (`RVK_LeafCore`): drawn in a little towards the crown's centre and
+    thinned out in place (blocks of texels dropped by a stable hash) - a wide crown's outer leaves would float if it
+    shrank more. Cards and leaves are shaded darker towards the crown's inside (`CrownShade`). Both blend back to the
+    game's look with distance.
+  - *Wind* (`wind.glsl` `BranchSwayAt`): the canopy's cards and its leaves sway together with the branches - smooth over
+    the crown, growing out from its centre, the grass's gusts on top (`RVK_LeafWind`); each leaf flutters
+    (`RVK_LeafFlutter`); a palm's fronds flex further and bounce at their tips. The trunk doesn't bend (it would come
+    apart from the canopy, a separate mesh); the game's own world-matrix sway (palms) stays.
+  - *Shadows* (`RVK_LeafShadow`): each sun cascade draws its visible canopies' leaves after its casters
+    (`DrawLeafShadows`, `leaf_shadow.vert` = shadow.vert built with `RVK_LEAF`), the canopy's cards cast as drawn (in
+    and thinned), and both sway, so the light under a tree moves with its crown. `ShadowRecord` carries the crown.
+  - *Falling leaves* (`RVK_LeafFall`): a few slots a canopy (five a tree, one a shrub); now and then - likelier in a
+    gust - a slot takes one of its leaves, which drifts down tumbling and spiralling, lies at the object's origin
+    height a few seconds and shrinks away (`leaf.vert` `FallingLeaf`). A function of the time only: no state.
+  - Cost (demo, 64 trees, per-pixel lighting, sun shadows, 960 x 960): ~0.2 ms GPU. The log's `leaves:` line every 600
+    frames counts canopies by kind, leaf draws, leaves drawn and cast, bakes; frame dumps print a `leaves:` line per
+    canopy (its kind, leaves baked and drawn, its crown).
+  - Demo: `tools/extract-tree.py <abiff id> build/trees` dumps a game mesh with its textures (needs ao-assets);
+    `rvk_demo --leaf-tree a.tree[,b.tree] --hdr` stands them in a row (`--leaf-forest N` an N x N grid seen from eye
+    height; `--leaf-off`, `--leaf-shadow-off`, `--leaf-density/size/dist/core/wind/flutter/fall`, `--leaf-cam-dist`,
+    `--leaf-cam-height`, `--leaf-cam-yaw`, `--leaf-film N`). Trees: 20842 tree_multiplebranch_big, 13147
+    jungle_talltree_20m, 6302 desert_tree_fat, 6257 shrubs_treetype_medium, 31932 tropical_palmtree01.
 - **Vertex buffers** keep their contents in CPU memory; every draw copies the range it uses into the ring
   buffer, so rewriting a buffer between draws is safe (the game's CPU skinning reuses one buffer).
 - Memory through VMA (from the Vulkan SDK); Vulkan entry points loaded at run time from `vulkan-1.dll`.
