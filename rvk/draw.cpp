@@ -2037,8 +2037,11 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
             CaptureCover(primitive, layout, vertices, vertexCount, indices, indexCount);
     }
     PushCandidateDraw(fvf);
-    // A canopy (leaves.cpp): its leaves, baked the first time it is seen, drawn just before it (DrawLeaves).
+    // A canopy (leaves.cpp): its leaves, baked the first time it is seen, drawn just before it (DrawLeaves). A solid
+    // draw may be a tree's trunk (where its fallen leaves lie).
     CanopyParams(primitive, fvf, layout, vertices, vertexCount, indices, indexCount);
+    if (!m_drawLeaves && !m_external)
+        NoteSolidDraw(fvf);
     // A swaying plant: its big quads split into small ones (cached), so they bend rather than tilt as a whole.
     float sway[4] = {};
     bool swaying = !m_external && SwayParams(primitive, fvf, layout.stride, vertices, vertexCount, indices, indexCount, sway);
@@ -2128,9 +2131,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         dt.leaf[2] = m_drawLeaves->centre[2];
         dt.leaf[3] = m_drawLeaves->kind == Canopy::Palm ? -m_drawLeaves->radius : m_drawLeaves->radius;
         dt.leafSet[0] = m_drawLeaves->first;
-        dt.leafSet[1] = m_drawLeafCount;
+        dt.leafSet[1] = m_drawLeafCount | m_drawLeafFall << 16;
         dt.leafSet[2] = m_drawLeaves->count;
-        dt.leafSet[3] = m_drawLeafFall;
+        std::memcpy(&dt.leafSet[3], &m_drawLeafGround, 4);
     }
     VkDeviceSize prevPositionsOffset = 0, prevPositionsBytes = 0;   // binding 8 (animated meshes' last positions)
     VkBuffer prevPositionsBuffer = f.ring;
@@ -2152,8 +2155,9 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
     }
     if (m_dumpFile && m_drawLeaves) {            // frame dump: the canopy's leaves (after its D line)
         static const char* const kKinds[] = {"none", "shrub", "tree", "palm"};
-        std::fprintf(m_dumpFile, "  leaves: %s, %u baked, %u drawn | crown (%.2f %.2f %.2f) r %.2f\n",
-                     kKinds[uint32_t(m_drawLeaves->kind)], m_drawLeaves->count, m_drawLeafCount,
+        std::fprintf(m_dumpFile, "  leaves: %s, %u baked, %u drawn, %u falling slots (ground y %.2f) | crown (%.2f %.2f %.2f) r %.2f\n",
+                     kKinds[uint32_t(m_drawLeaves->kind)], m_drawLeaves->count, m_drawLeafCount, m_drawLeafFall,
+                     m_drawLeafGround,
                      m_drawLeaves->centre[0], m_drawLeaves->centre[1], m_drawLeaves->centre[2], m_drawLeaves->radius);
     }
     ProfileDrawSection("draw: sway", since);

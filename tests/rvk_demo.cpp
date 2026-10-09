@@ -1983,6 +1983,7 @@ int g_leafForest = 0;              // --leaf-forest N: an N x N grid of the tree
 
 struct TreePart {
     uint32_t flags = 0, alphaRef = 128;
+    Matrix world;                  // the part's own (version 2: its node in the mesh; else the identity)
     Texture* texture = nullptr;
     std::vector<float> vertices;   // x y z, nx ny nz, u v
     std::vector<uint16_t> indices;
@@ -2006,12 +2007,17 @@ bool LoadTree(D& dev, const std::string& path, Tree& tree)
     auto u32 = [&]() { uint32_t v = 0; if (off + 4 <= data.size()) std::memcpy(&v, &data[off], 4); off += 4; return v; };
     if (data.size() < 12 || std::memcmp(data.data(), "RVKT", 4) != 0) { std::printf("leaf tree: %s is no tree\n", path.c_str()); return false; }
     off = 4;
-    u32();
+    const uint32_t version = u32();
     const uint32_t parts = u32();
     for (uint32_t p = 0; p < parts; ++p) {
         TreePart part;
         part.flags = u32();
         part.alphaRef = u32();
+        part.world = Identity();
+        if (version >= 2) {
+            std::memcpy(&part.world, &data[off], 64);
+            off += 64;
+        }
         const uint32_t w = u32(), h = u32();
         if (off + size_t(w) * h * 4 > data.size()) return false;
         part.texture = dev.CreateTexture(w, h, reinterpret_cast<const uint32_t*>(&data[off]));
@@ -2024,11 +2030,15 @@ bool LoadTree(D& dev, const std::string& path, Tree& tree)
         part.indices.resize(ni);
         std::memcpy(part.indices.data(), &data[off], size_t(ni) * 2);
         off += size_t(ni) * 2 + (ni % 2 ? 2 : 0);
-        for (uint32_t v = 0; v < nv; ++v)
+        for (uint32_t v = 0; v < nv; ++v) {
+            const float* p = &part.vertices[size_t(v) * 8];
             for (int k = 0; k < 3; ++k) {
-                tree.lo[k] = std::min(tree.lo[k], part.vertices[size_t(v) * 8 + k]);
-                tree.hi[k] = std::max(tree.hi[k], part.vertices[size_t(v) * 8 + k]);
+                const float x = p[0] * part.world.m[0][k] + p[1] * part.world.m[1][k] + p[2] * part.world.m[2][k] +
+                                part.world.m[3][k];
+                tree.lo[k] = std::min(tree.lo[k], x);
+                tree.hi[k] = std::max(tree.hi[k], x);
             }
+        }
         tree.parts.push_back(std::move(part));
     }
     std::printf("leaf tree: %s, %u parts, %.1f units tall\n", path.c_str(), parts, tree.hi[1] - tree.lo[1]);
@@ -2128,8 +2138,8 @@ void RunLeafScene(D& dev, int frames, const std::string& shot, const std::string
             // (The model's origin is its foot on the ground, as the game places it; the trunk reaches a little below.)
             Matrix w = Mul(Translate(-0.5f * (tree.lo[0] + tree.hi[0]), 0.0f, -0.5f * (tree.lo[2] + tree.hi[2])),
                            Mul(RotateY(pl.turn), Translate(pl.x, 0.0f, pl.z)));
-            dev.SetTransform(World, w);
             for (const TreePart& part : tree.parts) {
+                dev.SetTransform(World, Mul(part.world, w));
                 dev.SetTexture(0, part.texture);
                 dev.SetRenderState(RS_ALPHABLENDENABLE, (part.flags & 1) ? 1 : 0);
                 dev.SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);

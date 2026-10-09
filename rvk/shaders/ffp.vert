@@ -157,9 +157,9 @@ uint LeafHash(uint x)
 }
 float LeafHashU(uint x) { return float(LeafHash(x) >> 8) / 16777216.0; }
 
-// A falling leaf (FL.leafView.z, RVK_LeafFall): each of a canopy's slots (D.leafSet.w) now and then - likelier in a
-// gust - takes one of its leaves, which drifts down with the wind, tumbling and spiralling, lies on the ground (at the
-// object's origin height) a few seconds and shrinks away. A function of the time only, so its motion last frame is the
+// A falling leaf (FL.leafView.z, RVK_LeafFall): each of a canopy's slots (D.leafSet.y >> 16) now and then - likelier in a
+// gust - takes one of its leaves, which drifts down with the wind, tumbling and spiralling, lies on the ground (D.leafSet.w)
+// a few seconds and shrinks away. A function of the time only, so its motion last frame is the
 // same function a frame earlier. Its card's corner in model space, its normal and texture coordinate; false: no leaf
 // in the slot now (the card collapses).
 bool FallingLeaf(uint slot, vec2 corner, float time, out vec3 pos, out vec3 normal, out vec2 uv)
@@ -182,7 +182,7 @@ bool FallingLeaf(uint slot, vec2 corner, float time, out vec3 pos, out vec3 norm
     mat3 W = mat3(D.world), invW = inverse(W);
     vec3 start = (D.world * vec4(uintBitsToFloat(a.xyz), 1.0)).xyz;
     vec3 u = W * vec3(h0, h1.x), v = W * vec3(h1.y, h2);
-    float height = max(start.y - D.world[3].y, 0.0);
+    float height = max(start.y - uintBitsToFloat(D.leafSet.w), 0.0);
     float speed = 0.7 + 0.5 * LeafHashU(cs ^ 7u);    // world units a second
     float fallTime = height / speed;
     if (age >= fallTime + kLie) return false;
@@ -220,12 +220,12 @@ void LeafVertex(vec2 originXZ)
     uint leaf = uint(gl_VertexIndex) / 6u;
     vec2 corner = kLeafCorner[uint(gl_VertexIndex) % 6u];
     gLeafCorner = corner;
-    uint local = leaf - D.leafSet.x;
-    if (local >= D.leafSet.y) {                  // past the drawn leaves: the falling-leaf slots
+    uint local = leaf - D.leafSet.x, drawn = D.leafSet.y & 0xFFFFu;
+    if (local >= drawn) {                        // past the drawn leaves: the falling-leaf slots
         vec3 now, prev, n, nPrev;
         vec2 uv, uvPrev;
-        bool on = FallingLeaf(local - D.leafSet.y, corner, FL.wind.z, now, n, uv);
-        bool wasOn = FallingLeaf(local - D.leafSet.y, corner, FL.taa.w, prev, nPrev, uvPrev);
+        bool on = FallingLeaf(local - drawn, corner, FL.wind.z, now, n, uv);
+        bool wasOn = FallingLeaf(local - drawn, corner, FL.taa.w, prev, nPrev, uvPrev);
         inPos = vec4(on ? now : D.leaf.xyz, 1.0);
         gLeafPrev = wasOn && on ? prev : inPos.xyz;
         inNormal = n;

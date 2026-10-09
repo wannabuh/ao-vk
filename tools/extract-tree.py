@@ -5,9 +5,11 @@ ao-assets (AO_ASSETS, default ~/projects/ao-mods/ao-assets) to read the client's
 
 Usage: tools/extract-tree.py <abiff id> <out dir>        e.g. 20842 build/trees   -> <out>/<id>.tree
 
-File (little-endian): "RVKT", u32 version 1, u32 parts; per part: u32 flags (1 blended, 2 alpha tested),
-u32 alpha ref, u32 width, u32 height, width*height u32 pixels (0xAARRGGBB), u32 vertices, vertices * 8 floats
-(x y z, nx ny nz, u v), u32 indices, indices * u16 (triangle list), padded to 4 bytes.
+File (little-endian): "RVKT", u32 version 2, u32 parts; per part: u32 flags (1 blended, 2 alpha tested),
+u32 alpha ref, 16 floats: the part's own world matrix (D3D, row vectors: its node in the mesh's scene graph, at rest -
+the game draws each part with its own, so a canopy's origin is not the tree's foot), u32 width, u32 height,
+width*height u32 pixels (0xAARRGGBB), u32 vertices, vertices * 8 floats (x y z, nx ny nz, u v: the part's own space),
+u32 indices, indices * u16 (triangle list), padded to 4 bytes.
 """
 import io
 import json
@@ -96,12 +98,11 @@ def main():
     for root in doc["scenes"][doc.get("scene", 0)]["nodes"]:
         walk(root, np.eye(4))
 
-    blob = bytearray(b"RVKT" + struct.pack("<II", 1, len(parts)))
+    blob = bytearray(b"RVKT" + struct.pack("<II", 2, len(parts)))
     for prim, world in parts:
         attrs = prim["attributes"]
         pos = accessor(doc, binary, attrs["POSITION"]).astype(np.float64)
-        pos = np.c_[pos, np.ones(len(pos))] @ world
-        nrm = accessor(doc, binary, attrs["NORMAL"]).astype(np.float64) @ world[:3, :3] if "NORMAL" in attrs \
+        nrm = accessor(doc, binary, attrs["NORMAL"]).astype(np.float64) if "NORMAL" in attrs \
             else np.tile([0.0, 1.0, 0.0], (len(pos), 1))
         nrm /= np.maximum(np.linalg.norm(nrm, axis=1, keepdims=True), 1e-9)
         uv = accessor(doc, binary, attrs["TEXCOORD_0"]) if "TEXCOORD_0" in attrs else np.zeros((len(pos), 2))
@@ -127,14 +128,16 @@ def main():
             rgba = np.full((1, 1, 4), 255, dtype=np.uint32)
         h, w = rgba.shape[:2]
         argb = (rgba[..., 3] << 24) | (rgba[..., 0] << 16) | (rgba[..., 1] << 8) | rgba[..., 2]
-        blob += struct.pack("<IIII", flags, ref, w, h) + argb.astype("<u4").tobytes()
+        d3d_world = space.S @ world @ space.S       # the node's matrix back in the game's space (row vectors)
+        blob += struct.pack("<II", flags, ref) + d3d_world.astype("<f4").tobytes()
+        blob += struct.pack("<II", w, h) + argb.astype("<u4").tobytes()
         verts = np.c_[pos, nrm, uv].astype("<f4")
         blob += struct.pack("<I", len(verts)) + verts.tobytes()
         blob += struct.pack("<I", len(idx)) + idx.astype("<u2").tobytes()
         if len(idx) % 2:
             blob += b"\0\0"
         lo, hi = pos.min(0), pos.max(0)
-        print(f"part: {len(verts)} vertices, {len(idx) // 3} triangles, texture {w}x{h}, flags {flags}, "
+        print(f"part (origin {d3d_world[3, 0]:.2f} {d3d_world[3, 1]:.2f} {d3d_world[3, 2]:.2f}): {len(verts)} vertices, {len(idx) // 3} triangles, texture {w}x{h}, flags {flags}, "
               f"box ({lo[0]:.2f} {lo[1]:.2f} {lo[2]:.2f}) - ({hi[0]:.2f} {hi[1]:.2f} {hi[2]:.2f})")
     path = out / f"{mesh_id}.tree"
     path.write_bytes(bytes(blob))

@@ -220,8 +220,10 @@ void Device::CanopyParams(uint32_t primitive, uint32_t fvf, const FvfLayout& lay
     m_drawLeafKey = key;
     m_drawLeafCount = uint32_t(float(set.count) * keep * keep);
     // Falling leaves: a few slots a tree (one a shrub), each now and then a leaf drifting down (ffp.vert FallingLeaf).
-    if (m_drawLeafCount && m_leaf.fall > 0.0f)
-        m_drawLeafFall = uint32_t(std::lround((set.kind == Canopy::Shrub ? 1.0f : 5.0f) * m_leaf.fall * keep));
+    if (m_drawLeafCount && m_leaf.fall > 0.0f) {
+        m_drawLeafFall = std::min<uint32_t>(uint32_t(std::lround((set.kind == Canopy::Shrub ? 1.0f : 5.0f) * m_leaf.fall * keep)), 60u);
+        m_drawLeafGround = LeafGround(set);
+    }
 }
 
 // The crown: the canopy's box, its centre and half its largest extent (model space).
@@ -232,6 +234,57 @@ void Device::CrownOf(LeafSet& set) const
     for (int i = 0; i < 3; ++i)
         set.centre[i] = 0.5f * (lo[i] + hi[i]);
     set.radius = 0.5f * std::max(hi[0] - lo[0], std::max(hi[1] - lo[1], hi[2] - lo[2]));
+}
+
+// A solid static draw (opaque, depth-writing, lit, world-space): remembered a little while as a possible trunk, and
+// matched to the canopy drawn just before it if it stands under that one.
+void Device::NoteSolidDraw(uint32_t fvf)
+{
+    if (!m_leaf.on || !m_drawMesh || !m_drawMeshStatic || m_target != m_scene || IsTerrain(fvf) ||
+        (fvf & d3d::FVF_POSITION_MASK) != d3d::FVF_XYZ || !m_rs[d3d::RS_ZWRITEENABLE] || !m_rs[d3d::RS_LIGHTING] ||
+        m_rs[d3d::RS_ALPHABLENDENABLE] || (m_textures[0] && !m_textures[0]->m_opaque))
+        return;
+    float c[3], e[3];
+    DrawWorldBox(c, e);
+    SolidBox& b = m_recentSolid[m_recentSolidNext++ % 16];
+    for (int i = 0; i < 3; ++i) { b.lo[i] = c[i] - e[i]; b.hi[i] = c[i] + e[i]; }
+    b.draw = m_frameDraw;
+    const RecentCanopy& r = m_recentCanopy;
+    if (r.instance && m_frameDraw - r.draw <= 4 && r.x >= b.lo[0] - 0.5f && r.x <= b.hi[0] + 0.5f &&
+        r.z >= b.lo[2] - 0.5f && r.z <= b.hi[2] + 0.5f && b.lo[1] < r.bottom)
+        m_leafGround[r.instance] = b.lo[1] + 0.05f;
+}
+
+// The ground under the current canopy (see m_leafGround): the captured terrain, the trunk drawn next to it, what was
+// found for this tree before, or just under the crown.
+float Device::LeafGround(const LeafSet& set)
+{
+    float c[3], e[3];
+    DrawWorldBox(c, e);
+    const float x = c[0], z = c[2], bottom = c[1] - e[1];
+    float y;
+    uint32_t colour, light;
+    if (m_grassOn && GroundAt(x, z, &y, &colour, &light) && y <= bottom + 0.5f)
+        return y;
+    uint64_t instance = m_drawMeshKey * 0x9E3779B97F4A7C15ull;
+    instance ^= uint64_t(int64_t(std::floor(x * 4.0f))) * 0xC2B2AE3D27D4EB4Full;
+    instance ^= uint64_t(int64_t(std::floor(z * 4.0f))) * 0x165667B19E3779F9ull;
+    m_recentCanopy = {instance, x, z, bottom, m_frameDraw};
+    float best = 1e30f;
+    for (const SolidBox& b : m_recentSolid)
+        if (b.draw && m_frameDraw - b.draw <= 4 && x >= b.lo[0] - 0.5f && x <= b.hi[0] + 0.5f && z >= b.lo[2] - 0.5f &&
+            z <= b.hi[2] + 0.5f && b.lo[1] < bottom)
+            best = std::min(best, b.lo[1] + 0.05f);
+    if (best < 1e30f) {
+        if (m_leafGround.size() > 8192)
+            m_leafGround.clear();
+        m_leafGround[instance] = best;
+        return best;
+    }
+    auto it = m_leafGround.find(instance);
+    if (it != m_leafGround.end())
+        return it->second;
+    return bottom - 0.5f * e[1];                 // no trunk found: a little under the crown
 }
 
 // Bakes a canopy's leaves (see the top of the file) into the pool.

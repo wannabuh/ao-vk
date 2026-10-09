@@ -1368,8 +1368,22 @@ private:
     VkPipeline m_leafShadowPipeline = VK_NULL_HANDLE;   // leaf_shadow.vert + shadow.frag
     uint64_t m_leafShadowLeaves = 0;             // leaves drawn into the sun's cascades (the log's 600 frames)
     void DrawLeafShadows(VkCommandBuffer cmd);   // the current cascade's canopies' leaves (shadow.cpp RenderShadowMap)
-    uint32_t m_drawLeafCount = 0;                // ... how many of its leaves at this distance
+    uint32_t m_drawLeafCount = 0;                // ... how many of its leaves at this distance (with the falling slots
+                                                 // in its record: DrawTransform leafSet)
     uint32_t m_drawLeafFall = 0;                 // ... its falling-leaf slots (ffp.vert FallingLeaf)
+    float m_drawLeafGround = 0.0f;               // ... the ground under it (world y: where its fallen leaves lie)
+    // The ground under a tree (LeafGround): each part of a mesh has its own origin - a canopy's is up in its crown -
+    // so it comes from the captured terrain (the ground grass), else from the trunk: a solid static mesh drawn next to
+    // the canopy, standing under it. Recent solid draws' world boxes, and per tree (canopy mesh + position) what was
+    // found; a trunk drawn after its canopy is matched to it then, for the next frames.
+    struct SolidBox { float lo[3], hi[3]; uint32_t draw; };
+    SolidBox m_recentSolid[16] = {};
+    uint32_t m_recentSolidNext = 0;
+    struct RecentCanopy { uint64_t instance; float x, z, bottom; uint32_t draw; };
+    RecentCanopy m_recentCanopy{};
+    std::unordered_map<uint64_t, float> m_leafGround;   // tree instance -> ground y
+    void NoteSolidDraw(uint32_t fvf);            // Draw: a solid static draw (a trunk?)
+    float LeafGround(const LeafSet& set);
     Canopy CanopyKind(uint32_t primitive, uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount,
                       const uint16_t* indices, uint32_t indexCount);
     void CanopyParams(uint32_t primitive, uint32_t fvf, const detail::FvfLayout& layout, const void* vertices,
