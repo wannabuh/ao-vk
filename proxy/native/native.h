@@ -36,6 +36,9 @@ void Log(const char* fmt, ...);
 void SetIniPath(const char* path);
 const char* IniPath();
 Mode GetMode(const char* name, Mode fallback);
+
+// "module+offset" for a code address (module = file name), or the bare address.
+void DescribeAddress(uintptr_t address, char* out, size_t size);
 const char* ModeName(Mode mode);
 
 // Replaces the function at `rva` in `module` with a jump to `target` once the `count` bytes there equal `expected`

@@ -10,11 +10,13 @@
 // count its data is from, +0xF4 StateBlob_c.
 #include "native/visual.h"
 #include "native/orig_api.gen.h"
+#include "native/popin.h"
 #include "native/serialize.h"
 #include "native/vc10.h"
 #include "native/xmath.h"
 
 #include <cmath>
+#include <intrin.h>
 
 namespace rnative::visual {
 
@@ -54,6 +56,7 @@ void __cdecl SetMaxActiveLightCount(uint32_t count) { Global<uint32_t>(kMaxLight
 // up to 200 m, one a metre after that.
 void __fastcall AddToRenderList(Visual* v, void*, int32_t list, int32_t bucket)
 {
+    popin::Drawn(v);
     void* camera = Global<void*>(kCurrentCamera);
     if (!camera) return;
     if (uint32_t(bucket) > 0x707) {
@@ -263,6 +266,7 @@ void* __fastcall Construct(Visual* v, void*, void* parent, void* animation)
     v[0xBC] = 0;
     Field<uint32_t>(v, kRestored) = Global<uint32_t>(kRestoreCount);
     DefaultBlob(v);
+    popin::Created(v, _ReturnAddress());
     return v;
 }
 
@@ -280,11 +284,13 @@ void* __fastcall Copy(Visual* v, void*, Visual* from)
     v[0xBC] = 0;
     Field<uint32_t>(v, kRestored) = Field<uint32_t>(from, kRestored);
     DefaultBlob(v);
+    popin::Created(v, _ReturnAddress());
     return v;
 }
 
 void __fastcall Destroy(Visual* v)
 {
+    popin::Destroyed(v);
     Field<uintptr_t>(v, 0) = reinterpret_cast<uintptr_t>(g_orig) + kVtable;
     Field<uintptr_t>(v, kSubject) = reinterpret_cast<uintptr_t>(g_orig) + kSubjectVtable;
     if (void* d = Field<void*>(v, kDelta)) orig::RResource_t_ReleaseRResource(d);

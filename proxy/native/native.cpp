@@ -37,6 +37,7 @@
 #include "native/timer.h"
 #include "native/funcom.h"
 #include "native/findobject.h"
+#include "native/popin.h"
 #include "native/d3dx.h"
 
 namespace rnative {
@@ -52,6 +53,7 @@ void Install(HMODULE orig)
     skin::Install(orig);
     anim::Install(orig);
     scene::Install(orig);
+    popin::Install(orig);
     catrender::Install(orig);
     catmesh::Install(orig);
     catquery::Install(orig);

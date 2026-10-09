@@ -15,6 +15,7 @@
 #include "native/viewport.h"
 #include "native/device.h"
 #include "native/orig_api.gen.h"
+#include "native/popin.h"
 #include "native/scene.h"
 #include "native/vc10.h"
 #include "native/xmath.h"
@@ -493,6 +494,7 @@ void __fastcall Process(uint8_t* vp, void*, void* root)
     Field<uint32_t>(Randy(), 0x288) &= 7;
     void* camera = Field<void*>(vp, 0xC);
     if (!camera) return;
+    popin::FrameStart(vp, root);
     orig::RCamera_t_GetViewMatrix(camera, g_viewMatrix);
     orig::render_t_SetTransformMatrix(Render(), 2, g_viewMatrix);
     Field<float>(vp, 0x18) =
