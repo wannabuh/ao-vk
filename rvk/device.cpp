@@ -853,6 +853,8 @@ bool Device::CreatePipelines(std::string* error)
     vkDestroyShaderModule(m_device, vert, nullptr);
     vkDestroyShaderModule(m_device, fragGlow, nullptr);
     vkDestroyShaderModule(m_device, frag, nullptr);
+    vkDestroyShaderModule(m_device, fragGlowNoCut, nullptr);
+    vkDestroyShaderModule(m_device, fragNoCut, nullptr);
     if (!ok || !CreateShadowResources(error) || !CreatePointShadowResources(error) || !CreateHdrResources(error) ||
         !CreateParticleResources(error) || !CreateSkinResources(error))
         return false;
