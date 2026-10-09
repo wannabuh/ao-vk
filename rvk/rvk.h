@@ -85,6 +85,7 @@ private:
     std::vector<uint8_t> m_alphaMask;
     uint32_t m_alphaW = 0, m_alphaH = 0;
     uint32_t m_alphaVersion = 0;       // counts the uploads that changed the mask (a canopy's leaves are rebaked)
+    VkDeviceSize m_bytes = 0;          // its image's memory (the GPU memory report)
     bool m_lightmap = false;           // captured as a terrain lightmap (a re-upload recaptures the grass's light)
     bool m_groundBase = false;         // captured as a terrain base texture (a re-upload recaptures the grass's ground)
     Texture* m_normalMap = nullptr;    // tangent-space normal map drawn with this texture (owned; SetNormalMap)
@@ -1383,6 +1384,11 @@ private:
                     VkDeviceSize frameLightsOffset, VkBuffer prevBuffer, VkDeviceSize prevOffset,
                     VkDeviceSize prevBytes, VkBuffer smoothBuffer, VkDeviceSize smoothOffset, VkDeviceSize smoothBytes);
     uint32_t m_leafBakesThisFrame = 0;
+    // GPU memory (diag.cpp GpuMemoryReport: in frame dumps and the 600-frame log).
+    bool m_memoryBudget = false;                 // VK_EXT_memory_budget: the driver's usage and budget per heap
+    VkDeviceSize m_textureBytes[2] = {};         // live textures' images: the game's, render targets
+    uint32_t m_textureCount[2] = {};
+    std::string GpuMemoryReport() const;
     void DestroyLeafResources();
     float m_pointLightScale = 1.0f, m_charLightScale = 1.0f;   // SetPointLightIntensity
     float LightScale(const d3d::Light& l) const;

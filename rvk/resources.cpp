@@ -157,6 +157,11 @@ bool Device::RealizeTexture(Texture* t)
     vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, t->m_levels, 0, 1};
     vkCreateImageView(m_device, &vi, nullptr, &t->m_view);
     RegisterBindlessTexture(t);
+    VmaAllocationInfo info2;
+    vmaGetAllocationInfo(m_allocator, t->m_allocation, &info2);
+    t->m_bytes = info2.size;
+    m_textureBytes[t->m_renderTarget ? 1 : 0] += t->m_bytes;
+    ++m_textureCount[t->m_renderTarget ? 1 : 0];
     return true;
 }
 
@@ -560,7 +565,11 @@ void Device::DestroyTextureNow(Texture* t)
 {
     UnregisterBindlessTexture(t);                // clears the slot to the black image before the view goes
     if (t->m_view) vkDestroyImageView(m_device, t->m_view, nullptr);
-    if (t->m_image) vmaDestroyImage(m_allocator, t->m_image, t->m_allocation);
+    if (t->m_image) {
+        vmaDestroyImage(m_allocator, t->m_image, t->m_allocation);
+        m_textureBytes[t->m_renderTarget ? 1 : 0] -= t->m_bytes;
+        --m_textureCount[t->m_renderTarget ? 1 : 0];
+    }
     delete t;
 }
 

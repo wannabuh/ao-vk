@@ -332,6 +332,10 @@ bool Device::CreateLogicalDevice(std::string* error)
                                            VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
                                            VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME,
                                            VK_EXT_ROBUSTNESS_2_EXTENSION_NAME};   // nullDescriptor: empty bindless slots
+    // The driver's own usage and budget per memory heap (the GPU memory report, diag.cpp GpuMemoryReport).
+    m_memoryBudget = has(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+    if (m_memoryBudget)
+        extensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
     // Swapchain support even without a window yet: SetWindow() can attach one later.
     m_swapchainSupported = has(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     if (m_swapchainSupported)
@@ -456,6 +460,8 @@ bool Device::CreateLogicalDevice(std::string* error)
     ai.device = m_device;
     ai.instance = m_instance;
     ai.pVulkanFunctions = &fns;
+    if (m_memoryBudget)
+        ai.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
     return Check(vmaCreateAllocator(&ai, &m_allocator), "vmaCreateAllocator", error);
 }
 
@@ -1379,6 +1385,7 @@ void Device::BeginFrame()
         if (GlobalMemoryStatusEx(&mem))
             Log("address space: %llu of %llu MB free (the game's process)", (unsigned long long)(mem.ullAvailVirtual >> 20),
                 (unsigned long long)(mem.ullTotalVirtual >> 20));
+        Log("%s", GpuMemoryReport().c_str());
         Log("opaque static fast path: %llu draws (last 600 frames)", (unsigned long long)m_opaqueDraws);
         Log("foliage: %llu draws, %llu of them far (LOD) (last 600 frames)", (unsigned long long)m_foliageDraws,
             (unsigned long long)m_foliageLodDraws);
