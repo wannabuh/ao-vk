@@ -493,6 +493,7 @@ void main()
             a2 = clamp(a2 + min(0.5 * (dot(dnx, dnx) + dot(dny, dny)), 0.18), 1e-6, 1.0);
             gPbrAlpha = sqrt(a2);
             gPbrF0 = mix(vec3(0.04), gPbrAlbedo, gPbrMetal);
+            gPbrSunVisibility = gSunVisibilityValid ? gSunVisibility : 1.0;
             gPbr = true;
         }
         vec3 ambient = vec3(0.0), diff = vec3(0.0), spec = vec3(0.0), diffL = vec3(0.0), specL = vec3(0.0);

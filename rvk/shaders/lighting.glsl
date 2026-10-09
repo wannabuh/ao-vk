@@ -8,6 +8,7 @@
 bool gPbr = false;
 float gPbrAlpha = 0.25;          // GGX alpha (roughness squared, widened by the normal's variance)
 vec3 gPbrF0 = vec3(0.04);        // reflectance facing the surface: 4% for non-metals, the albedo for metals
+float gPbrSunVisibility = 1.0;   // how much of the sun reaches the pixel, fully (the sun's highlight, see below)
 
 const float kPbrPi = 3.14159265;
 
@@ -73,8 +74,12 @@ void AccumulateLight(Light l, vec3 posW, vec3 normalW, vec3 toEye, float sunScal
         att *= PointShadow(l, posW, normalW, nl);   // shadows take the light's diffuse and specular, not its ambient
     diff += att * nl * l.diffuse.rgb;
     if (gPbr) {
-        if (nl > 0.0 && att > 0.0)
-            spec += att * l.diffuse.rgb * PbrSpecular(normalize(normalW), L, toEye);
+        // The sun's highlight is shadowed fully (sunScale keeps part of the sunlight in full shadow - baked-looking
+        // shade - but a highlight has none to keep) and fades as the sun nears the horizon: a low sun's highlight at
+        // grazing angles is the brightest there is, on surfaces its long shadows (beyond the cascades) should cover.
+        float a = type == 3u ? gPbrSunVisibility * smoothstep(0.03, 0.25, L.y) : att;
+        if (nl > 0.0 && a > 0.0)
+            spec += a * l.diffuse.rgb * PbrSpecular(normalize(normalW), L, toEye);
     } else if ((C.flags.x & F_SPECULAR) != 0u && nl > 0.0) {
         float nh = max(dot(normalW, normalize(L + toEye)), 0.0);
         spec += att * pow(nh, C.misc.x) * l.specular.rgb;
