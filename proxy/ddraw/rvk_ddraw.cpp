@@ -124,7 +124,7 @@ static void ProfileSweep(bool start)
     static const Step kSteps[] = {
         {"baseline", nullptr, 0}, {"depth pre-pass off", "RVK_Prepass", 0}, {"soft shadows off", "RVK_SunSoft", 0}, {"point shadows off", "RVK_PtOn", 0},
         {"sun shadows off", "RVK_SunShadow", 0}, {"contact shadows off", "RVK_ContactOn", 0},
-        {"leaf light off", "RVK_LeafOn", 0}, {"relief (bump) off", "RVK_BumpOn", 0}, {"light override off", "RVK_LightOver", 0},
+        {"leaf light off", "RVK_LeafLightOn", 0}, {"relief (bump) off", "RVK_BumpOn", 0}, {"light override off", "RVK_LightOver", 0},
         {"per-pixel lighting off", "RVK_PixelLight", 0}, {"night glow off", "RVK_NightOn", 0}, {"sway off", "RVK_SwayOn", 0},
         {"grass push off", "RVK_PushOn", 0}, {"plant detail off", "RVK_PlantDetOn", 0}, {"foliage lod off", "RVK_FolLodOn", 0},
         {"gi off", "RVK_GiOn", 0}, {"ao off", "RVK_AoOn", 0}, {"volumetric off", "RVK_VolOn", 0}, {"reflections off", "RVK_SsrOn", 0},

@@ -310,7 +310,8 @@ All settings live in `randy-vk.ini` (section `[Renderer]`; the native code's swi
 saved whenever they change. With AOReloaded they
 appear in the game's options window (F10) under **Renderer**: the presets first, then every feature as an on/off
 checkbox, its
-sliders and choices further down, grouped by feature. Changes apply immediately. Edits to the `[Renderer]` section of
+sliders and choices further down, grouped by feature. New, unfinished features sit in their own **Experimental**
+block just under the feature switches, off by default. Changes apply immediately. Edits to the `[Renderer]` section of
 `randy-vk.ini` made while the game runs apply too, within half a second (the options window shows them once
 reopened).
 
@@ -338,7 +339,7 @@ Some useful ones:
 | `RVK_GrassTrail` | 1 | grass trodden by characters stays down a few seconds behind them (needs `RVK_PushOn`) |
 | `RVK_GrassShadow` | 1 | grass blades cast the sun's shadow near the camera, onto the ground and each other (needs `RVK_SunShadow`) |
 | `RVK_GrassEven` | 1 | an even grass colour: one green (1) rather than the colours of the ground under each blade (0) |
-| `RVK_WaterOn` | 1 | the new water (off = the game's own; needs HDR) |
+| `RVK_WaterOn` | 0 | the new water (off = the game's own; needs HDR). Experimental: off by default |
 | `RVK_WaterStyle` | 0.5 | 0 = the game's water made richer, 1 = realistic |
 | `RVK_WaterQual` | 2 | 1 low, 2 medium, 3 high: surface detail and reflection quality |
 | `RVK_WaterWaves` / `RVK_WaterRipple` | 0.3 / 1 | wave height, small ripples |

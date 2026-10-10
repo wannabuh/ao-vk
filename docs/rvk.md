@@ -138,7 +138,7 @@
     standing, `--grass-bench-film N` ~60 frames a second with a screenshot every N: film_NNN.bmp; the bench has no other
     shadow caster: add `--grass-bench-walker` for a sun shadow map), `--grass-shadow 0|1`, `--grass-style V,F,G,U,T` (variety, flowers, glow, gusts, trails). The log's `ground grass:` line every 600 frames: blades drawn, tiles, builds and their cost,
     the share of blades lit by a captured lightmap, the capture's cost, the terrain's ambient.
-- **Leaves** (setting `RVK_LeafOn`, Plants; on by default, off in Classic+): leaves on the game's trees, shrubs and palms,
+- **Leaves** (setting `RVK_LeafOn`, Experimental; off by default): leaves on the game's trees, shrubs and palms,
   whose canopies are a few big cards with a painted cluster of leaves and twigs each (a 20-unit jungle crown is 54
   triangles) - an addition on top of them (leaves.cpp, `leaf.vert` = ffp.vert built with `RVK_LEAF`). Needs HDR.
   - *Canopies* (`CanopyKind`): lit, static, upright meshes drawn into the scene with depth writes and a texture that is

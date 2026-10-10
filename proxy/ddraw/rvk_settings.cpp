@@ -57,8 +57,8 @@ Setting g_settings[] = {
     {"RVK_PbrGlow",    "Emissive maps' brightness (glowing surfaces from the materials folder)", "Lighting", Float, 0, 8, 0.25f, 2, nullptr, 0, "RVK_Pbr"},
     {"RVK_PbrDebug",   "Debug view (7 which surfaces have maps: green PBR, blue normal map, magenta albedo, orange emissive; 8 emitted light only; 9 reflected surroundings; 1 albedo, 2 roughness, 3 metallic, 4 occlusion, 5 normal, 6 highlights only; Ctrl+Shift+K)", "Lighting", Choice, 0, 9, 1, 0, nullptr, 0, "RVK_Pbr", "0 1 2 3 4 5 6 7 8 9"},
     {"RVK_Albedo",     "Replacement textures (albedo maps from the materials folder)", "Lighting",     Bool,  0, 1, 1, 1, nullptr, 0},
-    {"RVK_LeafOn",     "Sunlight through leaves",                                  "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0},
-    {"RVK_LeafLight",  "Strength",                                                 "Lighting",         Float, 0.25f, 2, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafLightOn","Sunlight through leaves",                                  "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0},
+    {"RVK_LeafLight",  "Strength",                                                 "Lighting",         Float, 0.25f, 2, 0.25f, 1, nullptr, 0, "RVK_LeafLightOn"},
     {"RVK_PtLight",    "Point light intensity (lamps, fires, other lights)",       "Lighting",         Float, 0.25f, 2, 0.05f, 0.3f, nullptr, 0},
     {"RVK_CharLight",  "Character light intensity (lights characters carry, yours too)", "Lighting",  Float, 0.1f, 2, 0.05f, 0.25f, nullptr, 0},
     {"RVK_TessOn",     "Rounder characters (Phong tessellation)",                  "Lighting",         Bool,  0, 1, 1, 1, nullptr, 0},
@@ -92,30 +92,30 @@ Setting g_settings[] = {
     {"RVK_TrailShade", "Trodden grass shows as lawn stripes (lighter / darker by the way it lies)", "Plants", Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
     {"RVK_GrassShadow","Grass blades cast the sun's shadow (near the camera)",       "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_GrassOn"},
     {"RVK_GrassEven",  "Even grass colour (1 = one green, 0 = the ground's colours)", "Plants",          Float, 0, 1, 0.1f, 1, nullptr, 0, "RVK_GrassOn"},
-    {"RVK_LeafOn",     "Leaves on trees and shrubs (sprigs that sway and flutter)",  "Plants",           Bool,  0, 1, 1, 1, nullptr, 0},
-    {"RVK_LeafDensity","Leaf density (1 = each card's leafy area covered about twice)", "Plants",      Float, 0.25f, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
-    {"RVK_LeafSize",   "Sprig size (1 = an eighth of the leaf texture)",            "Plants",           Float, 0.5f, 2.5f, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
-    {"RVK_LeafDist",   "Leaves up to this distance (thinning out from half of it)", "Plants",           Int,   15, 150, 5, 60, nullptr, 0, "RVK_LeafOn"},
-    {"RVK_LeafCore",   "The game's own canopy cut back to an inner core (0 = left as it is)", "Plants", Float, 0, 1, 0.1f, 0.6f, nullptr, 0, "RVK_LeafOn"},
-    {"RVK_LeafWind",   "Branches swaying in the wind",                              "Plants",           Float, 0, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
-    {"RVK_LeafFlutter","Leaves fluttering",                                         "Plants",           Float, 0, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
-    {"RVK_LeafTrees",  "Leaves on trees",                                           "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
-    {"RVK_LeafShrubs", "Leaves on shrubs and bushes",                               "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
-    {"RVK_LeafPalms",  "Palm fronds bending in the wind",                           "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
-    {"RVK_LeafShadow", "Leaves cast the sun's shadow (dappled light under trees)",  "Plants",           Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
-    {"RVK_LeafFall",   "Falling leaves (more in gusts; 0 = none)",                  "Plants",           Float, 0, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafOn",     "Leaves on trees and shrubs (sprigs that sway and flutter)",  "Experimental",     Bool,  0, 1, 1, 0, nullptr, 0},
+    {"RVK_LeafDensity","Leaf density (1 = each card's leafy area covered about twice)", "Experimental", Float, 0.25f, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafSize",   "Sprig size (1 = an eighth of the leaf texture)",            "Experimental",     Float, 0.5f, 2.5f, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafDist",   "Leaves up to this distance (thinning out from half of it)", "Experimental",     Int,   15, 150, 5, 60, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafCore",   "The game's own canopy cut back to an inner core (0 = left as it is)", "Experimental", Float, 0, 1, 0.1f, 0.6f, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafWind",   "Branches swaying in the wind",                              "Experimental",     Float, 0, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafFlutter","Leaves fluttering",                                         "Experimental",     Float, 0, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafTrees",  "Leaves on trees",                                           "Experimental",     Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafShrubs", "Leaves on shrubs and bushes",                               "Experimental",     Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafPalms",  "Palm fronds bending in the wind",                           "Experimental",     Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafShadow", "Leaves cast the sun's shadow (dappled light under trees)",  "Experimental",     Bool,  0, 1, 1, 1, nullptr, 0, "RVK_LeafOn"},
+    {"RVK_LeafFall",   "Falling leaves (more in gusts; 0 = none)",                  "Experimental",     Float, 0, 3, 0.25f, 1, nullptr, 0, "RVK_LeafOn"},
 
-    {"RVK_WaterOn",    "New water (waves, reflections, refraction, foam; needs HDR)", "Water",          Bool,  0, 1, 1, 1, nullptr, 0},
-    {"RVK_WaterStyle", "Look (0 = the game's water made richer, 1 = realistic)",  "Water",            Float, 0, 1, 0.05f, 0.5f, nullptr, 0, "RVK_WaterOn"},
-    {"RVK_WaterQual",  "Quality (1 low, 2 medium, 3 high)",                        "Water",            Int,   1, 3, 1, 2, nullptr, 0, "RVK_WaterOn"},
-    {"RVK_WaterWaves", "Wave height",                                              "Water",            Float, 0, 3, 0.1f, 0.3f, nullptr, 0, "RVK_WaterOn"},
-    {"RVK_WaterRipple","Ripples",                                                  "Water",            Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_WaterOn"},
-    {"RVK_WaterRefl",  "Reflections",                                              "Water",            Float, 0, 1.5f, 0.05f, 1, nullptr, 0, "RVK_WaterOn"},
-    {"RVK_WaterRefr",  "Refraction (bending what is seen through it)",            "Water",            Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_WaterOn"},
-    {"RVK_WaterClear", "Clarity (how far one sees into it)",                       "Water",            Float, 0.2f, 4, 0.1f, 1, nullptr, 0, "RVK_WaterOn"},
-    {"RVK_WaterFoam",  "Foam (shores, crests)",                                    "Water",            Float, 0, 2, 0.1f, 0, nullptr, 0, "RVK_WaterOn"},
-    {"RVK_WaterCaust", "Caustics (sunlight patterns under water)",                 "Water",            Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_WaterOn"},
-    {"RVK_WaterTex",   "The game's water texture on the surface",                  "Water",            Float, 0, 1, 0.05f, 0.5f, nullptr, 0, "RVK_WaterOn"},
+    {"RVK_WaterOn",    "New water (waves, reflections, refraction, foam; needs HDR)", "Experimental",    Bool,  0, 1, 1, 0, nullptr, 0},
+    {"RVK_WaterStyle", "Look (0 = the game's water made richer, 1 = realistic)",  "Experimental",     Float, 0, 1, 0.05f, 0.5f, nullptr, 0, "RVK_WaterOn"},
+    {"RVK_WaterQual",  "Quality (1 low, 2 medium, 3 high)",                        "Experimental",     Int,   1, 3, 1, 2, nullptr, 0, "RVK_WaterOn"},
+    {"RVK_WaterWaves", "Wave height",                                              "Experimental",     Float, 0, 3, 0.1f, 0.3f, nullptr, 0, "RVK_WaterOn"},
+    {"RVK_WaterRipple","Ripples",                                                  "Experimental",     Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_WaterOn"},
+    {"RVK_WaterRefl",  "Reflections",                                              "Experimental",     Float, 0, 1.5f, 0.05f, 1, nullptr, 0, "RVK_WaterOn"},
+    {"RVK_WaterRefr",  "Refraction (bending what is seen through it)",            "Experimental",     Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_WaterOn"},
+    {"RVK_WaterClear", "Clarity (how far one sees into it)",                       "Experimental",     Float, 0.2f, 4, 0.1f, 1, nullptr, 0, "RVK_WaterOn"},
+    {"RVK_WaterFoam",  "Foam (shores, crests)",                                    "Experimental",     Float, 0, 2, 0.1f, 0, nullptr, 0, "RVK_WaterOn"},
+    {"RVK_WaterCaust", "Caustics (sunlight patterns under water)",                 "Experimental",     Float, 0, 2, 0.1f, 1, nullptr, 0, "RVK_WaterOn"},
+    {"RVK_WaterTex",   "The game's water texture on the surface",                  "Experimental",     Float, 0, 1, 0.05f, 0.5f, nullptr, 0, "RVK_WaterOn"},
 
     {"RVK_SunShadow",  "Sun shadows",                                              "Shadows",          Bool,  0, 1, 1, 1, "RANDYVK_SHADOWS", 0},
     {"RVK_SunRes",     "Resolution (4096 = 256 MB, 8192 = 1 GB of video memory)",  "Shadows",          Choice, 1024, 8192, 1, 2048, nullptr, 0, "RVK_SunShadow", "1024 2048 4096 8192"},
@@ -377,7 +377,8 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
         d->SetGrassShadows(V("RVK_GrassShadow") != 0.0f);
     else if (is("RVK_GrassEven"))
         d->SetGrassEven(V("RVK_GrassEven"));
-    else if (std::strncmp(n, "RVK_Leaf", 8) == 0 && std::strcmp(n, "RVK_LeafLight") != 0) {
+    else if (std::strncmp(n, "RVK_Leaf", 8) == 0 && std::strcmp(n, "RVK_LeafLight") != 0 &&
+             std::strcmp(n, "RVK_LeafLightOn") != 0) {
         rvk::Device::LeafSettings l;
         l.on = V("RVK_LeafOn") != 0.0f;
         l.density = V("RVK_LeafDensity");
@@ -399,7 +400,7 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
         d->SetGrading(V("RVK_Saturation"), V("RVK_Contrast"), V("RVK_Warmth"), V("RVK_LutAmount"), V("RVK_NightTint"),
                       V("RVK_Vignette"));
     else if (is("RVK_SunSoft")) d->SetSunSoftness(V(n));
-    else if (is("RVK_LeafLight")) d->SetLeafLight(V(n));
+    else if (is("RVK_LeafLightOn") || is("RVK_LeafLight")) d->SetLeafLight(V("RVK_LeafLight"));
     else if (is("RVK_NightGlow")) d->SetNightGlow(V(n));
     else if (is("RVK_Contact")) d->SetContactShadows(V(n));
     else if (is("RVK_Ao") || is("RVK_AoRadius")) d->SetAo(V("RVK_Ao"), V("RVK_AoRadius"));
@@ -479,7 +480,8 @@ void Load()
     // that switching the feature on shows it.
     for (size_t i = 0; i < kCount; ++i) {
         Setting& t = g_settings[i];
-        if (inIni[i] || t.type != Bool) continue;
+        // Experimental features stay at their (off) default for a new ini: don't infer them from their children.
+        if (inIni[i] || t.type != Bool || std::strcmp(t.section, "Experimental") == 0) continue;
         for (Setting& child : g_settings) {
             const Vanilla* vanilla = child.parent && std::strcmp(child.parent, t.name) == 0 ? FindVanilla(child.name) : nullptr;
             if (!vanilla) continue;
