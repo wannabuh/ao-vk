@@ -5,6 +5,8 @@
 
 #include "native/native.h"
 
+#include "aovk_plugin.h"
+
 #include <cstdint>
 
 namespace rnative::device {
@@ -22,6 +24,13 @@ struct StateChange {
     uint32_t stage, type, value;            // RenderState: type = the state; Texture: stage
     void* surface;                          // Texture: the IDirectDrawSurface7 (or null)
 };
+// The interface back end's shapes and meshes (rvk::Device::UiShape / UiVertex / UiMesh / UiMeshes, the same layouts):
+// the interface plugin API's (include/aovk_plugin.h).
+using UiShape = AoVkUiShape;
+using UiVertex = AoVkUiVertex;
+using UiMesh = AoVkUiMesh;
+using UiMeshes = AoVkUiMeshes;
+
 struct Direct {
     // DeviceState::UpdateDevice's changes in the order it would make the calls (SetRenderState, SetTextureStageState,
     // SetTexture), as one.
@@ -38,6 +47,14 @@ struct Direct {
     // this frame - false: the renderer shows the last one drawn (its interface layer, RVK_UiRate). end after it.
     bool (*interfaceBegin)();
     void (*interfaceEnd)();
+    // While the interface is drawn: a window's rectangle on screen, for the glass behind it (docs/ui-dll.md).
+    void (*interfaceWindow)(float x0, float y0, float x1, float y1);
+    // While the interface is drawn: shapes of our own, where its drawing has got to (UiShape below, phase 2).
+    // With meshes (or null) between the shapes' fills and their depth (UiMeshes below, phase 9).
+    void (*interfaceShapes)(const UiShape* shapes, uint32_t count, const UiMeshes* meshes);
+    // An interface image from BGRA pixels (A8R8G8B8, tightly packed): a handle for UiShape::image, or null; and its end.
+    void* (*interfaceImage)(const void* bgra, uint32_t width, uint32_t height);
+    void (*interfaceImageFree)(void* image);
 };
 void SetDirect(const Direct* direct);       // null: none (the backend's device is gone)
 
@@ -45,9 +62,14 @@ void SetDirect(const Direct* direct);       // null: none (the backend's device 
 // shadows' per-frame work (cat_skin.cpp: its callback over skinned positions) can be skipped.
 bool BlobShadowsReplaced();
 
-// The direct channel's interfaceBegin / interfaceEnd (true / nothing without it).
+// The direct channel's interfaceBegin / interfaceEnd / interfaceWindow (true / nothing without it). Unlike the rest of
+// the channel these don't need [Native] Device: they come from GUI.dll's hooks (gui.cpp), not the device layer.
 bool InterfaceBegin();
 void InterfaceEnd();
+void InterfaceWindow(float x0, float y0, float x1, float y1);
+void InterfaceShapes(const UiShape* shapes, uint32_t count, const UiMeshes* meshes = nullptr);
+void* InterfaceImage(const void* bgra, uint32_t width, uint32_t height);
+void InterfaceImageFree(void* image);
 
 // Around a native mesh's draw (mesh.cpp): its indices are a native triangle list's, unchanged while `generation`
 // (meshdata::IndexGeneration, non-zero) is. [Native] Retain = on.

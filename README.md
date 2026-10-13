@@ -411,6 +411,8 @@ other DLLs, which derive from Randy's classes, keep working.
 - `docs/architecture.md`: the overall design; `docs/frame.md`: how the game draws a frame
 - `docs/rvk.md`: the renderer; `docs/materials.md`: material maps (normal, PBR, albedo); `docs/d3d7-vocabulary.md`: what the game uses
 - `docs/native.md`: replacing Randy; `docs/skinning.md`, `docs/animation.md`: the character code
+- `docs/ui-dll.md`: the interface plugin API (`include/aovk_plugin.h`) - a DLL in `ao-vk-plugins\` next to
+  `randy31.dll` that draws the game's interface through ao-vk. ao-vk runs without one (the game's own interface).
 
 ## Building
 
@@ -427,6 +429,14 @@ cmake --build --preset linux-release
 ```
 
 The result is `build/linux-release/randy31.dll`, plus test programs.
+
+On Windows the same works in WSL (Ubuntu 26.04's packages: clang, lld, llvm, cmake, ninja). `tools/update-client.ps1`
+builds there and installs the result into a client: `randy31.dll` (the game's own kept as `randy31_orig.dll`).
+Close the game first:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\update-client.ps1 [-NoBuild] [-Client <client folder>]
+```
 
 ### Testing
 

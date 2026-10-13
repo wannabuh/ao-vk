@@ -1,6 +1,7 @@
 // Patching helpers and the [Native] modes (native.h).
 #include "native/native.h"
 #include "native/entry_guard.gen.h"
+#include "native/hooklib.h"
 
 #include <algorithm>
 
@@ -22,32 +23,6 @@ char g_ini[MAX_PATH];
 // what native code calls instead of taking the original's address: the native one if we have it, else the original's.
 HMODULE g_original;
 std::unordered_map<uint32_t, void*> g_native;
-
-// Trampolines live in one executable page, handed out in 32-byte pieces.
-uint8_t* g_tramp;
-size_t g_trampUsed;
-constexpr size_t kTrampPage = 4096, kTrampSize = 32;
-
-uint8_t* NewTrampoline()
-{
-    if (!g_tramp || g_trampUsed + kTrampSize > kTrampPage) {
-        g_tramp = static_cast<uint8_t*>(VirtualAlloc(nullptr, kTrampPage, MEM_COMMIT | MEM_RESERVE,
-                                                     PAGE_EXECUTE_READWRITE));
-        g_trampUsed = 0;
-        if (!g_tramp)
-            return nullptr;
-    }
-    uint8_t* t = g_tramp + g_trampUsed;
-    g_trampUsed += kTrampSize;
-    return t;
-}
-
-void WriteJump(uint8_t* at, const void* to)
-{
-    at[0] = 0xE9;
-    int32_t rel = int32_t(reinterpret_cast<uintptr_t>(to) - (reinterpret_cast<uintptr_t>(at) + 5));
-    std::memcpy(at + 1, &rel, 4);
-}
 
 }  // namespace
 
@@ -118,8 +93,8 @@ void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t co
                 const HookFixups& fixups)
 {
     auto* at = reinterpret_cast<uint8_t*>(module) + rva;
-    uint8_t want[kTrampSize];
-    if (count <= kTrampSize) {
+    uint8_t want[hooklib::kTrampSize];
+    if (count <= hooklib::kTrampSize) {
         std::memcpy(want, expected, count);
         const uint32_t delta = uint32_t(reinterpret_cast<uintptr_t>(module) - 0x10000000u);
         for (size_t i = 0; i < fixups.abs32Count; ++i) {
@@ -129,11 +104,11 @@ void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t co
             std::memcpy(want + fixups.abs32[i], &v, 4);
         }
     }
-    if (count < 5 || count > kTrampSize - 5 || std::memcmp(at, want, count) != 0) {
+    if (count < 5 || count > hooklib::kTrampSize - 5 || std::memcmp(at, want, count) != 0) {
         Log("%s: unexpected code at %p - unknown client build, not replaced", what, (void*)at);
         return nullptr;
     }
-    uint8_t* tramp = NewTrampoline();
+    uint8_t* tramp = hooklib::NewTrampoline();
     if (!tramp)
         return nullptr;
     std::memcpy(tramp, at, count);
@@ -145,47 +120,17 @@ void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t co
         rel = int32_t(dest - reinterpret_cast<uintptr_t>(tramp + o + 4));
         std::memcpy(tramp + o, &rel, 4);
     }
-    WriteJump(tramp + count, at + count);
+    hooklib::WriteJump(tramp + count, at + count);
     DWORD protect;
     if (!VirtualProtect(at, count, PAGE_EXECUTE_READWRITE, &protect))
         return nullptr;
-    WriteJump(at, target);
+    hooklib::WriteJump(at, target);
     for (size_t i = 5; i < count; ++i)
         at[i] = 0xCC;                                      // never reached: the jump skips the rest
     VirtualProtect(at, count, protect, &protect);
     FlushInstructionCache(GetCurrentProcess(), at, count);
     Wrapped().insert(rva);
     g_native[rva] = target;
-    return tramp;
-}
-
-void* HookAt(uint8_t* at, size_t count, const size_t* rel32, size_t rel32Count, void* target, const char* what)
-{
-    if (count < 5 || count > kTrampSize - 5)
-        return nullptr;
-    uint8_t* tramp = NewTrampoline();
-    if (!tramp)
-        return nullptr;
-    std::memcpy(tramp, at, count);
-    for (size_t i = 0; i < rel32Count; ++i) {
-        const size_t o = rel32[i];
-        int32_t rel;
-        std::memcpy(&rel, at + o, 4);
-        uintptr_t dest = reinterpret_cast<uintptr_t>(at + o + 4) + rel;
-        rel = int32_t(dest - reinterpret_cast<uintptr_t>(tramp + o + 4));
-        std::memcpy(tramp + o, &rel, 4);
-    }
-    WriteJump(tramp + count, at + count);
-    DWORD protect;
-    if (!VirtualProtect(at, count, PAGE_EXECUTE_READWRITE, &protect)) {
-        Log("%s: can't patch %p", what, (void*)at);
-        return nullptr;
-    }
-    WriteJump(at, target);
-    for (size_t i = 5; i < count; ++i)
-        at[i] = 0xCC;
-    VirtualProtect(at, count, protect, &protect);
-    FlushInstructionCache(GetCurrentProcess(), at, count);
     return tramp;
 }
 
@@ -213,6 +158,10 @@ bool IsCode(uintptr_t address)                      // in a loaded module's imag
                               reinterpret_cast<const char*>(address), &m);
 }
 
+// Modules watched besides Randy's own (WatchModule): "name+", as Where writes them.
+char g_watchedExtra[8][MAX_PATH + 1];
+LONG g_watchedExtraCount;
+
 LONG CALLBACK CrashLogger(EXCEPTION_POINTERS* e)
 {
     static LONG reports;
@@ -224,6 +173,8 @@ LONG CALLBACK CrashLogger(EXCEPTION_POINTERS* e)
     static const char* const kWatched[] = {"randy31.dll+", "randy31_orig.dll+", "DisplaySystem.dll+", "Gamecode.dll+"};
     bool watched = false;
     for (const char* m : kWatched) watched |= _strnicmp(where, m, std::strlen(m)) == 0;
+    for (LONG i = 0; i < g_watchedExtraCount; ++i)
+        watched |= _strnicmp(where, g_watchedExtra[i], std::strlen(g_watchedExtra[i])) == 0;
     if (!watched || InterlockedIncrement(&reports) > 8) return EXCEPTION_CONTINUE_SEARCH;
     const ULONG_PTR* info = e->ExceptionRecord->ExceptionInformation;
     Log("fault %08lx at %s (%s %08lx), thread %lu - first chance, may be handled", (unsigned long)code, where,
@@ -251,6 +202,14 @@ LONG CALLBACK CrashLogger(EXCEPTION_POINTERS* e)
 }
 
 }  // namespace
+
+void WatchModule(const char* name)
+{
+    if (!name || g_watchedExtraCount >= LONG(sizeof(g_watchedExtra) / sizeof(g_watchedExtra[0])))
+        return;
+    std::snprintf(g_watchedExtra[g_watchedExtraCount], sizeof(g_watchedExtra[0]), "%s+", name);
+    ++g_watchedExtraCount;
+}
 
 void DescribeAddress(uintptr_t address, char* out, size_t size) { Where(address, out, size); }
 
@@ -299,7 +258,7 @@ bool Replace(HMODULE module, uint32_t rva, void* target, const char* what)
     DWORD protect;
     if (!VirtualProtect(at, 5, PAGE_EXECUTE_READWRITE, &protect))
         return false;
-    WriteJump(at, target);
+    hooklib::WriteJump(at, target);
     VirtualProtect(at, 5, protect, &protect);
     FlushInstructionCache(GetCurrentProcess(), at, 5);
     g_native[rva] = target;

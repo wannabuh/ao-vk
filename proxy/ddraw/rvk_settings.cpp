@@ -2,6 +2,9 @@
 #include "rvk_settings.h"
 
 #include "rvk_backend.h"
+#include "native/device.h"
+
+#include "aovk_plugin.h"
 
 #include <windows.h>
 
@@ -39,6 +42,8 @@ Setting g_settings[] = {
     {"RVK_Enhance",    "All enhancements (Ctrl+Shift+E)", "General", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_Prepass",    "Depth pre-pass", "General", Bool, 0, 1, 1, 1, nullptr, 0},
     {"RVK_UiRate",     "Interface redraws a second", "General", Choice, 0, 120, 1, 60, nullptr, 0, nullptr, "0 30 60 90 120"},
+
+    {"RVK_UiSkin",     "Interface look from the interface plugin (glass behind windows, its windows and styles)", "Interface", Bool, 0, 1, 1, 1, nullptr, 0},
 
     {"RVK_PixelLight", "Per-pixel lighting",                                       "Lighting",         Bool,  0, 1, 1, 1, "RANDYVK_PIXEL_LIGHTING", 0},
     {"RVK_LightOver",  "All nearby lights (light override)",   "Lighting",         Bool,  0, 1, 1, 1, "RANDYVK_LIGHT_OVERRIDE", 0},
@@ -240,7 +245,7 @@ const Vanilla kVanilla[] = {
     {"RVK_Hdr", 0}, {"RVK_Bloom", 0}, {"RVK_BloomFx", 0}, {"RVK_NightGlow", 0}, {"RVK_Ao", 0}, {"RVK_Gi", 0},
     {"RVK_Volume", 0}, {"RVK_Ssr", 0}, {"RVK_MBlur", 0}, {"RVK_Taa", 0}, {"RVK_Saturation", 1}, {"RVK_Contrast", 1},
     {"RVK_Warmth", 0}, {"RVK_NightTint", 0}, {"RVK_Vignette", 0}, {"RVK_LutAmount", 0}, {"RVK_Dof", 0},
-    {"RVK_Particles", 0}, {"RVK_PartCore", 1}, {"RVK_WaterOn", 0},
+    {"RVK_Particles", 0}, {"RVK_PartCore", 1}, {"RVK_WaterOn", 0}, {"RVK_UiSkin", 0},
 };
 
 float Stored(const char* name) { Setting* s = Find(name); return s ? s->value : 0.0f; }
@@ -304,6 +309,25 @@ void Save(const Setting& s)
 
 void ApplyOne(const Setting& s, rvk::ThreadedDevice* d);
 
+// The interface look (docs/ui-dll.md): RVK_UiSkin on and the interface plugin asking for glass.
+AoVkGlass g_pluginGlass;                          // (enable 0 until the plugin says otherwise)
+
+void ApplyInterface(rvk::ThreadedDevice* d)
+{
+    const AoVkGlass& s = g_pluginGlass;
+    rvk::Device::GlassParams g;
+    g.enable = V("RVK_UiSkin") != 0.0f && s.enable;
+    g.blur = s.blur;
+    g.dim = s.dim;
+    g.tint = s.tint;
+    g.edge = s.edge;
+    g.radius = s.radius;
+    std::copy(s.tintColor, s.tintColor + 3, g.tintColor);
+    std::copy(s.rimColor, s.rimColor + 3, g.rimColor);
+    SetInterfaceGlass(g.enable);
+    if (d) d->SetInterfaceGlass(g);
+}
+
 // Puts a setting into effect - and, for a feature's on / off setting, the settings it switches.
 void Apply(const Setting& s, rvk::ThreadedDevice* d)
 {
@@ -324,6 +348,7 @@ void ApplyOne(const Setting& s, rvk::ThreadedDevice* d)
     }
     else if (is("RVK_Prepass")) d->SetDepthPrepass(V(n) != 0.0f);
     else if (is("RVK_UiRate")) SetInterfaceRate(V(n));
+    else if (is("RVK_UiSkin")) ApplyInterface(d);
     else if (is("RVK_FolEdges")) d->SetFoliageEdges(V(n) != 0.0f);
     else if (is("RVK_PixelLight")) d->SetPixelLighting(V(n) != 0.0f);
     else if (is("RVK_LightOver")) d->SetLightOverride(V(n) != 0.0f);
@@ -560,6 +585,12 @@ void Set(const char* name, float value)
 // An edit made to randy-vk.ini while the game runs: checked twice a second (its write time), and every setting whose
 // value there differs from the one in effect is applied - as from the settings window, but not written back (the
 // file already says it). A setting missing from the file or not a number (a save half done) is left as it is.
+void SetPluginGlass(const AoVkGlass& glass)
+{
+    g_pluginGlass = glass;
+    ApplyInterface(g_rvk.device);
+}
+
 void PollIni(rvk::ThreadedDevice* device)
 {
     Load();

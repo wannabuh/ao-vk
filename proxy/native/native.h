@@ -17,6 +17,8 @@
 #include <cstdint>
 #include <emmintrin.h>
 
+#include "native/hooklib.h"
+
 namespace rnative {
 
 // lrint in the default rounding mode - to nearest, ties to even, as the original's x87 fistp - in one SSE2 instruction.
@@ -30,7 +32,6 @@ enum class Mode { Off, On, Verify };
 // Where log lines go (randy-vk.log in the proxy; stdout in tests).
 using LogFn = void (*)(const char* fmt, ...);
 void SetLog(LogFn log);
-void Log(const char* fmt, ...);
 
 // randy-vk.ini [Native] `name` (written with `fallback` if absent).
 void SetIniPath(const char* path);
@@ -54,10 +55,7 @@ struct HookFixups {
 };
 void* HookEntry(HMODULE module, uint32_t rva, const uint8_t* expected, size_t count, void* target, const char* what,
                 const HookFixups& fixups = {});
-// The same at an address in another module (GUI.dll), whose code the caller has checked: its first `count` bytes run
-// in the returned trampoline (rel32 operands at the given offsets re-aimed), then the rest of it. Not registered for
-// NativeFor / AddressFor (those are Randy's offsets).
-void* HookAt(uint8_t* at, size_t count, const size_t* rel32, size_t rel32Count, void* target, const char* what);
+// HookAt (an address in another module: GUI.dll) is hooklib.h's.
 
 // The client build the replacements were written against (randy31_orig.dll's PE timestamp 0x5CD328BA and image size
 // 0x1ED000): Replace works only on it.
@@ -76,6 +74,8 @@ void* HookSlot(HMODULE module, uint32_t vtable, uint32_t slot, uint32_t expected
 // Logs the first few faults (access violations etc.) in Randy (ours or the original), DisplaySystem or Gamecode, with their module + offset and the
 // return addresses on the stack, before anyone handles them (randy-vk.log).
 void InstallCrashLog();
+// ... and in this module too (a plugin's file name: "name.dll"), from now on.
+void WatchModule(const char* name);
 
 // The module the replacements run against (the original randy31_orig.dll), set once by Install.
 void SetOriginal(HMODULE module);

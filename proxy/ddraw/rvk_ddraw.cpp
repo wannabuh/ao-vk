@@ -1,7 +1,7 @@
 // rvk backend: shared state, pixel formats, caps, IDirectDraw7, IDirect3D7, clipper, palette, import hooks.
 #include "rvk_backend.h"
 #include "rvk_settings.h"
-#include "native/gui.h"
+#include "native/ui_layer.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -177,8 +177,9 @@ void RvkState::Present()
         return;
     ++presentCount;
     CallLogFrame(presentCount);
-    if (InterfaceRateOn())
-        rnative::gui::Install();   // GUI.dll's interface drawing (RVK_UiRate), once it is loaded
+    PluginFrame();            // the interface plugin's per-frame work
+    if (InterfaceHooksWanted())
+        rnative::uilayer::Install();   // GUI.dll's interface drawing (RVK_UiRate, glass, the plugin), once it is loaded
     Frame();                  // a present without any rendering still shows a frame
     device->EndFrame();
     PollMaterialMaps();       // material maps decoded in the background, uploaded between frames

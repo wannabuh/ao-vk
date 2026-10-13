@@ -25,6 +25,12 @@ bool RvkBackend();                                // RANDYVK_DDRAW=rvk installed
 void CallLogFrame(uint64_t presented);            // each present (rvk_device.cpp: RANDYVK_CALLLOG)
 void SetInterfaceRate(float hz);                  // RVK_UiRate: interface redraws a second (0 = every frame)
 bool InterfaceRateOn();                           // ... not every frame (GUI.dll's drawing hooked)
+void SetInterfaceGlass(bool on);                  // RVK_UiGlass: glass behind the windows (docs/ui-dll.md)
+bool InterfaceHooksWanted();                      // the rate, the glass or the plugin: GUI.dll's drawing hooked
+// The interface plugin (rvk_plugin.cpp, docs/ui-dll.md).
+void LoadPlugins();                               // once, early (trace.cpp's Init: before GUI.dll makes its fonts)
+bool PluginAttached();
+void PluginFrame();                               // each presented frame
 // Native deferred skinning (proxy/native/cat_skin.cpp): gives a vertex buffer its skin job; false if it can't take it.
 bool AttachSkin(void* d3dVertexBuffer, std::shared_ptr<rvk::skin::Job> job);
 }  // namespace rvkproxy

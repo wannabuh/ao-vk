@@ -913,6 +913,45 @@ void ThreadedDevice::InterfaceEnd()
     Enqueue([this](const uint8_t*) { m_device.InterfaceEnd(); });
 }
 
+void ThreadedDevice::SetInterfaceGlass(const Device::GlassParams& p)
+{
+    Enqueue([this, p](const uint8_t*) { m_device.SetInterfaceGlass(p); });
+}
+
+void ThreadedDevice::InterfaceWindow(float x0, float y0, float x1, float y1)
+{
+    Enqueue([this, x0, y0, x1, y1](const uint8_t*) { m_device.InterfaceWindow(x0, y0, x1, y1); });
+}
+
+void ThreadedDevice::UiShapes(const Device::UiShape* shapes, uint32_t count, const Device::UiMeshes* meshes)
+{
+    const bool anyMesh = meshes && meshes->count && meshes->vertexCount && meshes->indexCount;
+    if (!count && !anyMesh)
+        return;
+    if (!anyMesh) {
+        Enqueue([this, count](const uint8_t* data) {
+            m_device.UiShapes(reinterpret_cast<const Device::UiShape*>(data), count, m_device.InterfaceDepth());
+        }, shapes, uint32_t(count * sizeof(Device::UiShape)));
+        return;
+    }
+    // One copy: the shapes, the meshes, the vertices, the indices (each a multiple of 4 bytes, the first two of 8).
+    const uint32_t meshCount = meshes->count, vertexCount = meshes->vertexCount, indexCount = meshes->indexCount;
+    const size_t shapeBytes = size_t(count) * sizeof(Device::UiShape), meshBytes = meshCount * sizeof(Device::UiMesh),
+                 vertexBytes = size_t(vertexCount) * sizeof(Device::UiVertex), indexBytes = indexCount * 4u;
+    std::vector<uint8_t>& copy = m_uiCopy;
+    copy.resize(shapeBytes + meshBytes + vertexBytes + indexBytes);
+    if (shapeBytes) std::memcpy(copy.data(), shapes, shapeBytes);
+    std::memcpy(copy.data() + shapeBytes, meshes->meshes, meshBytes);
+    std::memcpy(copy.data() + shapeBytes + meshBytes, meshes->vertices, vertexBytes);
+    std::memcpy(copy.data() + shapeBytes + meshBytes + vertexBytes, meshes->indices, indexBytes);
+    Enqueue([this, count, meshCount, vertexCount, indexCount, shapeBytes, meshBytes, vertexBytes](const uint8_t* data) {
+        Device::UiMeshes m{reinterpret_cast<const Device::UiMesh*>(data + shapeBytes), meshCount,
+                           reinterpret_cast<const Device::UiVertex*>(data + shapeBytes + meshBytes), vertexCount,
+                           reinterpret_cast<const uint32_t*>(data + shapeBytes + meshBytes + vertexBytes), indexCount};
+        m_device.UiShapes(reinterpret_cast<const Device::UiShape*>(data), count, m_device.InterfaceDepth(), &m);
+    }, copy.data(), uint32_t(copy.size()));
+}
+
 void ThreadedDevice::SetDepthPrepass(bool on)
 {
     Enqueue([this, on](const uint8_t*) { m_device.SetDepthPrepass(on); });

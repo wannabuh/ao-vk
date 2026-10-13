@@ -274,6 +274,7 @@ void Init()
         if (rvkproxy::RvkBackend()) {
             rnative::skin::SetSink(&rvkproxy::AttachSkin);
             rnative::scene::SetLightSink(&rvkproxy::SceneLights);
+            rvkproxy::LoadPlugins();      // (it draws through the Vulkan renderer only; before GUI.dll makes its fonts)
         }
         rnative::Install(g_orig);
     }

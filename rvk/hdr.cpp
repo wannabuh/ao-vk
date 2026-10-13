@@ -62,6 +62,15 @@ const uint32_t kContactSpirv[] = {
 const uint32_t kTaaSpirv[] = {
 #include "taa.frag.inc"
 };
+const uint32_t kUiBlurDownSpirv[] = {
+#include "ui_blur_down.frag.inc"
+};
+const uint32_t kUiBlurUpSpirv[] = {
+#include "ui_blur_up.frag.inc"
+};
+const uint32_t kUiGlassSpirv[] = {
+#include "ui_glass.frag.inc"
+};
 const uint32_t kSharpenSpirv[] = {
 #include "sharpen.frag.inc"
 };
@@ -257,6 +266,10 @@ bool Device::CreateHdrResources(std::string* error)
               fullscreen(kSharpenSpirv, sizeof(kSharpenSpirv), kColorFormat, false, m_bloomLayout, &m_sharpenPipeline) &&
               fullscreen(kUiCompositeSpirv, sizeof(kUiCompositeSpirv), kColorFormat, 2, m_bloomLayout,
                          &m_uiCompositePipeline) &&
+              fullscreen(kUiBlurDownSpirv, sizeof(kUiBlurDownSpirv), kColorFormat, 0, m_bloomLayout,
+                         &m_glassDownPipeline) &&
+              fullscreen(kUiBlurUpSpirv, sizeof(kUiBlurUpSpirv), kColorFormat, 0, m_bloomLayout, &m_glassUpPipeline) &&
+              fullscreen(kUiGlassSpirv, sizeof(kUiGlassSpirv), kColorFormat, 2, m_bloomLayout, &m_glassPipeline) &&
               fullscreen(kMotionBlurSpirv, sizeof(kMotionBlurSpirv), kColorFormat, false, m_bloomLayout, &m_motionPipeline) &&
               fullscreen(kTileMaxSpirv, sizeof(kTileMaxSpirv), GetFormatInfo(Format::RG16F).vk, false, m_bloomLayout,
                          &m_tileMaxPipeline) &&
@@ -300,6 +313,9 @@ void Device::DestroyHdrResources()
         if (t) { DestroyTextureNow(t); t = nullptr; }
     if (m_tonemapped) { DestroyTextureNow(m_tonemapped); m_tonemapped = nullptr; }
     if (m_uiLayer) { DestroyTextureNow(m_uiLayer); m_uiLayer = nullptr; }
+    for (Texture*& t : m_glassTex)
+        if (t) { DestroyTextureNow(t); t = nullptr; }
+    DestroyUiShapePipeline();
     m_uiLayerReady.store(false, std::memory_order_relaxed);
     for (Texture*& t : m_motionTiles)
         if (t) { DestroyTextureNow(t); t = nullptr; }
@@ -309,6 +325,7 @@ void Device::DestroyHdrResources()
                           &m_envAccumPipeline, &m_envFilterPipeline,
                           &m_volumePipeline, &m_volumeBlurPipeline, &m_ssrPipeline,
                           &m_contactPipeline, &m_taaPipeline, &m_sharpenPipeline, &m_uiCompositePipeline,
+                          &m_glassDownPipeline, &m_glassUpPipeline, &m_glassPipeline,
                           &m_motionPipeline,
                           &m_tileMaxPipeline, &m_neighbourMaxPipeline, &m_objectBlurPipeline, &m_dofCompositePipeline,
                           &m_dofFocusPipeline, &m_dofPrefilterPipeline, &m_dofTilesPipeline, &m_dofGatherPipeline,

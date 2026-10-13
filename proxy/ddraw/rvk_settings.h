@@ -5,6 +5,8 @@
 
 #include <cstdint>
 
+#include "aovk_plugin.h"
+
 namespace rvk {
 class ThreadedDevice;
 }
@@ -43,6 +45,9 @@ void Set(const char* name, float value);            // clamped, applied to the d
 void ApplyAll(rvk::ThreadedDevice* device);         // a new device gets every setting (and the colour tables)
 void LoadLuts(rvk::ThreadedDevice* device);         // randy-vk-day/night.cube next to the ini (Ctrl+Shift+L)
 void PollIni(rvk::ThreadedDevice* device);          // once a frame: randy-vk.ini edited by hand -> its changes applied
+// The glass behind the interface's windows as the interface plugin wants it (docs/ui-dll.md), in effect while
+// RVK_UiSkin is on.
+void SetPluginGlass(const AoVkGlass& glass);
 void LogAll();
 const char* IniPath();                              // randy-vk.ini (other sections: [Particles])
 
