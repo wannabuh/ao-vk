@@ -354,11 +354,17 @@ static bool TexelRgb(Format fmt, const uint8_t* base, uint32_t pitch, uint32_t x
 // Samples a texture on a small grid (RGB, nw x nh, each sample at its cell's centre) for the ground grass (grass.cpp:
 // the ground's colour and whether it is grass, and the lightmaps' baked light).
 static bool PixelsThumbnail(Format fmt, const void* data, uint32_t width, uint32_t height, uint32_t pitch,
-                            uint8_t* out, uint32_t nw, uint32_t nh)
+                            uint8_t* out, uint32_t nw, uint32_t nh, const Device::Rect* changed = nullptr)
 {
     const uint8_t* base = static_cast<const uint8_t*>(data);
-    for (uint32_t j = 0; j < nh; ++j)
-        for (uint32_t i = 0; i < nw; ++i) {
+    // Conservative cell bounds: recompute every sample that could touch the changed pixels. Extra neighbours
+    // are harmless and preserve the exact centre/four-sample rules for small and non-divisible images.
+    const uint32_t i0=changed?uint32_t(std::max(int64_t(0),int64_t(changed->left)*nw/width-1)):0;
+    const uint32_t j0=changed?uint32_t(std::max(int64_t(0),int64_t(changed->top)*nh/height-1)):0;
+    const uint32_t i1=changed?uint32_t(std::min(int64_t(nw),(int64_t(changed->right)*nw+width-1)/width+1)):nw;
+    const uint32_t j1=changed?uint32_t(std::min(int64_t(nh),(int64_t(changed->bottom)*nh+height-1)/height+1)):nh;
+    for (uint32_t j = j0; j < j1; ++j)
+        for (uint32_t i = i0; i < i1; ++i) {
             uint32_t x = ((2 * i + 1) * width) / (2 * nw), y = ((2 * j + 1) * height) / (2 * nh);
             x = x < width ? x : width - 1;
             y = y < height ? y : height - 1;
@@ -430,11 +436,15 @@ static bool TexelAlpha(Format fmt, const uint8_t* base, uint32_t pitch, uint32_t
 
 // The mean alpha on a grid of nw x nh cells (each from four texels spread over it), for the leaves (leaves.cpp).
 static bool PixelsAlphaMask(Format fmt, const void* data, uint32_t width, uint32_t height, uint32_t pitch,
-                            uint8_t* out, uint32_t nw, uint32_t nh)
+                            uint8_t* out, uint32_t nw, uint32_t nh, const Device::Rect* changed = nullptr)
 {
     const uint8_t* base = static_cast<const uint8_t*>(data);
-    for (uint32_t j = 0; j < nh; ++j)
-        for (uint32_t i = 0; i < nw; ++i) {
+    const uint32_t i0=changed?uint32_t(std::max(int64_t(0),int64_t(changed->left)*nw/width-1)):0;
+    const uint32_t j0=changed?uint32_t(std::max(int64_t(0),int64_t(changed->top)*nh/height-1)):0;
+    const uint32_t i1=changed?uint32_t(std::min(int64_t(nw),(int64_t(changed->right)*nw+width-1)/width+1)):nw;
+    const uint32_t j1=changed?uint32_t(std::min(int64_t(nh),(int64_t(changed->bottom)*nh+height-1)/height+1)):nh;
+    for (uint32_t j = j0; j < j1; ++j)
+        for (uint32_t i = i0; i < i1; ++i) {
             uint32_t sum = 0;
             for (uint32_t k = 0; k < 4; ++k) {
                 uint32_t x = ((4 * i + 1 + 2 * (k & 1)) * width) / (4 * nw);
@@ -449,19 +459,26 @@ static bool PixelsAlphaMask(Format fmt, const void* data, uint32_t width, uint32
     return true;
 }
 
-void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
-                           const void* data, uint32_t pitch)
+void Device::AnalyzeTexture(Texture* t, const void* data, uint32_t pitch, const Rect* changed)
 {
-    if (!t || !t->m_image || level >= t->m_levels || !width || !height)
-        return;
-    uint32_t rowBytes = FormatRowBytes(t->m_format, width), rows = FormatRows(t->m_format, height);
+    if (!t || !t->m_image) return;
+    uint32_t x = 0, y = 0, width = t->m_width, height = t->m_height;
 
-    // Whether the texture is fully opaque, for the static-draw opaque fast path (Draw): only a full level-0 upload
-    // proves it; a partial update makes it unknown again.
-    if (level == 0) {
+    // Complete source pixels preserve metadata even when only a changed region is sent to the GPU.
+    {
         if (x == 0 && y == 0 && width >= t->m_width && height >= t->m_height &&
             pitch >= FormatRowBytes(t->m_format, t->m_width))
-            t->m_opaque = PixelsOpaque(t->m_format, data, t->m_width, t->m_height, pitch);
+        {
+            // A previously opaque image remains opaque if the changed region is opaque. Otherwise the complete
+            // image decides, including transparent-to-opaque transitions. The source is still the full CPU image.
+            if (changed && t->m_opaque) {
+                const uint32_t block=FormatIsCompressed(t->m_format)?4:1;
+                const size_t offset=size_t(changed->top/block)*pitch+
+                    size_t(changed->left/block)*FormatRowBytes(t->m_format,block);
+                t->m_opaque=PixelsOpaque(t->m_format,static_cast<const uint8_t*>(data)+offset,
+                    changed->right-changed->left,changed->bottom-changed->top,pitch);
+            } else t->m_opaque = PixelsOpaque(t->m_format, data, t->m_width, t->m_height, pitch);
+        }
         else
             t->m_opaque = false;
         // The colour grid the ground-grass classification reads (grass.cpp): a full level-0 upload only.
@@ -470,6 +487,7 @@ void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, u
         std::vector<uint8_t> before;
         if (t->m_groundBase && t->m_thumbValid)
             before = t->m_thumb;
+        const bool hadThumb=t->m_thumbValid;
         t->m_thumbValid = false;
         if (x == 0 && y == 0 && width >= t->m_width && height >= t->m_height &&
             pitch >= FormatRowBytes(t->m_format, t->m_width)) {
@@ -478,7 +496,7 @@ void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, u
             t->m_thumbH = whole ? t->m_height : 16;
             t->m_thumb.resize(size_t(t->m_thumbW) * t->m_thumbH * 3);
             t->m_thumbValid = PixelsThumbnail(t->m_format, data, t->m_width, t->m_height, pitch, t->m_thumb.data(),
-                                              t->m_thumbW, t->m_thumbH);
+                                              t->m_thumbW, t->m_thumbH, hadThumb?changed:nullptr);
             if (!t->m_thumbValid)
                 std::vector<uint8_t>().swap(t->m_thumb);
             // A ground texture with a new picture (a stand-in replaced as the area loads): the grass classified
@@ -491,8 +509,11 @@ void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, u
             std::vector<uint8_t> mask;
             uint32_t mw = std::min<uint32_t>(t->m_width, 64), mh = std::min<uint32_t>(t->m_height, 64);
             if (!t->m_opaque && t->m_width >= 16 && t->m_height >= 16) {
+                const bool hadMask=changed && t->m_alphaMask.size()==size_t(mw)*mh;
+                if (hadMask) mask=t->m_alphaMask;
                 mask.resize(size_t(mw) * mh);
-                if (!PixelsAlphaMask(t->m_format, data, t->m_width, t->m_height, pitch, mask.data(), mw, mh))
+                if (!PixelsAlphaMask(t->m_format, data, t->m_width, t->m_height, pitch, mask.data(), mw, mh,
+                    hadMask?changed:nullptr))
                     mask.clear();
             }
             if (mask != t->m_alphaMask) {
@@ -503,7 +524,21 @@ void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, u
             }
         }
     }
+}
 
+void Device::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+                           const void* data, uint32_t pitch, bool analyze)
+{
+    if (!t || !t->m_image || level >= t->m_levels || !width || !height) return;
+    if (analyze && level == 0) {
+        if (!x && !y && width == t->m_width && height == t->m_height)
+            AnalyzeTexture(t, data, pitch);
+        else {
+            t->m_opaque = false;
+            t->m_thumbValid = false;
+        }
+    }
+    uint32_t rowBytes = FormatRowBytes(t->m_format, width), rows = FormatRows(t->m_format, height);
     // Stage tightly packed rows in this frame's ring buffer; the upload command buffer runs before the
     // frame's draws.
     EnsureRingSpace(VkDeviceSize(rowBytes) * rows);

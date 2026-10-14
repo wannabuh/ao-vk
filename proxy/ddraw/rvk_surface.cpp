@@ -13,6 +13,42 @@ namespace rvkproxy {
 
 namespace {
 
+namespace updates {
+inline bool Empty(const RECT& r) { return r.left >= r.right || r.top >= r.bottom; }
+inline RECT Union(const RECT& a, const RECT& b) {
+    if (Empty(a)) return b;
+    if (Empty(b)) return a;
+    return {std::min(a.left,b.left),std::min(a.top,b.top),std::max(a.right,b.right),std::max(a.bottom,b.bottom)};
+}
+inline RECT Clamp(RECT r, uint32_t w, uint32_t h, uint32_t block) {
+    r.left = std::clamp(r.left,0L,LONG(w)); r.right = std::clamp(r.right,0L,LONG(w));
+    r.top = std::clamp(r.top,0L,LONG(h)); r.bottom = std::clamp(r.bottom,0L,LONG(h));
+    if (Empty(r)) return {};
+    r.left = r.left / LONG(block) * LONG(block); r.top = r.top / LONG(block) * LONG(block);
+    r.right = std::min(LONG(w),(r.right+LONG(block)-1)/LONG(block)*LONG(block));
+    r.bottom = std::min(LONG(h),(r.bottom+LONG(block)-1)/LONG(block)*LONG(block));
+    return r;
+}
+// Exact byte comparison, no hash collision risk. Return the bounding box of changed pixel/block row spans.
+inline RECT Changed(const uint8_t* before, const uint8_t* after, uint32_t pitch, RECT r,
+                    uint32_t block, uint32_t unitBytes, uint32_t w, uint32_t h) {
+    RECT changed{};
+    for (LONG y=r.top/LONG(block); y<(r.bottom+LONG(block)-1)/LONG(block); ++y) {
+        const size_t offset=size_t(y)*pitch+size_t(r.left/LONG(block))*unitBytes;
+        const size_t bytes=size_t((r.right+LONG(block)-1)/LONG(block)-r.left/LONG(block))*unitBytes;
+        if (!std::memcmp(before+offset,after+offset,bytes)) continue;
+        size_t first=0,last=bytes;
+        while (first<bytes && before[offset+first]==after[offset+first]) ++first;
+        while (last>first && before[offset+last-1]==after[offset+last-1]) --last;
+        RECT row{r.left+LONG(first/unitBytes*block),y*LONG(block),
+                 std::min(LONG(w),r.left+LONG((last+unitBytes-1)/unitBytes*block)),
+                 std::min(LONG(h),(y+1)*LONG(block))};
+        changed=Union(changed,row);
+    }
+    return changed;
+}
+}
+
 uint32_t LevelCount(uint32_t w, uint32_t h)
 {
     uint32_t n = 1;
@@ -233,12 +269,17 @@ rvk::Texture* RSurface::RvkTexture()
     return t->texture;
 }
 
-void RSurface::Upload()
+void RSurface::Upload(const RECT* modified, bool forceFull)
 {
     if (kind != Kind::Texture)
         return;
     rvk::ThreadedDevice* dev = g_rvk.device;
     RSurface* t = top;
+    RECT whole{0,0,LONG(desc.dwWidth),LONG(desc.dwHeight)};
+    const uint32_t block = rvk::FormatIsCompressed(format) ? 4 : 1;
+    RECT region = updates::Clamp(modified ? *modified : whole, desc.dwWidth, desc.dwHeight, block);
+    if (updates::Empty(region)) return;
+    m_dirtyRect = updates::Union(m_dirtyRect, region);
     if (!dev || shadow.empty()) {
         dirty = !shadow.empty();
         t->anyDirty |= dirty;
@@ -251,8 +292,15 @@ void RSurface::Upload()
     }
     dirty = false;
     uint32_t w = desc.dwWidth, h = desc.dwHeight;
+    const bool initial = m_uploadedTo != t->texture || m_uploadedSerial != g_rvk.deviceSerial;
+    // A palette edit can recolour pixels outside the written rectangle; compare the complete converted image.
+    region = !initial && !forceFull && !palettized ? m_dirtyRect : whole;
+    std::vector<uint8_t> converted;
+    const uint8_t* pixels = shadow.data();
+    uint32_t pitch = Pitch();
     if (convert24 || palettized) {
-        std::vector<uint32_t> argb(size_t(w) * h);
+        converted.resize(size_t(w)*h*4);
+        auto* argb = reinterpret_cast<uint32_t*>(converted.data());
         const PALETTEENTRY* pal = t->palette ? t->palette->entries : nullptr;
         for (uint32_t y = 0; y < h; ++y)
             for (uint32_t x = 0; x < w; ++x) {
@@ -264,10 +312,36 @@ void RSurface::Upload()
                     argb[y * w + x] = 0xFF000000u | (uint32_t(p[2]) << 16) | (uint32_t(p[1]) << 8) | p[0];
                 }
             }
-        dev->UpdateTexture(t->texture, level, 0, 0, w, h, argb.data(), w * 4);
-    } else {
-        dev->UpdateTexture(t->texture, level, 0, 0, w, h, shadow.data(), Pitch());
+        pixels=converted.data(); pitch=w*4;
     }
+    if (!initial && !forceFull) {
+        const uint32_t unit = rvk::FormatRowBytes(t->texture->GetFormat(),block);
+        if (m_submittedPixels && m_submittedPixels->size()==size_t(pitch)*rvk::FormatRows(format,h))
+            region=updates::Changed(m_submittedPixels->data(),pixels,pitch,region,block,unit,w,h);
+        if (!updates::Empty(region)) {
+            // One immutable full CPU image for exact metadata and future comparisons. Only the changed region
+            // enters the GPU staging ring; the queue keeps this image alive until both analysis and upload finish.
+            auto snapshot=m_submittedPixels;
+            if (!snapshot || snapshot.use_count()!=2) // this local reference + the surface only: worker finished
+                snapshot=std::make_shared<std::vector<uint8_t>>(pixels,
+                    pixels+size_t(pitch)*rvk::FormatRows(format,h));
+            else {
+                const uint32_t rowBytes=rvk::FormatRowBytes(t->texture->GetFormat(),region.right-region.left);
+                for (LONG y=region.top/LONG(block); y<(region.bottom+LONG(block)-1)/LONG(block); ++y) {
+                    const size_t offset=size_t(y)*pitch+size_t(region.left/LONG(block))*unit;
+                    std::memcpy(snapshot->data()+offset,pixels+offset,rowBytes);
+                }
+            }
+            dev->UpdateTextureSnapshot(t->texture,level,region.left,region.top,region.right-region.left,
+                region.bottom-region.top,snapshot,pitch);
+            m_submittedPixels=std::move(snapshot);
+        }
+    } else {
+        dev->UpdateTexture(t->texture,level,0,0,w,h,pixels,pitch);
+        m_submittedPixels.reset();
+    }
+    m_uploadedTo=t->texture; m_uploadedSerial=g_rvk.deviceSerial;
+    m_dirtyRect={};
 }
 
 HRESULT RSurface::DoAddAttachedSurface(LPDIRECTDRAWSURFACE7 s)
@@ -316,7 +390,7 @@ HRESULT RSurface::DoBlt(LPRECT dstRect, LPDIRECTDRAWSURFACE7 srcIface, LPRECT sr
         for (LONG y = std::max(0L, r.top); y < std::min(LONG(desc.dwHeight), r.bottom); ++y)
             for (LONG x = std::max(0L, r.left); x < std::min(LONG(desc.dwWidth), r.right); ++x)
                 std::memcpy(shadow.data() + size_t(y) * Pitch() + size_t(x) * bpp, &color, bpp);
-        Upload();
+        Upload(&r);
         return DD_OK;
     }
     if (flags & DDBLT_DEPTHFILL) {
@@ -409,7 +483,7 @@ HRESULT RSurface::DoBlt(LPRECT dstRect, LPDIRECTDRAWSURFACE7 srcIface, LPRECT sr
             }
         }
     }
-    Upload();
+    Upload(&d);
     return DD_OK;
 }
 
@@ -512,7 +586,7 @@ HRESULT RSurface::DoSetPalette(LPDIRECTDRAWPALETTE p)
     palette = pal;
     if (palettized)                             // re-convert every level with the new palette
         for (RSurface* l = top; l; l = l->nextLevel)
-            l->Upload();
+            l->Upload(nullptr,true);
     return DD_OK;
 }
 
@@ -580,7 +654,7 @@ HRESULT RSurface::DoUnlock(LPRECT)
     if (m_lockFlags & DDLOCK_READONLY)
         return DD_OK;
     if (kind == Kind::Texture) {
-        Upload();
+        Upload(&m_lockRect);
     } else if (IsGpu(this)) {
         static bool logged;
         if (!logged) { logged = true; RvkLog("writes to a render target through Lock are ignored"); }

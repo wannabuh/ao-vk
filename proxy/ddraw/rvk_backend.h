@@ -197,7 +197,7 @@ public:
     RPalette* palette = nullptr;
 
     rvk::Texture* RvkTexture();                    // creates/uploads as needed; null if not a GPU surface
-    void Upload();                                 // shadow -> GPU for this level (if a device exists)
+    void Upload(const RECT* modified = nullptr, bool forceFull = false);
     uint32_t Pitch() const;
     void EnsureShadow();
 
@@ -238,6 +238,10 @@ protected:
     HRESULT DoGetLOD(LPDWORD lod) override { if (lod) *lod = m_lod; return DD_OK; }
 
 private:
+    RECT m_dirtyRect{};
+    rvk::Texture* m_uploadedTo = nullptr;
+    uint64_t m_uploadedSerial = 0;
+    std::shared_ptr<std::vector<uint8_t>> m_submittedPixels; // immutable while a worker record holds it
     bool m_locked = false;
     RECT m_lockRect{};
     DWORD m_lockFlags = 0;

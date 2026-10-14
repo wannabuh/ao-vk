@@ -676,7 +676,9 @@ public:
     // level's edge). pitch = bytes per row of pixels (or of 4x4 blocks). The new contents are visible to the
     // whole frame being recorded (uploads run before the frame's draws).
     void UpdateTexture(Texture* texture, uint32_t level, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
-                       const void* data, uint32_t pitch);
+                       const void* data, uint32_t pitch, bool analyze = true);
+    // Complete CPU contents for metadata, independently of the region sent to the GPU.
+    void AnalyzeTexture(Texture* texture, const void* data, uint32_t pitch, const Rect* changed = nullptr);
     Texture* CreateRenderTarget(uint32_t width, uint32_t height);   // A8R8G8B8, sampleable
     // GPU copy/stretch between images (render targets, the main target or textures as source; render
     // targets or the main target as destination). Null = main target; null rect = whole image.

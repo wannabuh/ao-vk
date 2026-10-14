@@ -1475,6 +1475,39 @@ void ThreadedDevice::UpdateTexture(Texture* t, uint32_t level, uint32_t x, uint3
     Commit();
 }
 
+void ThreadedDevice::UpdateTextureSnapshot(Texture* t, uint32_t level, uint32_t x, uint32_t y, uint32_t width,
+    uint32_t height, const SharedVertices& image, uint32_t pitch)
+{
+    if (!t || !image || !width || !height) return;
+    const uint64_t imageBytes=image->size();
+    for (;;) {
+        uint64_t used=m_textureSnapshotBytes.load(std::memory_order_acquire);
+        if (!used || used+imageBytes<=kQueueBytes) break; // one oversize image is allowed, like stripped uploads
+        Publish();
+        WaitWhileEqual(m_textureSnapshotBytes,used,1);
+    }
+    m_textureSnapshotBytes.fetch_add(imageBytes,std::memory_order_relaxed);
+    Enqueue([this, t, level, x, y, width, height, image, pitch](const uint8_t*) {
+        const uint32_t block = FormatIsCompressed(t->GetFormat()) ? 4 : 1;
+        const uint32_t unitBytes = FormatRowBytes(t->GetFormat(), block);
+        const uint8_t* region = image->data() + size_t(y/block)*pitch + size_t(x/block)*unitBytes;
+        if (!level) {
+            Device::Rect changed{int32_t(x),int32_t(y),int32_t(x+width),int32_t(y+height)};
+            m_device.AnalyzeTexture(t, image->data(), pitch, &changed);
+        }
+        // Large snapshots still go into bounded staging strips; no allocation can run past the frame ring.
+        const uint32_t rowBytes=FormatRowBytes(t->GetFormat(),width);
+        const uint32_t rows=FormatRows(t->GetFormat(),height);
+        const uint32_t per=std::max(1u,(16u<<20)/rowBytes);
+        for (uint32_t row=0; row<rows; row+=per) {
+            const uint32_t py=row*block, ph=std::min(height-py,std::min(per,rows-row)*block);
+            m_device.UpdateTexture(t,level,x,y+py,width,ph,region+size_t(row)*pitch,pitch,false);
+        }
+        m_textureSnapshotBytes.fetch_sub(image->size(),std::memory_order_release);
+        WakeByAddressAll(&m_textureSnapshotBytes);
+    });
+}
+
 void ThreadedDevice::DestroyTexture(Texture* t)
 {
     if (!t)
