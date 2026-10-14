@@ -234,6 +234,9 @@ public:
     Texture* CreateRenderTarget(uint32_t width, uint32_t height);
     void UpdateTexture(Texture* texture, uint32_t level, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                        const void* data, uint32_t pitch);
+    // Full immutable CPU image for metadata, but only the modified region enters the GPU staging ring.
+    void UpdateTextureSnapshot(Texture* texture, uint32_t level, uint32_t x, uint32_t y, uint32_t width,
+        uint32_t height, const SharedVertices& image, uint32_t pitch);
     void DestroyTexture(Texture* texture);
     void CopyTexture(Texture* dst, const Device::Rect* dstRect, Texture* src, const Device::Rect* srcRect, bool linear);
 
@@ -381,6 +384,7 @@ private:
     alignas(64) std::atomic<uint32_t> m_workerSleeping{0};
     std::atomic<uint64_t> m_framesQueued{0}, m_framesDone{0};
     std::atomic<uint64_t> m_recordsQueued{0}, m_recordsDone{0};
+    std::atomic<uint64_t> m_textureSnapshotBytes{0}; // shared images also obey the queue memory budget
     uint64_t m_callerNs = 0;                           // calling thread's time inside Enqueue, this frame (its thread only)
     uint32_t m_callerSample = 0;                       // ... sampled 1 in 64 calls, so timing doesn't cost the hot path
 
