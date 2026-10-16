@@ -62,8 +62,8 @@
   redrawn interface into `m_uiLayer` (cleared; every draw blends, its alpha accumulating coverage, so the layer is
   premultiplied) and blends the layer over the main target (ONE, INV_SRC_ALPHA) at the end of `Render`. Exact for
   alpha-blended and additive interface draws; an unblended one keeps its texture's alpha as coverage, one multiplying
-  the frame is approximated. Hooks are only made with a rate set; the two entries' code is checked (MSVC's exception
-  prologue calling GUI.dll's `_EH_prolog`), so another GUI.dll build is left alone (logged).
+  the frame is approximated. Hooks are only made with a rate set (or glass, or an interface plugin: docs/ui-dll.md); the two entries' code is checked (MSVC's exception prologue calling GUI.dll's `_EH_prolog`), so another
+  GUI.dll build is left alone (logged). The interface calls reach the renderer whether or not `[Native] Device` is on.
   Measured (a 245 fps spot, 60): the interface's game-thread time 1.5 -> 0.34 ms, its GPU time 0.3 -> 0.07 ms;
   cursor, interface look and input unchanged in play. 60 is the recommended value.
 - **Ground grass** (setting `RVK_GrassOn`, Plants; **off** by default): our own grass over the game's terrain, an

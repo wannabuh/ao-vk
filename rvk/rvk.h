@@ -711,6 +711,67 @@ public:
     void InterfaceEnd();
     // The layer holds an interface drawn at the current size (else the next frame must redraw it). Any thread.
     bool InterfaceLayerReady() const { return m_uiLayerReady.load(std::memory_order_relaxed); }
+    // Interface glass (interface.cpp, docs/ui-dll.md phase 1): frosted glass behind the interface's windows. While
+    // the interface is redrawn into its layer, each window's rectangle on screen (pixels) - kept for the frames that
+    // show the layer without redrawing it.
+    struct GlassParams {
+        bool enable = false;
+        uint32_t blur = 3;                       // downsampling steps (1-4): the blur's width
+        float dim = 0.25f;                       // darkens the scene behind (0-1)
+        float tint = 0.5f;                       // towards the deep blue (0-1)
+        float edge = 0.5f;                       // rim light and glow (0-1)
+        float radius = 6.0f;                     // corner radius (pixels)
+        float tintColor[3] = {0.04f, 0.16f, 0.28f};   // what the tint goes towards
+        float rimColor[3] = {0.45f, 0.80f, 1.00f};    // the rim light's and glow's colour
+    };
+    void SetInterfaceGlass(const GlassParams& p) { m_glass = p; }
+    void InterfaceWindow(float x0, float y0, float x1, float y1);
+    // The interface back end (interface.cpp, docs/ui-dll.md phase 2): shapes of our own drawn into the interface
+    // where the game's drawing has got to - an anti-aliased rounded rectangle with a vertical gradient fill, a border
+    // inside its edge and a glow outside it, premultiplied over what is there. At the interface's depth (`depth`:
+    // GUI.dll's Z 0.01 in the game's viewport, InterfaceDepth): the shapes in order, depth tested, then their solid
+    // parts write depth; glow-only shapes (glowOnly) depth tested LESS_OR_EQUAL - over shapes at that depth - and
+    // nothing written (the caller keeps them off windows in front). Colours straight (not premultiplied).
+    struct UiShape {
+        float rect[4];                           // x0, y0, x1, y1 on the target (pixels)
+        float clip[4];                           // drawn only inside this (pixels)
+        float radius, border, glow, glowOnly;    // corner radius, border width, glow width (pixels); glowOnly 1:
+                                                 // just the glow, drawn last (below)
+        float fillTop[4], fillBottom[4];         // rgba
+        float borderColor[4], glowColor[4];      // rgba
+        // An image instead of a shape (image non-null): the texture's part `uv` (u0, v0, u1, v1) over rect, times
+        // fillTop (straight rgba); additive 1: its light added (alpha out 0), else over by its own alpha.
+        Texture* image;
+        float uv[4];
+        float additive;
+    };
+    // Meshes with the shapes (docs/ui-dll.md phase 9, RmlUi's geometry): triangles of UiVertex (RmlUi's Vertex
+    // layout: position in pixels, premultiplied rgba8, texture coordinates), each mesh some of the batch's indices
+    // moved by its translation, scissored to its clip, times its texture (null: white) and opacity. Drawn after the
+    // shapes' colour pass and before their depth pass - in front of the window's shapes, behind windows in front (depth
+    // tested LESS, not written).
+    struct UiVertex {
+        float x, y;
+        uint8_t rgba[4];
+        float u, v;
+    };
+    struct UiMesh {
+        uint32_t firstIndex, indexCount;
+        float translate[2];
+        float clip[4];                           // x0, y0, x1, y1 (pixels)
+        Texture* image;
+        float opacity;
+    };
+    struct UiMeshes {
+        const UiMesh* meshes;
+        uint32_t count;
+        const UiVertex* vertices;
+        uint32_t vertexCount;
+        const uint32_t* indices;
+        uint32_t indexCount;
+    };
+    void UiShapes(const UiShape* shapes, uint32_t count, float depth, const UiMeshes* meshes = nullptr);
+    float InterfaceDepth() const;
     Texture* GetRenderTarget() const { return m_target == m_main ? nullptr : m_target; }
 
     void DrawPrimitive(uint32_t primitive, uint32_t fvf, const void* vertices, uint32_t vertexCount);
@@ -2583,6 +2644,29 @@ private:
     std::atomic<bool> m_uiLayerReady{false};
     VkPipeline m_uiCompositePipeline = VK_NULL_HANDLE;
     void InterfaceSceneEnd();                    // what the interface's first draw does: the scene ends
+    // Interface glass (interface.cpp).
+    GlassParams m_glass;
+    std::vector<std::array<float, 4>> m_glassRects;   // the windows of the interface in the layer
+    Texture* m_glassTex[4] = {};                 // the blur's levels: 1/2, 1/4, 1/8, 1/16 of the main target
+    VkPipeline m_glassDownPipeline = VK_NULL_HANDLE, m_glassUpPipeline = VK_NULL_HANDLE, m_glassPipeline = VK_NULL_HANDLE;
+    void RenderGlass(VkCommandBuffer cmd);
+    // The interface back end's shapes (interface.cpp): made at their first use.
+    VkPipelineLayout m_uiShapeLayout = VK_NULL_HANDLE;
+    VkPipeline m_uiShapePipeline = VK_NULL_HANDLE;         // colour: depth tested, not written
+    VkPipeline m_uiShapeDepthPipeline = VK_NULL_HANDLE;    // depth only, where the shape is solid
+    VkPipeline m_uiShapeGlowPipeline = VK_NULL_HANDLE;     // glows: colour, depth tested LESS_OR_EQUAL
+    bool m_uiShapeFailed = false;
+    bool CreateUiShapePipeline();
+    void DestroyUiShapePipeline();
+    // ... and its images (ui_image.frag): one texture by push descriptor, the colour pass only.
+    VkDescriptorSetLayout m_uiImageSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout m_uiImageLayout = VK_NULL_HANDLE;
+    VkPipeline m_uiImagePipeline = VK_NULL_HANDLE;
+    bool DrawUiImage(VkCommandBuffer cmd, const UiShape& s, float depth, int32_t w, int32_t h);
+    // ... and its meshes (ui_mesh.vert / .frag): vertices and indices from the ring, one texture by push descriptor.
+    VkPipelineLayout m_uiMeshLayout = VK_NULL_HANDLE;
+    VkPipeline m_uiMeshPipeline = VK_NULL_HANDLE;
+    void DrawUiMeshes(VkCommandBuffer cmd, const UiMeshes& m, float depth, int32_t w, int32_t h);
     // GPU profiling (profile.cpp): a mark when the scene's draw class changes, so the 4.8 ms "scene" block splits
     // into opaque / terrain base / terrain light / foliage.
     int m_sceneClass = 0;

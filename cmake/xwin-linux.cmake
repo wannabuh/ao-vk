@@ -23,6 +23,9 @@ set(_xwin_includes
 list(JOIN _xwin_includes " " _xwin_includes)
 set(CMAKE_C_FLAGS_INIT   "${_xwin_includes}")
 set(CMAKE_CXX_FLAGS_INIT "${_xwin_includes}")
+# ... and for llvm-rc (the vendored FreeType's version resource includes windows.h).
+set(CMAKE_RC_FLAGS_INIT "/I ${XWIN_DIR}/crt/include /I ${XWIN_DIR}/sdk/include/ucrt")
+string(APPEND CMAKE_RC_FLAGS_INIT " /I ${XWIN_DIR}/sdk/include/um /I ${XWIN_DIR}/sdk/include/shared")
 
 set(_xwin_libs
     "/libpath:${XWIN_DIR}/crt/lib/x86"

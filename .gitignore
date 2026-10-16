@@ -7,3 +7,5 @@ compile_commands.json
 /proxy/native/private/
 
 __pycache__/
+
+dist/

@@ -118,6 +118,10 @@ public:
     void InterfaceBegin(bool redraw);
     void InterfaceEnd();
     bool InterfaceLayerReady() const { return m_device.InterfaceLayerReady(); }
+    // Interface glass (Device::SetInterfaceGlass / InterfaceWindow).
+    void SetInterfaceGlass(const Device::GlassParams& p);
+    void InterfaceWindow(float x0, float y0, float x1, float y1);
+    void UiShapes(const Device::UiShape* shapes, uint32_t count, const Device::UiMeshes* meshes = nullptr);   // (copied)
     void SetShadowResolution(uint32_t sun, uint32_t point);
     void SetPointLightIntensity(float lights, float characters);
     void SetTessellation(float shape, float distance, uint32_t level);
@@ -291,6 +295,7 @@ private:
     // frames by BeginFrame.
     struct RecordKind { const char* who; uint64_t count; };
     std::vector<RecordKind> m_recordKinds;
+    std::vector<uint8_t> m_uiCopy;                     // UiShapes: the shapes and meshes gathered for their record
     uint64_t m_recordKindFrames = 0;
     // The draws that copy their vertices into the record, by the visual drawing them (its class) and where the
     // vertices come from, over the last kCopySampleFrames frames of each ~600: how many and how big, and how many

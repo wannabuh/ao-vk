@@ -1,0 +1,18 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "linux-release",
+            "displayName": "Release (x86, Linux cross via xwin)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/../build/aoplugin",
+            "toolchainFile": "${sourceDir}/../cmake/xwin-linux.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "linux-release", "configurePreset": "linux-release" }
+    ]
+}

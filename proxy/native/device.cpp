@@ -609,8 +609,24 @@ void SetDirect(const Direct* direct) { g_direct = direct; }
 
 bool BlobShadowsReplaced() { return g_directOn && g_direct && g_direct->blobShadowsReplaced && g_direct->blobShadowsReplaced(); }
 
-bool InterfaceBegin() { return !g_directOn || !g_direct || !g_direct->interfaceBegin || g_direct->interfaceBegin(); }
-void InterfaceEnd() { if (g_directOn && g_direct && g_direct->interfaceEnd) g_direct->interfaceEnd(); }
+bool InterfaceBegin() { return !g_direct || !g_direct->interfaceBegin || g_direct->interfaceBegin(); }
+void InterfaceEnd() { if (g_direct && g_direct->interfaceEnd) g_direct->interfaceEnd(); }
+void InterfaceWindow(float x0, float y0, float x1, float y1)
+{
+    if (g_direct && g_direct->interfaceWindow) g_direct->interfaceWindow(x0, y0, x1, y1);
+}
+void InterfaceShapes(const UiShape* shapes, uint32_t count, const UiMeshes* meshes)
+{
+    if (g_direct && g_direct->interfaceShapes) g_direct->interfaceShapes(shapes, count, meshes);
+}
+void* InterfaceImage(const void* bgra, uint32_t width, uint32_t height)
+{
+    return g_direct && g_direct->interfaceImage ? g_direct->interfaceImage(bgra, width, height) : nullptr;
+}
+void InterfaceImageFree(void* image)
+{
+    if (image && g_direct && g_direct->interfaceImageFree) g_direct->interfaceImageFree(image);
+}
 
 RetainedIndices::RetainedIndices(uint64_t generation) : m_previous(g_retainGeneration)
 {

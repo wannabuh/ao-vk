@@ -625,22 +625,25 @@ bool DirectBlobShadowsReplaced()
 }
 
 // The interface layer (RVK_UiRate, docs/rvk.md): redraw the interface when its time has come (or the renderer has
-// none to show), else let the renderer show the last one. Off (0): drawn every frame, straight into the frame.
+// none to show), else let the renderer show the last one. Off (0): drawn every frame, straight into the frame -
+// unless the glass is on (RVK_UiGlass, docs/ui-dll.md), which needs the layer: then it is redrawn into it every
+// frame.
 double g_uiPeriodMs;                                // 0: off
+bool g_uiGlass;
 int64_t g_uiLastRedraw;
 bool g_uiOpen;
 
 bool DirectInterfaceBegin()
 {
     rvk::ThreadedDevice* dev = g_rvk.device;
-    if (!dev || g_uiPeriodMs <= 0.0 || g_uiOpen)
+    if (!dev || (g_uiPeriodMs <= 0.0 && !g_uiGlass) || g_uiOpen)
         return true;
     LARGE_INTEGER now, frequency;
     QueryPerformanceCounter(&now);
     QueryPerformanceFrequency(&frequency);
     const double sinceMs = double(now.QuadPart - g_uiLastRedraw) * 1000.0 / double(frequency.QuadPart);
     // (A little early rather than a whole frame late: redraws at the rate even when frames don't divide it evenly.)
-    const bool redraw = !dev->InterfaceLayerReady() || sinceMs >= g_uiPeriodMs * 0.95;
+    const bool redraw = !dev->InterfaceLayerReady() || g_uiPeriodMs <= 0.0 || sinceMs >= g_uiPeriodMs * 0.95;
     if (redraw)
         g_uiLastRedraw = now.QuadPart;
     g_uiOpen = true;
@@ -657,8 +660,43 @@ void DirectInterfaceEnd()
         dev->InterfaceEnd();
 }
 
+void DirectInterfaceWindow(float x0, float y0, float x1, float y1)
+{
+    if (g_uiOpen && g_uiGlass)
+        if (rvk::ThreadedDevice* dev = g_rvk.device)
+            dev->InterfaceWindow(x0, y0, x1, y1);
+}
+
+static_assert(sizeof(rnative::device::UiShape) == sizeof(rvk::Device::UiShape), "UiShape layouts");
+static_assert(sizeof(rnative::device::UiVertex) == sizeof(rvk::Device::UiVertex) &&
+                  sizeof(rnative::device::UiMesh) == sizeof(rvk::Device::UiMesh) &&
+                  sizeof(rnative::device::UiMeshes) == sizeof(rvk::Device::UiMeshes),
+              "UiMesh layouts");
+
+void DirectInterfaceShapes(const rnative::device::UiShape* shapes, uint32_t count,
+                           const rnative::device::UiMeshes* meshes)
+{
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
+        dev->UiShapes(reinterpret_cast<const rvk::Device::UiShape*>(shapes), count,
+                      reinterpret_cast<const rvk::Device::UiMeshes*>(meshes));
+}
+
+void* DirectInterfaceImage(const void* bgra, uint32_t width, uint32_t height)
+{
+    rvk::ThreadedDevice* dev = g_rvk.device;
+    return dev && bgra && width && height ? dev->CreateTexture(width, height, bgra) : nullptr;
+}
+
+void DirectInterfaceImageFree(void* image)
+{
+    if (rvk::ThreadedDevice* dev = g_rvk.device)
+        dev->DestroyTexture(static_cast<rvk::Texture*>(image));
+}
+
 const rnative::device::Direct kDirect{&DirectApplyStates, &DirectGameSection, &DirectDrawIndexedVB,
-                                      &DirectBlobShadowsReplaced, &DirectInterfaceBegin, &DirectInterfaceEnd};
+                                      &DirectBlobShadowsReplaced, &DirectInterfaceBegin, &DirectInterfaceEnd,
+                                      &DirectInterfaceWindow, &DirectInterfaceShapes, &DirectInterfaceImage,
+                                      &DirectInterfaceImageFree};
 
 void DirectAttach(RDevice* device)
 {
@@ -682,6 +720,10 @@ void SetInterfaceRate(float hz)
 }
 
 bool InterfaceRateOn() { return g_uiPeriodMs > 0.0; }
+
+void SetInterfaceGlass(bool on) { g_uiGlass = on; }
+
+bool InterfaceHooksWanted() { return g_uiPeriodMs > 0.0 || g_uiGlass || PluginAttached(); }
 
 HRESULT RDevice::DoGetTexture(DWORD stage, LPDIRECTDRAWSURFACE7* out)
 {
