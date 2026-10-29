@@ -348,7 +348,7 @@ void main()
         // The game's far fog in the sky's twilight colours (SkyDelta): as much as the game fogged the land, the
         // difference the twilight makes to its colour there - the land fades into the sky drawn behind it.
         // (Our own sky - FL.skyRing: the scene already fogged into its horizon, rvk draw.cpp; only the haze's colour.)
-        if (P.fog.y > P.fog.x) {
+        if (P.fog.y > P.fog.x && P.air0.x != 0.0) {   // (no view rays before the first world camera)
             vec3 Vd;
             float dd, ph;
             AirRay(z, Vd, dd, ph);

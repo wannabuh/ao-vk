@@ -873,6 +873,10 @@ void Device::LandHaze(float out[24]) const
         out[4] = fogParams[0];
         out[5] = fogParams[1];
     }
+    // (The view rays' scale also without the haze: the tone mapping's far fog takes the twilight's colour along them.
+    // Left 0 - the sun unknown outdoors, after leaving a shop - its rays were inf / inf, and the land went black.)
+    out[8] = m_aoProj.m[0][0];
+    out[9] = m_aoProj.m[1][1];
     if (m_landHaze <= 0.0f || !linear || !SunKnown())   // (indoors: no distant land, no outdoor air - the zone's fog)
         return;
     const float l = 0.3f * fog[0] + 0.59f * fog[1] + 0.11f * fog[2];
@@ -894,8 +898,6 @@ void Device::LandHaze(float out[24]) const
         const auto& v = m_aoView.m;
         const float vary = std::clamp(m_cloudParams.vary, 0.0f, 1.0f);
         const float weather = (1.0f + (0.7f + 0.7f * SkyCloudiness() - 1.0f) * vary) * (1.0f + StormSky());
-        out[8] = m_aoProj.m[0][0];
-        out[9] = m_aoProj.m[1][1];
         // The morning's haze (RVK_MornHaze): thicker round sunrise - the sun from ~6 degrees under the horizon to
         // ~15 up -, half as much round sunset (docs/twilight-plan.md).
         float morning = 0.0f;

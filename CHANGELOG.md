@@ -5,6 +5,10 @@ What changed in each ao-vk release, newest first. Downloads and install notes: t
 
 ## Unreleased
 
+### Fixed
+- Leaving a shop could turn the whole world black outdoors, by day or night, with only the sky, the interface and a
+  little bloom left; it stayed black until Ctrl+Shift+E or another zone change.
+
 ## 0.8.0 - 2026-10-29
 
 ### New
