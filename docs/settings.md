@@ -65,7 +65,7 @@ by hand; run the script after changing a setting (`--check` tells whether this f
 
 | Setting | What it does | Values | Default | Cost | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `RVK_Darkness` | Darkness: how dark nights, storms and dim places get (0 lightest, as the blue hour after sunset; 1 ao-vk's earlier nights; 2 very dark) | 0 .. 2 | 0 | no cost | window; was `RVK_NightDark` |
+| `RVK_Darkness` | Darkness: how dark nights, storms and dim places get (0 lightest: the game's own night light; 1 ao-vk's darker nights; 2 very dark) | 0 .. 2 | 0 | no cost | window; was `RVK_NightDark` |
 | `RVK_DarkFloor` | Darkness: the floor under the land's brightness, x (the exposure raised in the darkest places, as eyes adapt; 0 none) | 0 .. 2 | 1 |  | ini only |
 | `RVK_PixelLight` | Per-pixel lighting | on / off | on | GPU: low | window; game value off; was env `RANDYVK_PIXEL_LIGHTING` |
 | `RVK_LightOver` | All nearby lights (light override) | on / off | on |  | ini only; game value off; was env `RANDYVK_LIGHT_OVERRIDE` |

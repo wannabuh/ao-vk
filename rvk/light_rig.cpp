@@ -164,7 +164,11 @@ void Device::UpdateLightRig()
         // double without the grass's capture.)
         const float noonGame = z.landSeen ? z.land : r.groundKnown ? 1.09f : 0.74f;
         r.landGame = game > 0.0f ? game / noonGame : 1.0f;
-        const float target = std::clamp(r.landTarget / std::max(r.landGame, 1e-3f), 0.2f, 1.5f);
+        // (RVK_Darkness under 1 takes that much of it, in its log: 0 leaves the land at the game's own light, as nights
+        // were before the rig at 0 - the physical night at 0 still took a moonless night to ~0.6 of it, which players
+        // found too dark.)
+        const float share = std::clamp(m_darkness, 0.0f, 1.0f);
+        const float target = std::pow(std::clamp(r.landTarget / std::max(r.landGame, 1e-3f), 0.2f, 1.5f), share);
         r.landGain = m_rigGainSet ? r.landGain + (target - r.landGain) * (1.0f - std::exp(-m_frameDt / 1.5f)) : target;
         // The camera's metering on top, for everything alike (the land, the sky, the clouds, lamps): the whole view's
         // brightness over the land's (scene_luma.comp, every other frame each), against the zone's by day (the sun
