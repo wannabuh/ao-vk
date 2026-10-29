@@ -817,9 +817,11 @@ bool ParseIni(const Setting& s, const char* text, float* out)
 // reaches a player by itself: once (the entry's id under [Migrations]), the value under the old name moves to the new
 // one - and a value still at the old default, which the player never chose, takes the new default instead (NaN: kept
 // as it is). In [Renderer] and in the presets saved in the ini (AOReloaded's slots) alike. A new default for a
-// setting that keeps its name: an entry with `was` the same as `now`.
+// setting that keeps its name: an entry with `was` the same as `now`. kAny: every value takes the new default (a
+// setting whose scale changed meaning, so what a player chose on the old one no longer says what it did).
 struct Migration { const char* id; const char* now; const char* was; float oldDefault; };
 constexpr float kKeep = std::numeric_limits<float>::quiet_NaN();
+constexpr float kAny = std::numeric_limits<float>::infinity();
 const Migration kMigrations[] = {
     // (Most for the game's option variables, which take at most 15 characters: AOReloaded's settings window leaves a
     // longer name out, so the setting couldn't be changed in game - RVK_NativeGround, the native ground's own switch,
@@ -840,6 +842,9 @@ const Migration kMigrations[] = {
     {"MBlurOn070", "RVK_MBlurOn", "RVK_MBlurOn", 1.0f},
     {"PbrGlow070", "RVK_PbrGlow", "RVK_PbrGlow", 1.75f},
     {"CloudQual070", "RVK_CloudQual", "RVK_CloudQual", 2.0f},
+    // (0.8.1: RVK_Darkness 0 is the game's own night light again, as before the light rig; under 0.8.0 even 0 was
+    // too dark for players, and any value chosen then was chosen against those darker nights. Everyone starts at 0.)
+    {"Darkness081", "RVK_Darkness", "RVK_Darkness", kAny},
 };
 
 // A key in randy-vk.ini's [Renderer] twice (a hand edit): only the first counts - an edit to the other did nothing
@@ -884,7 +889,7 @@ void Migrate(std::vector<bool>& inIni)
             GetPrivateProfileStringA(section, m.was, "", text, sizeof(text), g_iniPath);
             if (!text[0] || !ParseIni(*s, text, out))
                 return false;
-            if (!std::isnan(m.oldDefault) && std::fabs(*out - m.oldDefault) < 1e-4f)
+            if (std::isinf(m.oldDefault) || (!std::isnan(m.oldDefault) && std::fabs(*out - m.oldDefault) < 1e-4f))
                 *out = s->defaultValue;
             *out = Clamp(*s, *out);
             return true;
