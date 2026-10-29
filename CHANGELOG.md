@@ -5,13 +5,16 @@ What changed in each ao-vk release, newest first. Downloads and install notes: t
 
 ## Unreleased
 
+## 0.8.1 - 2026-10-29
+
 ### Changed
 - Nights are as light as before 0.8.0 again at `RVK_Darkness` 0 (the default): the land, buildings and characters
   are lit with the game's own night light, no longer taken down to the hour's physical light (a moonless night was at
   about half of it). Settings between 0 and 1 go smoothly over to 0.8.0's darker nights, and 1 and above are as they
   were. Dusk at settings under 1 is a little lighter too.
 - `RVK_Darkness` is set back to 0 once for everyone, whatever it was: a value chosen under 0.8.0 was chosen against
-  its darker nights. Set it again in the Renderer tab (Lighting) if you liked them darker.
+  its darker nights. Set it again in the settings window (Lighting) or the console (`darkness`) if you liked them
+  darker.
 
 ## 0.8.0 - 2026-10-29
 
