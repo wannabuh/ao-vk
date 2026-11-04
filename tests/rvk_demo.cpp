@@ -1609,6 +1609,7 @@ void RunTerrainTest(D& dev, int frames, const std::string& shot)
 // (a turn shows), a canyon wall across the view.
 bool g_nativeGroundTest = false;
 bool g_nativeOn = false;
+bool g_groundSingle = false;   // --ground-single: the game's ground in one pass (the Shadowlands'), not two
 template <typename D>
 void RunNativeGroundTest(D& dev, int frames, const std::string& shot)
 {
@@ -1761,7 +1762,34 @@ void RunNativeGroundTest(D& dev, int frames, const std::string& shot)
         dev.SetTextureStageState(0, TSS_ALPHAOP, TOP_SELECTARG1);
         dev.SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
         dev.SetDrawVisual(uint32_t(VisualKind::Terrain), "AnarchyGround_t");
-        for (const GamePatch& gp : patches) {                 // base pass: the tiles, unlit, clamped
+        if (g_groundSingle) {
+            // (--ground-single: the game's one pass, as on the Shadowlands' playfields - lit and opaque, the lightmap
+            // and the lights added in stage 0, the tile multiplied in by stage 1.)
+            dev.SetRenderState(RS_LIGHTING, 1);
+            dev.SetRenderState(RS_AMBIENT, 0xFF515151);
+            dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
+            dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
+            dev.SetTextureStageState(0, TSS_TEXCOORDINDEX, 1);
+            dev.SetTextureStageState(0, TSS_COLOROP, TOP_ADD);
+            dev.SetTextureStageState(1, TSS_TEXCOORDINDEX, 0);
+            dev.SetTextureStageState(1, TSS_COLOROP, TOP_MODULATE);
+            dev.SetTextureStageState(1, TSS_COLORARG1, TA_TEXTURE);
+            dev.SetTextureStageState(1, TSS_COLORARG2, TA_CURRENT);
+            dev.SetTextureStageState(1, TSS_ADDRESSU, TADDRESS_CLAMP);
+            dev.SetTextureStageState(1, TSS_ADDRESSV, TADDRESS_CLAMP);
+            for (const GamePatch& gp : patches) {
+                dev.SetTexture(0, gp.lightmap);
+                for (const Chunk& ch : gp.chunks) {
+                    dev.SetTexture(1, tiles[ch.tile]);
+                    dev.DrawIndexedPrimitive(TriangleList, kFvfTerrain, ch.v.data(), uint32_t(ch.v.size()), ch.i.data(),
+                                             uint32_t(ch.i.size()));
+                }
+            }
+            dev.SetTexture(1, nullptr);
+            dev.SetTextureStageState(1, TSS_COLOROP, TOP_DISABLE);
+            dev.SetTextureStageState(1, TSS_TEXCOORDINDEX, 1);
+        }
+        if (!g_groundSingle) for (const GamePatch& gp : patches) {   // base pass: the tiles, unlit, clamped
             dev.SetRenderState(RS_LIGHTING, 0);
             dev.SetRenderState(RS_ALPHABLENDENABLE, 0);
             dev.SetRenderState(RS_ZFUNC, CMP_LESSEQUAL);
@@ -1775,7 +1803,7 @@ void RunNativeGroundTest(D& dev, int frames, const std::string& shot)
                                          uint32_t(ch.i.size()));
             }
         }
-        for (const GamePatch& gp : patches) {                 // lighting pass: the lightmap + the lights, multiplying
+        if (!g_groundSingle) for (const GamePatch& gp : patches) {   // lighting pass: the lightmap + the lights, multiplying
             dev.SetRenderState(RS_LIGHTING, 1);
             dev.SetRenderState(RS_AMBIENT, 0xFF515151);
             dev.SetRenderState(RS_ALPHABLENDENABLE, 1);
@@ -5821,6 +5849,7 @@ int main(int argc, char** argv)
         else if (a == "--terrain-test") g_terrainTest = true;
         else if (a == "--native-ground-test") g_nativeGroundTest = true;
         else if (a == "--native-on") g_nativeOn = true;
+        else if (a == "--ground-single") g_groundSingle = true;
         else if (a == "--native-ground-file" && i + 1 < argc) g_groundFile = argv[++i];
         else if (a == "--eye" && i + 3 < argc) { for (int k = 0; k < 3; ++k) g_eye[k] = float(std::atof(argv[++i])); }
         else if (a == "--view-yaw" && i + 1 < argc) g_viewYaw = float(std::atof(argv[++i]));

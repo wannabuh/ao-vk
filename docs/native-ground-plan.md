@@ -34,6 +34,10 @@ comes in a frame, rvk draws its patches for that pass instead, and skips every g
   mappings, docs/ground-format.md), with the derivatives of the continuous cell coordinates (no seams in mip
   selection), through the game's clamped sampler. Cliff faces, rock, the hexagons and the variation as before (the
   faces' texture without rock: the cell's tile).
+- **One pass of the game's**: some playfields (the Shadowlands') have their ground drawn in one lit, opaque pass: the
+  lightmap and the lights added in stage 0, the tile multiplied in by stage 1. Such a draw stands for both passes
+  (`DrawNativeGroundSingle`): the lighting pass's state is its own with stage 1 off, the base pass's is made from it
+  (unlit, the tile's stage as stage 0). `rvk_demo --native-ground-test --ground-single` draws the game's ground so.
 - **Lighting pass**: the game's lighting state, its stage 0 texture replaced by the playfield's lightmap - the
   baked map of the hour as the game handed it to `AnarchyGround_t::SetShadowMap` (4-bit, high nibble first, through
   the game's palette: grey `(i / 15 x 188 + 4) x (1 - shade)`), one texel a cell.
