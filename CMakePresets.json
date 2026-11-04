@@ -11,9 +11,22 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             }
+        },
+        {
+            "name": "mac-release",
+            "displayName": "Release (x86, macOS cross via xwin; docs/mac.md)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/mac-release",
+            "toolchainFile": "${sourceDir}/cmake/xwin-mac.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "VULKAN_SDK_DIR": "$env{VULKAN_SDK}"
+            }
         }
     ],
     "buildPresets": [
-        { "name": "linux-release", "configurePreset": "linux-release" }
+        { "name": "linux-release", "configurePreset": "linux-release" },
+        { "name": "mac-release", "configurePreset": "mac-release" }
     ]
 }

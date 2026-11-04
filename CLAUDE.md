@@ -22,6 +22,10 @@ cmake --build --preset linux-release
 Output in `build/linux-release/`: `randy31.dll` (+ `randy31.map`), and the test exes `rvk_demo`, `native_check`,
 `crash_check`, `randy_harness`, `forward_check`. `compile_commands.json` is symlinked from that build dir.
 
+On macOS (CrossOver's Wine with the KosmicKrisp driver), the preset is `mac-release` (`cmake/xwin-mac.cmake`, with
+Homebrew's LLVM and lld). Set `VULKAN_SDK` to the macOS Vulkan SDK and pass `-DVMA_INCLUDE_DIR=<dir>`.
+`docs/mac.md` covers the Wine setup and `tools/mac/` (`setup-wine.sh`, `run-wine.sh`, `rvk-demo.sh`).
+
 Source files and shaders are listed explicitly in `CMakeLists.txt`: a new `.cpp` must be added to its target
 (`randy_native`, `randy31` or `rvk`), a new shader to the glslc `foreach` list (or the define-variant list), and a new
 shared `.glsl` include to the `DEPENDS` lists. Shaders compile to `build/.../rvk-shaders/*.inc` and are embedded.
@@ -33,6 +37,8 @@ Everything runs under Wine (`WINEPREFIX` defaults to `~/.wine-prk`). There is no
 - `tools/rvk-demo.sh [out-dir] [args]`: rvk alone, headless, with the Khronos validation layer; writes a PNG and
   `validation.log`. It runs in a Wine prefix of its own (`RVK_DEMO_PREFIX`, default `~/.wine`): the game's keeps a
   wineserver on the desktop's display while the launcher is open, and hidden demos joining it hang. Scene flags are in `tests/rvk_demo.cpp` (`--shadow-test`, `--grass-walk X`, `--tess 0.75`, ...).
+  On macOS: `RVK_DEMO_BOTTLE=<bottle> tools/mac/rvk-demo.sh [out-dir] [args]`. Don't run it while the game runs on the
+  same Mac, because a GPU hang there makes the game lose its device too.
 - `tools/look-check.py [scene...]`: a few fixed rvk_demo scenes (dusk sweep, nights at three darkness levels, storm,
   the native ground) reduced to region averages and compared with `tests/look-baseline.tsv`; flags any region that
   moved and any validation message besides the known shutdown leaks. Run it after any change that shouldn't alter the

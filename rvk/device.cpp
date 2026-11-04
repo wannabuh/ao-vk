@@ -779,12 +779,14 @@ bool Device::CreateLogicalDevice(std::string* error)
     // (the character selection, 2026-11-04; docs/mac.md). Its tessellation stays off there - characters, ground and
     // water surface are drawn as without it - unless RANDYVK_TESS=1 (a test of a newer driver).
     {
+        // (VK_DRIVER_ID_MESA_KOSMICKRISP by its number: older headers, such as the Linux SDK's, may not have the name.)
+        constexpr VkDriverId kKosmicKrisp = VkDriverId(28);
         VkPhysicalDeviceDriverProperties driver{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
         VkPhysicalDeviceProperties2 p2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
         p2.pNext = &driver;
         vkGetPhysicalDeviceProperties2(m_physical, &p2);
         const char* v = std::getenv("RANDYVK_TESS");
-        if (m_tessSupported && driver.driverID == VK_DRIVER_ID_MESA_KOSMICKRISP && !(v && *v == '1')) {
+        if (m_tessSupported && driver.driverID == kKosmicKrisp && !(v && *v == '1')) {
             m_tessSupported = false;
             enabled.features.tessellationShader = VK_FALSE;
             Log("tessellation: off on KosmicKrisp (RANDYVK_TESS=1 turns it on)");
