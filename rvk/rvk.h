@@ -1272,6 +1272,7 @@ private:
         d3d::Matrix baseWorld{}, baseView{}, baseProj{};
     } m_native;
     void DrawNativeGroundOne();
+    void DrawNativeGroundSingle();               // the game's ground drawn in one pass (the Shadowlands): both passes
     void DrawPendingGroundBase();
     void NoteSceneFog();
     bool m_groundOnePass = true;                 // RVK_GroundOne

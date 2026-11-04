@@ -5,6 +5,11 @@ What changed in each ao-vk release, newest first. Downloads and install notes: t
 
 ## Unreleased
 
+### Fixed
+- In the Shadowlands (Nascense, the starting area), the ground was missing wherever ao-vk drew it itself
+  (`RVK_GroundOn`): you saw the void under your feet. The game draws these playfields' ground in one pass, not the
+  two ao-vk waited for, so ao-vk skipped the game's ground and drew none of its own.
+
 ## 0.8.1 - 2026-10-29
 
 ### Changed

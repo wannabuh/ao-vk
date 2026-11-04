@@ -538,16 +538,30 @@ bool Device::NativeGroundReplaces(uint32_t fvf)
         return false;
     const bool base = !m_rs[d3d::RS_LIGHTING] && !m_rs[d3d::RS_ALPHABLENDENABLE];
     const bool light = m_rs[d3d::RS_LIGHTING] && IsMultiplyPass();
+    // The game's ground in one pass, as it draws the Shadowlands' playfields (a frame dump of Nascene, 2026-11-04):
+    // lit and opaque, the lightmap and the lights added in stage 0, the tile multiplied in by stage 1. Both passes in
+    // one draw. Not taken for either, it was skipped and nothing drawn in its place: no ground at all.
+    const auto& s1 = m_tss[1];
+    const bool single = m_rs[d3d::RS_LIGHTING] && !m_rs[d3d::RS_ALPHABLENDENABLE] &&
+                        s1[d3d::TSS_COLOROP] == d3d::TOP_MODULATE &&
+                        ((s1[d3d::TSS_COLORARG1] == d3d::TA_TEXTURE && s1[d3d::TSS_COLORARG2] == d3d::TA_CURRENT) ||
+                         (s1[d3d::TSS_COLORARG1] == d3d::TA_CURRENT && s1[d3d::TSS_COLORARG2] == d3d::TA_TEXTURE));
     if (base || light)
         StreetCaptureGroundPass(light);          // (a street being recorded: its ground's passes - portal_street.cpp)
-    if ((base || light) && m_native.drawnBase != m_frameNumber && m_native.drawnLight != m_frameNumber)
+    const bool first = (base || light || single) && m_native.drawnBase != m_frameNumber &&
+                       m_native.drawnLight != m_frameNumber;
+    if (first)
         EnsurePebbleTable();                     // (which cells are sand: the means' texture, made again once it is)
-    if ((base || light) && m_native.drawnBase != m_frameNumber && m_native.drawnLight != m_frameNumber &&
-        NativeMapsSignature() != m_native.mapsSignature)
+    if (first && NativeMapsSignature() != m_native.mapsSignature)
         MakeNativeCodes();                       // (the tiles' maps or the settings changed: once a frame at most)
-    if ((base || light) && m_native.drawnBase != m_frameNumber && m_native.drawnLight != m_frameNumber)
+    if (first)
         PollNativeSky();
-    if (base && m_native.drawnBase != m_frameNumber) {
+    if (single) {
+        if (first) {
+            m_native.drawnBase = m_native.drawnLight = m_frameNumber;
+            DrawNativeGroundSingle();
+        }
+    } else if (base && m_native.drawnBase != m_frameNumber) {
         m_native.drawnBase = m_frameNumber;
         // One pass (RVK_GroundOne): deferred to the lighting pass, which draws the ground once, its texture and its
         // light together - while the ground had a lighting pass last frame (this one's is then all but sure to come
@@ -605,6 +619,64 @@ void Device::DrawNativeGroundOne()
     m_recordExtra[0] = m_recordExtra[1] = m_recordExtra[2] = 0;
     m_groundOne = false;
     m_rs = rs;
+    m_constantsDirty = true;
+}
+
+// The game's ground in one pass (NativeGroundReplaces), drawn as its two passes would be. The lighting pass's state is
+// the draw's own with stage 1 off (the native lighting pass lays the lightmap in stage 0, read through set 1). The
+// base pass's is made from it: unlit, with the tile's stage as stage 0 (its sampler: the game's clamped one), read
+// through set 0. With RVK_GroundOne both go into the one pass (DrawNativeGroundOne); else the base pass is drawn,
+// then the lighting pass multiplying it.
+void Device::DrawNativeGroundSingle()
+{
+    const auto rs = m_rs;
+    const auto tss = m_tss;
+    Texture* tex1 = m_textures[1];
+    auto baseRs = rs;
+    baseRs[d3d::RS_LIGHTING] = 0;
+    auto baseTss = tss;
+    baseTss[0] = tss[1];
+    baseTss[0][d3d::TSS_COLOROP] = d3d::TOP_SELECTARG1;
+    baseTss[0][d3d::TSS_COLORARG1] = d3d::TA_TEXTURE;
+    baseTss[0][d3d::TSS_ALPHAOP] = d3d::TOP_SELECTARG1;
+    baseTss[0][d3d::TSS_ALPHAARG1] = d3d::TA_TEXTURE;
+    baseTss[0][d3d::TSS_TEXCOORDINDEX] = 0;
+    baseTss[1][d3d::TSS_COLOROP] = baseTss[1][d3d::TSS_ALPHAOP] = d3d::TOP_DISABLE;
+    auto lightTss = tss;
+    lightTss[0][d3d::TSS_TEXCOORDINDEX] = 1;
+    lightTss[1][d3d::TSS_COLOROP] = lightTss[1][d3d::TSS_ALPHAOP] = d3d::TOP_DISABLE;
+    m_textures[1] = nullptr;
+    if (m_groundOnePass && m_pixelLighting && m_target == m_scene && m_scene && m_target->m_format == Format::RGBA16F) {
+        m_tss = baseTss;
+        m_native.baseSampler = StageSamplerSlot(0);
+        m_native.baseRs = baseRs;
+        m_native.baseTss = baseTss;
+        m_native.baseTex1 = nullptr;
+        m_native.baseWorld = m_world;
+        m_native.baseView = m_view;
+        m_native.baseProj = m_proj;
+        if (m_scenePhase && !m_external) NoteSceneFog();
+        m_tss = lightTss;
+        m_constantsDirty = true;
+        DrawNativeGroundOne();
+    } else {
+        m_rs = baseRs;
+        m_tss = baseTss;
+        m_constantsDirty = true;
+        DrawNativeGround(false);
+        m_rs = rs;
+        m_rs[d3d::RS_ALPHABLENDENABLE] = 1;
+        m_rs[d3d::RS_SRCBLEND] = d3d::BLEND_ZERO;
+        m_rs[d3d::RS_DESTBLEND] = d3d::BLEND_SRCCOLOR;
+        m_rs[d3d::RS_ZWRITEENABLE] = 0;
+        m_rs[d3d::RS_ZFUNC] = d3d::CMP_EQUAL;
+        m_tss = lightTss;
+        m_constantsDirty = true;
+        DrawNativeGround(true);
+    }
+    m_rs = rs;
+    m_tss = tss;
+    m_textures[1] = tex1;
     m_constantsDirty = true;
 }
 
