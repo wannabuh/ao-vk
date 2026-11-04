@@ -3290,6 +3290,8 @@ private:
                         uint32_t& vertexCount, const uint16_t*& indices, uint32_t& indexCount);
     float m_drawSway[4] = {};                    // the current draw's sway (for its shadow caster)
     bool m_dynamicWriteMask = false;             // per-draw colour write masks (extended dynamic state 3)
+    bool m_emulateVertexInput = false;           // dynamic vertex input emulated (dynemu.h: the driver lacks it)
+    bool m_emulateBlend = false;                 // ... dynamic blend enable and equation
     void FrameLightMask(uint32_t fvf, uint32_t stride, const void* vertices, uint32_t vertexCount, uint32_t out[4]);
     struct LightSphere {
         float x, y, z, r2;
