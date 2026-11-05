@@ -5,6 +5,19 @@ What changed in each ao-vk release, newest first. Downloads and install notes: t
 
 ## Unreleased
 
+### New
+- ao-vk runs on macOS under CrossOver or Wine with the KosmicKrisp Vulkan driver. That driver has no per-draw vertex
+  input or blend states. ao-vk now makes a matching pipeline for each combination the first time it appears, so a new
+  combination can make the picture stutter once. `RANDYVK_DYNAMIC_EMULATION=0` turns this off. `docs/mac.md`
+  describes the setup: `tools/mac/setup-wine.sh` makes a copy of CrossOver's Wine that uses KosmicKrisp, and
+  `tools/mac/run-wine.sh` starts the launcher with it.
+- On KosmicKrisp, tessellation stays off for characters, the native ground and the water surface. With it on, a
+  character up close burst into spikes across the screen. `RANDYVK_TESS=1` turns it back on.
+
+### Fixed
+- Blending into the HDR scene's extra targets (glow, light fraction, motion, surface colour) now asks the driver for
+  independent blending. Drivers that enforce this rule could otherwise blend them all the same way.
+
 ## 0.8.1 - 2026-10-29
 
 ### Changed

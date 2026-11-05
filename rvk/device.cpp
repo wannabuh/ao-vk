@@ -1,5 +1,6 @@
 // Device setup, main targets, swapchain, frames, render target switching, screenshots.
 #include "internal.h"
+#include "dynemu.h"
 
 #include <algorithm>
 #include <chrono>
@@ -547,10 +548,12 @@ bool Device::CreateLogicalDevice(std::string* error)
         return std::any_of(available.begin(), available.end(),
                            [&](const VkExtensionProperties& e) { return std::strcmp(e.extensionName, name) == 0; });
     };
+    // Dynamic vertex input and blending (extended dynamic state 3) where the driver has them, else emulated (dynemu.h:
+    // macOS's MoltenVK and KosmicKrisp have neither) - below, with the features.
     std::vector<const char*> extensions = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
-                                           VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
-                                           VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME,
                                            VK_EXT_ROBUSTNESS_2_EXTENSION_NAME};   // nullDescriptor: empty bindless slots
+    const bool eds3Ext = has(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
+    const bool vertexInputExt = has(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
     // The driver's own usage and budget per memory heap (the GPU memory report, diag.cpp GpuMemoryReport).
     m_memoryBudget = has(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
     if (m_memoryBudget)
@@ -616,12 +619,30 @@ bool Device::CreateLogicalDevice(std::string* error)
     vkGetPhysicalDeviceProperties2(m_physical, &props2);
     bool quad = (p11.subgroupSupportedStages & VK_SHADER_STAGE_FRAGMENT_BIT) &&
                 (p11.subgroupSupportedOperations & VK_SUBGROUP_FEATURE_QUAD_BIT);
-    if (!quad || !v13.dynamicRendering || !v13.synchronization2 || !eds3.extendedDynamicState3ColorBlendEnable ||
-        !eds3.extendedDynamicState3ColorBlendEquation || !vertexInput.vertexInputDynamicState ||
-        !v13.shaderDemoteToHelperInvocation || !features.features.imageCubeArray) {
-        if (error) *error = "required Vulkan features missing (dynamic rendering, sync2, dynamic blend/vertex input, "
+    if (!quad || !v13.dynamicRendering || !v13.synchronization2 || !v13.shaderDemoteToHelperInvocation ||
+        !features.features.imageCubeArray) {
+        if (error) *error = "required Vulkan features missing (dynamic rendering, sync2, demote to helper, cube arrays, "
                           "fragment quad operations)";
         return false;
+    }
+    // Dynamic vertex input and blend enable / equation: the driver's, or emulated by pipelines per state (dynemu.h).
+    // RANDYVK_DYNAMIC_EMULATION=0 never emulates (the device fails without them, as before), =1 always does (a test of
+    // the emulation on a GPU that has them).
+    {
+        const char* v = std::getenv("RANDYVK_DYNAMIC_EMULATION");
+        const char mode = v && (*v == '0' || *v == '1') ? *v : 'a';
+        const bool nativeVertexInput = vertexInputExt && vertexInput.vertexInputDynamicState;
+        const bool nativeBlend = eds3Ext && eds3.extendedDynamicState3ColorBlendEnable &&
+                                 eds3.extendedDynamicState3ColorBlendEquation;
+        m_emulateVertexInput = mode == '1' || (mode == 'a' && !nativeVertexInput);
+        m_emulateBlend = mode == '1' || (mode == 'a' && !nativeBlend);
+        if (mode == '0' && (!nativeVertexInput || !nativeBlend)) {
+            if (error) *error = "required Vulkan features missing (dynamic blend/vertex input; emulation off: "
+                              "RANDYVK_DYNAMIC_EMULATION=0)";
+            return false;
+        }
+        Log("dynamic vertex input: %s; dynamic blend enable and equation: %s",
+            m_emulateVertexInput ? "emulated" : "the driver's", m_emulateBlend ? "emulated" : "the driver's");
     }
     // Bindless textures (M1): textures and samplers in descriptor arrays, indexed per draw.
     m_bindless = descIdx.shaderSampledImageArrayNonUniformIndexing && descIdx.descriptorBindingSampledImageUpdateAfterBind &&
@@ -646,13 +667,17 @@ bool Device::CreateLogicalDevice(std::string* error)
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT};
     enVertexInput.vertexInputDynamicState = VK_TRUE;
     VkPhysicalDeviceExtendedDynamicState3FeaturesEXT enEds3{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT};
-    enEds3.pNext = &enVertexInput;
-    enEds3.extendedDynamicState3ColorBlendEnable = VK_TRUE;
-    enEds3.extendedDynamicState3ColorBlendEquation = VK_TRUE;
+    enEds3.extendedDynamicState3ColorBlendEnable = m_emulateBlend ? VK_FALSE : VK_TRUE;
+    enEds3.extendedDynamicState3ColorBlendEquation = m_emulateBlend ? VK_FALSE : VK_TRUE;
     // Write masks per draw (optional): attachments a draw leaves as they are aren't read and written back.
-    m_dynamicWriteMask = eds3.extendedDynamicState3ColorWriteMask == VK_TRUE;
+    m_dynamicWriteMask = eds3Ext && eds3.extendedDynamicState3ColorWriteMask == VK_TRUE;
     enEds3.extendedDynamicState3ColorWriteMask = m_dynamicWriteMask ? VK_TRUE : VK_FALSE;
     Log("dynamic colour write masks: %s", m_dynamicWriteMask ? "yes" : "no");
+    // The two extensions only where something of theirs is the driver's.
+    const bool useEds3 = !m_emulateBlend || m_dynamicWriteMask;
+    const bool useVertexInput = !m_emulateVertexInput;
+    if (useEds3) extensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
+    if (useVertexInput) extensions.push_back(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
     VkPhysicalDeviceDescriptorIndexingFeatures enDescIdx{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
     enDescIdx.shaderSampledImageArrayNonUniformIndexing = m_bindless ? VK_TRUE : VK_FALSE;
     enDescIdx.descriptorBindingSampledImageUpdateAfterBind = m_bindless ? VK_TRUE : VK_FALSE;
@@ -662,13 +687,17 @@ bool Device::CreateLogicalDevice(std::string* error)
     enDescIdx.shaderStorageBufferArrayNonUniformIndexing = descIdx.shaderStorageBufferArrayNonUniformIndexing;
     VkPhysicalDeviceRobustness2FeaturesEXT enRob2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT};
     enRob2.nullDescriptor = m_bindless ? VK_TRUE : VK_FALSE;
-    enRob2.pNext = &enEds3;
     enDescIdx.pNext = &enRob2;
     // Timeline semaphores: the frame interpolation swapchain's (RVK_FrameGen, framegen.cpp) - core in Vulkan 1.2.
     VkPhysicalDeviceTimelineSemaphoreFeatures enTimeline{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES};
     enTimeline.timelineSemaphore = timeline.timelineSemaphore;
     m_timelineSemaphores = timeline.timelineSemaphore == VK_TRUE;
-    enVertexInput.pNext = &enTimeline;
+    {                                            // robustness 2 -> [extended dynamic state 3] -> [vertex input] -> timeline
+        void** tail = &enRob2.pNext;
+        if (useEds3) { *tail = &enEds3; tail = &enEds3.pNext; }
+        if (useVertexInput) { *tail = &enVertexInput; tail = &enVertexInput.pNext; }
+        *tail = &enTimeline;
+    }
     VkPhysicalDeviceFragmentShadingRateFeaturesKHR enRate{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR};
     if (rateExt && rate.attachmentFragmentShadingRate && rate.pipelineFragmentShadingRate) {
         VkPhysicalDeviceFragmentShadingRatePropertiesKHR rp{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_PROPERTIES_KHR};
@@ -717,7 +746,8 @@ bool Device::CreateLogicalDevice(std::string* error)
     enHalf.pNext = &enDescIdx;
     VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enExec{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
-    m_shaderStats = execExt && exec.pipelineExecutableInfo;
+    // (Not with the emulation: its pipelines are templates, their statistics the variants'.)
+    m_shaderStats = execExt && exec.pipelineExecutableInfo && !m_emulateVertexInput && !m_emulateBlend;
     if (m_shaderStats) {
         enExec.pipelineExecutableInfo = VK_TRUE;
         enExec.pNext = enHalf.pNext;
@@ -738,11 +768,30 @@ bool Device::CreateLogicalDevice(std::string* error)
     enabled.features.robustBufferAccess = features.features.robustBufferAccess;
     enabled.features.textureCompressionBC = features.features.textureCompressionBC;
     enabled.features.imageCubeArray = VK_TRUE;           // point light shadow maps
+    // The HDR scene's attachments blend each their own way (draw.cpp ApplyDynamicState).
+    enabled.features.independentBlend = features.features.independentBlend;
     // Gathers with offsets: AMD's ambient occlusion's shaders (RVK_AoMode 1, cacao.cpp).
     m_gatherExtended = features.features.shaderImageGatherExtended == VK_TRUE;
     enabled.features.shaderImageGatherExtended = features.features.shaderImageGatherExtended;
     enabled.features.tessellationShader = features.features.tessellationShader;   // characters' Phong tessellation
     m_tessSupported = features.features.tessellationShader;
+    // KosmicKrisp (macOS, Vulkan on Metal): a character up close, tessellated, burst into spikes across the screen
+    // (the character selection, 2026-11-04; docs/mac.md). Its tessellation stays off there - characters, ground and
+    // water surface are drawn as without it - unless RANDYVK_TESS=1 (a test of a newer driver).
+    {
+        // (VK_DRIVER_ID_MESA_KOSMICKRISP by its number: older headers, such as the Linux SDK's, may not have the name.)
+        constexpr VkDriverId kKosmicKrisp = VkDriverId(28);
+        VkPhysicalDeviceDriverProperties driver{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+        VkPhysicalDeviceProperties2 p2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+        p2.pNext = &driver;
+        vkGetPhysicalDeviceProperties2(m_physical, &p2);
+        const char* v = std::getenv("RANDYVK_TESS");
+        if (m_tessSupported && driver.driverID == kKosmicKrisp && !(v && *v == '1')) {
+            m_tessSupported = false;
+            enabled.features.tessellationShader = VK_FALSE;
+            Log("tessellation: off on KosmicKrisp (RANDYVK_TESS=1 turns it on)");
+        }
+    }
     // M3: a batch's indirect commands carry the record index in firstInstance (the shader's gl_InstanceIndex),
     // and one call holds several commands (multiDrawIndirect).
     m_groupIndirect = features.features.drawIndirectFirstInstance && features.features.multiDrawIndirect;
@@ -783,6 +832,7 @@ bool Device::CreateLogicalDevice(std::string* error)
     if (!Check(vkCreateDevice(m_physical, &ci, nullptr, &m_device), "vkCreateDevice", error))
         return false;
     LoadDevice(m_device);
+    InstallDynamicStateEmulation(m_device, m_emulateVertexInput, m_emulateBlend);   // (nothing, if neither)
     vkGetDeviceQueue(m_device, m_queueFamily, 0, &m_queue);
     if (qci.queueCount >= 2) vkGetDeviceQueue(m_device, m_queueFamily, 1, &m_fgPresentQueue);
     if (qci.queueCount >= 3) vkGetDeviceQueue(m_device, m_queueFamily, 2, &m_fgAcquireQueue);
