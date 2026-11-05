@@ -41,6 +41,15 @@ if [ -n "$validation" ]; then
 fi
 case $prog in
     [A-Za-z]:\\*) set -- --workdir "${prog%\\*}" "$prog" "$@" ;;
-    *) set -- "$prog" "$@" ;;
+    *) # (Wine runs a macOS path as Z:<path>, and Windows starts no program whose path is longer than 259 characters:
+       # CrossOver's wrapper only says it "cannot execute" it.)
+       full=$prog
+       case $full in /*) ;; *) full=$PWD/$prog ;; esac
+       if [ $((${#full} + 2)) -gt 259 ]; then
+           echo "the program's path is too long for Windows ($((${#full} + 2)) characters as Z:..., at most 259):" \
+                "copy it to a shorter folder" >&2
+           exit 1
+       fi
+       set -- "$prog" "$@" ;;
 esac
 exec "$copy/bin/wine" --bottle "$bottle" "$@"

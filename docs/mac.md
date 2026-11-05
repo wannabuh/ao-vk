@@ -78,8 +78,9 @@ the game, start the launcher:
 tools/mac/run-wine.sh "PRK Preview ARM64" 'C:\PRKLauncher\PRK.Launcher.exe'
 ```
 
-A Windows path runs the program in its own folder. `--validation` adds the Khronos validation layer. `RVK_MAC_WINE`
-names another copy than `~/ao-vk-wine`.
+A Windows path runs the program in its own folder. A macOS path runs it in the current folder. Wine sees it as
+`Z:<path>`, and Windows starts no program whose path is longer than 259 characters, so the script stops when it is.
+`--validation` adds the Khronos validation layer. `RVK_MAC_WINE` names another copy than `~/ao-vk-wine`.
 
 The script does not join a bottle that another Wine still runs, usually CrossOver itself. The programs that Wine
 started there use its MoltenVK, and a Wine of another version may not be able to talk to its wineserver. The script
