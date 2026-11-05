@@ -48,6 +48,10 @@ struct TerrainMap {
     bool pebble;        // ... its pebbles (D.terrainAt.y 3): each its own shade of the ground's colour
     vec2 top, topDx, topDy;
 };
+// The loops over a map's lays and their hexagons are unrolled ([[unroll]]): indexed by a loop's counter, its arrays
+// were kept in memory rather than registers on Apple's GPUs (KosmicKrisp), and the steep ground took twice the GPU
+// time (an M4: in game the cliffs ~5 ms a frame against ~2.4; rvk_demo at Stret West Bank, its slopes filling the
+// screen, 26 ms against 18).
 
 // The hexagon grid over a lay (st: in repeats of the texture, on the world): the three cells around st, the weights
 // of their centres (Mikkelsen's TriangleGrid, sharpened) and each cell's offset into the texture (down: this much of a
@@ -144,7 +148,7 @@ TerrainMap TerrainMapAt(vec3 posW, vec2 uv, vec3 n)
     m.w = mix(m.w, vec3(0.0), lessThan(m.w, vec3(0.03)));
     m.w /= m.w.x + m.w.y + m.w.z;               // (at least one is a third or more)
     m.hexW[0] = vec3(0.0);
-    for (int i = 1; i < 3; ++i) {
+    [[unroll]] for (int i = 1; i < 3; ++i) {
         m.hexW[i] = vec3(0.0);
         if (m.hex > 0.0 && m.w[i] > 0.002)
             TerrainHexGrid(m.uv[i], uint(i) * 0x9E3779B9u, m.rock ? 0.0 : 1.0, m.hexW[i], m.hexOff[3 * i],
@@ -334,7 +338,7 @@ vec4 TerrainLay(texture2D top, sampler smp, texture2D face, TerrainMap m, int i)
     vec4 c = vec4(0.0);
     if (m.hex < 1.0) c = TERRAIN_FACE_READ(face, m.uv[i], m.dx[i], m.dy[i]) * (1.0 - m.hex);
     if (m.hex > 0.0)
-        for (int k = 0; k < 3; ++k)
+        [[unroll]] for (int k = 0; k < 3; ++k)
             if (m.hexW[i][k] > 0.002)
                 c += TERRAIN_FACE_READ(face, m.uv[i] + m.hexOff[3 * i + k], m.dx[i], m.dy[i]) * (m.hexW[i][k] * m.hex);
     return c;
@@ -344,7 +348,7 @@ vec4 TerrainLay(texture2D top, sampler smp, texture2D face, TerrainMap m, int i)
 vec4 TerrainTexture(texture2D top, sampler smp, texture2D face, TerrainMap m, vec4 faceScale)
 {
     vec4 c = m.w.x > 0.002 ? TerrainLay(top, smp, face, m, 0) * m.w.x : vec4(0.0);
-    for (int i = 1; i < 3; ++i)
+    [[unroll]] for (int i = 1; i < 3; ++i)
         if (m.w[i] > 0.002) c += TerrainLay(top, smp, face, m, i) * (faceScale * m.w[i]);
     return c;
 }
@@ -356,10 +360,10 @@ vec4 TerrainTexture(texture2D top, sampler smp, texture2D face, TerrainMap m, ve
 void TerrainSettle(texture2D face, inout TerrainMap m)
 {
     if (m.hex <= 0.0) return;
-    for (int i = 1; i < 3; ++i) {
+    [[unroll]] for (int i = 1; i < 3; ++i) {
         if (m.w[i] <= 0.002) continue;
         vec3 w = vec3(0.0);
-        for (int k = 0; k < 3; ++k)
+        [[unroll]] for (int k = 0; k < 3; ++k)
             if (m.hexW[i][k] > 0.002)
                 w[k] = mix(1.0, Luma(TERRAIN_FACE_READ(face, m.uv[i] + m.hexOff[3 * i + k], m.dx[i], m.dy[i]).rgb), 0.6) *
                        m.hexW[i][k];
@@ -375,7 +379,7 @@ vec4 TerrainSettleLay(texture2D face, inout TerrainMap m, int i)
     if (m.hex <= 0.0) return c;
     vec4 sum = vec4(0.0);
     vec3 w = vec3(0.0);
-    for (int k = 0; k < 3; ++k)
+    [[unroll]] for (int k = 0; k < 3; ++k)
         if (m.hexW[i][k] > 0.002) {
             const vec4 t = TERRAIN_FACE_READ(face, m.uv[i] + m.hexOff[3 * i + k], m.dx[i], m.dy[i]);
             w[k] = mix(1.0, Luma(t.rgb), 0.6) * m.hexW[i][k];
@@ -405,7 +409,7 @@ vec4 TerrainRockTint(TerrainMap m)
 vec4 TerrainClutterBase(TerrainMap m)
 {
     vec4 c = m.w.x > 0.002 ? TERRAIN_FACE_READ(texImages[TerrainRockImage(0)], m.top, m.topDx, m.topDy) * m.w.x : vec4(0.0);
-    for (int i = 1; i < 3; ++i)
+    [[unroll]] for (int i = 1; i < 3; ++i)
         if (m.w[i] > 0.002) c += TERRAIN_FACE_READ(texImages[TerrainRockImage(0)], m.uv[i], m.dx[i], m.dy[i]) * m.w[i];
     c.rgb = mix(FL.terrainRock2.rgb, c.rgb, 0.75);
     if (!m.pebble) return c * TerrainRockTint(m);
@@ -436,7 +440,7 @@ vec4 TerrainBase(uint image, sampler smp, inout TerrainMap m)
         if (m.w.x >= 0.998) return top;
         if (m.rock) {
             vec4 faces = vec4(0.0);
-            for (int i = 1; i < 3; ++i)
+            [[unroll]] for (int i = 1; i < 3; ++i)
                 if (m.w[i] > 0.002) faces += TerrainSettleLay(texImages[TerrainRockImage(0)], m, i) * m.w[i];
             const float side = m.w.y + m.w.z;
             faces.rgb = mix(FL.terrainRock2.rgb * side, faces.rgb, 0.75);
@@ -444,7 +448,7 @@ vec4 TerrainBase(uint image, sampler smp, inout TerrainMap m)
         }
         const uvec2 c = NativeCell(m.uv[0]);
         vec4 faces = vec4(0.0);
-        for (int i = 1; i < 3; ++i)
+        [[unroll]] for (int i = 1; i < 3; ++i)
             if (m.w[i] > 0.002)
                 faces += textureGrad(sampler2D(texImages[nonuniformEXT(c.x)], bindlessSamplers[D.sampIdx.w]), m.uv[i],
                                      m.dx[i], m.dy[i]) * m.w[i];
@@ -453,7 +457,7 @@ vec4 TerrainBase(uint image, sampler smp, inout TerrainMap m)
     const uint faceImage = m.rock ? TerrainRockImage(0) : image;
     const vec4 top = m.w.x > 0.002 ? TerrainLay(texImages[image], smp, texImages[faceImage], m, 0) * m.w.x : vec4(0.0);
     vec4 faces = vec4(0.0);
-    for (int i = 1; i < 3; ++i)
+    [[unroll]] for (int i = 1; i < 3; ++i)
         if (m.w[i] > 0.002) faces += TerrainSettleLay(texImages[faceImage], m, i) * m.w[i];
     if (!m.rock) return top + faces;
     const float side = m.w.y + m.w.z;
@@ -466,7 +470,7 @@ vec4 TerrainBase(uint image, sampler smp, inout TerrainMap m)
 vec3 TerrainNormalMap(vec3 n, texture2D top, float topStrength, texture2D face, float faceStrength, TerrainMap m)
 {
     vec3 sum = vec3(0.0);
-    for (int i = 0; i < 3; ++i) {
+    [[unroll]] for (int i = 0; i < 3; ++i) {
         if (m.w[i] <= 0.002) continue;
         vec2 uvx = m.dx[i], uvy = m.dy[i];
         vec3 t;
@@ -669,7 +673,7 @@ vec3 NativeOrm(TerrainMap m, out float w)
     }
     const uint faceOrm = m.rock ? rockOrm : NativeOrmImage(m.uv[0]);
     if (faceOrm != 0xFFFFu)
-        for (int i = 1; i < 3; ++i)
+        [[unroll]] for (int i = 1; i < 3; ++i)
             if (m.w[i] > 0.002) {
                 sum += TERRAIN_FACE_READ(texImages[nonuniformEXT(faceOrm)], m.uv[i], m.dx[i], m.dy[i]).rgb * m.w[i];
                 w += m.w[i];
