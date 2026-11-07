@@ -5,6 +5,13 @@ What changed in each ao-vk release, newest first. Downloads and install notes: t
 
 ## Unreleased
 
+### Changed
+- The rock on steep ground and cliffs (`RVK_CliffTex`, `RVK_CliffRock`) takes about half the GPU time it took: on an
+  Apple M4 in hilly land about 4 ms a frame less. Each of the rock's texture tiles is read once instead of twice, and
+  a slope turned mostly one way reads the rock from that side only.
+- On macOS the rock on steep ground and cliffs takes about half the GPU time again, with the same picture: on an
+  Apple M4 in hilly land about 2 ms a frame less, and up to a third of the frame where cliffs fill the screen.
+
 ## 0.8.1 - 2026-10-29
 
 ### Changed

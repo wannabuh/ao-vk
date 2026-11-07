@@ -1,6 +1,7 @@
 // Direct3D 7 fixed-function pixel processing: two texture stages, specular add, fog, alpha test.
 #extension GL_KHR_shader_subgroup_quad : require
 #extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_control_flow_attributes : require
 // RVK_NO_FRAME_LIGHTS: the build for draws no frame light reaches (lighting.glsl) - not the ground's either.
 #ifdef RVK_NO_FRAME_LIGHTS
 #define RVK_NO_GROUND

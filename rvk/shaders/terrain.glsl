@@ -48,6 +48,10 @@ struct TerrainMap {
     bool pebble;        // ... its pebbles (D.terrainAt.y 3): each its own shade of the ground's colour
     vec2 top, topDx, topDy;
 };
+// The loops over a map's lays and their hexagons are unrolled ([[unroll]]): indexed by a loop's counter, its arrays
+// were kept in memory rather than registers on Apple's GPUs (KosmicKrisp), and the steep ground took twice the GPU
+// time (an M4: in game the cliffs ~5 ms a frame against ~2.4; rvk_demo at Stret West Bank, its slopes filling the
+// screen, 26 ms against 18).
 
 // The hexagon grid over a lay (st: in repeats of the texture, on the world): the three cells around st, the weights
 // of their centres (Mikkelsen's TriangleGrid, sharpened) and each cell's offset into the texture (down: this much of a
@@ -138,8 +142,13 @@ TerrainMap TerrainMapAt(vec3 posW, vec2 uv, vec3 n)
         // (A pebble, a few pixels across: the rock from the one side it faces most - one read, not three.)
         if (m.pebble) m.w = m.w.x >= max(m.w.y, m.w.z) ? vec3(1.0, 0.0, 0.0) : m.w.y >= m.w.z ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0);
     }
+    // A lay with less than 3% of the pixel is left out and its share given to the others: a face turned within ~25
+    // degrees of x or z reads one lay, not two, and the foot and the top of a slope read no faces or no top. Every
+    // lay costs reads of each map (through its hexagons: up to three each); a few percent of one doesn't show.
+    m.w = mix(m.w, vec3(0.0), lessThan(m.w, vec3(0.03)));
+    m.w /= m.w.x + m.w.y + m.w.z;               // (at least one is a third or more)
     m.hexW[0] = vec3(0.0);
-    for (int i = 1; i < 3; ++i) {
+    [[unroll]] for (int i = 1; i < 3; ++i) {
         m.hexW[i] = vec3(0.0);
         if (m.hex > 0.0 && m.w[i] > 0.002)
             TerrainHexGrid(m.uv[i], uint(i) * 0x9E3779B9u, m.rock ? 0.0 : 1.0, m.hexW[i], m.hexOff[3 * i],
@@ -329,7 +338,7 @@ vec4 TerrainLay(texture2D top, sampler smp, texture2D face, TerrainMap m, int i)
     vec4 c = vec4(0.0);
     if (m.hex < 1.0) c = TERRAIN_FACE_READ(face, m.uv[i], m.dx[i], m.dy[i]) * (1.0 - m.hex);
     if (m.hex > 0.0)
-        for (int k = 0; k < 3; ++k)
+        [[unroll]] for (int k = 0; k < 3; ++k)
             if (m.hexW[i][k] > 0.002)
                 c += TERRAIN_FACE_READ(face, m.uv[i] + m.hexOff[3 * i + k], m.dx[i], m.dy[i]) * (m.hexW[i][k] * m.hex);
     return c;
@@ -339,7 +348,7 @@ vec4 TerrainLay(texture2D top, sampler smp, texture2D face, TerrainMap m, int i)
 vec4 TerrainTexture(texture2D top, sampler smp, texture2D face, TerrainMap m, vec4 faceScale)
 {
     vec4 c = m.w.x > 0.002 ? TerrainLay(top, smp, face, m, 0) * m.w.x : vec4(0.0);
-    for (int i = 1; i < 3; ++i)
+    [[unroll]] for (int i = 1; i < 3; ++i)
         if (m.w[i] > 0.002) c += TerrainLay(top, smp, face, m, i) * (faceScale * m.w[i]);
     return c;
 }
@@ -347,17 +356,38 @@ vec4 TerrainTexture(texture2D top, sampler smp, texture2D face, TerrainMap m, ve
 // The faces' hexagons' weights take their texture's brightness in (the brighter cell wins where they meet - a clean
 // seam rather than a blur); every map read after it uses the same. face: the faces' colour (the rock's albedo or the
 // cell's tile) - both passes settle them from the same texture.
+// Only the hexagons with a weight are read (from 0.002, as the lays read them): a pixel is mostly in one or two.
 void TerrainSettle(texture2D face, inout TerrainMap m)
 {
     if (m.hex <= 0.0) return;
-    for (int i = 1; i < 3; ++i) {
+    [[unroll]] for (int i = 1; i < 3; ++i) {
         if (m.w[i] <= 0.002) continue;
-        vec3 lum;
-        for (int k = 0; k < 3; ++k)
-            lum[k] = Luma(TERRAIN_FACE_READ(face, m.uv[i] + m.hexOff[3 * i + k], m.dx[i], m.dy[i]).rgb);
-        vec3 w = mix(vec3(1.0), lum, 0.6) * m.hexW[i];
+        vec3 w = vec3(0.0);
+        [[unroll]] for (int k = 0; k < 3; ++k)
+            if (m.hexW[i][k] > 0.002)
+                w[k] = mix(1.0, Luma(TERRAIN_FACE_READ(face, m.uv[i] + m.hexOff[3 * i + k], m.dx[i], m.dy[i]).rgb), 0.6) *
+                       m.hexW[i][k];
         m.hexW[i] = w / max(w.x + w.y + w.z, 1e-6);
     }
+}
+
+// Face i's lay settled from its own reads (TerrainSettle, then TerrainLay, without reading each hexagon twice): its
+// colour, and its weights settled in m for the map reads after it.
+vec4 TerrainSettleLay(texture2D face, inout TerrainMap m, int i)
+{
+    vec4 c = m.hex < 1.0 ? TERRAIN_FACE_READ(face, m.uv[i], m.dx[i], m.dy[i]) * (1.0 - m.hex) : vec4(0.0);
+    if (m.hex <= 0.0) return c;
+    vec4 sum = vec4(0.0);
+    vec3 w = vec3(0.0);
+    [[unroll]] for (int k = 0; k < 3; ++k)
+        if (m.hexW[i][k] > 0.002) {
+            const vec4 t = TERRAIN_FACE_READ(face, m.uv[i] + m.hexOff[3 * i + k], m.dx[i], m.dy[i]);
+            w[k] = mix(1.0, Luma(t.rgb), 0.6) * m.hexW[i][k];
+            sum += t * w[k];
+        }
+    const float total = max(w.x + w.y + w.z, 1e-6);
+    m.hexW[i] = w / total;
+    return c + sum * (m.hex / total);
 }
 
 // The rock's colour made the cell's: its tile's mean colour over the rock's (a sand cliff is sand-coloured rock, a dark
@@ -379,7 +409,7 @@ vec4 TerrainRockTint(TerrainMap m)
 vec4 TerrainClutterBase(TerrainMap m)
 {
     vec4 c = m.w.x > 0.002 ? TERRAIN_FACE_READ(texImages[TerrainRockImage(0)], m.top, m.topDx, m.topDy) * m.w.x : vec4(0.0);
-    for (int i = 1; i < 3; ++i)
+    [[unroll]] for (int i = 1; i < 3; ++i)
         if (m.w[i] > 0.002) c += TERRAIN_FACE_READ(texImages[TerrainRockImage(0)], m.uv[i], m.dx[i], m.dy[i]) * m.w[i];
     c.rgb = mix(FL.terrainRock2.rgb, c.rgb, 0.75);
     if (!m.pebble) return c * TerrainRockTint(m);
@@ -409,27 +439,27 @@ vec4 TerrainBase(uint image, sampler smp, inout TerrainMap m)
         const vec4 top = m.w.x > 0.002 ? NativeTop(m.uv[0], m.dx[0], m.dy[0], smp) * m.w.x : vec4(0.0);
         if (m.w.x >= 0.998) return top;
         if (m.rock) {
-            TerrainSettle(texImages[TerrainRockImage(0)], m);
             vec4 faces = vec4(0.0);
-            for (int i = 1; i < 3; ++i)
-                if (m.w[i] > 0.002) faces += TerrainLay(texImages[image], smp, texImages[TerrainRockImage(0)], m, i) * m.w[i];
+            [[unroll]] for (int i = 1; i < 3; ++i)
+                if (m.w[i] > 0.002) faces += TerrainSettleLay(texImages[TerrainRockImage(0)], m, i) * m.w[i];
             const float side = m.w.y + m.w.z;
             faces.rgb = mix(FL.terrainRock2.rgb * side, faces.rgb, 0.75);
             return top + faces * TerrainRockTint(m);
         }
         const uvec2 c = NativeCell(m.uv[0]);
         vec4 faces = vec4(0.0);
-        for (int i = 1; i < 3; ++i)
+        [[unroll]] for (int i = 1; i < 3; ++i)
             if (m.w[i] > 0.002)
                 faces += textureGrad(sampler2D(texImages[nonuniformEXT(c.x)], bindlessSamplers[D.sampIdx.w]), m.uv[i],
                                      m.dx[i], m.dy[i]) * m.w[i];
         return top + faces;
     }
     const uint faceImage = m.rock ? TerrainRockImage(0) : image;
-    TerrainSettle(texImages[faceImage], m);
-    if (!m.rock) return TerrainTexture(texImages[image], smp, texImages[faceImage], m, vec4(1.0));
-    vec4 top = m.w.x > 0.002 ? TerrainLay(texImages[image], smp, texImages[faceImage], m, 0) * m.w.x : vec4(0.0);
-    vec4 faces = TerrainTexture(texImages[image], smp, texImages[faceImage], m, vec4(1.0)) - top;
+    const vec4 top = m.w.x > 0.002 ? TerrainLay(texImages[image], smp, texImages[faceImage], m, 0) * m.w.x : vec4(0.0);
+    vec4 faces = vec4(0.0);
+    [[unroll]] for (int i = 1; i < 3; ++i)
+        if (m.w[i] > 0.002) faces += TerrainSettleLay(texImages[faceImage], m, i) * m.w[i];
+    if (!m.rock) return top + faces;
     const float side = m.w.y + m.w.z;
     if (side > 0.002) faces.rgb = mix(FL.terrainRock2.rgb * side, faces.rgb, 0.75);
     return top + faces * TerrainRockTint(m);
@@ -440,7 +470,7 @@ vec4 TerrainBase(uint image, sampler smp, inout TerrainMap m)
 vec3 TerrainNormalMap(vec3 n, texture2D top, float topStrength, texture2D face, float faceStrength, TerrainMap m)
 {
     vec3 sum = vec3(0.0);
-    for (int i = 0; i < 3; ++i) {
+    [[unroll]] for (int i = 0; i < 3; ++i) {
         if (m.w[i] <= 0.002) continue;
         vec2 uvx = m.dx[i], uvy = m.dy[i];
         vec3 t;
@@ -643,7 +673,7 @@ vec3 NativeOrm(TerrainMap m, out float w)
     }
     const uint faceOrm = m.rock ? rockOrm : NativeOrmImage(m.uv[0]);
     if (faceOrm != 0xFFFFu)
-        for (int i = 1; i < 3; ++i)
+        [[unroll]] for (int i = 1; i < 3; ++i)
             if (m.w[i] > 0.002) {
                 sum += TERRAIN_FACE_READ(texImages[nonuniformEXT(faceOrm)], m.uv[i], m.dx[i], m.dy[i]).rgb * m.w[i];
                 w += m.w[i];
