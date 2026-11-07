@@ -306,6 +306,7 @@ void Init()
         }
         rnative::Install(g_orig);
     }
+    rvkproxy::InstallBrowserHooks();
     LoadAoReloaded();
 }
 
