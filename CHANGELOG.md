@@ -5,6 +5,10 @@ What changed in each ao-vk release, newest first. Downloads and install notes: t
 
 ## Unreleased
 
+### Fixed
+- The game could crash, now and then, where plants are drawn. ao-vk measured the size of every plant for a survey in
+  randy-vk.log, also of plants it knew no shape for.
+
 ## 0.8.1 - 2026-10-29
 
 ### Changed
