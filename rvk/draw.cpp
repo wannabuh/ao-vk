@@ -3809,13 +3809,15 @@ void Device::Draw(uint32_t primitive, uint32_t fvf, const void* vertices, uint32
         else
             ++m_foliageDynamic;
         m_foliageVerts += vertexCount;
-        float c[3], e[3];
-        DrawWorldBox(c, e);
-        const float h = e[1] * 2.0f;
-        if (m_foliageMinH == 0.0f || h < m_foliageMinH)
-            m_foliageMinH = h;
-        if (h > m_foliageMaxH)
-            m_foliageMaxH = h;
+        if (m_drawObject || m_drawMesh) {        // a draw without a known mesh has no box to measure
+            float c[3], e[3];
+            DrawWorldBox(c, e);
+            const float h = e[1] * 2.0f;
+            if (m_foliageMinH == 0.0f || h < m_foliageMinH)
+                m_foliageMinH = h;
+            if (h > m_foliageMaxH)
+                m_foliageMaxH = h;
+        }
     }
 
     ProfileDrawSection("draw: constants", since);
