@@ -35,6 +35,7 @@ void ParticleFrame();
 // scene and drawn here - just before the interface - over the finished picture (rvk_particles.cpp).
 void FlushOverlayText();                             // each presented frame (rvk_particles.cpp)
 void WeatherFrame();                              // each presented frame (rvk_weather.cpp)
+void InstallBrowserHooks();                       // at startup (rvk_browser.cpp: RVK_WebNoSpare)
 void SmokeFrame();                                // each presented frame (rvk_smoke.cpp)
 // The game's effects watched (rvk_fx.cpp: RVK_FxLog); FxPlay plays a template on the player at the next FxFrame.
 void FxFrame();                                   // each presented frame

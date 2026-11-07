@@ -5,6 +5,11 @@ What changed in each ao-vk release, newest first. Downloads and install notes: t
 
 ## Unreleased
 
+### Fixed
+- The market window stayed empty once it had been closed, until the game was restarted (seen under Wine on macOS).
+  The in-game browser no longer keeps a spare page process ready, which under Wine ended itself unused.
+  `RVK_WebNoSpare` (randy-vk.ini, on by default; takes effect at the next start) switches it off.
+
 ## 0.8.1 - 2026-10-29
 
 ### Changed

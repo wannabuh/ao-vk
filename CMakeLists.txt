@@ -16,7 +16,7 @@ target_compile_definitions(randy_native PRIVATE _CRT_SECURE_NO_WARNINGS)
 
 # Drop-in randy31.dll. Exports not implemented here forward to the original, renamed randy31_orig.dll.
 add_library(randy31 SHARED proxy/dllmain.cpp proxy/trace.cpp proxy/ddraw/com_trace.cpp proxy/ddraw/com_trace_detail.cpp
-            proxy/ddraw/rvk_ddraw.cpp proxy/ddraw/rvk_surface.cpp proxy/ddraw/rvk_device.cpp proxy/ddraw/rvk_settings.cpp proxy/ddraw/rvk_particles.cpp proxy/ddraw/rvk_weather.cpp proxy/ddraw/rvk_smoke.cpp proxy/ddraw/rvk_fx.cpp proxy/ddraw/rvk_time.cpp proxy/ddraw/rvk_statels.cpp proxy/ddraw/rvk_ground.cpp proxy/ddraw/rvk_freecam.cpp proxy/ddraw/rvk_input.cpp proxy/ddraw/rvk_console.cpp
+            proxy/ddraw/rvk_ddraw.cpp proxy/ddraw/rvk_surface.cpp proxy/ddraw/rvk_device.cpp proxy/ddraw/rvk_settings.cpp proxy/ddraw/rvk_particles.cpp proxy/ddraw/rvk_weather.cpp proxy/ddraw/rvk_browser.cpp proxy/ddraw/rvk_smoke.cpp proxy/ddraw/rvk_fx.cpp proxy/ddraw/rvk_time.cpp proxy/ddraw/rvk_statels.cpp proxy/ddraw/rvk_ground.cpp proxy/ddraw/rvk_freecam.cpp proxy/ddraw/rvk_input.cpp proxy/ddraw/rvk_console.cpp
             proxy/ddraw/rvk_materials.cpp proxy/exports.gen.cpp proxy/randy31.def)
 target_include_directories(randy31 PRIVATE proxy third_party)
 target_compile_definitions(randy31 PRIVATE _CRT_SECURE_NO_WARNINGS)
